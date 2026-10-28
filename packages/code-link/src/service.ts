@@ -251,13 +251,14 @@ declare module "@tomradex/ipc" {
     "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
     /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
-    "codeLink.conversation": (projectId: string, sessionId: string, before?: number) => RecordRead | null;
+    "codeLink.conversation": (projectId: string, sessionId: string, before?: number, after?: number) => RecordRead | null;
     /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
     "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
+    "codeLink.sessionEscape": (projectId: string, sessionId: string) => boolean;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
     /** Where a conversation runs — here on its engine's SDK, or in a terminal as a session — and whether it can move now. */
@@ -407,6 +408,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private repoConnect!: RepoConnect;
   /** Repositories whose files are being filled in right now, so two triggers do not write at once. */
   private readonly autoConnecting = new Set<string>();
+  /** Records found by looking through an agent's folder, by agent and its session id. */
+  private readonly recordFiles = new Map<string, string>();
   /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
   private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
@@ -783,10 +786,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
-      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before) => ctx.codeLink.conversation(projectId, sessionId, before));
+      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => ctx.codeLink.conversation(projectId, sessionId, before, after));
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
       ctx.ipc.handle("codeLink.toTerminal", (projectId, threadId) => ctx.codeLink.toTerminal(projectId, threadId));
@@ -967,19 +971,30 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /**
-   * A session's conversation from its agent's own record, read-only: its end, or the stretch `before` an earlier
-   * read's start. Null when Tomrade cannot read that agent's record.
+   * A session's conversation from its agent's own record, read-only: its end, the stretch `before` an earlier read's
+   * start, or what came `after` an earlier read's `next`. Null when Tomrade cannot read that agent's record.
    */
-  conversation(projectId: string, sessionId: string, before?: number): RecordRead | null {
+  conversation(projectId: string, sessionId: string, before?: number, after?: number): RecordRead | null {
     const s = this.store.session(projectId, sessionId);
     if (!s?.externalId) return null;
     const record = recordOf(this.ctx, s.agent);
-    const file = record ? (s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null })) : null;
-    const read = record && file ? record.read(file, before === undefined ? undefined : { before }) : null;
+    const file = record ? (s.transcript ?? this.recordFile(s.agent, s.externalId, record, s.cwd ?? null)) : null;
+    const read = record && file ? record.read(file, before !== undefined ? { before } : after !== undefined ? { after } : undefined) : null;
     if (read || !s.recordSavedAt) return read;
     // The agent's own record is gone (its CLI cleans old ones up) or unreadable here: what was saved when it ended.
     const saved = snapshotFile(this.recordsDir(), s.agent, s.externalId);
     return saved ? readSnapshot(saved, before) : null;
+  }
+
+  /** Where an agent keeps a conversation's record, looked for once: the agent's folder is not read through on every read. */
+  private recordFile(agent: string, externalId: string, record: NonNullable<ReturnType<typeof recordOf>>, cwd: string | null): string | null {
+    const key = `${agent}:${externalId}`;
+    const known = this.recordFiles.get(key);
+    if (known && fs.existsSync(known)) return known;
+    const found = record.find(externalId, { cwd });
+    if (found) this.recordFiles.set(key, found);
+    else this.recordFiles.delete(key);
+    return found;
   }
 
   /**
@@ -1027,6 +1042,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** Text into a terminal session's pane, with Enter, as typed at its keyboard; false when it could not go. */
   sessionSay(projectId: string, sessionId: string, text: string): Promise<boolean> {
     return this.panel.say(projectId, sessionId, text);
+  }
+
+  /** Esc in a terminal session's pane, as pressed at its keyboard; false when it could not go. */
+  sessionEscape(projectId: string, sessionId: string): Promise<boolean> {
+    return this.panel.escape(projectId, sessionId);
   }
 
   /** The agent's declared keys for its permission prompt, pressed in the session's pane while it shows one; see `SessionPanel.answer`. */

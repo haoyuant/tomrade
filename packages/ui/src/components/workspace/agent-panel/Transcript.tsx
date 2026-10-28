@@ -11,7 +11,8 @@ import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
 import { ChecklistBlock, FindingBlock } from "../DoctorCards";
 import { ClaimCard, type ClaimOffer } from "./ClaimCard";
-import { CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
+import { looksLikeMarkdown } from "~/lib/markdownDetect";
+import { AgentMarkdown, CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
 import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 
 /** What every row reads besides its own message; the handlers keep their identity, so a streamed reply re-renders only its own line. */
@@ -193,7 +194,9 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
   const body =
     b.type === "text" ? (
       <>
-        {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue, projectId)}</p>)}
+        {m.role === "agent" && looksLikeMarkdown(b.text)
+          ? <AgentMarkdown text={b.text} byKey={byKey} onOpenIssue={onOpenIssue} projectId={projectId} />
+          : b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue, projectId)}</p>)}
         {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
       </>
     ) : b.type === "media" ? (

@@ -360,6 +360,9 @@ export interface RecordRead {
   lines: RecordLine[];
   cut: boolean;
   start?: number;
+  /** A read up to the record's end: where the next read goes on (`after`), and how many of `lines` come before it — the rest are read again then. */
+  next?: number;
+  held?: number;
 }
 
 /**
@@ -369,8 +372,12 @@ export interface RecordRead {
 export interface EngineRecord {
   /** Where its CLI keeps that session's record on this machine; null when it is not there. */
   find(sessionId: string, opts: { cwd: string | null }): string | null;
-  /** The record's end as conversation lines, the agent's machinery left out, or the stretch `before` a read's `start`; null when it cannot be read. */
-  read(file: string, opts?: { before?: number }): RecordRead | null;
+  /**
+   * The record's end as conversation lines, the agent's machinery left out, the stretch `before` a read's `start`, or
+   * what came `after` a read's `next` (a reader that cannot go on reads the end; its `start` then says so); null when
+   * it cannot be read.
+   */
+  read(file: string, opts?: { before?: number; after?: number }): RecordRead | null;
   /** What the record calls the conversation; null without a name. */
   title?(file: string): string | null;
 }

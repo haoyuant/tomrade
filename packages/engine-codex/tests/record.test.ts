@@ -40,3 +40,18 @@ it("reads a conversation read-only from Codex's rollout, names it by the first p
   expect(findCodexRollout("nope", home)).toBeNull();
   expect(findCodexRollout("../x", home)).toBeNull();
 });
+
+it("goes on from where the last read of a rollout stopped, waiting on a call until its output is written", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-going-on-"));
+  const rollout = path.join(dir, "rollout.jsonl");
+  const item = (payload: unknown) => `${JSON.stringify({ type: "response_item", payload })}\n`;
+  fs.writeFileSync(rollout, item({ type: "message", role: "user", content: [{ type: "input_text", text: "看看目录" }] }) + item({ type: "function_call", name: "shell", call_id: "c1", arguments: JSON.stringify({ command: ["ls"] }) }));
+  const first = codexRecord.read(rollout)!;
+  expect(first.lines.map((l) => l.text)).toEqual(["看看目录", "shell · ls"]);
+  expect(first.held).toBe(1);
+  fs.appendFileSync(rollout, item({ type: "function_call_output", call_id: "c1", output: JSON.stringify({ output: "a.ts", metadata: { exit_code: 0 } }) }) + item({ type: "message", role: "assistant", content: [{ type: "output_text", text: "有 a.ts。" }] }));
+  const next = codexRecord.read(rollout, { after: first.next })!;
+  expect(next.start).toBe(first.next);
+  expect(next.lines).toEqual([{ who: "tool", text: "shell · ls", detail: { input: "$ ls", output: "a.ts" } }, { who: "agent", text: "有 a.ts。" }]);
+  expect([next.held, next.next]).toEqual([2, fs.statSync(rollout).size]);
+});

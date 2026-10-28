@@ -98,11 +98,13 @@ const entriesOf = (text: string): Record<string, unknown>[] =>
   });
 
 /**
- * A stretch of a JSONL record as conversation lines: its end, or what came `before` an earlier read's start, in whole
- * lines. Each tool call gets the output filed under its id, from the stretch or just past it. Null when the file
- * cannot be read.
+ * A stretch of a JSONL record as conversation lines: its end, what came `before` an earlier read's start, or what came
+ * `after` an earlier read's `next`, in whole lines. Each tool call gets the output filed under its id, from the stretch
+ * or just past it. A read up to the end says where the next one goes on (`next`): past its last whole line, or back at
+ * the first call still waiting for its output, with `held` the lines before that. Going on is refused for more than a
+ * page, or past the end of a record that shrank: that reads its end afresh. Null when the file cannot be read.
  */
-export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { before?: number }): RecordRead | null {
+export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { before?: number; after?: number }): RecordRead | null {
   let fd: number;
   try {
     fd = fs.openSync(file, "r");
@@ -111,27 +113,55 @@ export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { befo
   }
   try {
     const size = fs.fstatSync(fd).size;
-    const end = Math.min(size, Math.max(0, opts?.before ?? size));
-    const start = end > 0 ? lineStart(fd, Math.max(0, end - CONVERSATION_PAGE)) : 0;
+    const after = opts?.before === undefined && opts?.after !== undefined && opts.after >= 0 && opts.after <= size && size - opts.after <= CONVERSATION_PAGE ? opts.after : null;
+    const end = after !== null ? size : Math.min(size, Math.max(0, opts?.before ?? size));
+    const start = after ?? (end > 0 ? lineStart(fd, Math.max(0, end - CONVERSATION_PAGE)) : 0);
+    const buf = Buffer.alloc(end - start);
+    const got = fs.readSync(fd, buf, 0, buf.length, start);
     const lines: RecordLine[] = [];
     const calls = new Map<string, RecordLine>();
+    /** Calls not yet given their output: where their entry begins, and their line's place. */
+    const waiting = new Map<string, { at: number; line: number }>();
     const fileResults = (entry: Record<string, unknown>) => {
       for (const r of reader.results?.(entry) ?? []) {
         const line = calls.get(r.call);
         if (line?.detail) line.detail.output = clipDetail(r.output);
+        waiting.delete(r.call);
       }
     };
-    for (const entry of entriesOf(readAt(fd, start, end - start))) {
-      const at = entryTime(entry);
+    /** Where the whole lines read end. */
+    let whole = start;
+    for (let pos = 0; pos < got; ) {
+      const nl = buf.indexOf(0x0a, pos);
+      const rowEnd = nl < 0 || nl >= got ? got : nl;
+      const at = start + pos;
+      const row = buf.subarray(pos, rowEnd).toString("utf8");
+      pos = rowEnd + 1;
+      let entry: Record<string, unknown> | null = null;
+      try {
+        entry = row.trim() ? (JSON.parse(row) as Record<string, unknown>) : null;
+      } catch {
+        // a line still being written, or one cut at a read's edge
+        if (rowEnd === got) break;
+      }
+      whole = start + Math.min(pos, got);
+      if (!entry) continue;
+      const stamped = entryTime(entry);
       for (const { call, ...line } of reader.lines(entry)) {
-        if (at !== null) line.at = at;
+        if (stamped !== null) line.at = stamped;
+        if (call) {
+          calls.set(call, line);
+          waiting.set(call, { at, line: lines.length });
+        }
         lines.push(line);
-        if (call) calls.set(call, line);
       }
       fileResults(entry);
     }
     if (end < size && calls.size) for (const entry of entriesOf(readAt(fd, end, Math.min(size - end, RESULT_LOOKAHEAD)))) fileResults(entry);
-    return { lines, cut: start > 0, start };
+    if (end < size) return { lines, cut: start > 0, start };
+    // A call far back whose output never came is not waited for: its line stays as it is.
+    const open = [...waiting.values()].filter((w) => whole - w.at <= RESULT_LOOKAHEAD).sort((x, y) => x.at - y.at)[0];
+    return { lines, cut: start > 0, start, next: open?.at ?? whole, held: open?.line ?? lines.length };
   } catch {
     return null;
   } finally {
