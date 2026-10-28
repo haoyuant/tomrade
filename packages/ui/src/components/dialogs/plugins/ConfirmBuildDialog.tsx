@@ -4,9 +4,9 @@ import { Eyebrow } from "~/components/ui/atoms";
 import { subscribe } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { useBuildReview, useStudioConfirm, useWorkspaces } from "~/lib/plugins";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { isLeadWindow } from "~/lib/window-chrome";
-import { Findings, Reach, TrustTags, messageOf } from "./parts";
+import { Findings, Reach, TrustTags } from "./parts";
 
 const wider = (before: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] } | null, after: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] }) => {
   if (!before) return [];
@@ -54,7 +54,7 @@ export function ConfirmBuildDialog({ name, title, onClose }: { name: string; tit
               <Findings findings={r.analysis?.findings ?? []} />
             </>
           )}
-          {review.error && <p style={{ color: "var(--danger)" }}>{messageOf(review.error)}</p>}
+          {review.error && <p style={{ color: "var(--danger)" }}>{readableError(review.error)}</p>}
           {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
       </DialogBody>
@@ -76,7 +76,7 @@ export function ConfirmBuildDialog({ name, title, onClose }: { name: string; tit
                   toast({ body: `${t("plugins.loaded", { title })}${result.snapshot ? ` · ${t("plugins.snapshotSaved")}` : ""}` });
                   onClose();
                 },
-                onError: (e) => setError(messageOf(e))
+                onError: (e) => setError(readableError(e))
               }
             )
           }

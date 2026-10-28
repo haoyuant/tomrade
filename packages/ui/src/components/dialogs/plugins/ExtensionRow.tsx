@@ -9,10 +9,10 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAllowVersion, useReload, useRollback, useSetAutoUpdate, useUndoVia, useUninstall, useWithdrawVersion } from "~/lib/plugins";
 import { useSetPluginEnabled } from "~/lib/queries";
 import { restartApp, reveal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { ConfirmBuildDialog } from "./ConfirmBuildDialog";
-import { Reach, TrustTags, messageOf, useCurrentProject } from "./parts";
+import { Reach, TrustTags, useCurrentProject } from "./parts";
 
 const STATE_KEY: Record<PluginView["state"], MessageKey> = {
   active: "pluginsPanel.stateRunning",
@@ -37,7 +37,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
   const [error, setError] = useState<string | null>(null);
   // A row that failed to load is not running, so its switch reads off; switching it on tries it again.
   const on = plugin.state !== "disabled" && plugin.state !== "failed";
-  const fail = (e: unknown) => setError(messageOf(e));
+  const fail = (e: unknown) => setError(readableError(e));
   const name = ext.dir.split(/[\\/]/).at(-1) ?? ext.id;
 
   return (
@@ -144,7 +144,7 @@ function VersionRange({ id, title, version, misses }: { id: string; title: strin
       {granted ? (
         <div className="row" style={{ gap: 8, alignItems: "center" }}>
           <span className="meta-txt dense">{t("plugins.runsByExemption", { version })}</span>
-          <button type="button" className="btn btn-ghost btn-xs" data-testid="withdraw-version" disabled={withdraw.isPending} onClick={() => withdraw.mutate(id, { onError: (e) => setError(messageOf(e)) })}>
+          <button type="button" className="btn btn-ghost btn-xs" data-testid="withdraw-version" disabled={withdraw.isPending} onClick={() => withdraw.mutate(id, { onError: (e) => setError(readableError(e)) })}>
             {t("plugins.withdrawExemption")}
           </button>
         </div>
@@ -183,7 +183,7 @@ function AllowVersionDialog({ id, title, version, misses, onClose }: { id: strin
           className="btn btn-danger"
           data-testid="allow-version-confirm"
           disabled={allow.isPending}
-          onClick={() => allow.mutate(id, { onSuccess: onClose, onError: (e) => setError(messageOf(e)) })}
+          onClick={() => allow.mutate(id, { onSuccess: onClose, onError: (e) => setError(readableError(e)) })}
         >
           {t("plugins.runAnywayConfirm")}
         </button>
@@ -296,7 +296,7 @@ function UninstallDialog({ id, title, onClose }: { id: string; title: string; on
                   toast({ body: t("plugins.uninstalled", { title }) });
                   onClose();
                 },
-                onError: (e) => setError(messageOf(e))
+                onError: (e) => setError(readableError(e))
               }
             )
           }

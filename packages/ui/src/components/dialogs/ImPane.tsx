@@ -3,7 +3,6 @@ import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImNotifyKind, ImPa
 import { GROUP_PRESETS, presetOf, type GroupPreset } from "@tomradex/im/presets";
 import { Icon, type IconId } from "~/components/icons";
 import { FoldChevron, SectionHead, Tag } from "~/components/ui/atoms";
-import { messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import {
@@ -13,6 +12,7 @@ import {
 import { usePanelOpen } from "~/lib/panel";
 import { useProjects, useSaveSettings, useSecretStorage, useSettings } from "~/lib/queries";
 import { cn } from "~/lib/utils";
+import { readableError } from "~/lib/toast";
 
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
 const SHARED: ImSettings["notify"] = { tickets: true, code: true, presence: false, routines: false, attention: true };
@@ -168,7 +168,7 @@ function People({ connection, im, pairing, defaultProject, onError }: {
   const revoke = useImRevoke();
   const paired = im.identities.filter((i) => i.connectionId === connection.id);
   useEffect(() => { if (!projectId && defaultProject) setProjectId(defaultProject); }, [defaultProject, projectId]);
-  const fail = { onError: (e: Error) => onError(messageOf(e)) };
+  const fail = { onError: (e: Error) => onError(readableError(e)) };
   return (
     <div className="stack-2" data-testid="im-people">
       <div className="eyebrow">{t("imSettings.pairing")}</div>
@@ -591,7 +591,7 @@ function Ignored({ im, defaultProject, onError }: { im: ImSettings; defaultProje
   const time = (at: number) => new Date(at).toLocaleTimeString(intlTag(locale), { hour: "2-digit", minute: "2-digit" });
   const routed = (row: ImIgnoredView) => im.routes.some((r) => r.connectionId === row.connectionId && r.tenantId === row.tenantId && r.conversationId === row.conversationId);
   const go = (row: ImIgnoredView, scope: "person" | "group") =>
-    allow.mutate([{ ignoredId: row.id, scope, ...(routed(row) ? {} : { projectId }) }], { onError: (e) => onError(messageOf(e)) });
+    allow.mutate([{ ignoredId: row.id, scope, ...(routed(row) ? {} : { projectId }) }], { onError: (e) => onError(readableError(e)) });
   return (
     <div className="stack-2" data-testid="im-ignored">
       <SectionHead title={t("imSettings.ignored")}>{t("imSettings.ignoredHelp")}</SectionHead>
@@ -626,7 +626,7 @@ function Deliveries({ onError }: { onError: (e: string) => void }) {
   const retry = useImRetry();
   const discard = useImDiscard();
   const rows = deliveries.data ?? [];
-  const fail = { onError: (e: Error) => onError(messageOf(e)) };
+  const fail = { onError: (e: Error) => onError(readableError(e)) };
   return (
     <div className="stack-2" data-testid="im-deliveries">
       <SectionHead title={t("imSettings.deliveries")}>{t("imSettings.deliveriesHelp")}</SectionHead>
@@ -653,7 +653,7 @@ function Deliveries({ onError }: { onError: (e: string) => void }) {
 export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const save = useSaveSettings();
+  const save = useSaveSettings({ reportErrors: false });
   const views = useImConnections();
   const adapters = useImAdapters();
   const pairings = useImPairings();
@@ -669,7 +669,7 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
   const persist = (next: ImSettings, done?: () => void) => {
     if (!settings.data) return;
     setError(null);
-    save.mutate({ ...settings.data, im: next }, { onSuccess: () => done?.(), onError: (e) => setError(messageOf(e)) });
+    save.mutate({ ...settings.data, im: next }, { onSuccess: () => done?.(), onError: (e) => setError(readableError(e)) });
   };
   const installed = adapters.data ?? [];
 

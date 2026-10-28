@@ -18,7 +18,7 @@ const ALT_SPACE = "Alt+Space";
 export function GlobalHotkeyField() {
   const { t } = useI18n();
   const settings = useSettings();
-  const save = useSaveSettings();
+  const save = useSaveSettings({ reportErrors: false });
   const terminal = !!useCommands().data?.some((c) => c.id === "code-sessions.open");
   const status = useGlobalKeyStatus();
   const [recording, setRecording] = useState(false);

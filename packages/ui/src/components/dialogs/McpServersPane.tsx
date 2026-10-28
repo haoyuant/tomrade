@@ -323,7 +323,7 @@ function ServerRow({
 export function McpServersPane() {
   const { t } = useI18n();
   const settings = useSettings();
-  const save = useSaveSettings();
+  const save = useSaveSettings({ reportErrors: false });
   const servers = useMcpServers();
   const reconnect = useReconnectMcpServer();
   const [editing, setEditing] = useState<string | null>(null);

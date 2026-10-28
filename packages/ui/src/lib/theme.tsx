@@ -74,7 +74,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const active = activePreference(preference, automation, customThemes);
   const resolved = resolve(active, customThemes);
   const [theme, setTheme] = useState<ResolvedTheme>(resolved.base);
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   useEffect(() => {
     const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true); };
     apply();
@@ -101,10 +101,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const styles = getComputedStyle(document.documentElement), id = `custom:${crypto.randomUUID()}` as const;
     const tokens = Object.fromEntries(THEME_TOKEN_NAMES.map(name => [name, cssColorToHex(styles.getPropertyValue(`--${name}`).trim())]));
     const fonts = Object.fromEntries(THEME_TYPOGRAPHY_NAMES.map(name => [name, styles.getPropertyValue(`--${name}`).trim()]));
-    const created = { id, name: `Custom ${customThemes.length + 1}`, base: resolved.base, icon: "i-sliders", tokens, fonts } as CustomTheme;
+    const created = { id, name: t("settingsDialog.customThemeName", { n: customThemes.length + 1 }), base: resolved.base, icon: "i-sliders", tokens, fonts } as CustomTheme;
     const current = qc.getQueryData<AppSettings>(keys.settings);
     if (current) save.mutate({ ...current, theme: id, themeAutomation: { ...automation, mode: "none" }, customThemes: [...customThemes, created] }, { onSuccess: () => onCreated?.(created) });
-  }, [customThemes, qc, save, resolved.base, automation]);
+  }, [customThemes, qc, save, resolved.base, automation, t]);
   const deleteCustomTheme = useCallback((id: string) => {
     const fallback = automation.defaultTheme === id ? "dawn" : automation.defaultTheme;
     const schedule = automation.schedule.filter(rule => rule.theme !== id);

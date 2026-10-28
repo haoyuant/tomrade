@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { AppSettings } from "@tomradex/domain";
 import { invoke } from "../api";
 import { keys } from "./keys";
@@ -17,10 +17,16 @@ export const useAbout = () => useQuery({ queryKey: keys.about, queryFn: () => in
 export const useSecretStorage = () =>
   useQuery({ queryKey: keys.secretStorage, queryFn: () => invoke("settings.secretStorage"), staleTime: Infinity, retry: false });
 
-export function useSaveSettings() {
+/** A failed save says so as a toast, unless `reportErrors: false` because the caller shows it in place. */
+export const saveSettingsOptions = (qc: QueryClient, reportErrors = true) => ({
+  mutationFn: (next: AppSettings) => invoke("settings.set", next),
+  meta: { reportErrors },
+  onSuccess: (saved: AppSettings) => qc.setQueryData(keys.settings, saved),
+  // Whatever showed the new value goes back to what is saved.
+  onError: () => void qc.invalidateQueries({ queryKey: keys.settings })
+});
+
+export function useSaveSettings({ reportErrors = true }: { reportErrors?: boolean } = {}) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (next: AppSettings) => invoke("settings.set", next),
-    onSuccess: (saved) => qc.setQueryData(keys.settings, saved)
-  });
+  return useMutation(saveSettingsOptions(qc, reportErrors));
 }

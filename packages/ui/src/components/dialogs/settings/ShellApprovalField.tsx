@@ -12,7 +12,7 @@ export function ShellApprovalField() {
   const { t, locale } = useI18n();
   const settings = useSettings();
   const sections = useSettingsSections(locale);
-  const save = useSaveSettings();
+  const save = useSaveSettings({ reportErrors: false });
   const [error, setError] = useState<string | null>(null);
   const shell = sections.data?.find((s) => s.id === "shell");
   if (!shell || !settings.data) return null;

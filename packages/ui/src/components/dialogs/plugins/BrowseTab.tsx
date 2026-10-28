@@ -7,8 +7,8 @@ import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBrowse, useCommunityAccount, useCommunityPlugin, useInspect, useReport, useStoreInstall } from "~/lib/plugins";
 import { openExternal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
-import { Field, Findings, Reach, TrustTags, messageOf } from "./parts";
+import { readableError, useToast } from "~/lib/toast";
+import { Field, Findings, Reach, TrustTags } from "./parts";
 
 type Sort = "downloads" | "updated" | "title";
 
@@ -60,7 +60,7 @@ export function BrowseTab() {
         </div>
       </form>
       <div className="stack-2" style={{ marginBottom: "var(--space-3)" }}>
-        {browse.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(browse.error) })}</p>}
+        {browse.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: readableError(browse.error) })}</p>}
         {officialStatus && !officialStatus.available && (
           <p className="meta-txt" style={{ color: "var(--danger)" }} data-testid="official-unavailable">
             {t("plugins.officialUnavailable", { message: officialStatus.error ?? "" })}
@@ -134,7 +134,7 @@ function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }
     <Dialog open onOpenChange={(o) => !o && onClose()} label={d?.title ?? id} className="sheet-md">
       <DialogHead title={d?.title ?? id} aside={latest ? <TrustTags tier={latest.tier} risk={latest.risk} /> : undefined} />
       <DialogBody>
-        {detail.error && <p style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(detail.error) })}</p>}
+        {detail.error && <p style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: readableError(detail.error) })}</p>}
         {d && (
           <div className="stack-3" data-testid="plugin-detail">
             <p>{d.description}</p>
@@ -222,7 +222,7 @@ function InstallConfirmDialog(props: { id: string; title: string; publisher: str
         <div className="stack-3" data-testid="install-inspection">
           {read?.tier !== "official" && <p>{t("plugins.unreviewedNote")}</p>}
           {inspect.isPending && <p className="meta-txt">{t("plugins.installReading")}</p>}
-          {inspect.error && <p style={{ color: "var(--danger)" }}>{messageOf(inspect.error)}</p>}
+          {inspect.error && <p style={{ color: "var(--danger)" }}>{readableError(inspect.error)}</p>}
           {read && (
             <>
               <p>{t("plugins.installLede")}</p>
@@ -262,7 +262,7 @@ function InstallConfirmDialog(props: { id: string; title: string; publisher: str
                   props.onClose();
                   props.onDone();
                 },
-                onError: (e) => setError(messageOf(e))
+                onError: (e) => setError(readableError(e))
               }
             )
           }
@@ -333,7 +333,7 @@ function ReportDialog({ id, title, version, onClose }: { id: string; title: stri
                     toast({ body: t("plugins.reportSent") });
                     onClose();
                   },
-                  onError: (e) => setError(messageOf(e))
+                  onError: (e) => setError(readableError(e))
                 }
               )
             }
