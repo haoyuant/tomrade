@@ -196,6 +196,15 @@ export function keptEnded<T>(ended: readonly T[], endedAt: (r: T) => number | nu
   return kept;
 }
 
+/**
+ * The row the bar marks as open: what the panel shows. Looking back on a session or a conversation, that one; on the
+ * whole History, none; otherwise the session or conversation open in the panel.
+ */
+export function barOpenKeyOf(open: { review: { focus: { sessionId?: string | null; threadId?: string | null } | null } | null; sessionId: string | null; threadId: string | null }): string | null {
+  if (open.review) return open.review.focus?.sessionId ? `session:${open.review.focus.sessionId}` : open.review.focus?.threadId ? `thread:${open.review.focus.threadId}` : null;
+  return open.sessionId ? `session:${open.sessionId}` : open.threadId ? `thread:${open.threadId}` : null;
+}
+
 /** What the bar shows of its rows: every one still going, the last few to end, the open one, and a parent of any kept. */
 export function barShown(rows: BarRow[], openKey: string | null, now: number): BarRow[] {
   const ended = keptEnded(rows.filter((r) => r.status === "done"), (r) => r.at, (r) => r.key === openKey, now);
