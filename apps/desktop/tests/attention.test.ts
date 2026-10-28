@@ -183,7 +183,7 @@ describe("the attention row", () => {
     shown.length = 0;
   });
   const start = () => {
-    const state = { sessions: [] as unknown[], client: false, cells: undefined as { sessionId: string; n: number }[] | undefined };
+    const state = { sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined };
     const listeners = new Map<string, Listener>();
     const sent: unknown[][] = [];
     const revealed: unknown[][] = [];
@@ -197,7 +197,7 @@ describe("the attention row", () => {
       settings: { register: () => {}, locale: () => "en", get: () => ({}) },
       agent: { codeEngines: () => [{ id: "claude", title: "Claude Code" }], activities: () => [], store: { thread: () => null, messages: () => [] } },
       get: (name: string) => services[name],
-      bail: (name: string) => (name === "codeLink/cells" ? state.cells : undefined),
+      bail: (name: string) => (name === "codeLink/session-cells" ? state.cells : undefined),
       ipc: { handle: () => {}, send: (...args: unknown[]) => void sent.push(args) },
       emit: () => {},
       on: (name: string, fn: Listener) => void listeners.set(name, fn),
@@ -228,7 +228,7 @@ describe("the attention row", () => {
   it("opens a terminal session in its cell while its Terminal window is open, and in the main window's panel otherwise", async () => {
     const { state, listeners, sent, revealed } = start();
     const target = { projectId: "p", threadId: null, itemId: "i", sessionId: "s1" };
-    state.cells = [];
+    state.cells = {};
     listeners.get("attention/open")!(target);
     await vi.advanceTimersByTimeAsync(0);
     expect(revealed).toEqual([["p", "s1"]]);
