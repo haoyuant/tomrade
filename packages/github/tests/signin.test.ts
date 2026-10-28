@@ -79,7 +79,7 @@ let n = 0;
 async function machine(github: { origin: string }, opts: { userData?: string; clientId?: string } = {}) {
   const userData = opts.userData ?? path.join(root, `user ${n++}`);
   fs.mkdirSync(userData, { recursive: true });
-  const config = { clientId: opts.clientId ?? "Iv-test", appSlug: "tomrade", webUrl: github.origin, apiUrl: github.origin, pollUnitMs: 5, sessionFile: path.join(userData, "github-session.enc"), cipher };
+  const config = { clientId: opts.clientId ?? "Iv-test", appSlug: "tomrade", webUrl: github.origin, apiUrl: github.origin, pollUnitMs: 5, ghToken: async () => "", sessionFile: path.join(userData, "github-session.enc"), cipher };
   const bag = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json") }], [GitHubAccount, config]] });
   return { ...bag, github: bag.ctx.github, userData };
 }
