@@ -818,9 +818,9 @@ function apply(ctx: Context, config: Config) {
     snapshotNewSessions(win, next.sessions);
   };
 
-  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. */
+  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. Before the first state, by what the cells hold. */
   const renumber = (projectId: string, win: Open, layout: Layout | null) => {
-    const cells = layout && win.shown && !win.closed ? cellNumbers(layout, win.shown.terminals, win.shown.sessions) : {};
+    const cells = layout && !win.closed ? cellNumbers(layout, win.shown?.terminals ?? [], win.shown?.sessions ?? []) : {};
     const same = Object.keys(cells).length === Object.keys(win.cells).length && Object.entries(cells).every(([id, n]) => win.cells[id] === n);
     win.cells = cells;
     if (!same) ctx.codeLink.cellsChanged(projectId);
@@ -1564,6 +1564,8 @@ function apply(ctx: Context, config: Config) {
   const opening = async (projectId: string, win: Open, w: ReturnType<typeof words>) => {
     const initialState = await state(projectId);
     follow(win, initialState.terminals);
+    win.shown = { terminals: initialState.terminals, sessions: initialState.sessions };
+    renumber(projectId, win, initialState.layout);
     win.surface = ctx.desktopSurfaces.open({
       id: `code-sessions.${projectId}`,
       title: w("windowTitle", { project: projectName(projectId) }),
@@ -1649,13 +1651,6 @@ function apply(ctx: Context, config: Config) {
     const bounds = replayBounds(projectId, sessionId);
     if (!bounds || !recorder.has(bounds.pane, bounds.from, bounds.to)) return null;
     return recorder.slice(bounds.pane, bounds.from, bounds.to);
-  });
-  // The tray's "· cell 2" and its way to a session's cell: only while the window is open to show them.
-  ctx.on("codeLink/cells", (projectId) => {
-    const win = open.get(projectId);
-    if (!win || win.closed) return;
-    const layout = stateOf(config.stateFile).layouts?.[projectId];
-    return cellsIn(isLayout(layout) ? layout : fresh()).flatMap((leaf, i) => (leaf.sessionId ? [{ sessionId: leaf.sessionId, n: i + 1 }] : []));
   });
   // Projects with a window before `used` was kept count as used long ago, the last one opened first.
   ctx.on("codeLink/terminal-windows", () => {
