@@ -8,6 +8,7 @@ import type {} from "@tomradex/settings";
 import { piLentModel } from "./lend.js";
 import { listedModels, PERMISSION_MODES, PiOptions, piSignedIn } from "./options.js";
 import { piConnector, piMcpLink } from "./outside.js";
+import { piRecord } from "./record.js";
 import { PiRuntime } from "./rpc.js";
 
 const EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -50,6 +51,7 @@ export function createPiEngine(ctx: Context): Engine {
       ],
       checkCli: (file) => cli.check(file),
       mcpLink: piMcpLink(ctx),
+      record: piRecord,
       // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
       setup: {
         install: ["npm install -g @earendil-works/pi-coding-agent"],
@@ -81,4 +83,5 @@ export { default as builtinPi, BuiltinPiConfig, BuiltinPiOptions, createBuiltinP
 export { modelsFile, piTarget, type PiTarget } from "./target.js";
 export { bridgeSource } from "./bridge.js";
 export { piLentModel } from "./lend.js";
+export { findPiSession, piRecord, piSessionFolder, piSessionTitle } from "./record.js";
 export { outsideExtension, outsideExtensionUrl, piAgentDir, piConnector, piMcpLink, piUserExtension } from "./outside.js";
