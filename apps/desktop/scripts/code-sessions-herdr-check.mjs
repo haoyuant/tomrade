@@ -749,7 +749,7 @@ app.whenReady().then(async () => {
     recordSettings(true);
     const baseline = Math.round((withoutBefore.median + withoutAfter.median) / 2);
     console.log(`INFO: typing latency in a cell, ${noisy.length} panes printing without pause — observed: ${JSON.stringify(withObservers)} · not observed, before and after: ${JSON.stringify(withoutBefore)} ${JSON.stringify(withoutAfter)} · observers (%cpu, rss KB): ${JSON.stringify(observerCost)}`);
-    check("后台窗格在录时打字延迟不回退（中位数不比不录时多 15 ms）", watchedNoise && withObservers.median >= 0 && withObservers.median <= baseline + 15, JSON.stringify({ watchedNoise, withObservers, withoutBefore, withoutAfter }));
+    check("后台窗格在录时打字延迟不回退（中位数不比不录时多 5 ms）", watchedNoise && withObservers.median >= 0 && withObservers.median <= baseline + 5, JSON.stringify({ watchedNoise, withObservers, withoutBefore, withoutAfter }));
     for (const n of noisy) {
       ctx.codeLink.store.patchSession(project.id, n.id, { state: "ended", endedAt: Date.now() });
       herdr("pane", "close", n.pane);

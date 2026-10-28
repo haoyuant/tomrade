@@ -207,6 +207,21 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["key", "ctrl+enter"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
+  // The first frame after a keystroke is its echo: it goes at once, and the frames after it are batched again.
+  const shown = () => win.posts.flatMap((p) => (p.type === "frame" ? [Buffer.from(p.bytes).toString()] : []));
+  live.frame("ls", { full: false });
+  expect(shown().at(-1)).toBe("ls");
+  live.frame("out", { full: false });
+  expect(shown().at(-1)).toBe("ls");
+  await batched();
+  expect(shown().at(-1)).toBe("out");
+  // Long after the keystroke a frame is no echo: it waits for its batch.
+  await say({ type: "input", cell: "c1", data: "x" });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  live.frame("late", { full: false });
+  expect(shown().at(-1)).toBe("out");
+  await batched();
+  expect(shown().at(-1)).toBe("late");
   // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
   // A frame still waiting goes before it: the window draws what was painted before what is said about it.
   live.frame("tail", { full: false });
