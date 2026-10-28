@@ -528,9 +528,10 @@ export class Starter {
     return { ok: true, continued: false, threadId: null, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
   }
 
-  /** The thread's terminal session whose agent still runs, if any. */
+  /** The thread's terminal session whose agent still runs, if any: one whose agent exited, its pane back at the shell, ends here. */
   liveTerminalSession(projectId: string, threadId: string): SessionView | null {
-    return this.host.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId && s.mode === "terminal" && s.state !== "lost") ?? null;
+    const sessions = this.host.store.sessions(projectId, { live: true }).filter((s) => s.threadId === threadId && s.mode === "terminal" && s.state !== "lost");
+    return sessions.find((s) => !this.host.sessions.endIfExited(projectId, s.id)) ?? null;
   }
 
   /** A headless run refused because the conversation's agent is in a terminal: one process on its session at a time. */
