@@ -464,6 +464,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${errorMessage(err)}`)),
       onEnded: (session) => void this.saveRecord(session)
     });
+    for (const projectId of this.ctx.db.openIds()) this.foldTwinClaims(projectId);
+    this.ctx.on("db/opened", (projectId) => this.foldTwinClaims(projectId));
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.panel = new SessionPanel(this.ctx, this.store);
     this.review = new Review({ ctx: this.ctx, store: this.store, read: (projectId, sessionId, before) => this.conversation(projectId, sessionId, before), recorded: (projectId, sessionId) => this.herdr.rawOutputThere(projectId, sessionId) });
@@ -1019,6 +1021,26 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   private recordsDir(): string {
     return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", "records");
+  }
+
+  /**
+   * One conversation holding the same ticket in two live rows — a claim made again after Tomrade restarted, before a
+   * claim looked for its own row: the earliest keeps the ticket, a later one lets it go and ends once it holds nothing.
+   */
+  private foldTwinClaims(projectId: string): void {
+    const kept = new Set<string>();
+    let changed = false;
+    const live = this.store.sessions(projectId, { live: true }).filter((s) => !!s.externalId && s.threadId === null && s.endedAt === null && s.state !== "lost");
+    for (const s of live.sort((a, b) => a.startedAt - b.startedAt)) {
+      const twins = s.itemIds.filter((id) => kept.has(`${s.agent}:${s.externalId}:${id}`));
+      for (const id of s.itemIds) kept.add(`${s.agent}:${s.externalId}:${id}`);
+      if (!twins.length) continue;
+      const rest = s.itemIds.filter((id) => !twins.includes(id));
+      this.store.patchSession(projectId, s.id, { itemIds: rest, ...(rest.length ? {} : { branch: "" }) });
+      if (!rest.length) this.sessions.end(projectId, s.id, "ended", true, "an earlier row of its conversation holds its ticket");
+      changed = true;
+    }
+    if (changed) this.notify(projectId);
   }
 
   /** Ends the sessions whose conversation no longer exists and drops the link to it. */

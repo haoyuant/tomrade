@@ -1717,6 +1717,50 @@ describe("one outside session working tickets in parallel", () => {
     expect(items.get(project.id, b.id)!.status).toBe("done");
   });
 
+  it("claims a ticket its conversation already holds into that row again after Tomrade restarts, not into a new one beside it", async () => {
+    const { codeLink, ctx, project, ticket, inv } = await setup();
+    const a = ticket("Alpha");
+    const b = ticket("Beta");
+    const c = ticket("Gamma");
+    const claim = async (key: string, on: typeof inv, extra: Record<string, unknown> = {}) =>
+      (await ctx.tools.execute("claim_ticket", { key, parallel: true, ...extra }, on)) as Claimed & { claimed?: boolean; sharedCheckout?: unknown[] };
+    const alpha = await claim(a.key, inv);
+    const beta = await claim(b.key, inv);
+    // Tomrade restarted: the agent's MCP connection is a new one, found again on its conversation's row by its hooks;
+    // it claims another ticket alongside, then Beta again.
+    const again = { ...inv, connection: "conn-par-after-restart" };
+    codeLink.bindConnection(project.id, again.connection, alpha.tracking.sessionId);
+    const gamma = await claim(c.key, again);
+    expect(codeLink.store.session(project.id, gamma.tracking.sessionId)).toMatchObject({ externalId: "cli-par", itemIds: [c.id] });
+    const back = await claim(b.key, again);
+    expect(back.claimed).not.toBe(false);
+    expect(back.tracking.sessionId).toBe(beta.tracking.sessionId);
+    expect(back.branch).toBe(beta.branch);
+    expect(codeLink.sessionsOf(project.id, b.id).filter((s) => s.state !== "ended")).toHaveLength(1);
+    // The conversation's other rows are not "another session in this folder".
+    expect(back.sharedCheckout ?? []).toEqual([]);
+    // Told to take it over from yet another connection, the same.
+    const third = { ...inv, connection: "conn-par-third" };
+    codeLink.bindConnection(project.id, third.connection, gamma.tracking.sessionId);
+    expect((await claim(b.key, third, { takeOver: true })).tracking.sessionId).toBe(beta.tracking.sessionId);
+    expect(codeLink.sessionsOf(project.id, b.id).filter((s) => s.state !== "ended")).toHaveLength(1);
+  });
+
+  it("folds a ticket one conversation holds in two live rows into the earliest when the project opens", async () => {
+    const { codeLink, ctx, project, ticket, inv, post } = await setup();
+    const a = ticket("Alpha");
+    const b = ticket("Beta");
+    await ctx.tools.execute("claim_ticket", { key: a.key }, inv);
+    const first = codeLink.store.session(project.id, ((await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true }, inv)) as Claimed).tracking.sessionId)!;
+    // What an older version left: a second row of the same conversation holding Beta too.
+    const twin = codeLink.store.createSession(project.id, { repoId: first.repoId, branch: first.branch, itemIds: [b.id], mode: first.mode, agent: first.agent, threadId: null, device: first.device, externalId: first.externalId });
+    await post({ hook_event_name: "PostToolUse", session_id: "cli-par", tool_name: "Read", tool_input: {} });
+    ctx.emit("db/opened", project.id);
+    expect(codeLink.store.session(project.id, first.id)).toMatchObject({ itemIds: [b.id] });
+    expect(codeLink.store.session(project.id, twin.id)).toMatchObject({ itemIds: [], state: "ended" });
+    expect(codeLink.sessionsOf(project.id, b.id).filter((s) => s.state !== "ended").map((s) => s.id)).toEqual([first.id]);
+  });
+
   it("tells sessions with worktrees of their own apart by where their hooks fire, and keeps both live", async () => {
     const { codeLink, ctx, items, project, repo, ticket, inv, post, worktree, checkout } = await setup();
     const a = ticket("Alpha");
