@@ -721,6 +721,10 @@ export class CodeLink extends Service implements CodeLinkReader {
         if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
+      // a session left pointing at a deleted thread would open a blank conversation
+      for (const projectId of this.ctx.db.openIds()) this.cutDeadThreads(ctx.agent, projectId);
+      ctx.on("db/opened", (projectId) => this.cutDeadThreads(ctx.agent, projectId));
+      ctx.on("agent/thread-deleted", (projectId) => this.cutDeadThreads(ctx.agent, projectId));
       ctx.on("agent/run-ended", (run, thread) => {
         this.running.delete(thread.id);
         this.archiveCompletedSessions(thread.projectId);
@@ -1000,6 +1004,15 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   private recordsDir(): string {
     return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", "records");
+  }
+
+  /** Ends the sessions whose conversation no longer exists and drops the link to it. */
+  private cutDeadThreads(agent: Context["agent"], projectId: string): void {
+    for (const s of this.store.sessions(projectId)) {
+      if (!s.threadId || agent.store.thread(projectId, s.threadId)) continue;
+      if (s.state !== "ended" && s.state !== "lost") this.sessions.end(projectId, s.id, "ended", true, "its conversation was deleted");
+      this.store.patchSession(projectId, s.id, { threadId: null });
+    }
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
