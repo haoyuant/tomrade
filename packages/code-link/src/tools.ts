@@ -84,6 +84,9 @@ interface Subject {
 }
 
 const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
+
+/** Two rows of one outside agent's conversation: the same agent under the same id, neither a thread's. */
+export const isSameConversation = (a: SessionView, b: SessionView): boolean => !!a.externalId && a.externalId === b.externalId && a.agent === b.agent && a.threadId === null && b.threadId === null;
 const GITHUB_PULL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\//i;
 
 export function registerTools(ctx: Context, host: ToolHost): void {
@@ -91,6 +94,9 @@ export function registerTools(ctx: Context, host: ToolHost): void {
   // One that handed its merge to the person, or has been silent for an hour, is no longer working the ticket.
   const workingOn = (projectId: string, itemId: string): SessionView[] =>
     host.store.sessions(projectId, { itemId, live: true }).filter((s) => s.state !== "lost" && s.endedAt === null && s.blocked !== "merge" && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS);
+  /** The other live rows of a session's conversation. */
+  const sameConversation = (projectId: string, session: SessionView): SessionView[] =>
+    host.store.sessions(projectId, { live: true }).filter((s) => s.id !== session.id && s.state !== "lost" && s.endedAt === null && isSameConversation(s, session));
   const holderView = (s: SessionView) => ({
     sessionId: s.id,
     agent: s.agent,
@@ -516,6 +522,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         // nothing — Start made one for this very ticket — that row is where the agent works, not the one bound before.
         const moved = connected && !connected.itemIds.includes(item.id) ? host.freeSibling(projectId, connected) : null;
         let session = tokened ?? again ?? moved ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId, item.key) : null);
+        // The same conversation may already hold this ticket in a row of its own: claimed before Tomrade restarted, whose
+        // connection went with it. That row is this claim's, not a new one beside it.
+        const kin = !tokened && !again && session ? sameConversation(projectId, session).find((s) => s.itemIds.includes(item.id)) : undefined;
+        if (kin) session = kin;
         // Another session on this ticket is someone's work in progress: say who and change nothing, unless told to take it over.
         const own = new Set([...(session ? [session.id] : []), ...(!tokened && inv.connection ? host.connectedSessions(projectId, inv.connection).map((s) => s.id) : [])]);
         const holders = workingOn(projectId, item.id).filter((s) => !own.has(s.id));
@@ -573,7 +583,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const here = session ? [session.worktree, session.cwd].filter((folder): folder is string => !!folder).map((folder) => path.resolve(folder)) : [];
         const sharing = session && here.length
           ? host.store.sessions(projectId, { live: true }).filter((s) =>
-              s.id !== session!.id && s.state !== "lost" && s.endedAt === null && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS
+              s.id !== session!.id && !isSameConversation(s, session!) && s.state !== "lost" && s.endedAt === null && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS
               && [s.worktree, s.cwd].some((folder) => !!folder && here.includes(path.resolve(folder))))
           : [];
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
