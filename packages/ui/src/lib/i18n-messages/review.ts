@@ -2,7 +2,7 @@ export const review = {
   en: {
     title: "Look back",
     crumb: "Assistant › Look back",
-    hint: "The session bar's History and ⌘K both come here",
+    hint: "The session bar's History and {{key}} both come here",
     history: "History",
     historyNote: "Earlier ones are in History",
     back: "Back to the list",
@@ -72,7 +72,7 @@ export const review = {
   zh: {
     title: "回看",
     crumb: "助手 › 回看",
-    hint: "会话栏点「历史」或 ⌘K 搜，都到这里",
+    hint: "会话栏点「历史」或 {{key}} 搜，都到这里",
     history: "历史",
     historyNote: "更早的在历史里",
     back: "回到列表",

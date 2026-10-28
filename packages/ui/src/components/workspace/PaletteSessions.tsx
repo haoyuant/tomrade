@@ -11,7 +11,7 @@ import { invoke } from "~/lib/api";
 import { ATTENTION_KEY, type AttentionEntry } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
 import { useI18n } from "~/lib/i18n";
-import { keyLabel } from "~/lib/keybindings";
+import { keyLabel, formatChord } from "~/lib/keybindings";
 import { askPanel, usePanelSession } from "~/lib/panelRequests";
 import { keys } from "~/lib/queries";
 import { outcomeLine } from "~/lib/review";
@@ -96,11 +96,11 @@ export function PaletteStart({ start, words, fresh, run }: {
   const { t } = useI18n();
   const { cliName, go, recommended } = start;
   const rows: { way: LooseWay; title: string; sub: string; key: string }[] = [
-    { way: "builtin", title: t("commandPalette.startBuiltin"), sub: t("commandPalette.startBuiltinSub"), key: "↵" },
+    { way: "builtin", title: t("commandPalette.startBuiltin"), sub: t("commandPalette.startBuiltinSub"), key: formatChord("Enter") },
     ...(cliName
       ? [
-          { way: "pane" as const, title: t("commandPalette.startPane", { agent: cliName }), sub: t("commandPalette.startPaneSub"), key: "⌥↵" },
-          { way: "cell" as const, title: t("commandPalette.startCell", { agent: cliName }), sub: t("commandPalette.startCellSub"), key: "⇧↵" }
+          { way: "pane" as const, title: t("commandPalette.startPane", { agent: cliName }), sub: t("commandPalette.startPaneSub"), key: formatChord("Alt+Enter") },
+          { way: "cell" as const, title: t("commandPalette.startCell", { agent: cliName }), sub: t("commandPalette.startCellSub"), key: formatChord("Shift+Enter") }
         ]
       : [])
   ];
@@ -122,7 +122,7 @@ export function PaletteStart({ start, words, fresh, run }: {
               {row.title}
               {row.way === recommended && <span className="tag neutral palette-start-chip">{t("commandPalette.startRecommended")}</span>}
             </span>
-            <span className="meta-txt">{row.way !== "builtin" && !words ? t("commandPalette.startNeedsWords") : row.sub}</span>
+            <span className="meta-txt">{row.way !== "builtin" && !words ? t("commandPalette.startNeedsWords", { pane: formatChord("Alt+Enter"), cell: formatChord("Shift+Enter") }) : row.sub}</span>
           </span>
           <Kbd>{row.key}</Kbd>
         </button>

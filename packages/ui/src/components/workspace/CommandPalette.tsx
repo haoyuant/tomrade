@@ -18,7 +18,7 @@ import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useSelectedId, useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
-import { keyLabel } from "~/lib/keybindings";
+import { keyLabel, formatChord } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { askPanel } from "~/lib/panelRequests";
@@ -295,7 +295,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
               </>
               )}
             </Command.List>
-            {dock && !startMode && <div className="palette-foot">{t("commandPalette.shiftEnterHint")}</div>}
+            {dock && !startMode && <div className="palette-foot">{t("commandPalette.shiftEnterHint", { enter: formatChord("Enter"), shiftEnter: formatChord("Shift+Enter") })}</div>}
           </Command>
         </RadixDialog.Content>
       </RadixDialog.Portal>

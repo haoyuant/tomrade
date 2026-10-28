@@ -36,7 +36,7 @@ import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } f
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
-import { hits, keyLabel } from "~/lib/keybindings";
+import { hits, keyLabel, formatChord } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
 import { useComposerHistory } from "./agent-panel/useComposerHistory";
 import { useEngineChoice } from "./agent-panel/useEngineChoice";
@@ -958,7 +958,7 @@ export function AgentPanel({
         <Composer
           composer={composer}
           draft={draft}
-          placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : elsewhere ? t("handoff.composerElsewhere") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+          placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : elsewhere ? t("handoff.composerElsewhere") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder", { key: formatChord("Mod+Enter") }) : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
           archived={archivedNow}
           busy={busy}
           canSend={!(busy || blocked || (!draft.trim() && !attachments.length))}

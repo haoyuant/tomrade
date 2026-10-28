@@ -410,7 +410,7 @@ app.whenReady().then(async () => {
     const pickedAside = await wait(async () => cellShows(seventhItem.key), 3000);
     const namesLocked = await cellNames();
     const pickToast = await js(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? ''`);
-    check("锁住的面板不会被侧栏点击替换：会话换进别的面板，并提示「已移出面板」可撤销", lockOn && pickedAside && namesLocked[3]?.startsWith(`${sessions[3].item.key} `) && pickToast.includes("已移出面板") && pickToast.includes("撤销"), JSON.stringify({ namesLocked, pickToast }));
+    check("锁住的面板不会被侧栏点击替换：会话换进别的面板，并提示「已移出格子」可撤销", lockOn && pickedAside && namesLocked[3]?.startsWith(`${sessions[3].item.key} `) && pickToast.includes("已移出格子") && pickToast.includes("撤销"), JSON.stringify({ namesLocked, pickToast }));
     check("撤销后被换下的会话回到原来的面板", await undoPick(sixShown), JSON.stringify(await cellNames()));
     // A session that needs you in the selected pane: it stays, the pick goes elsewhere.
     ctx.codeLink.store.patchSession(project.id, sessions[5].id, { state: "waiting", blocked: "merge" });
@@ -687,7 +687,7 @@ app.whenReady().then(async () => {
     const single = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return [document.querySelectorAll('.cs-cell').length, !!cell?.querySelector('.xterm'), !!cell?.querySelector('.cs-term-closed')?.offsetParent, [...document.querySelectorAll('.cs-cell-name')].filter((n) => n.textContent === '从右侧选一个会话，在这里显示它的终端').length]; })()`);
     check("同一个 pane 上的会话不会被放进旁边的空面板，终端的格子也不会被挤掉", !!newPane && single[0] === cellsNow && single[1] && !single[2] && single[3] === 1, JSON.stringify({ cellsNow, single }));
     // The empty pane goes again, for what follows.
-    await tjs(`(() => { const empty = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent === '从右侧选一个会话，在这里显示它的终端'); empty?.querySelector('button[aria-label="关闭这个窗格"]')?.click(); return true; })()`);
+    await tjs(`(() => { const empty = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent === '从右侧选一个会话，在这里显示它的终端'); empty?.querySelector('button[aria-label="关闭这个格子"]')?.click(); return true; })()`);
     await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length`)) === cellsNow - 1, 5000);
     ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
@@ -1049,7 +1049,7 @@ app.whenReady().then(async () => {
     // That shell goes again, and its cell.
     await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-focused]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
     await sleep(800);
-    await tjs(`document.querySelector('.cs-cell[data-focused] button[aria-label="关闭这个窗格"]')?.click(); true`);
+    await tjs(`document.querySelector('.cs-cell[data-focused] button[aria-label="关闭这个格子"]')?.click(); true`);
     await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length`)) === cellsBeforeTop, 5000);
     await tjs(`document.querySelector('[data-testid=cs-top-palette]').click(); true`);
     const topPalette = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 3000);
@@ -1092,8 +1092,8 @@ app.whenReady().then(async () => {
     await tjs(`${askCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
     const allowed = await wait(async () => typedIn.length === 1, 3000);
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
-    const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 没离开当前会话')`), 3000);
-    check("允许之后提示「已允许「…」· 没离开当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
+    const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 仍停留在当前会话')`), 3000);
+    check("允许之后提示「已允许「…」· 仍停留在当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
     // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: null, action: null, detail: null } });
     ctx.emit("codeLink/changed", project.id);
@@ -1116,8 +1116,8 @@ app.whenReady().then(async () => {
     await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-look]')?.click(); true`);
     const looked = await wait(async () => opens.some((t) => t.threadId === chooser.id), 3000);
     await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-choice]')?.click(); true`);
-    const chosen = await wait(async () => !ctx.agent.thread(project.id, chooser.id).pending && (await tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已回答「清理重复工单」· 没离开当前会话')`)), 5000);
-    check("「先看看」在主窗口打开它；点「确认」直接回答，提示没离开当前会话", looked && chosen, JSON.stringify({ looked, chosen, toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
+    const chosen = await wait(async () => !ctx.agent.thread(project.id, chooser.id).pending && (await tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已回答「清理重复工单」· 仍停留在当前会话')`)), 5000);
+    check("「先看看」在主窗口打开它；点「确认」直接回答，提示仍停留在当前会话", looked && chosen, JSON.stringify({ looked, chosen, toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
     // the overview below reads this pane's marker in its last lines
     await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null, ask: null });

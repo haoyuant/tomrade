@@ -5,6 +5,8 @@ import { GlobalHotkeyField } from "~/components/dialogs/settings/GlobalHotkeyFie
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { invoke, logQuietly } from "~/lib/api";
+import { keyLabel } from "~/lib/keybindings";
+import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 import { useCommands, useProjects, useSaveSettings, useSettings } from "~/lib/queries";
 import { findEngine } from "~/lib/agent";
@@ -31,9 +33,19 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   const own = state?.locals.filter((e) => !e.usesModels) ?? [];
   // Chat works on a model the built-in agent cannot drive; tickets then have nowhere to go, and setup says why.
   const cannot = state && engines && !state.route ? builtinProblem(engines, state.worker) : null;
+  const toast = useToast();
+  // Picked here to work in the Terminal window: it opens once setup steps aside, not over it.
+  const [cli, setCli] = useState(false);
+  const done = () => {
+    onDone();
+    if (cli)
+      void invoke("contributions.run", "code-sessions.open", {}).catch((error: unknown) =>
+        toast({ ...errorSpec(error), body: t("setup.terminalWindowFailed", { reason: readableError(error), key: keyLabel("palette") }) })
+      );
+  };
   // Done either way, the tour is where a first run goes next.
   const openTour = () => {
-    onDone();
+    done();
     if (sample) void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
   };
   // A chain that keeps failing hands over to the troubleshooter, whose thread lives in the sample project; the panel shows the newest thread.
@@ -100,7 +112,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                   </li>
                 )}
               </ul>
-              {state.locals.length > 0 && <WorkStyle />}
+              {state.locals.length > 0 && <WorkStyle onPick={(style) => setCli(style === "cli")} />}
               {sample ? (
                 <>
                   <p className="meta-txt">{t("setup.doneTour")}</p>
@@ -113,14 +125,14 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                     >
                       {t("setup.openTour")}
                     </button>
-                    <button type="button" className="btn btn-secondary" data-testid="setup-continue" onClick={onDone}>
+                    <button type="button" className="btn btn-secondary" data-testid="setup-continue" onClick={done}>
                       {t("setup.toProjects")}
                     </button>
                   </div>
                 </>
               ) : (
                 <div>
-                  <button type="button" className="btn btn-primary" data-testid="setup-continue" onClick={onDone}>
+                  <button type="button" className="btn btn-primary" data-testid="setup-continue" onClick={done}>
                     {t("setup.continue")}
                   </button>
                 </div>
@@ -159,7 +171,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
  * Asked once, where a local agent is set up: someone who works in several CLIs at once starts on the Terminal window.
  * It is Settings › Sessions' "When Tomrade opens", answered here so nobody has to find it.
  */
-function WorkStyle() {
+function WorkStyle({ onPick }: { onPick: (style: "panel" | "cli") => void }) {
   const { t } = useI18n();
   const settings = useSettings();
   const save = useSaveSettings();
@@ -173,8 +185,8 @@ function WorkStyle() {
     setPicked(style);
     // Only this field differs between two quick saves, so the later one stands either way.
     save.mutate({ ...settings.data!, sessions: { ...(settings.data!.sessions as object | undefined), openAtStart: style === "cli" ? "terminal" : "main" } });
-    // Several CLIs at once: the Terminal window right away, and a key to bring it up from any app.
-    if (style === "cli") void invoke("contributions.run", "code-sessions.open", {}).catch(logQuietly("the Terminal window"));
+    // Several CLIs at once: the Terminal window when setup is done, and a key to bring it up from any app.
+    onPick(style);
   };
   return (
     <div className="stack-2" data-testid="setup-work-style">

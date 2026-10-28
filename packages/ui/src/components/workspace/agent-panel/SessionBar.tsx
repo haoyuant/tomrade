@@ -183,7 +183,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     return (
       <nav className="sbar is-rail" aria-label={t("sessionBar.label")} ref={nav}>
         <div className="sbar-head">
-          <button type="button" className="btn btn-icon" title={t("sessionBar.showCards")} aria-label={t("sessionBar.showCards")} aria-expanded="false" onClick={() => onMode("cards")}>
+          <button type="button" className="btn btn-icon" title={t("sessionBar.showCards", { key: keyLabel("sessionBar") })} aria-label={t("sessionBar.showCards", { key: keyLabel("sessionBar") })} aria-expanded="false" onClick={() => onMode("cards")}>
             <Icon name="i-expand" size={13} />
           </button>
         </div>
@@ -236,7 +236,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   return (
     <nav className="sbar is-cards" aria-label={t("sessionBar.label")}>
       <div className="sbar-head">
-        <button type="button" className="btn btn-icon" title={t("sessionBar.showRail")} aria-label={t("sessionBar.showRail")} aria-expanded="true" onClick={() => onMode("rail")}>
+        <button type="button" className="btn btn-icon" title={t("sessionBar.showRail", { key: keyLabel("sessionBar") })} aria-label={t("sessionBar.showRail", { key: keyLabel("sessionBar") })} aria-expanded="true" onClick={() => onMode("rail")}>
           <Icon name="i-shrink" size={13} />
         </button>
         <span className="sbar-head-title">{t("sessionBar.label")}</span>

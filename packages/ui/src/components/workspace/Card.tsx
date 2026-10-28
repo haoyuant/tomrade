@@ -8,6 +8,7 @@ import { useI18n } from "~/lib/i18n";
 import { useIsSelected, useWorkspace } from "./context";
 import { isCommitKey } from "~/lib/keys";
 import { useStartingFor } from "~/lib/startWays";
+import { formatChord } from "~/lib/keybindings";
 
 export interface CardProps {
   item: Item;
@@ -133,7 +134,7 @@ const CardFace = memo(function CardFace({
       tabIndex={0}
       data-selected={selected}
       aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-      title={t("card.keyboardHint")}
+      title={t("card.keyboardHint", { left: formatChord("Alt+ArrowLeft"), right: formatChord("Alt+ArrowRight") })}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (isCommitKey(e) || e.key === " ") {
