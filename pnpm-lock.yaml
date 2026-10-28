@@ -2816,6 +2816,9 @@ importers:
       '@tomradex/schedules':
         specifier: workspace:*
         version: link:../schedules
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18
@@ -2843,6 +2846,12 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools

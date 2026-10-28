@@ -84,6 +84,16 @@ describe("web search tools", () => {
   it("says nothing is switched on when no provider is registered", async () => {
     const { ctx } = await boot();
     await expect(ctx.tools.execute("web_search", { query: "x" }, { by })).rejects.toThrow("No web search provider is switched on");
+    expect(ctx.webSearch.unavailable()?.settings).toBe("webSearch");
+    await ctx.fiber.dispose();
+  });
+
+  it("lists its providers for the Web search pane, in the order they are asked, each with where it is set up", async () => {
+    const { ctx } = await boot(fake("tavily", { title: "Tavily", unavailable: () => "no key", settings: "tavily" }), fake("kimi", { title: "Kimi", settings: "assistant" }));
+    expect(ctx.webSearch.views()).toEqual([
+      { id: "tavily", title: "Tavily", unavailable: "no key", settings: "tavily" },
+      { id: "kimi", title: "Kimi", unavailable: null, settings: "assistant" }
+    ]);
     await ctx.fiber.dispose();
   });
 

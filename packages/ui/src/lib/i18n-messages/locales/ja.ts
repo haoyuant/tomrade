@@ -366,6 +366,17 @@ export const ja: PartialMessages = {
     purposeBranch: "ブランチ名",
     purposeOther: "その他"
   },
+  webSearch: {
+    label: "Web 検索",
+    lede: "アシスタントが Web を検索し、ページを読む方法です。自前で検索できるモデルはそのモデルの検索を使います。それ以外のモデルでは、下の一覧で最初に設定済みのサービスが答えます。各サービスの設定は一覧の下にあります。",
+    answering: "使用中",
+    standby: "待機",
+    notSetUp: "未設定",
+    setUpBelow: "下で設定",
+    openSettings: "設定を開く",
+    none: "有効な Web 検索サービスがありません。プラグインで有効にするか、インストールしてください。",
+    findPlugin: "検索プラグインを探す"
+  },
   background: {
     label: "バックグラウンド",
     title: "バックグラウンドで実行",

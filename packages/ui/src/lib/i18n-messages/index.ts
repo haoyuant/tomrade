@@ -4,6 +4,7 @@ import { announcements } from "./announcements";
 import { legal } from "./legal";
 import { usage } from "./usage";
 import { background } from "./background";
+import { webSearch } from "./webSearch";
 import { projectRules } from "./projectRules";
 import { projectBrief } from "./projectBrief";
 import { templates } from "./templates";
@@ -85,6 +86,7 @@ export const en = {
   legal: legal.en,
   usage: usage.en,
   background: background.en,
+  webSearch: webSearch.en,
   projectRules: projectRules.en,
   projectBrief: projectBrief.en,
   templates: templates.en,
@@ -167,6 +169,7 @@ export const zh: typeof en = {
   legal: legal.zh,
   usage: usage.zh,
   background: background.zh,
+  webSearch: webSearch.zh,
   projectRules: projectRules.zh,
   projectBrief: projectBrief.zh,
   templates: templates.zh,
