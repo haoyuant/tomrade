@@ -45,7 +45,7 @@ import { Starter, type StartGate, type StartOptions, type StartResult } from "./
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
-import { askLine, permissionAsk, questionAsk } from "./ask.js";
+import { askLine, doingLine, permissionAsk, questionAsk } from "./ask.js";
 import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
@@ -862,7 +862,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : doingLine(live, this.words()), blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };

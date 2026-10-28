@@ -11,7 +11,7 @@ import { outcomeLine } from "~/lib/review";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
 import { rangeLabel, spanLabel } from "~/lib/sessionTime";
 import type { Starting } from "~/lib/startWays";
-import { askText } from "~/lib/terminalSession";
+import { askText, doingText } from "~/lib/terminalSession";
 
 export type BarMode = "rail" | "cards";
 /** What a card answers with: a terminal session's permission prompt, or an assistant question by one of its choices. */
@@ -96,7 +96,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const title = (r: BarRow) => r.title || t("agentPanel.newThread");
   const outcome = (r: BarRow) => (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null);
-  const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? outcome(r) : r.activity);
+  const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? outcome(r) : doingText(r, t));
   // what it is up to: continuing after a usage limit, else its state — an idle one says how long ago it moved
   const state = (r: BarRow) => (r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "idle" ? timeAgo(r.at) : statusWord(r.status));
   // a live terminal session's pane, its last lines as the pane shows them

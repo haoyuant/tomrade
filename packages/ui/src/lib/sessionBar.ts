@@ -41,6 +41,8 @@ export interface BarRow {
   ask: SessionAsk | null;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** The tool whose call just failed, worded where it shows (`doingText`); null otherwise. */
+  failedTool: string | null;
   /** What came of an ended session: its pull request, commits, asks and last word, said by `outcomeLine`. */
   outcome: SessionOutcome | null;
   /** The Terminal window cell that shows it, by the window's number; null when no cell does. */
@@ -114,7 +116,7 @@ export function sessionBarRows(input: {
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
-      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : finished ? null : (th.said ?? null),
+      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : finished ? null : (th.said ?? null), failedTool: live ? session.failedTool : null,
       outcome: finished && th.said ? { pr: null, commits: 0, asked: null, said: th.said } : null, cell: live ? cellOf(session.id) : null, prompt: null, tail: null, ask: null,
       itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
@@ -131,7 +133,7 @@ export function sessionBarRows(input: {
       title: s.title || (s.itemIds[0] ? input.itemTitle(s.itemIds[0]) : null) || "",
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
-      activity: ended ? null : s.activity, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
+      activity: ended ? null : s.activity, failedTool: ended ? null : s.failedTool, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
       prompt: status === "wait" && s.approval && isApprovalAsk(s) ? (s.prompt ?? null) : null, tail: ended ? null : (s.tail ?? null), ask: status === "wait" && s.state === "waiting" ? (s.ask ?? null) : null,
       itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0

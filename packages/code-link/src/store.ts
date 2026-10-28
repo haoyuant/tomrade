@@ -208,7 +208,9 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN marks_json TEXT NOT NULL DEFAUL
 `
   },
   // What a session waits on the person for, as a structure each window words in its own language.
-  { version: 20, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN ask_json TEXT" }
+  { version: 20, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN ask_json TEXT" },
+  // The tool whose call just failed, for each window to word in its own language.
+  { version: 21, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN failed_tool TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -379,6 +381,8 @@ export interface SessionView {
   summary: string | null;
   /** What it is doing this moment, from its last hook; null between tools, and while it asks. */
   activity: string | null;
+  /** The tool whose call just failed, while that is the last word of what it does ("" when the hook named none); null otherwise. */
+  failedTool: string | null;
   /** What it waits on the person for, while it does; null otherwise. */
   ask: SessionAsk | null;
   blocked: SessionBlock | null;
@@ -461,6 +465,7 @@ interface SessionRow {
   worked_json: string | null;
   marks_json: string | null;
   ask_json: string | null;
+  failed_tool: string | null;
   asked: number | null;
   mode: string;
   agent: string;
@@ -586,6 +591,7 @@ const toSession = (r: SessionRow): SessionView => ({
   lastCommitAt: r.last_commit_at,
   summary: r.summary,
   activity: r.activity ?? null,
+  failedTool: r.failed_tool ?? null,
   ask: r.ask_json ? (JSON.parse(r.ask_json) as SessionAsk) : null,
   blocked: (r.blocked as SessionBlock | null) ?? null,
   requestedBy: r.requested_by ?? null,
@@ -654,6 +660,7 @@ export interface SessionPatch {
   lastCommitAt?: number | null;
   summary?: string | null;
   activity?: string | null;
+  failedTool?: string | null;
   ask?: SessionAsk | null;
   blocked?: SessionBlock | null;
   requestedBy?: string | null;
@@ -1084,6 +1091,7 @@ export class CodeLinkStore {
       lastCommitAt: "last_commit_at",
       summary: "summary",
       activity: "activity",
+      failedTool: "failed_tool",
       ask: "ask_json",
       blocked: "blocked",
       requestedBy: "requested_by",
@@ -1092,6 +1100,8 @@ export class CodeLinkStore {
     };
     const sets: string[] = [];
     const values: unknown[] = [];
+    // A failure is what it does only until the next word of what it does.
+    if (patch.activity !== undefined && patch.failedTool === undefined) patch = { ...patch, failedTool: null };
     for (const [field, column] of Object.entries(columns) as [keyof SessionPatch, string][]) {
       const value = patch[field];
       if (value === undefined) continue;
