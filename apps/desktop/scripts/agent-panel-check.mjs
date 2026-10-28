@@ -746,6 +746,7 @@ const run = async () => {
       lines: [...document.querySelectorAll('.ai-session-convo .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]), details: document.querySelectorAll('.ai-session-convo .cs-convo-detail').length,
       empty: document.querySelector('.ai-session-empty')?.textContent ?? null, show: !!document.querySelector('[data-testid="ai-session-show"]'),
       approve: document.querySelector('[data-testid="ai-approve"]')?.textContent ?? null, allow: !!document.querySelector('[data-testid="ai-allow"]'), deny: !!document.querySelector('[data-testid="ai-deny"]'), there: !!document.querySelector('[data-testid="ai-answer-there"]'),
+      trust: !!document.querySelector('[data-testid="ai-trust-continue"]') && !!document.querySelector('[data-testid="ai-trust-exit"]'),
       input: document.querySelector('.ai-session-foot .ai-input')?.value ?? null, drawer: document.querySelector('[data-testid="ai-drawer"]')?.textContent ?? null,
       current: document.querySelector('.ai .sbar [aria-current="true"]')?.getAttribute('aria-label') ?? document.querySelector('.ai .sbar [aria-current="true"]')?.textContent ?? null }; })()`);
   let view = await sessionView();
@@ -955,7 +956,7 @@ const run = async () => {
   // keys the agent declared; the answer closes the ask on both sides.
   // the panel stays on this session after an answer here; going on to the next one waiting is checked further down
   ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
-  // A folder's trust is no permission (Enter there is "No, exit"): the ask shows, with only the way to answer it in the pane.
+  // A folder's trust is no permission (Enter there may be "No, exit"): no Allow or Deny, but its own Trust and Exit, which move the cursor first.
   screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
   const convoAt = convoReads;
   moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
@@ -963,7 +964,7 @@ const run = async () => {
   moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1600);
   view = await sessionView();
-  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /wants to run pnpm test/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
+  check("a session waiting on a folder's trust offers Trust and Exit, not Allow or Deny", view?.state === "waiting" && view.trust && !view.allow && !view.deny, view);
   check("a burst of changes re-reads the record once, not once per change", convoReads - convoAt >= 1 && convoReads - convoAt <= 2, convoReads - convoAt);
   const asks = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
   // The cursor on No: Deny alone.

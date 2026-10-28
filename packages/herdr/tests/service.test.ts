@@ -179,6 +179,38 @@ describe("herdr service", () => {
     fake.close();
   });
 
+  it("reads CodeBuddy, which herdr names no agent for, off its pane with Tomrade's manifest, and lets herdr read what it knows", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake, { ownLookMs: 40, ownReadMs: 10 });
+    const heard: HerdrPaneEvent[] = [];
+    herdr.onPane((event) => heard.push(event));
+    const pane = fake.createPane("/work");
+    pane.text = "Do you trust the files in this folder?\n  > 1. Trust folder only (work)\n    2. No, exit (escape)\nEnter to confirm • Esc to exit";
+    herdr.watch(pane.pane_id);
+    // A plain shell: nothing to read, nothing told.
+    await until(() => fake.of("pane.process_info").length >= 1);
+    expect(fake.of("pane.read")).toEqual([]);
+    pane.foreground = { cmdline: "node /usr/local/bin/codebuddy --settings /tmp/s.json", cwd: "/work" };
+    await until(() => heard.length === 1);
+    expect(heard[0]).toEqual({ kind: "status", paneId: "w1:p1", status: "blocked", agent: "codebuddy" });
+    expect(fake.of("pane.read").at(-1)).toEqual({ pane_id: "w1:p1", source: "detection" });
+    pane.text = "● Done.\n  ⏵⏵ bypass permissions on (shift+Tab to cycle)";
+    await until(() => heard.length === 2);
+    expect(heard[1]).toEqual({ kind: "status", paneId: "w1:p1", status: "idle", agent: "codebuddy" });
+    // It exited to the shell: what it showed no longer holds.
+    pane.foreground = undefined;
+    await until(() => heard.length === 3);
+    expect(heard[2]).toEqual({ kind: "status", paneId: "w1:p1", status: "unknown", agent: null });
+    // An agent herdr reads itself is herdr's to tell.
+    fake.setStatus(pane.pane_id, "claude", "working");
+    await until(() => heard.length === 4);
+    const reads = fake.of("pane.process_info").length;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(fake.of("pane.process_info").length).toBe(reads);
+    expect(heard.slice(3)).toEqual([{ kind: "status", paneId: "w1:p1", status: "working", agent: "claude" }]);
+    fake.close();
+  });
+
   it("tells where a pane's view is in its scrollback, now and on each change, moves it, and stops when asked", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);

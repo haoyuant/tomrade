@@ -42,11 +42,12 @@ afterEach(() => {
 });
 
 describe("reading an agent off its pane", () => {
-  it("finds herdr's manifest by an agent's id or alias, and none for an agent herdr has none for", () => {
+  it("finds herdr's manifest by an agent's id or alias, Tomrade's own for CodeBuddy, and none for an agent neither has", () => {
     expect(manifestOf("claude")?.id).toBe("claude");
     expect(manifestOf("claude-code")?.id).toBe("claude");
     expect(manifestOf("copilot")?.id).toBe("copilot");
-    expect(manifestOf("codebuddy")).toBeNull();
+    expect(manifestOf("codebuddy")?.id).toBe("codebuddy");
+    expect(manifestOf("dsh")).toBeNull();
   });
 
   it("reads Claude's screen as herdr does, and tells only what changed", () => {
@@ -155,13 +156,13 @@ describe("reading an agent off its pane", () => {
     expect(s.status(as, "claude")).toBe("idle");
     expect(s.status(as, "codex")).toBe("idle");
     expect(s.status(as, null)).toBe("unknown");
-    // An agent herdr has no manifest for goes by its title, which says nothing here.
-    expect(s.status(as, "codebuddy")).toBe("unknown");
+    // An agent no manifest reads goes by its title, which says nothing here.
+    expect(s.status(as, "dsh")).toBe("unknown");
     expect(told).toEqual([
       { agent: "claude", status: "idle" },
       { agent: "codex", status: "idle" },
       { agent: null, status: "unknown" },
-      { agent: "codebuddy", status: "unknown" }
+      { agent: "dsh", status: "unknown" }
     ]);
   });
 });

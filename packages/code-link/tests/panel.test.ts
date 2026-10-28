@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
 import { inputsOf, promptOnScreen, SessionPanel, type CodeLinkStore, type SessionView } from "@tomradex/code-link";
-import { tailLines } from "@tomradex/code-link/prompt";
+import { arrowsTo, tailLines, trustOnScreen } from "@tomradex/code-link/prompt";
 import { Herdr } from "@tomradex/herdr";
 import { FakeHerdr } from "@tomradex/testkit";
 
@@ -64,6 +64,78 @@ describe("the prompt on a pane's screen", () => {
     // a titled prompt about a folder's trust, and rows that name keys under no question at all
     expect(promptOnScreen("△ Permission required\nTrust this folder?\nAllow once   Allow always   Reject")).toBeNull();
     expect(promptOnScreen("Settings\n→ Theme (t)\n  Skip intro (esc)")).toBeNull();
+  });
+});
+
+/** Folder trust as Claude Code 2.1 and Cursor Agent drew it in a fresh folder (2026-10-28), the cursor on "No, exit" in Claude's. */
+const CLAUDE_TRUST_LIVE = [
+  "────────────────────────────────────────────────────────────────────────",
+  " Accessing workspace:",
+  "",
+  " /Users/me/Projects/demo-wt/fb-3",
+  "",
+  " Quick safety check: Is this a project you created or one you trust? (Like your own code, a",
+  " well-known open source project, or work from your team). If not, take a moment to review what's in",
+  " this folder first.",
+  "",
+  " Claude Code'll be able to read, edit, and execute files here.",
+  "",
+  " Security guide",
+  "",
+  " ❯ No, exit",
+  "   Yes, I trust this folder",
+  "",
+  " Enter to confirm · Esc to cancel"
+].join("\n");
+const CURSOR_TRUST = [
+  "  ╭────────────────────────────────────────────────────────────────╮",
+  "  │  ⚠ Workspace Trust Required                                    │",
+  "  │  Cursor Agent can execute code and access files in this directory. │",
+  "  │  Do you trust the contents of this directory?                  │",
+  "  │    /Users/me/Projects/demo-wt/fb-3                             │",
+  "  │                                                                │",
+  "  │  ▶ [a] Trust this workspace                                    │",
+  "  │    [q] Quit                                                    │",
+  "  │                                                                │",
+  "  │  Use arrow keys to navigate, Enter to select, or press the key shown │",
+  "  ╰────────────────────────────────────────────────────────────────╯"
+].join("\n");
+const screenFile = (name: string) => fs.readFileSync(path.join(__dirname, "../../pty-host/tests/fixtures/agent-screens", name), "utf8");
+
+describe("a folder's trust on a pane's screen", () => {
+  it("reads its options, the cursor's, and which trusts and which leaves, as each agent draws them", () => {
+    expect(trustOnScreen(CLAUDE_TRUST_LIVE)).toEqual({ options: ["No, exit", "Yes, I trust this folder"], selected: 0, trust: 1, exit: 0 });
+    expect(trustOnScreen(CLAUDE_TRUST)).toEqual({ options: ["No, exit", "Yes, I trust this folder"], selected: 0, trust: 1, exit: 0 });
+    expect(trustOnScreen("Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit")).toEqual({ options: ["Yes, proceed", "No, exit"], selected: 0, trust: 0, exit: 1 });
+    expect(trustOnScreen(screenFile("codex-blocked-trust.txt"))).toEqual({ options: ["Yes, continue", "No, quit"], selected: 0, trust: 0, exit: 1 });
+    expect(trustOnScreen(CURSOR_TRUST)).toEqual({ options: ["Trust this workspace", "Quit"], selected: 0, trust: 0, exit: 1 });
+    // CodeBuddy offers three scopes: the narrowest, the folder alone, is the one taken
+    expect(trustOnScreen(screenFile("codebuddy-blocked-trust.txt"))).toEqual({
+      options: ["Trust folder only (fb-3)", "Trust parent folder (demo-wt/**)", "Trust folder and all subdirectories (fb-3/**)", "No, exit (escape)"],
+      selected: 0,
+      trust: 0,
+      exit: 3
+    });
+    expect(trustOnScreen("Do you trust this folder?\n● 1. Trust folder (demo)\n  2. Trust parent folder (x)\n  3. Don't trust (esc)")).toMatchObject({ trust: 0, exit: 2 });
+    // a wrapped option is the one before it, not an option of its own
+    expect(trustOnScreen("Do you trust the files in this folder?\n> 1. Trust folder only\n     (a-very-long-name)\n  2. No, exit (escape)")).toMatchObject({ options: ["Trust folder only", "No, exit (escape)"], exit: 1 });
+  });
+
+  it("reads none it could not answer whole: no cursor, no way to leave or trust, or no such question", () => {
+    expect(trustOnScreen(CLAUDE_TRUST.replace("❯ No, exit", "  No, exit"))).toBeNull();
+    expect(trustOnScreen("Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. Maybe later")).toBeNull();
+    expect(trustOnScreen(CLAUDE_ASKS)).toBeNull();
+    expect(trustOnScreen("haoyuant@mac repo % echo trust me?\ntrust me?\nhaoyuant@mac repo %")).toBeNull();
+    expect(trustOnScreen("")).toBeNull();
+  });
+
+  it("moves the cursor by arrows from where it is", () => {
+    const claude = trustOnScreen(CLAUDE_TRUST_LIVE)!;
+    expect(arrowsTo(claude, claude.trust)).toEqual(["down"]);
+    expect(arrowsTo(claude, claude.exit)).toEqual([]);
+    const codebuddy = trustOnScreen(screenFile("codebuddy-blocked-trust.txt"))!;
+    expect(arrowsTo(codebuddy, codebuddy.exit)).toEqual(["down", "down", "down"]);
+    expect(arrowsTo({ ...codebuddy, selected: 3 }, codebuddy.trust)).toEqual(["up", "up", "up"]);
   });
 });
 
@@ -184,7 +256,7 @@ describe("the panel's side of a terminal session", () => {
     pane.text = CLAUDE_ASKS.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
     expect((await panel.glance([{ ...asks, lastEventAt: 6 }], 1600)).get("s1")?.prompt).toBe("deny");
     // a screen with no prompt is looked at again only after a while
-    pane.text = CLAUDE_TRUST;
+    pane.text = "haoyuant@mac repo %";
     expect((await panel.glance([{ ...asks, lastEventAt: 7 }], 2000)).get("s1")?.prompt).toBeNull();
     const before = reads();
     await panel.glance([{ ...asks, lastEventAt: 7 }], 3000);
@@ -193,6 +265,55 @@ describe("the panel's side of a terminal session", () => {
     expect(reads()).toBe(before + 1);
     // no longer asking, its prompt is gone at once
     expect((await panel.glance([{ ...asks, state: "running", activity: null, lastEventAt: 7 }], 4600)).get("s1")?.prompt).toBeNull();
+    fake.close();
+  });
+
+  it("answers a folder's trust by moving the cursor to the option first and pressing Enter only once it is there", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    // the agent's screen follows the arrows it is sent, as Claude Code's does, after `lag` ms (never, at Infinity)
+    let lag = 0;
+    const down = () => (pane.text = pane.text.replace("❯ No, exit", "  No, exit").replace("  Yes, I trust", "❯ Yes, I trust"));
+    fake.answer = (method, params) => {
+      const keys = (params.keys as string[] | undefined) ?? [];
+      if (method === "pane.send_input" && keys[0] === "down" && lag === 0) down();
+      else if (method === "pane.send_input" && keys[0] === "down" && Number.isFinite(lag)) setTimeout(down, lag);
+      return undefined;
+    };
+    const blocked = { state: "waiting" as const, ask: { kind: "permission" as const, tool: null, action: null, detail: null } };
+    const panel = await panelOn(fake, { s1: session(blocked), mute: session({ ...blocked, id: "mute", agent: "mute" }) });
+    pane.text = CLAUDE_TRUST_LIVE;
+    expect(await panel.trust("p", "s1", "trust")).toBe("answered");
+    expect(fake.of("pane.send_input")).toEqual([{ pane_id: "w1:p1", keys: ["down"] }, { pane_id: "w1:p1", keys: ["enter"] }]);
+    // already there: Enter alone, for any agent, keys declared or not
+    pane.text = CLAUDE_TRUST_LIVE;
+    expect(await panel.trust("p", "mute", "exit")).toBe("answered");
+    expect(fake.of("pane.send_input").slice(2)).toEqual([{ pane_id: "w1:p1", keys: ["enter"] }]);
+    // the screen redraws a moment late: Enter waits for it
+    pane.text = CLAUDE_TRUST_LIVE;
+    lag = 250;
+    expect(await panel.trust("p", "s1", "trust")).toBe("answered");
+    // a cursor that never gets there gets no Enter
+    pane.text = CLAUDE_TRUST_LIVE;
+    lag = Infinity;
+    const sent = fake.of("pane.send_input").length;
+    expect(await panel.trust("p", "s1", "trust")).toBe("failed");
+    expect(fake.of("pane.send_input").slice(sent)).toEqual([{ pane_id: "w1:p1", keys: ["down"] }]);
+    // no trust on the screen, nothing pressed
+    pane.text = CLAUDE_ASKS;
+    expect(await panel.trust("p", "s1", "trust")).toBe("notPrompt");
+    expect(fake.of("pane.send_input").length).toBe(sent + 1);
+    fake.close();
+  });
+
+  it("glances a folder's trust for the card of a session only its screen said waits, its agent's keys or none", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    pane.text = CLAUDE_TRUST_LIVE;
+    const blocked = { state: "waiting" as const, ask: { kind: "permission" as const, tool: null, action: null, detail: null } };
+    const panel = await panelOn(fake, {});
+    const seen = await panel.glance([session(blocked), session({ ...blocked, id: "mute", agent: "mute" }), session({ id: "bash", agent: "mute" })], 1000);
+    expect([...seen.values()].map((g) => g.prompt)).toEqual(["trust", "trust", null]);
     fake.close();
   });
 

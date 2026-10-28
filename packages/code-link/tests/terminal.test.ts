@@ -448,22 +448,38 @@ describe("the system terminal on Linux", () => {
     expect(tries.map((t) => t.command)).toEqual(["kitty", "x-terminal-emulator"]);
   });
 
+  it.skipIf(process.platform === "win32")("says the script ended, its agent with it, in a folder whose path has a space, and starts again without it", async () => {
+    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-exited-")), "Application Support");
+    const herdr: PaneTerminal = { kind: "herdr", launch: async () => ({ paneId: "w1:p1" }), installed: async () => "0.9.5" };
+    try {
+      await launchTerminal({ cwd: os.tmpdir(), command: `test -e '${path.join(dir, "pid")}' && echo running`, dir }, "herdr", herdr, "darwin");
+      fs.writeFileSync(path.join(dir, "exited"), "");
+      const { execFileSync } = await import("node:child_process");
+      // the marker from a run before is gone while it runs; the pid file goes and the marker comes once it ends
+      expect(execFileSync("/bin/bash", [path.join(dir, "run.command")], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } }).trim()).toBe("running");
+      expect([fs.existsSync(path.join(dir, "pid")), fs.existsSync(path.join(dir, "exited"))]).toEqual([false, true]);
+    } finally {
+      fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(process.platform === "win32")("keeps the window open after the agent, its pid file gone as when the script ends", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-keep-open-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
     try {
       const script = path.join(dir, "run.command");
       const pidFile = path.join(dir, "pid");
-      const tail = `rm -f '${pidFile}'\nexec "\${SHELL:-bash}"\n`;
+      const exitedFile = path.join(dir, "exited");
+      const tail = `rm -f '${pidFile}'\n: > '${exitedFile}'\nexec "\${SHELL:-bash}"\n`;
       await launchTerminal({ cwd: dir, command: "echo agent", dir, resume: "echo again" }, SYSTEM_TERMINAL, null, "linux");
       expect(fs.readFileSync(script, "utf8").endsWith(`echo agent\n${tail}`)).toBe(true);
       // herdr's resume runs in a pane that stays anyway
       expect(fs.readFileSync(path.join(dir, "resume.command"), "utf8")).not.toContain("exec");
       // the shell that stays: the agent's pid file already gone, so the session is not kept alive by it
       const shell = path.join(dir, "shell");
-      fs.writeFileSync(shell, `#!/bin/sh\ntest -e '${pidFile}' && echo pid-left || echo pid-gone\n`, { mode: 0o755 });
+      fs.writeFileSync(shell, `#!/bin/sh\ntest -e '${pidFile}' && echo pid-left || echo pid-gone\ntest -e '${exitedFile}' && echo exited\n`, { mode: 0o755 });
       const { execFileSync } = await import("node:child_process");
-      expect(execFileSync("/bin/bash", [script], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", SHELL: shell } }).trim().split("\n")).toEqual(["agent", "pid-gone"]);
+      expect(execFileSync("/bin/bash", [script], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", SHELL: shell } }).trim().split("\n")).toEqual(["agent", "pid-gone", "exited"]);
 
       await launchTerminal({ cwd: dir, command: "echo agent", dir }, SYSTEM_TERMINAL, null, "win32");
       expect(fs.readFileSync(script, "utf8")).toContain(tail);

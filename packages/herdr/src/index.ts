@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { findCommand } from "@tomradex/engine-kit";
+import { detect, manifestOf, ownAgentOfCommand } from "@tomradex/pty-host/screens";
 import type {} from "@tomradex/ipc";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
@@ -109,6 +110,12 @@ export const REVIVE_WINDOW_MS = 5 * 60_000;
 export const CONTROL_SETTLE_MS = 2_000;
 /** How long a reading of herdr's own clients holds: the process list is read at most this often. */
 export const CLIENTS_TTL_MS = 5_000;
+/**
+ * A followed pane herdr names no agent in is looked at this often for an agent only Tomrade's manifests read
+ * (CodeBuddy Code), and that agent's screen read this often while it runs there.
+ */
+export const OWN_LOOK_MS = 3_000;
+export const OWN_READ_MS = 1_000;
 
 /**
  * Whether `ps ax -o tty=,args=` shows a client of herdr's own: herdr on a terminal, run bare, on a named or remote
@@ -142,6 +149,9 @@ export interface HerdrConfig {
   startTimeoutMs?: number;
   /** How many starts `revive` makes within REVIVE_WINDOW_MS; tests make it small. */
   reviveLimit?: number;
+  /** OWN_LOOK_MS and OWN_READ_MS; tests make them short. */
+  ownLookMs?: number;
+  ownReadMs?: number;
 }
 
 /** What Tomrade remembers about herdr on this machine. */
@@ -160,6 +170,23 @@ interface HerdrUp {
 const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
 const statusOf = (value: unknown): HerdrStatus => (typeof value === "string" && STATUSES.has(value) ? (value as HerdrStatus) : "unknown");
 
+/** A followed pane: its status stream, who holds it, what was last told of it, and Tomrade's own reading of it. */
+interface Watched {
+  stream: { close(): void } | null;
+  timer: NodeJS.Timeout | null;
+  delay: number;
+  last: string | null;
+  holds: Set<symbol>;
+  own: OwnReading | null;
+}
+
+/** An agent in a pane herdr names none in, as Tomrade reads it: which, when its process was last looked for, the next read. */
+interface OwnReading {
+  timer: NodeJS.Timeout | null;
+  agent: string | null;
+  looked: number;
+}
+
 /**
  * herdr on this machine — the terminal workspace manager coding agents run
  * in. Tomrade does not bundle it: when it is installed, a ticket can run in
@@ -174,7 +201,7 @@ export class Herdr extends Service implements TerminalProvider {
 
   private readonly listeners = new Set<(event: HerdrPaneEvent) => void>();
   /** The panes being followed, each with its own status stream (herdr subscribes to status per pane), and who follows it. */
-  private readonly watched = new Map<string, { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number; last: string | null; holds: Set<symbol> }>();
+  private readonly watched = new Map<string, Watched>();
   private global: { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number } | null = null;
   private disposed = false;
   private readonly reconnectMs: number;
@@ -183,6 +210,8 @@ export class Herdr extends Service implements TerminalProvider {
   private readonly statePath: string | null;
   private readonly startTimeoutMs: number;
   private readonly reviveLimit: number;
+  private readonly ownLookMs: number;
+  private readonly ownReadMs: number;
   /** The server start under way, shared by every launch that wants one meanwhile. */
   private starting: Promise<HerdrUp | null> | null = null;
   /** When `revive` started the server, oldest first. */
@@ -206,6 +235,8 @@ export class Herdr extends Service implements TerminalProvider {
     this.statePath = config.statePath ?? null;
     this.startTimeoutMs = config.startTimeoutMs ?? START_TIMEOUT_MS;
     this.reviveLimit = config.reviveLimit ?? REVIVE_LIMIT;
+    this.ownLookMs = config.ownLookMs ?? OWN_LOOK_MS;
+    this.ownReadMs = config.ownReadMs ?? OWN_READ_MS;
   }
 
   [Service.init]() {
@@ -701,7 +732,7 @@ export class Herdr extends Service implements TerminalProvider {
     const entry = this.watched.get(paneId);
     if (entry) entry.holds.add(hold);
     else {
-      this.watched.set(paneId, { stream: null, timer: null, delay: this.reconnectMs, last: null, holds: new Set([hold]) });
+      this.watched.set(paneId, { stream: null, timer: null, delay: this.reconnectMs, last: null, holds: new Set([hold]), own: null });
       this.subscribePane(paneId);
     }
     return () => {
@@ -721,6 +752,7 @@ export class Herdr extends Service implements TerminalProvider {
     this.watched.delete(paneId);
     entry.stream?.close();
     if (entry.timer) clearTimeout(entry.timer);
+    this.stopOwn(entry);
   }
 
   private emit(event: HerdrPaneEvent): void {
@@ -758,7 +790,11 @@ export class Herdr extends Service implements TerminalProvider {
         current.delay = this.reconnectMs;
         this.onPaneEvent(paneId, { event: "pane.agent_status_changed", data: { pane_id: paneId, agent_status: agent.agent_status, agent: agent.agent ?? null } });
       }
-    }, () => undefined);
+    }, (err) => {
+      // No agent herdr knows there (yet): one of Tomrade's own may run there.
+      const current = this.watched.get(paneId);
+      if (current && err instanceof HerdrError && err.code === "agent_not_found") this.startOwn(paneId, current);
+    });
   }
 
   private onPaneEvent(paneId: string, event: HerdrEvent): void {
@@ -766,10 +802,59 @@ export class Herdr extends Service implements TerminalProvider {
     if (!entry || event.event !== "pane.agent_status_changed") return;
     const status = statusOf(event.data.agent_status);
     const agent = typeof event.data.agent === "string" ? event.data.agent : null;
+    // herdr reads the agents it knows; a pane it names none in is Tomrade's to read.
+    if (agent) this.stopOwn(entry);
+    else this.startOwn(paneId, entry);
+    if (!agent && entry.own?.agent) return;
+    this.tellStatus(paneId, entry, status, agent);
+  }
+
+  private tellStatus(paneId: string, entry: Watched, status: HerdrStatus, agent: string | null): void {
     const key = `${agent ?? ""}:${status}`;
     if (entry.last === key) return;
     entry.last = key;
     this.emit({ kind: "status", paneId, status, agent });
+  }
+
+  private startOwn(paneId: string, entry: Watched): void {
+    if (entry.own || this.disposed) return;
+    const own: OwnReading = { timer: null, agent: null, looked: 0 };
+    entry.own = own;
+    own.timer = setTimeout(() => void this.readOwn(paneId, entry, own), this.ownReadMs);
+    own.timer.unref?.();
+  }
+
+  private stopOwn(entry: Watched): void {
+    if (entry.own?.timer) clearTimeout(entry.own.timer);
+    entry.own = null;
+  }
+
+  /**
+   * An agent herdr has no manifest for, read as herdr reads its own: named by the pane's foreground process, its
+   * state read off what herdr's detection reads of the pane, with Tomrade's manifest for it.
+   */
+  private async readOwn(paneId: string, entry: Watched, own: OwnReading): Promise<void> {
+    own.timer = null;
+    const live = () => this.watched.get(paneId) === entry && entry.own === own && !this.disposed;
+    const now = Date.now();
+    if (!own.agent || now - own.looked >= this.ownLookMs) {
+      own.looked = now;
+      const fg = await this.processes(paneId);
+      if (!live()) return;
+      const agent = fg.map((p) => ownAgentOfCommand(p.cmdline)).find((a) => !!a) ?? null;
+      // It went: what it last showed no longer holds.
+      if (own.agent && !agent) this.tellStatus(paneId, entry, "unknown", null);
+      own.agent = agent;
+    }
+    const manifest = own.agent ? manifestOf(own.agent, (line) => this.ctx.logger.warn(line)) : null;
+    if (own.agent && manifest) {
+      const screen = await this.call<{ read: { text?: string } }>("pane.read", { pane_id: paneId, source: "detection" }).then((r) => r.read.text ?? "", () => null);
+      if (!live()) return;
+      const seen = screen === null ? null : detect(manifest, { screen, oscTitle: "", oscProgress: "" });
+      if (seen && !seen.skip) this.tellStatus(paneId, entry, seen.state, own.agent);
+    }
+    own.timer = setTimeout(() => void this.readOwn(paneId, entry, own), own.agent ? this.ownReadMs : this.ownLookMs);
+    own.timer.unref?.();
   }
 
   /** Pane ends are told for every pane at once; one stream hears them all. */

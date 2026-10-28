@@ -21,7 +21,7 @@ let n = 0;
 async function machine() {
   const userData = path.join(root, `user data ${n++}`);
   fs.mkdirSync(userData, { recursive: true });
-  const bag = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json") }], GitHubAccount] });
+  const bag = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json") }], [GitHubAccount, { ghToken: async () => "" }]] });
   return { ...bag, github: bag.ctx.github, userData };
 }
 
@@ -68,7 +68,7 @@ it("hands git a personal token that settings.json keeps sealed", async () => {
   const userData = path.join(root, `user data ${n++}`);
   fs.mkdirSync(userData, { recursive: true });
   const cipher = { available: () => true, encrypt: (v: string) => Buffer.from([...v].reverse().join("")), decrypt: (b: Buffer) => [...b.toString()].reverse().join("") };
-  const { ctx } = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json"), cipher }], GitHubAccount] });
+  const { ctx } = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json"), cipher }], [GitHubAccount, { ghToken: async () => "" }]] });
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => answer(200, { login: "me" }));
   await ctx.github.connection.connect("ghp_sealed");
   expect(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).not.toContain("ghp_sealed");
@@ -76,4 +76,35 @@ it("hands git a personal token that settings.json keeps sealed", async () => {
   expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
   await ctx.github.connection.disconnect!();
   expect(fs.existsSync(path.join(userData, "github-token.json"))).toBe(false);
+});
+
+it("falls back to the GitHub CLI's token for issues only, after the sign-in and the personal token", async () => {
+  const userData = path.join(root, `user data ${n++}`);
+  fs.mkdirSync(userData, { recursive: true });
+  let gh = "gho_cli";
+  const { ctx } = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json") }], [GitHubAccount, { ghToken: async () => gh }]] });
+  const github = ctx.github;
+  const calls: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    calls.push(String((init?.headers as Record<string, string>).Authorization));
+    return answer(200, { login: "me" });
+  });
+
+  expect(await github.token()).toBe("");
+  expect(github.credential()).toBeNull();
+  expect(await github.readToken()).toBe("gho_cli");
+  // gh reads issues only: the account itself, which storage and publishing go by, stays unconnected
+  expect(await github.status()).toEqual({ connected: false });
+  expect(await github.issues.whoami()).toBe("me");
+  expect(calls.at(-1)).toBe("Bearer gho_cli");
+
+  // a personal token comes first
+  await github.connection.connect("ghp_own");
+  expect(await github.readToken()).toBe("ghp_own");
+
+  await github.disconnect();
+  gh = "";
+  // the cached answer is dropped only after its minute; a fresh account sees no gh
+  const fresh2 = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json") }], [GitHubAccount, { ghToken: async () => "" }]] });
+  expect(await fresh2.ctx.github.status()).toEqual({ connected: false });
 });

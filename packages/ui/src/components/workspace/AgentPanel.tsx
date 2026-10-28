@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CardAction, FocusRef } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
@@ -170,6 +170,8 @@ export function AgentPanel({
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
+  /** Until the person touches the transcript, a waiting question is where it rests. */
+  const pinAsk = useRef(true);
   const panel = useRef<HTMLElement>(null);
 
   // Tokens arrive faster than frames: what came in between is shown together, at most once a frame.
@@ -280,14 +282,56 @@ export function AgentPanel({
     return () => watch.disconnect();
   }, [open]);
 
+  // Where the transcript rests: the question waiting on the person if one shows, else the newest line while following.
+  const place = useCallback(() => {
+    const el = scroll.current;
+    if (!el) return;
+    const ask = pinAsk.current ? el.querySelector<HTMLElement>(".q-ask:not(.done)") : null;
+    if (!ask && !following.current) return;
+    el.scrollTop = el.scrollHeight;
+    if (!ask) return;
+    // a card taller than the view shows from its top
+    const above = ask.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    if (above < 0) el.scrollTop += above - 8;
+  }, []);
+  // another thread opens on its waiting question or newest line; declared before the scrolling effects so they read the reset
+  useLayoutEffect(() => {
+    following.current = true;
+    pinAsk.current = true;
+  }, [threadId]);
   // After layout, so a working line or question that just mounted is inside scrollHeight.
   useEffect(() => {
+    if (!scroll.current) return;
+    const frame = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(frame);
+  }, [place, threadId, detail.data?.messages.length, runningRun?.id, pending?.question.id]);
+  // Markdown, images and cards grow after the first paint: keep the place while the person has not scrolled away.
+  const inSession = !!shownSession;
+  useEffect(() => {
     const el = scroll.current;
-    if (!el || !following.current) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
+    if (!open || !el || typeof ResizeObserver === "undefined") return;
+    const grow = new ResizeObserver(place);
+    const watchKids = () => Array.from(el.children).forEach((kid) => grow.observe(kid));
+    watchKids();
+    const kids = new MutationObserver(() => {
+      watchKids();
+      place();
     });
-  }, [detail.data?.messages.length, runningRun?.id, pending?.question.id]);
+    kids.observe(el, { childList: true });
+    const leave = () => {
+      pinAsk.current = false;
+    };
+    el.addEventListener("wheel", leave, { passive: true });
+    el.addEventListener("touchmove", leave, { passive: true });
+    el.addEventListener("pointerdown", leave);
+    return () => {
+      grow.disconnect();
+      kids.disconnect();
+      el.removeEventListener("wheel", leave);
+      el.removeEventListener("touchmove", leave);
+      el.removeEventListener("pointerdown", leave);
+    };
+  }, [open, threadId, inSession, place]);
   // the reply streaming in keeps the newest line in view, from the line that shows it
   const followLive = useCallback(() => {
     const el = scroll.current;
@@ -296,11 +340,6 @@ export function AgentPanel({
       el.scrollTop = el.scrollHeight;
     });
   }, []);
-
-  // another thread opens at its newest line
-  useEffect(() => {
-    following.current = true;
-  }, [threadId]);
 
   // A finished run hands the keyboard back to the composer only when it was the panel's to begin with.
   useEffect(() => {
@@ -759,13 +798,17 @@ export function AgentPanel({
         const result = await invoke("codeLink.sessionAnswer", projectId, row.sessionId!, reply.which);
         if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
         if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else if ("trust" in reply) {
+        const result = await invoke("codeLink.sessionTrust", projectId, row.sessionId!, reply.trust);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
       } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
     } catch (error) {
       return reportError(error);
     }
     void recentSessions.refetch();
     if (row.key === currentKey && goesOn) return waitQueue.current.answered(row.key);
-    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
+    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "trust" in reply ? (reply.trust === "trust" ? "sessionBar.trustedStay" : "sessionBar.leftStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
   };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
   const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard });

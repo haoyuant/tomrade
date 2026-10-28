@@ -48,13 +48,14 @@ exports.pruneSqlite = pruneSqlite;
 const CONPTY_FILES = ["conpty.node", "conpty_console_list.node", "conpty/OpenConsole.exe", "conpty/conpty.dll"];
 
 /**
- * The built-in terminal is Windows' alone: other apps carry none of it. A Windows app keeps node-pty's lib and its
- * own arch's ConPTY runtime, not winpty, the .pdb files, other platforms' prebuilds or the sources.
+ * The built-in terminal is Windows' alone: other apps carry none of its runtime, only the pty host's screen reading,
+ * which herdr's service reads agents herdr has no manifest for with. A Windows app keeps node-pty's lib and its own
+ * arch's ConPTY runtime, not winpty, the .pdb files, other platforms' prebuilds or the sources.
  */
 function pruneConpty(modules, platform, arch) {
   const dir = path.join(modules, "node-pty");
   if (platform !== "win32") {
-    for (const gone of ["node-pty", "@xterm/headless", "@tomradex/pty-host"]) fs.rmSync(path.join(modules, gone), { recursive: true, force: true });
+    for (const gone of ["node-pty", "@xterm/headless"]) fs.rmSync(path.join(modules, gone), { recursive: true, force: true });
     return;
   }
   const prebuilds = path.join(dir, "prebuilds");
