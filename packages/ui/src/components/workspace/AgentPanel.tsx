@@ -734,6 +734,24 @@ export function AgentPanel({
     if ((id === threadId && busy) || !(await confirm({ body: t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm") }))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
+  // Ending a terminal session, from the bar or its view, asks first: its pane closes and its agent stops; one in another terminal app only leaves the bar.
+  const endSessionById = async (sessionId: string) => {
+    const session = recentSessions.data?.find((s) => s.id === sessionId);
+    if (!session) return;
+    const row = barRows.find((r) => r.sessionId === sessionId);
+    const name = row ? rowName(row) : session.title || t("agentPanel.newThread");
+    const body = session.herdrPane
+      ? t("sessionBar.endSessionConfirm", { name, agent: findEngine(engines.data, session.agent)?.title ?? session.agent })
+      : t("sessionBar.endSessionOutsideConfirm", { name, app: session.terminal?.replace(/\.app$/, "") || t("sessionBar.whereOutside") });
+    if (!(await confirm({ body, yes: t(session.herdrPane ? "sessionBar.endSessionYes" : "sessionBar.endSessionOutsideYes") }))) return;
+    try {
+      await invoke("codeLink.stopSession", projectId, sessionId);
+    } catch (error) {
+      return reportError(error);
+    }
+    void recentSessions.refetch();
+    toast({ body: t("sessionBar.endedToast", { name }) });
+  };
   // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
   const answerCard = async (row: BarRow, reply: CardAnswer) => {
     try {
@@ -750,8 +768,8 @@ export function AgentPanel({
     toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
   };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
   const newBarThread = useCallback(() => {
@@ -759,6 +777,7 @@ export function AgentPanel({
   }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  const endBarSession = useCallback((row: BarRow) => void latestBar.current.end(row.sessionId!), []);
   const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => latestBar.current.answer(row, reply), []);
   // What the waiting conversations ask, read only while their cards show and again for each new wait.
   const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
@@ -890,6 +909,7 @@ export function AgentPanel({
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
           onClose={() => setOpenSession(null)}
+          onEnd={shownSession.state === "ended" || shownSession.state === "lost" ? undefined : () => void endSessionById(shownSession.id)}
           onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
           goesOnNext={goesOnNext}
           focusSay={sayTo === shownSession.id}
@@ -1251,6 +1271,7 @@ export function AgentPanel({
         onHistory={openHistory}
         onArchive={archiveBarThread}
         onDelete={deleteBarThread}
+        onEnd={endBarSession}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>

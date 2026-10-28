@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
 import { activeRows, away, bundles, canAnswer, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
-import { IDLE_SHOWN, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
+import { DONE_SHOWN, DONE_SHOWN_FOR_MS, IDLE_SHOWN, keptEnded, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -178,7 +178,7 @@ describe("what the Terminal window shows unless asked for everything", () => {
   const long = now - 2 * THREAD_DONE_AFTER_MS;
   const ids = (r: { here: { id: string }[]; away: { id: string }[] }) => [...r.here.map((x) => x.id), ...r.away.map((x) => x.id)].sort();
 
-  it("keeps what waits, runs or is open here, and the newest few idle; ended and long-quiet ones go to History", () => {
+  it("keeps what waits, runs or is open here, the newest few idle and the last few to end; long-quiet ones go to History", () => {
     // 85 conversations nobody touched for days, as the Tomrade project had, and a handful still going.
     const old = Array.from({ length: 85 }, (_, i) => thread(`old${i}`, { updatedAt: long - i }));
     const threads = [...old, thread("asking", { updatedAt: long, wait: { kind: "question", text: "?", since: long, questionId: "q", options: null } }), thread("busy", { running: true, updatedAt: long }), thread("fresh", { updatedAt: now - 60_000 }), thread("finished", { updatedAt: now - 60_000, itemId: "i1", ticketDone: true })];
@@ -194,7 +194,23 @@ describe("what the Terminal window shows unless asked for everything", () => {
     expect(all.here.length + all.away.length).toBe(85 + 4 + 4 + 1);
 
     const going = activeRows(all, new Set(), now);
-    expect(ids(going)).toEqual(["asking", "busy", "fresh", "live", "outsideNow", "shell"]);
+    expect(ids(going)).toEqual(["asking", "busy", "ended", "fresh", "live", "outsideNow", "shell"]);
+    // The overview's active view is what is still going: one that just ended is not.
+    expect(ids(activeRows(all, new Set(), now, { ended: false }))).toEqual(["asking", "busy", "fresh", "live", "outsideNow", "shell"]);
+  });
+
+  it("keeps the last few to end within the hour, as the assistant panel's bar does", () => {
+    const ended = [
+      ...Array.from({ length: DONE_SHOWN + 2 }, (_, i) => row({ id: `e${i}`, state: "ended", endedAt: now - (i + 1) * 60_000, where: "herdr" })),
+      row({ id: "anHourAgo", state: "ended", endedAt: now - DONE_SHOWN_FOR_MS - 1, where: "herdr" })
+    ];
+    const going = activeRows(sidebarRows(ended, [], []), new Set(), now);
+    expect(ids(going)).toEqual(["e0", "e1", "e2"]);
+    // The same rule, read the panel's way, keeps the same ones.
+    const panel = keptEnded(ended, (s) => s.endedAt, () => false, now);
+    expect([...panel].map((s) => s.id).sort()).toEqual(ids(going));
+    // The open one stays however old.
+    expect([...keptEnded(ended, (s) => s.endedAt, (s) => s.id === "anHourAgo", now)].map((s) => s.id).sort()).toEqual(["anHourAgo", "e0", "e1", "e2"]);
   });
 
   it("keeps whatever a cell shows, and at most the newest few idle ones", () => {

@@ -51,7 +51,7 @@ function TurnLine({ turn, runs }: { turn: NonNullable<RecordUsage["turn"]>; runs
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, items, onOpenIssue, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, goesOnNext, focusSay }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, onOpenIssue, cell, onShowInTerminal, onBack, backBlocked, onClose, onEnd, onAnswered, goesOnNext, focusSay }: {
   projectId: string;
   session: SessionView;
   title: string;
@@ -70,6 +70,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   /** Why it cannot come back yet: its CLI still runs here. */
   backBlocked?: string;
   onClose: () => void;
+  /** Present while it has not ended: ends it (the panel asks first). */
+  onEnd?: () => void;
   /** Allow or Deny went through: the panel may move on to what else waits. */
   onAnswered?: () => void;
   /** Answering moves on to the next conversation or session waiting on the person. */
@@ -379,6 +381,11 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
             <button type="button" className="btn btn-ghost ai-session-show" data-testid="back-to-panel" disabled={!!backBlocked} title={backBlocked ?? t("handoff.backTitle")} onClick={onBack}>
               <Icon name="i-back" size={12} />
               {t("handoff.back")}
+            </button>
+          )}
+          {onEnd && (
+            <button type="button" className="btn btn-icon" data-testid="ai-session-end" title={t("sessionBar.endSession")} aria-label={t("sessionBar.endSession")} onClick={onEnd}>
+              <Icon name="i-stop" size={12} />
             </button>
           )}
           <button type="button" className="btn btn-icon" title={t("sessionBar.backToThreads")} aria-label={t("sessionBar.backToThreads")} onClick={onClose}>

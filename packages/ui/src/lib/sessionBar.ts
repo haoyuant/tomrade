@@ -186,6 +186,17 @@ export const DONE_SHOWN_FOR_MS = 60 * 60_000;
 export const DONE_SHOWN = 3;
 
 /**
+ * Which ended rows a bar keeps: the newest `DONE_SHOWN` that ended within `DONE_SHOWN_FOR_MS`, and the open one; the rest
+ * are in History. The assistant panel's bar and the Terminal window's read it alike.
+ */
+export function keptEnded<T>(ended: readonly T[], endedAt: (r: T) => number | null, open: (r: T) => boolean, now: number): Set<T> {
+  const kept = new Set(ended.filter(open));
+  const recent = ended.filter((r) => !open(r) && endedAt(r) !== null && now - endedAt(r)! <= DONE_SHOWN_FOR_MS);
+  for (const r of recent.sort((a, b) => endedAt(b)! - endedAt(a)!).slice(0, DONE_SHOWN)) kept.add(r);
+  return kept;
+}
+
+/**
  * The row the bar marks as open: what the panel shows. Looking back on a session or a conversation, that one; on the
  * whole History, none; otherwise the session or conversation open in the panel.
  */
@@ -196,8 +207,8 @@ export function barOpenKeyOf(open: { review: { focus: { sessionId?: string | nul
 
 /** What the bar shows of its rows: every one still going, the last few to end, the open one, and a parent of any kept. */
 export function barShown(rows: BarRow[], openKey: string | null, now: number): BarRow[] {
-  let done = 0;
-  const keep = new Set(rows.filter((r) => r.status !== "done" || r.key === openKey || (now - r.at <= DONE_SHOWN_FOR_MS && ++done <= DONE_SHOWN)).map((r) => r.key));
+  const ended = keptEnded(rows.filter((r) => r.status === "done"), (r) => r.at, (r) => r.key === openKey, now);
+  const keep = new Set(rows.filter((r) => r.status !== "done" || ended.has(r)).map((r) => r.key));
   for (const r of rows) if (r.parentKey && keep.has(r.key)) keep.add(r.parentKey);
   return rows.filter((r) => keep.has(r.key));
 }

@@ -1,6 +1,6 @@
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
 import { isApprovalAsk } from "../lib/terminalSession";
-import { IDLE_SHOWN, THREAD_DONE_AFTER_MS, threadFinished } from "../lib/sessionBar";
+import { IDLE_SHOWN, keptEnded, THREAD_DONE_AFTER_MS, threadFinished } from "../lib/sessionBar";
 
 /** A live session this window cannot show: it runs in another terminal app here, on another computer, or in the assistant panel. */
 export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !== "herdr";
@@ -103,13 +103,16 @@ export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], th
 
 /**
  * What is still going, out of the session bar: the bar and the overview show this unless asked for everything. It reads
- * as the assistant panel's bar does: an ended session is History's; a conversation idle with its ticket done, or untouched
- * for `THREAD_DONE_AFTER_MS`, is finished; idle ones past the newest `IDLE_SHOWN` wait in the full list. A live session
- * idle that long goes the same way, for one nothing ends (a terminal outside with no pane, whose process Tomrade did not
- * start). What waits or runs, a terminal open here, and whatever a cell shows always stay.
+ * as the assistant panel's bar does: an ended session is History's but for the last few to end (`keptEnded`, the bar
+ * only); a conversation idle with its ticket done, or untouched for `THREAD_DONE_AFTER_MS`, is finished; idle ones past
+ * the newest `IDLE_SHOWN` wait in the full list. A live session idle that long goes the same way, for one nothing ends
+ * (a terminal outside with no pane, whose process Tomrade did not start). What waits or runs, a terminal open here, and
+ * whatever a cell shows always stay.
  */
-export function activeRows(rows: { here: HereRow[]; away: SessionRow[] }, shown: ReadonlySet<string>, now: number): { here: HereRow[]; away: SessionRow[] } {
+export function activeRows(rows: { here: HereRow[]; away: SessionRow[] }, shown: ReadonlySet<string>, now: number, opts: { ended?: boolean } = {}): { here: HereRow[]; away: SessionRow[] } {
   const inCell = (r: HereRow) => shown.has(r.id) || (!!r.session && shown.has(r.session.id));
+  // The bar keeps the last few to end, as the assistant panel's does; the overview's active view keeps none.
+  const justEnded = opts.ended === false ? new Set<HereRow>() : keptEnded(rows.here.filter((r) => statusOf(r) === "done"), (r) => r.session?.endedAt ?? null, () => false, now);
   const quiet = (at: number) => now - at > THREAD_DONE_AFTER_MS;
   const stale = (s: SessionRow) => sessionStatus(s) === "idle" && quiet(s.lastEventAt ?? s.startedAt);
   let idle = 0;
@@ -117,7 +120,9 @@ export function activeRows(rows: { here: HereRow[]; away: SessionRow[] }, shown:
   for (const r of rows.here) {
     const status = statusOf(r);
     if (inCell(r) || status === "wait" || status === "run" || (r.kind === "terminal" && status !== "done")) keep.add(r.id);
-    else if (status === "done") continue;
+    else if (status === "done") {
+      if (justEnded.has(r)) keep.add(r.id);
+    }
     else if (r.kind === "thread" ? threadFinished({ idle: true, live: !!r.session && live(r.session), ticketDone: r.thread.ticketDone, movedAt: r.thread.updatedAt }, now) : !!r.session && stale(r.session)) continue;
     else if (++idle <= IDLE_SHOWN) keep.add(r.id);
   }

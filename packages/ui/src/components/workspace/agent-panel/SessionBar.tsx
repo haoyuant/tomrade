@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement } from "react";
 import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
+import { FoldChevron } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
@@ -31,18 +32,29 @@ export function StatusMark({ status, size = 10 }: { status: BarStatus; size?: nu
 
 /** An assistant conversation of its own can be put away or deleted here — not while its run goes, nor while it holds a permission prompt. */
 const actionable = (r: BarRow) => !!r.threadId && r.status !== "run" && r.wait?.kind !== "permission";
+/** A terminal session not yet ended can be ended here: its pane closes; one in another terminal app only leaves the bar. */
+const endable = (r: BarRow) => r.where !== "panel" && !!r.sessionId && r.status !== "done";
 
-/** The two buttons a card and a peek carry for such a conversation. */
-function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (threadId: string) => void; onDelete: (threadId: string) => void }) {
+/** The buttons a card and a peek carry: put away or delete a conversation, end a terminal session. */
+function RowActions({ row, onArchive, onDelete, onEnd }: { row: BarRow; onArchive: (threadId: string) => void; onDelete: (threadId: string) => void; onEnd: (row: BarRow) => void }) {
   const { t } = useI18n();
   return (
     <span className="sbar-actions" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => onArchive(row.threadId!)}>
-        <Icon name="i-archive" size={12} />
-      </button>
-      <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => onDelete(row.threadId!)}>
-        <Icon name="i-trash" size={12} />
-      </button>
+      {actionable(row) && (
+        <>
+          <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => onArchive(row.threadId!)}>
+            <Icon name="i-archive" size={12} />
+          </button>
+          <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => onDelete(row.threadId!)}>
+            <Icon name="i-trash" size={12} />
+          </button>
+        </>
+      )}
+      {endable(row) && (
+        <button type="button" className="btn btn-icon" data-testid="sbar-end" title={t("sessionBar.endSession")} aria-label={t("sessionBar.endSession")} onClick={() => onEnd(row)}>
+          <Icon name="i-stop" size={12} />
+        </button>
+      )}
     </span>
   );
 }
@@ -51,7 +63,7 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete, onEnd }: {
   rows: BarRow[];
   /** Starts under way, before their sessions are there: on top, a dashed ring. */
   starting: readonly Starting[];
@@ -72,10 +84,13 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   onArchive: (threadId: string) => void;
   /** Asks first; the panel confirms. */
   onDelete: (threadId: string) => void;
+  /** Ends a terminal session; asks first, the panel confirms. */
+  onEnd: (row: BarRow) => void;
 }) {
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [endedOpen, setEndedOpen] = useState(false);
   // the cards whose answer is on its way: no second press, which could answer whatever it asks next
   const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
   const peekId = useId();
@@ -141,12 +156,13 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     );
   };
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
-  // right-click on a dot or a card: the same two things its buttons do
+  // right-click on a dot or a card: the same things its buttons do
   const withMenu = (r: BarRow, node: ReactElement) =>
-    actionable(r) ? (
+    actionable(r) || endable(r) ? (
       <ContextMenu key={r.key} label={title(r)} trigger={node}>
-        <ContextMenuActionItem icon={<Icon name="i-archive" size={13} />} name={t("agentPanel.archiveThread")} onSelect={() => onArchive(r.threadId!)} />
-        <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("agentPanel.deleteThread")} onSelect={() => onDelete(r.threadId!)} />
+        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-archive" size={13} />} name={t("agentPanel.archiveThread")} onSelect={() => onArchive(r.threadId!)} />}
+        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("agentPanel.deleteThread")} onSelect={() => onDelete(r.threadId!)} />}
+        {endable(r) && <ContextMenuActionItem icon={<Icon name="i-stop" size={13} />} name={t("sessionBar.endSession")} onSelect={() => onEnd(r)} />}
       </ContextMenu>
     ) : (
       <Fragment key={r.key}>{node}</Fragment>
@@ -227,7 +243,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
             {said(shown) && (shown.status !== "run" || !shown.tail?.length) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
             <span className="sbar-peek-foot">
               <span className="meta-txt dense">{`${t("sessionBar.peekHint")} · ${t("sessionBar.peekExpand", { key: keyLabel("sessionBar") })}`}</span>
-              {actionable(shown) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} />}
+              {(actionable(shown) || endable(shown)) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
             </span>
           </div>
         )}
@@ -236,6 +252,24 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   }
 
   const shown = rows.filter((r) => filter === "all" || r.status === filter);
+  // Under "all", the last few to end wait folded below the rest; the open one stays in its place.
+  const ended = shown.filter((r) => r.status === "done" && r.key !== openKey);
+  const going = shown.filter((r) => !ended.includes(r));
+  const card = (r: BarRow) => withMenu(r, (
+    // a div, so the card's own buttons sit inside it; Enter and Space open it as a button would
+    <div role="button" tabIndex={0} className="sbar-card" data-key={r.key} data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r); } }}>
+      <span className="sbar-card-title">
+        <StatusMark status={r.status} />
+        <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
+        {chips(r)}
+        {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
+        {(actionable(r) || endable(r)) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
+      </span>
+      <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
+      {tail(r)}
+      {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
+    </div>
+  ));
   return (
     <nav className="sbar is-cards" aria-label={t("sessionBar.label")}>
       <div className="sbar-head">
@@ -265,21 +299,16 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
             <span className="meta-txt dense">{t("codeLink.startingLine", { agent: s.agent })}</span>
           </div>
         ))}
-        {shown.map((r) => withMenu(r, (
-          // a div, so the card's own buttons sit inside it; Enter and Space open it as a button would
-          <div role="button" tabIndex={0} className="sbar-card" data-key={r.key} data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r); } }}>
-            <span className="sbar-card-title">
-              <StatusMark status={r.status} />
-              <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
-              {chips(r)}
-              {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
-              {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
+        {(filter === "all" ? going : shown).map(card)}
+        {filter === "all" && ended.length > 0 && (
+          <div className="sbar-ended" data-testid="sbar-ended">
+            <span className="fold-row" title={t("sessionBar.justEndedHint")}>
+              <FoldChevron open={endedOpen} label={t("sessionBar.justEnded", { n: ended.length })} testId="sbar-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
+              <span className="meta-txt dense">{t("sessionBar.justEnded", { n: ended.length })}</span>
             </span>
-            <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
-            {tail(r)}
-            {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
+            {endedOpen && ended.map(card)}
           </div>
-        )))}
+        )}
         {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
       </div>
       <div className="sbar-foot">

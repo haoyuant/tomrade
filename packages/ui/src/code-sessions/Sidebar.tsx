@@ -92,8 +92,12 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
   const say = useSay();
   const words = useWords();
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  // The last few to end wait folded under the rest; one a cell shows stays where it was.
+  const [endedOpen, setEndedOpen] = useState(false);
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
   const { active, selected, shownPanes, selectedPane, pane } = marks;
+  const ended = rows.filter((r) => statusOf(r) === "done" && !has(active, r));
+  const going = rows.filter((r) => !ended.includes(r));
   // A pane that ran sessions before folds open to them; once one does, every row keeps the chevron's room, so they line up.
   const pastOf = (r: HereRow) => {
     const at = paneOf(r);
@@ -180,7 +184,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
   };
   return (
     <ul className="cs-list">
-      {bundles(rows).map((group) => {
+      {bundles(going).map((group) => {
         if (group.length === 1) return item(group[0]!);
         const at = pane(group[0]!.id);
         return (
@@ -202,6 +206,15 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
           </li>
         );
       })}
+      {ended.length > 0 && (
+        <li className="cs-ended" data-testid="cs-ended">
+          <span className="fold-row cs-fold-row" title={say("justEndedHint")}>
+            <FoldChevron open={endedOpen} label={say("justEnded", { n: ended.length })} testId="cs-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
+            <span className="cs-bundle-head">{say("justEnded", { n: ended.length })}</span>
+          </span>
+          {endedOpen && <ul className="cs-list">{ended.map((r) => item(r, false))}</ul>}
+        </li>
+      )}
     </ul>
   );
 }
