@@ -49,7 +49,8 @@ const GraphRegion = memo(GraphView);
 const EpicStripRegion = memo(EpicStrip);
 import { useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
-import { onStartPalette } from "~/lib/panelRequests";
+import { askPanel, onStartPalette } from "~/lib/panelRequests";
+import { useTryHost } from "~/lib/capabilities";
 import { useToastUndo } from "~/lib/undo";
 
 /** Below this the three panes cannot all hold their minimum. */
@@ -240,6 +241,18 @@ export function Workspace() {
     setProjectMenu(false);
     requestAnimationFrame(() => setProjectSettings(true));
   }, []);
+
+  // A "What Tomrade can do" card's Try it, carried out here.
+  useTryHost(ws.project.id, (action) => {
+    if (action.kind === "fill") {
+      setAiOpen(true);
+      askPanel({ kind: "fill", text: t(action.prompt) });
+    } else if (action.kind === "startPalette") {
+      setPaletteStarts(true);
+      setPalette(true);
+    } else if (action.kind === "agentConnection") setProjectSettings("repositories");
+    else setSettings("im");
+  });
 
   // The palette cannot ask for a name, so a view made from it opens under a
   // placeholder and is renamed in the head.

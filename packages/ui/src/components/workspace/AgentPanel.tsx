@@ -770,11 +770,29 @@ export function AgentPanel({
       reportError(error);
     }
   };
+  // A "Try it" card: the words wait in the input for the person to finish and send; nobody's own conversation is written over.
+  const fillWith = async (text: string) => {
+    setReviewIn(null);
+    if (!empty || draft.trim() || attachments.length || busy || archivedNow) {
+      try {
+        pickThread((await openThread({ boardId })).id);
+      } catch (error) {
+        return reportError(error);
+      }
+    } else setOpenSession(null);
+    setDraft(text);
+    // the panel may only now be unfolding
+    setTimeout(() => {
+      composer.current?.focus();
+      composer.current?.setSelectionRange(text.length, text.length);
+    }, 60);
+  };
   // What ⌘K asks of the panel, answered with this render's state.
   const latestRequest = useRef<(request: PanelRequest) => void>(() => {});
   latestRequest.current = (request) => {
     if (request.kind === "newThread") latestBar.current.newThread();
     else if (request.kind === "startWith") void startWith(request.text);
+    else if (request.kind === "fill") void fillWith(request.text);
     else if (request.kind === "openSession") { setReviewIn(null); setOpenSession(request.sessionId); setSayTo(request.say ? request.sessionId : null); }
     else if (request.kind === "toggleBar") chooseBarMode(barMode === "rail" ? "cards" : "rail");
     else if (request.kind === "review") openReview(request.sessionId || request.threadId ? { sessionId: request.sessionId, threadId: request.threadId, itemId: request.itemId } : null);

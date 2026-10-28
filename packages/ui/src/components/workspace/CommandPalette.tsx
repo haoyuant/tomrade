@@ -22,6 +22,7 @@ import { keyLabel, formatChord } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { askPanel } from "~/lib/panelRequests";
+import { openCapabilities } from "~/lib/capabilities";
 import { PaletteSessions, PaletteStart, useLooseStart } from "./PaletteSessions";
 
 export interface PaletteActions {
@@ -159,6 +160,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     { label: t("commandPalette.settings"), kb: keyLabel("settings"), run: actions.openSettings },
     { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
     { label: t("commandPalette.about"), kb: undefined, run: actions.openAbout },
+    { label: t("capabilities.label"), kb: undefined, run: () => openCapabilities() },
     { label: t("shortcuts.title"), kb: "?", run: actions.openShortcuts },
     { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
     ...THEME_OPTIONS.map((opt) => ({
