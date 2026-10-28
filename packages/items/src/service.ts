@@ -141,10 +141,13 @@ export interface EpicProgress {
 const STATUS_AT_SQL = "COALESCE((SELECT MAX(o.at) FROM oplog o WHERE o.entity_id = i.id AND o.entity = 'item' AND json_extract(o.patch_json, '$.status') IS NOT NULL), i.updated_at)";
 const CLOSED_SQL = `(${CLOSED_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 const DAY_MS = 86_400_000;
+/** The longest `listAll` reuses one read, for anything about an item that reads the clock. */
+const LIST_REUSE_MS = 5_000;
 
 export class Items extends Service implements ItemsReader, ItemsWriter {
   get deliveries(): DeliveryStore { return new DeliveryStore(this.ctx.db); }
   private filesResolver: FilesResolver | null = null;
+  private listed = new Map<string, { handle: unknown; changes: number; at: number; items: Item[] }>();
 
   /** Register the Files plugin's version resolver. This service stores metadata only. */
   files(resolver: FilesResolver): () => void {
@@ -298,6 +301,21 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
       .prepare("SELECT COUNT(*) AS total, COALESCE(SUM(status NOT IN ('done', 'cancelled')), 0) AS open, MAX(updated_at) AS lastWrite FROM items")
       .get() as ItemCounts;
     return { total: row.total, open: row.open, lastWrite: row.lastWrite ?? null };
+  }
+
+  /**
+   * Every item of one project, as `list({ projectId })` reads it, shared by callers that ask again and again with
+   * nothing written in between (each window's badges after every write). Read again once anything is written on the
+   * project's connection, its file is swapped, or LIST_REUSE_MS passes.
+   */
+  listAll(projectId: string): Item[] {
+    const db = this.db(projectId);
+    const { n } = db.prepare("SELECT total_changes() AS n").get() as { n: number };
+    const kept = this.listed.get(projectId);
+    if (kept && kept.handle === db.handle && kept.changes === n && Date.now() - kept.at < LIST_REUSE_MS) return [...kept.items];
+    const items = this.list({ projectId });
+    this.listed.set(projectId, { handle: db.handle, changes: n, at: Date.now(), items });
+    return [...items];
   }
 
   /** Without a project the list is the union over every open project, for surfaces that span them. */

@@ -12,7 +12,7 @@ import type {} from "@tomradex/files";
 import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
-import { invalidateContributions, invalidateProject, invalidateWorkspace, keys, sessionsRefresher } from "./lib/queries/index.js";
+import { invalidateContributions, invalidateFiles, invalidateProject, invalidateWrites, keys, sessionsRefresher } from "./lib/queries/index.js";
 import { isLeadWindow, watchWindowChrome } from "./lib/window-chrome.js";
 import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
@@ -80,19 +80,13 @@ if (window.tomrade) {
   });
   // A scan found new branches, pull requests or merges: the Code section, the badges and any moved status.
   // A save, a sync or an outside edit moved a project's files or their state.
-  subscribe("files.changed", (projectId) => {
-    void queryClient.invalidateQueries({ queryKey: keys.files.all(projectId) });
-    // A file operation is a record in the history window too.
-    void queryClient.invalidateQueries({ queryKey: keys.timeline(projectId) });
-  });
+  // A file operation is a record in the history window too.
+  subscribe("files.changed", (projectId, paths) => invalidateFiles(queryClient, projectId, paths));
   // The notes index caught up with a change: search hits, backlinks and tags may read differently.
   subscribe("notes.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.notes.all(projectId) }));
   // Someone wrote to a project — an agent, MCP, an undo, another view of it: its board catches up at once,
   // so the next edit carries the version that stands rather than being refused as stale.
-  subscribe("items.changed", (projectId, entities) => {
-    if (entities.some((e) => e !== "item")) invalidateProject(queryClient, projectId);
-    else invalidateWorkspace(queryClient, projectId);
-  });
+  subscribe("items.changed", (projectId, entities) => invalidateWrites(queryClient, projectId, entities));
   // Code-link writes only its own tables; a ticket it moves comes as items.changed. A session's hook
   // comes as codeLink.sessionsChanged and asks again only for what reads sessions, once per burst of them.
   // Asked again only when a start changed it: hook events do not touch it.

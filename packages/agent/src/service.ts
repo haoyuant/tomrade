@@ -162,7 +162,7 @@ declare module "@tomradex/ipc" {
     "agent.startGeneral": (projectId: string, itemId: string, opts?: GeneralStartOptions) => { threadId: string; runId: string; continued: boolean };
     "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
-    "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
+    "agent.thread": (projectId: string, threadId: string, afterSeq?: number) => ThreadDetail;
     "agent.usage": (days?: number) => UsageSummary;
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
@@ -229,6 +229,8 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 
 /** Room for a local agent to plan or research, while a run that hangs is still noticed within the quarter hour. */
 const RUN_MINUTES = 15;
+/** How often a streamed reply refreshes its run's progress (the token estimate); tools, retries and usage reports send theirs at once. */
+const STREAM_PROGRESS_MS = 250;
 
 export interface AgentSettings {
   defaultEngine: string;
@@ -289,6 +291,9 @@ interface RunCtx {
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
 const LIMIT_TRIES = 3;
+/** Misses in a row (no answer in time, or an error) after which playbook recommendations stop asking the worker model a while. */
+const PLAYBOOK_MISSES_TO_PAUSE = 3;
+const PLAYBOOK_PAUSE_MS = 15 * 60_000;
 /** How long a try waits for an answer. */
 const TRY_MS = 90_000;
 /**
@@ -368,6 +373,8 @@ export class Agent extends Service implements AgentReader {
   private readonly origins = new Set<ThreadOrigins>();
   /** Playbooks read from each project's shared copy; refreshed when a run starts. */
   private projectPlaybooks = new Map<string, Map<string, Playbook>>();
+  private playbookMisses = 0;
+  private playbookPausedUntil = 0;
   private permissions = new Map<string, { pending: PendingView; answer(value: string | null): void }>();
   private permissionQueues = new Map<string, Promise<unknown>>();
   private activeByThread = new Map<string, RunCtx>();
@@ -454,7 +461,7 @@ export class Agent extends Service implements AgentReader {
         const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
         return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
-      ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
+      ctx.ipc.handle("agent.thread", (projectId, threadId, afterSeq) => ctx.agent.thread(projectId, threadId, afterSeq));
       ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
       ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
       ctx.ipc.handle("agent.setRules", (projectId, body) => {
@@ -634,14 +641,15 @@ export class Agent extends Service implements AgentReader {
 
   // ── views ──────────────────────────────────────────────────────────────────
 
-  thread(projectId: string, threadId: string): ThreadDetail {
+  /** `afterSeq`: only the messages after it, for a reader that holds the rest; everything else is whole. */
+  thread(projectId: string, threadId: string, afterSeq?: number): ThreadDetail {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     const pending = this.store.pending(projectId, threadId);
     return {
       thread,
       activePermissionMode: this.activeByThread.get(threadId)?.io.run.scratch.get("permissionMode") as string | undefined,
-      messages: this.store.messages(projectId, threadId),
+      messages: this.store.messages(projectId, threadId, afterSeq),
       runs: this.store.runs(projectId, threadId),
       cards: this.store.cards(projectId, threadId),
       pending: this.permissions.get(threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
@@ -711,32 +719,23 @@ export class Agent extends Service implements AgentReader {
   }
 
   /**
-   * `withinMs` is for callers that must not wait on the worker model (an agent creating a ticket):
-   * past it, or on any failure, the keyword fallback answers instead.
+   * `withinMs` is for callers that must not wait on the worker model: past it, or on any failure, the keyword
+   * fallback answers instead. `keywordsOnly` answers from the keywords at once, with the playbooks already loaded.
+   * After PLAYBOOK_MISSES_TO_PAUSE misses in a row the worker model is not asked for PLAYBOOK_PAUSE_MS.
    */
-  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts: { withinMs?: number; signal?: AbortSignal } = {}): Promise<PlaybookRecommendation> {
+  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts: { withinMs?: number; signal?: AbortSignal; keywordsOnly?: boolean } = {}): Promise<PlaybookRecommendation> {
     const started = Date.now();
+    if (opts.keywordsOnly) return this.keywordPlaybook(projectId, input);
     const budget = opts.withinMs !== undefined ? AbortSignal.timeout(opts.withinMs) : undefined;
     const signal = budget && opts.signal ? AbortSignal.any([budget, opts.signal]) : budget ?? opts.signal;
     // The refresh can wait on storage; a budgeted caller goes with the playbooks already loaded.
     await bestEffort(settleBy(this.refreshProjectPlaybooks(projectId), signal), this.ctx.logger, `refreshing the playbooks of ${projectId}`);
-    // A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
-    const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !input.workType || entry.workTypes.includes(input.workType) : entry.source !== "plugin"));
+    const candidates = this.playbookCandidates(projectId, input.workType);
     const words = this.words();
     const candidateIds = new Set(candidates.map((entry) => entry.id));
-    const fallback = (): PlaybookRecommendation => {
-      const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
-      const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
-      const preferred = workType === "coding"
-        ? "code.implement"
-        : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
-      // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
-      const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
-      const selected = candidates.find((entry) => entry.id === playbookId);
-      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words("recommendedByType"), source: "fallback", requires: selected?.requires ?? [] };
-    };
+    const fallback = () => this.keywordPlaybook(projectId, input);
     const llm = this.ctx.get("llm") as LlmService | undefined;
-    if (!llm || !candidates.length) return fallback();
+    if (!llm || !candidates.length || Date.now() < this.playbookPausedUntil) return fallback();
     try {
       if (!(await settleBy(llm.worker(), signal)).ok) return fallback();
       const result = await settleBy(llm.completeJson(recommendationSchema, {
@@ -747,14 +746,40 @@ export class Agent extends Service implements AgentReader {
         system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${languageName(words.locale)}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);
+      this.playbookMisses = 0;
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
       const selected = candidates.find((entry) => entry.id === result.playbookId);
       return { ...result, source: "llm", requires: selected?.requires ?? [] };
     } catch (error) {
-      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : opts.signal?.aborted ? "cancelled" : errorMessage(error);
+      const cancelled = !budget?.aborted && !!opts.signal?.aborted;
+      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : cancelled ? "cancelled" : errorMessage(error);
       this.ctx.logger.warn(`playbook recommendation fell back to keywords after ${Date.now() - started}ms: ${why}`);
+      if (!cancelled && ++this.playbookMisses >= PLAYBOOK_MISSES_TO_PAUSE) {
+        this.playbookMisses = 0;
+        this.playbookPausedUntil = Date.now() + PLAYBOOK_PAUSE_MS;
+        this.ctx.logger.warn(`playbook recommendations use keywords for ${PLAYBOOK_PAUSE_MS / 60_000} minutes: the worker model missed ${PLAYBOOK_MISSES_TO_PAUSE} times running`);
+      }
       return fallback();
     }
+  }
+
+  /** A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket. */
+  private playbookCandidates(projectId: string, workType?: "coding" | "general"): PlaybookIndexEntry[] {
+    return this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !workType || entry.workTypes.includes(workType) : entry.source !== "plugin"));
+  }
+
+  private keywordPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }): PlaybookRecommendation {
+    const candidates = this.playbookCandidates(projectId, input.workType);
+    const candidateIds = new Set(candidates.map((entry) => entry.id));
+    const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
+    const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
+    const preferred = workType === "coding"
+      ? "code.implement"
+      : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
+    // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
+    const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
+    const selected = candidates.find((entry) => entry.id === playbookId);
+    return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: this.words()("recommendedByType"), source: "fallback", requires: selected?.requires ?? [] };
   }
 
   openPlaybook(id: string, projectId?: string): string | null {
@@ -1608,7 +1633,12 @@ export class Agent extends Service implements AgentReader {
     // conservative estimate of the reply, and every event carries the latest figure so the live line never blanks.
     let reported = { inputTokens: 0, outputTokens: 0 };
     let streamedSinceReport = 0;
+    let progressAt = -Infinity;
+    let progressSoon: ReturnType<typeof setTimeout> | null = null;
     const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) => {
+      progressAt = performance.now();
+      if (progressSoon) clearTimeout(progressSoon);
+      progressSoon = null;
       if (p.usage) {
         reported = p.usage;
         streamedSinceReport = 0;
@@ -1696,7 +1726,17 @@ export class Agent extends Service implements AgentReader {
         partial.text += text;
         streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
-        progress({});
+        // the estimate a streamed word moves is a figure on the working line: a few times a second is enough
+        const wait = progressAt + STREAM_PROGRESS_MS - performance.now();
+        if (wait <= 0) progress({});
+        else progressSoon ??= setTimeout(() => {
+          progressSoon = null;
+          try {
+            if (this.store.run(thread.projectId, run.id)?.status === "running") progress({});
+          } catch {
+            // The run's project, or the app, closed while this waited.
+          }
+        }, wait);
       },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       activity: (label) => {

@@ -145,6 +145,19 @@ function trayImage() {
 
 /** The most waiting, and the most running, sessions the tray lists. */
 const TRAY_ROWS = 5;
+/** How much of what waits a tray row shows. */
+const TRAY_TEXT = 60;
+
+/** A tray row's text, and whether it is all of what waits: an ask clipped before it reached the tray is not whole either. */
+export function trayText(text: string): { shown: string; whole: boolean } {
+  if (text.length <= TRAY_TEXT) return { shown: text, whole: !text.endsWith("…") };
+  return { shown: `${text.slice(0, TRAY_TEXT - 1)}…`, whole: false };
+}
+
+/** What a menu shows, without its handlers: two menus with the same shape look and read the same. */
+export function trayShapeOf(items: MenuItemConstructorOptions[]): unknown[] {
+  return items.map((i) => [i.type ?? "", i.label ?? "", i.enabled ?? true, i.accelerator ?? "", Array.isArray(i.submenu) ? trayShapeOf(i.submenu) : null]);
+}
 
 /** The terminal sessions running now, for the tray: what each is about, and its cell while its Terminal window is open. */
 export function trayRunning(ctx: Context): { who: string; cell: number | null; target: AttentionTarget }[] {
@@ -247,13 +260,21 @@ export const background = {
     let waiting: AttentionEntry[] = [];
     // what each listed entry's Allow presses, read off its screen for a terminal session; none where nothing may be answered here
     let allows = new Map<string, TrayAllow>();
+    const allowed = (w: ReturnType<typeof words>, who: string, text: string) => {
+      if (Notification.isSupported()) new Notification({ title: w("trayAllowed"), body: w("trayAllowedBody", { who, text }), silent: true }).show();
+    };
     const waitingItems = (w: ReturnType<typeof words>): MenuItemConstructorOptions[] =>
       waiting.slice(0, TRAY_ROWS).flatMap((e) => {
         const who = [e.itemKey, e.who].filter(Boolean).join(" · ") || w("trayAssistant");
-        const row: MenuItemConstructorOptions = { label: e.text ? w("trayWaiting", { who, text: e.text.slice(0, 60) }) : `◆ ${who}`, click: () => ctx.emit("attention/open", e) };
+        const text = e.text ? trayText(e.text) : null;
+        const open = () => ctx.emit("attention/open", e);
+        const row: MenuItemConstructorOptions = { label: text ? w("trayWaiting", { who, text: text.shown }) : `◆ ${who}`, click: open };
         const allow = allows.get(e.key);
+        if (!allow) return [row];
+        // What it would allow does not fit here: it opens, to be read whole before anything is pressed.
+        if (!text?.whole) return [row, { label: `    ${w("trayReview")}`, click: open }];
         // Answered on a screen that no longer asks: the session opens, to be answered there.
-        return allow ? [row, { label: `    ${allow.label}`, click: () => void allow.allow().catch(() => false).then((done) => done || ctx.emit("attention/open", e)) }] : [row];
+        return [row, { label: `    ${allow.label}`, click: () => void allow.allow().catch(() => false).then((done) => (done ? allowed(w, who, text.shown) : open())) }];
       });
     const runningItems = (w: ReturnType<typeof words>): MenuItemConstructorOptions[] =>
       trayRunning(ctx).map((r) => ({ label: r.cell ? w("trayCell", { label: w("trayRunning", { who: r.who }), n: r.cell }) : w("trayRunning", { who: r.who }), click: () => ctx.emit("attention/open", r.target) }));
@@ -264,7 +285,7 @@ export const background = {
       const sessions = [...waitingItems(w), ...runningItems(w)];
       const projects = hasTerminalWindow(ctx) ? terminalProjects(ctx) : [];
       const chord = terminalChord(ctx);
-      return Menu.buildFromTemplate([
+      return [
         ...sessions,
         ...(sessions.length ? [{ type: "separator" as const }] : []),
         ...(hasTerminalWindow(ctx)
@@ -277,11 +298,19 @@ export const background = {
         { label: w(runs === 1 ? "trayRunsOne" : "trayRunsMany", { n: runs }), enabled: false },
         { type: "separator" },
         { label: w("trayQuit"), click: () => app.quit() }
-      ]);
+      ] satisfies MenuItemConstructorOptions[];
     };
+    // Built again only when what it shows changes: the sweep asks every few seconds, and a menu rebuilt under the
+    // pointer flickers on some systems.
+    let trayShape = "";
     const refreshTray = () => {
       if (!tray) return;
-      tray.setContextMenu(menu());
+      const template = menu();
+      const shape = JSON.stringify([trayShapeOf(template), waiting.map((e) => e.key)]);
+      if (shape !== trayShape) {
+        trayShape = shape;
+        tray.setContextMenu(Menu.buildFromTemplate(template));
+      }
       // The count beside the icon, as the Dock's badge; a tray without a title (Windows, Linux) says it on hover.
       const n = waiting.length;
       if (process.platform === "darwin") tray.setTitle(n ? `◆ ${n}` : "");
@@ -333,6 +362,7 @@ export const background = {
     const syncTray = () => {
       if (wantsTray() && !tray) {
         tray = new Tray(trayImage());
+        trayShape = "";
         // macOS and Linux open the menu on a click; Windows keeps it for the right button.
         if (process.platform === "win32") tray.on("click", () => void showMainWindow());
         refreshTray();

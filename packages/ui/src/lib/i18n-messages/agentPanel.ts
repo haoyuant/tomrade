@@ -134,6 +134,7 @@ export const agentPanel = {
     archiveThread: "Archive thread",
     deleteThread: "Delete thread",
     deleteThreadConfirm: "Delete this thread permanently?",
+    deleteThreadEndsSession: "Delete this thread permanently? Its terminal session ends too.",
     collapsePanel: "Collapse panel — [[cmd:assistant]]",
     collapseAssistantAria: "Collapse assistant panel",
 
@@ -367,6 +368,7 @@ export const agentPanel = {
     archiveThread: "归档对话",
     deleteThread: "删除对话",
     deleteThreadConfirm: "永久删除这个对话？",
+    deleteThreadEndsSession: "永久删除这个对话？它的终端会话也会结束。",
     collapsePanel: "收起面板 — [[cmd:assistant]]",
     collapseAssistantAria: "收起助手面板",
 

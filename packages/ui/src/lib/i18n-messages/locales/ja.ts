@@ -2189,6 +2189,7 @@ export const ja: PartialMessages = {
     archiveThread: "スレッドをアーカイブ",
     deleteThread: "スレッドを削除",
     deleteThreadConfirm: "このスレッドを完全に削除しますか?",
+    deleteThreadEndsSession: "このスレッドを完全に削除しますか?ターミナルのセッションも終了します。",
     collapsePanel: "パネルを折りたたむ — [[cmd:assistant]]",
     collapseAssistantAria: "アシスタントパネルを折りたたむ",
     introMessage: "このボードを読み、書き込むことができます。私の書き込みはすべて記録され、実行ごとにまとめられ、ワンクリックで元に戻せます。",

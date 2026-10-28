@@ -11,6 +11,10 @@ import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
 import { modifiedEnter } from "./keys";
+import { frameBatch } from "./frames";
+
+/** Every cell's fit, once a frame and together. */
+const fits = frameBatch();
 
 /** A pane out of sight this long gives its context back; scrolling past it and back keeps it. */
 const WEBGL_RELEASE_MS = 2_000;
@@ -255,17 +259,21 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     const up = mouse("up");
     el.addEventListener("mousedown", down);
     el.addEventListener("mouseup", up);
-    const observer = new ResizeObserver(() => {
+    // A size that comes out the same grid is no resize: nothing goes to the pane, and xterm is not cleared.
+    const refit = () => {
       try {
-        fit.fit();
+        const dims = fit.proposeDimensions();
+        if (dims && Number.isFinite(dims.cols) && Number.isFinite(dims.rows) && (dims.cols !== terminal.cols || dims.rows !== terminal.rows)) fit.fit();
       } catch {
         // hidden for a moment
       }
-    });
+    };
+    const observer = new ResizeObserver(() => fits.soon(refit));
     observer.observe(el);
     if (focusOnAttach.current) terminal.focus();
     return () => {
       observer.disconnect();
+      fits.cancel(refit);
       selection.dispose();
       localLinks.dispose();
       el.removeEventListener("mousedown", down);

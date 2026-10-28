@@ -65,7 +65,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   onMode: (mode: BarMode) => void;
   onPick: (row: BarRow) => void;
   /** Answered from its card: the panel stays where it is. */
-  onAnswer: (row: BarRow, answer: CardAnswer) => void;
+  onAnswer: (row: BarRow, answer: CardAnswer) => Promise<unknown> | void;
   onNew: () => void;
   /** The look back on everything that ended, beyond the few the bar keeps. */
   onHistory: () => void;
@@ -76,6 +76,8 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  // the cards whose answer is on its way: no second press, which could answer whatever it asks next
+  const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
   const peekId = useId();
   const nav = useRef<HTMLElement>(null);
   // the peek holds its buttons: it stays while the pointer crosses over to it, and goes a moment after it left either
@@ -111,21 +113,27 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
   // A waiting card answers in place: Allow (or Deny, with no under the cursor) for a prompt on a terminal's screen, a
   // question's choices for a conversation; "look first" opens it. Nothing to press here leaves only the card.
+  const answer = (r: BarRow, reply: CardAnswer) => () => {
+    if (answering.has(r.key)) return;
+    setAnswering((keys) => new Set(keys).add(r.key));
+    void Promise.resolve(onAnswer(r, reply)).finally(() => setAnswering((keys) => { const next = new Set(keys); next.delete(r.key); return next; }));
+  };
   const ask = (r: BarRow) => {
     if (r.status !== "wait") return null;
+    const sending = answering.has(r.key);
     const pending = r.threadId ? pendings.get(r.threadId) : undefined;
     // a question with choices takes one as its answer, whether or not it also takes words; several at once are picked where it opens
     const choices = pending && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
     if (!r.prompt && !choices.length) return null;
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
-      <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
+      <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} aria-busy={sending || undefined} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
         <span className="sbar-ask-text">{pending?.question.text ?? said(r)}</span>
         <span className="sbar-ask-actions">
-          {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" onClick={() => onAnswer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
-          {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" onClick={() => onAnswer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
+          {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" disabled={sending} onClick={answer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
+          {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" disabled={sending} onClick={answer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
           {pending && choices.map((choice, i) => (
-            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="sbar-choice" onClick={() => onAnswer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
+            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="sbar-choice" disabled={sending} onClick={answer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
           ))}
           <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-look" onClick={() => onPick(r)}>{t("sessionBar.lookFirst")}</button>
         </span>

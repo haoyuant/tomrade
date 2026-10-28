@@ -2222,6 +2222,7 @@ export const ru: PartialMessages = {
     archiveThread: "Архивировать беседу",
     deleteThread: "Удалить беседу",
     deleteThreadConfirm: "Удалить эту беседу навсегда?",
+    deleteThreadEndsSession: "Удалить эту беседу навсегда? Её сеанс в терминале тоже завершится.",
     collapsePanel: "Свернуть панель — [[cmd:assistant]]",
     collapseAssistantAria: "Свернуть панель ассистента",
     introMessage: "Я могу читать эту доску и вносить в неё изменения. Каждое моё изменение подписано, сгруппировано по запуску и отменяется одним щелчком.",

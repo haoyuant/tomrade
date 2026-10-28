@@ -122,6 +122,46 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
     }
   });
 
+  it("tells of the sweep's sync only when it saved or took something, and sweeps a remote rarely while no window shows", async () => {
+    const { ctx, project } = await machine();
+    const id = project.id;
+    try {
+      const remote = path.join(root, `remote-${n++}.git`);
+      const seed = path.join(root, `seed-${n++}`);
+      execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+      execFileSync("git", ["init", "-q", "-b", "main", seed]);
+      git(seed, "config", "user.name", "Test");
+      git(seed, "config", "user.email", "test@example.com");
+      fs.writeFileSync(path.join(seed, "brief.md"), "brief\n");
+      git(seed, "add", ".");
+      git(seed, "commit", "-qm", "Seed");
+      git(seed, "remote", "add", "origin", remote);
+      git(seed, "push", "-q", "origin", "main");
+      ctx.plugin({ name: "scoped-folder-backend", inject: ["files"], apply: (c) => void c.files.register(folderBackend) });
+      await settle();
+      expect((await ctx.files.bind(id, "scoped-folder", { path: remote, directory: "" })).state).toBe("synced");
+      let told = 0;
+      ctx.on("files/changed", (projectId) => { if (projectId === id) told += 1; });
+      await ctx.files.syncAll();
+      expect(told).toBe(0);
+
+      git(seed, "pull", "-q", "--no-rebase", "origin", "main");
+      fs.writeFileSync(path.join(seed, "news.md"), "news\n");
+      git(seed, "add", ".");
+      git(seed, "commit", "-qm", "News from elsewhere");
+      git(seed, "push", "-q", "origin", "main");
+      ctx.emit("desktop/seen", false);
+      await ctx.files.syncAll();
+      expect(told).toBe(0);
+      ctx.emit("desktop/seen", true);
+      await ctx.files.syncAll();
+      expect(told).toBeGreaterThan(0);
+      expect((await ctx.files.tree(id)).map((e) => e.path)).toContain("news.md");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("rebinds a root cache to a directory without republishing code or losing pinned versions", async () => {
     const { ctx, project } = await machine();
     const id = project.id;
