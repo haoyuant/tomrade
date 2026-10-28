@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import type { Providing } from "@tomradex/community";
 import type { QuickSetupResult } from "@tomradex/llm";
 import { Icon } from "~/components/icons";
-import { invoke, messageOf } from "~/lib/api";
+import { invoke } from "~/lib/api";
 import { PROFILE_CHECK_KEY } from "~/lib/errors";
 import { useI18n } from "~/lib/i18n";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviderSignIn, useQuickSetup, useProviders } from "~/lib/setup";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { openExternal } from "~/lib/shell";
 import { isCommitKey } from "~/lib/keys";
+import { readableError } from "~/lib/toast";
 
 /** Why a connection failed, in words that say what to fix. */
 export function SetupProblem({ result, provider }: { result: Extract<QuickSetupResult, { ok: false }>; provider: string }) {
@@ -45,7 +46,7 @@ function ProviderPluginOffer({ plugin, offer }: { plugin: Providing; offer: Retu
 export function ProviderInstallProblem({ plugin, offer }: { plugin: Providing; offer: ReturnType<typeof useInstallProvider> }) {
   const { t } = useI18n();
   if (offer.stalled?.id === plugin.id) return <p className="profile-problem" role="alert">{t("setup.providerNotReady", { title: plugin.title })}</p>;
-  if (offer.failed?.id === plugin.id) return <p className="profile-problem" role="alert">{t("setup.installFailed", { title: plugin.title, message: messageOf(offer.failed.error) })}</p>;
+  if (offer.failed?.id === plugin.id) return <p className="profile-problem" role="alert">{t("setup.installFailed", { title: plugin.title, message: readableError(offer.failed.error) })}</p>;
   return null;
 }
 
@@ -100,7 +101,7 @@ export function QuickModelSetup({ onConnected }: { onConnected?: () => void }) {
           onConnected?.();
         }
       },
-      onError: (error) => setResult({ ok: false, kind: "other", detail: messageOf(error) })
+      onError: (error) => setResult({ ok: false, kind: "other", detail: readableError(error) })
     });
   };
   const signInAndConnect = () => {
@@ -108,7 +109,7 @@ export function QuickModelSetup({ onConnected }: { onConnected?: () => void }) {
     setSignInProblem(null);
     signIn.mutate(chosen.provider, {
       onSuccess: (outcome) => (outcome.ok ? connect(outcome.apiKey) : setSignInProblem(outcome.detail)),
-      onError: (error) => setSignInProblem(messageOf(error))
+      onError: (error) => setSignInProblem(readableError(error))
     });
   };
 

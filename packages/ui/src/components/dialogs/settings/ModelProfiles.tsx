@@ -10,6 +10,7 @@ import { PROFILE_CHECK_KEY } from "~/lib/errors";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { useModelProviders, useProviderSignIn, useProviders } from "~/lib/setup";
 import { openExternal } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { keys } from "~/lib/queries";
 
 const PROVIDER_TITLES: Record<string, MessageKey> = {
@@ -207,6 +208,7 @@ function ModelMediaLine({ draft, host, defaultInput }: { draft: ModelProfile; ho
 
 export function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onSave: (p: ModelProfile) => void; onCancel: () => void }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [draft, setDraft] = useState<ModelProfile>(profile);
   const refuseModel = useRefusedModels().refuse;
   const [checking, setChecking] = useState(false);
@@ -239,7 +241,9 @@ export function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfi
         setProblem(result);
       }
     } catch {
+      // The check itself failed (offline, the app busy): saved all the same, and said so.
       onSave(candidate());
+      toast({ body: t("settingsDialog.keyNotChecked") });
     } finally {
       setChecking(false);
     }

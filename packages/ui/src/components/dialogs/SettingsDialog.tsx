@@ -26,6 +26,7 @@ import { reportAction } from "~/lib/analytics";
 import { keys, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { useSettingsSheet } from "~/lib/settingsHost";
 import { useWebSearchProviders } from "~/lib/web-search";
+import { reportError } from "~/lib/toast";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 // closedWindow is per project, drawn in each project's settings.
@@ -57,7 +58,7 @@ export function SettingsDialog({
   const qc = useQueryClient();
   const settings = useSettings();
   const sections = useSettingsSections(locale);
-  const save = useSaveSettings();
+  const save = useSaveSettings({ reportErrors: false });
   const background = useBackgroundStatus();
   const providers = useStorageProviders();
   const searchProviders = useWebSearchProviders();
@@ -150,7 +151,7 @@ export function SettingsDialog({
             settings={settings.data}
             // A profile or an engine override can change what an engine's row shows (readiness, its Model
             // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
-            onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: keys.agent.engines }) })}
+            onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: keys.agent.engines }), onError: reportError })}
             onFindEngines={() => go("plugins", "engine")}
             focusEngine={open ? engine : undefined}
           />

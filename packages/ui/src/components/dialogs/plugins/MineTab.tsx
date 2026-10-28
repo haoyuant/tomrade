@@ -22,9 +22,9 @@ import {
   useWorkspaces
 } from "~/lib/plugins";
 import { openExternal, reveal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { ConfirmBuildDialog } from "./ConfirmBuildDialog";
-import { Field, TrustTags, messageOf, useCurrentProject } from "./parts";
+import { Field, TrustTags, useCurrentProject } from "./parts";
 
 const STATE: Record<string, MessageKey> = {
   active: "pluginsPanel.stateRunning",
@@ -72,7 +72,7 @@ function WorkspaceRow({ workspace: w, onLeave }: { workspace: Workspace; onLeave
   const [error, setError] = useState<string | null>(null);
   const view = w.view;
   const pending = !!view?.extension?.pending;
-  const fail = (e: unknown) => setError(messageOf(e));
+  const fail = (e: unknown) => setError(readableError(e));
   return (
     <div className="plug-ext" data-id={w.id}>
       <div className="cfg-row">
@@ -206,7 +206,7 @@ function NewPluginDialog({ projectId, onClose, onLeave }: { projectId: string; o
                   dock?.showThread(threadId);
                   onLeave?.();
                 },
-                onError: (e) => setError(messageOf(e))
+                onError: (e) => setError(readableError(e))
               }
             )
           }
@@ -247,7 +247,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
       <DialogBody>
         <div className="stack-3" data-testid="publish-dialog">
           <p>{t("plugins.publishLede")}</p>
-          {account.error && <p style={{ color: "var(--danger)" }}>{messageOf(account.error)}</p>}
+          {account.error && <p style={{ color: "var(--danger)" }}>{readableError(account.error)}</p>}
           <ul className="dash stack-2">
             {step(!!a?.signedIn, t("plugins.stepAccount"), t("plugins.stepAccountHint"))}
             {step(
@@ -264,7 +264,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
                       setLinking(true);
                       openExternal(url);
                     },
-                    onError: (e) => setError(messageOf(e))
+                    onError: (e) => setError(readableError(e))
                   })
                 }
               >
@@ -275,7 +275,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
               !!a?.publisher,
               t("plugins.stepPublisher", { login: a?.github ?? "…" }),
               undefined,
-              <button type="button" className="btn btn-secondary" disabled={!a?.github || become.isPending} onClick={() => become.mutate(undefined, { onError: (e) => setError(messageOf(e)) })}>
+              <button type="button" className="btn btn-secondary" disabled={!a?.github || become.isPending} onClick={() => become.mutate(undefined, { onError: (e) => setError(readableError(e)) })}>
                 {t("plugins.becomePublisher")}
               </button>
             )}
@@ -300,7 +300,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
                 toast({ body: t("plugins.published", { id: r.id, version: r.version }) });
                 onClose();
               },
-              onError: (e) => setError(messageOf(e))
+              onError: (e) => setError(readableError(e))
             })
           }
         >
@@ -366,7 +366,7 @@ function RestoreDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
                           toast({ body: t("plugins.restored", { rows }) });
                           onClose();
                         },
-                        onError: (e) => setError(messageOf(e))
+                        onError: (e) => setError(readableError(e))
                       }
                     )
                   }
@@ -421,7 +421,7 @@ function DeleteDialog({ workspace: w, onClose }: { workspace: Workspace; onClose
                   toast({ body: t("plugins.deleted", { title: w.title }) });
                   onClose();
                 },
-                onError: (e) => setError(messageOf(e))
+                onError: (e) => setError(readableError(e))
               }
             )
           }

@@ -13,7 +13,6 @@ import { BrowseTab } from "./plugins/BrowseTab";
 import { ExtensionRow } from "./plugins/ExtensionRow";
 import { MineTab } from "./plugins/MineTab";
 import { UpdatesTab } from "./plugins/UpdatesTab";
-import { messageOf } from "./plugins/parts";
 
 const TONE: Record<PluginView["state"], "faint" | "neutral" | "strong"> = {
   active: "strong",
@@ -304,7 +303,7 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
         const added = snapshot.plugins.filter((p) => p.extension).sort((a, b) => (a.extension!.dir < b.extension!.dir ? 1 : -1))[0];
         toast({ body: t("plugins.installedFromFile", { title: added?.extension?.title ?? file, version: added?.extension?.version ?? "" }) });
       },
-      onError: (e) => setInstallError(messageOf(e))
+      onError: (e) => setInstallError(readableError(e))
     });
   };
 
@@ -317,7 +316,7 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
         const added = snapshot.plugins.find((p) => p.extension?.dir === dir);
         toast({ body: t("plugins.folderLoaded", { title: added?.extension?.title ?? dir }) });
       },
-      onError: (e) => setInstallError(messageOf(e))
+      onError: (e) => setInstallError(readableError(e))
     });
   };
 

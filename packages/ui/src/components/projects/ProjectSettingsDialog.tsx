@@ -161,7 +161,7 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
   const [description, setDescription] = useState(project.description ?? "");
   const [archived, setArchived] = useState(project.archived);
   const settings = useSettings();
-  const saveSettings = useSaveSettings();
+  const saveSettings = useSaveSettings({ reportErrors: false });
   const savedWindow = closedWindowOf(settings.data, project.id);
   const [closedDraft, setClosedDraft] = useState<ClosedWindow | null>(null);
   const closed = closedDraft ?? savedWindow;

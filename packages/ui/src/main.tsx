@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "./lib/queryClient.js";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
@@ -19,9 +20,7 @@ import "./styles/app.css";
 import "./styles/layouts.css";
 
 // Local SQLite over IPC: refetching on focus buys nothing, invalidation is explicit.
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 30_000 } }
-});
+const queryClient = createQueryClient({ queries: { refetchOnWindowFocus: false, staleTime: 30_000 } });
 
 // The header's left gutter tracks the traffic lights, which live outside React.
 watchWindowChrome();

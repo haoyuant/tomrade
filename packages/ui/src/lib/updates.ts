@@ -68,10 +68,10 @@ export function useUpdateActions() {
   const qc = useQueryClient();
   const settle = (status: UpdateStatus) => qc.setQueryData(keys.updates, status);
   return {
-    check: useMutation({ mutationFn: () => invoke("updates.check"), onSuccess: settle }),
-    download: useMutation({ mutationFn: () => invoke("updates.download"), onSuccess: settle }),
-    install: useMutation({ mutationFn: () => invoke("updates.install") }),
-    moveToApplications: useMutation({ mutationFn: () => invoke("updates.moveToApplications") })
+    check: useMutation({ mutationFn: () => invoke("updates.check"), onSuccess: settle, meta: { reportErrors: true } }),
+    download: useMutation({ mutationFn: () => invoke("updates.download"), onSuccess: settle, meta: { reportErrors: true } }),
+    install: useMutation({ mutationFn: () => invoke("updates.install"), meta: { reportErrors: true } }),
+    moveToApplications: useMutation({ mutationFn: () => invoke("updates.moveToApplications"), meta: { reportErrors: true } })
   };
 }
 

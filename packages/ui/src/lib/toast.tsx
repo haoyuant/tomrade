@@ -34,6 +34,15 @@ export const errorSpec = (error: unknown): ToastSpec => {
   return { body, tone: "error", detail: raw.includes(body) ? undefined : raw };
 };
 
+/** The mounted toast stack, for failures reported outside it: the language and theme providers sit above it. */
+let reporter: ((spec: ToastSpec) => void) | null = null;
+
+/** A failure nobody else reports, as an error toast once a stack is mounted; before that, the console keeps it. */
+export const reportError = (error: unknown): void => {
+  if (reporter) reporter(errorSpec(error));
+  else console.warn(messageOf(error));
+};
+
 interface Toast extends ToastSpec {
   id: number;
 }
@@ -56,6 +65,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismiss = useCallback((id: number) => setToasts((all) => all.filter((t) => t.id !== id)), []);
+  useEffect(() => {
+    const own = (spec: ToastSpec) => void push(spec);
+    reporter = own;
+    return () => { if (reporter === own) reporter = null; };
+  }, [push]);
   const value = useMemo(() => ({ push, dismiss }), [push, dismiss]);
 
   return (

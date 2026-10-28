@@ -4,8 +4,8 @@ import { Icon } from "~/components/icons";
 import { SectionHead } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useRevoked, useStoreUpdate, useUpdates } from "~/lib/plugins";
-import { useToast } from "~/lib/toast";
-import { TrustTags, messageOf } from "./parts";
+import { readableError, useToast } from "~/lib/toast";
+import { TrustTags } from "./parts";
 import { keys } from "~/lib/queries";
 
 export function UpdatesTab() {
@@ -28,7 +28,7 @@ export function UpdatesTab() {
       >
         {t("plugins.updatesLede")}
       </SectionHead>
-      {updates.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(updates.error) })}</p>}
+      {updates.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: readableError(updates.error) })}</p>}
       {updates.data && !updates.data.length && <p className="meta-txt">{t("plugins.upToDate")}</p>}
       <div className="stack-2" data-testid="updates">
         {updates.data?.map((plan) => (
@@ -50,7 +50,7 @@ export function UpdatesTab() {
               onClick={() =>
                 update.mutate(plan.id, {
                   onSuccess: () => toast({ body: t("plugins.updated", { title: plan.id, version: plan.to.version }) }),
-                  onError: (e) => setError({ id: plan.id, message: messageOf(e) })
+                  onError: (e) => setError({ id: plan.id, message: readableError(e) })
                 })
               }
             >
