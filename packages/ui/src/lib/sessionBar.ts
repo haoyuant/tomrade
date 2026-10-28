@@ -185,6 +185,15 @@ function nest(rows: BarRow[]): BarRow[] {
 export const DONE_SHOWN_FOR_MS = 60 * 60_000;
 export const DONE_SHOWN = 3;
 
+/**
+ * The row the bar marks as open: what the panel shows. Looking back on a session or a conversation, that one; on the
+ * whole History, none; otherwise the session or conversation open in the panel.
+ */
+export function barOpenKeyOf(open: { review: { focus: { sessionId?: string | null; threadId?: string | null } | null } | null; sessionId: string | null; threadId: string | null }): string | null {
+  if (open.review) return open.review.focus?.sessionId ? `session:${open.review.focus.sessionId}` : open.review.focus?.threadId ? `thread:${open.review.focus.threadId}` : null;
+  return open.sessionId ? `session:${open.sessionId}` : open.threadId ? `thread:${open.threadId}` : null;
+}
+
 /** What the bar shows of its rows: every one still going, the last few to end, the open one, and a parent of any kept. */
 export function barShown(rows: BarRow[], openKey: string | null, now: number): BarRow[] {
   let done = 0;

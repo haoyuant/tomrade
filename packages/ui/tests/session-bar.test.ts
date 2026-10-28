@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { barModeFor, barPrefsOf, barShown, DONE_SHOWN_FOR_MS, paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
+import { barModeFor, barOpenKeyOf, barPrefsOf, barShown, DONE_SHOWN_FOR_MS, paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -187,4 +187,13 @@ it("waits on the person for a conversation the app's closing interrupted, as sto
   expect(listed[0]).toMatchObject({ status: "wait", wait: { kind: "stuck", text: "Interrupted — the app closed while this run was in progress." }, at: 4 });
   // continued: it runs, and waits on nobody
   expect(rows({ threads: [thread("cut", { interrupted: true, running: true })] })[0]).toMatchObject({ status: "run", wait: null });
+});
+
+it("marks as open what the panel shows: the session looked back on, nothing for the whole History, else the open one", () => {
+  const open = { sessionId: null, threadId: "t-live" };
+  expect(barOpenKeyOf({ ...open, review: null })).toBe("thread:t-live");
+  expect(barOpenKeyOf({ ...open, review: { focus: { sessionId: "s-ended" } } })).toBe("session:s-ended");
+  expect(barOpenKeyOf({ ...open, review: { focus: { threadId: "t-old" } } })).toBe("thread:t-old");
+  expect(barOpenKeyOf({ ...open, review: { focus: null } })).toBeNull();
+  expect(barOpenKeyOf({ sessionId: "s-live", threadId: "t-live", review: null })).toBe("session:s-live");
 });
