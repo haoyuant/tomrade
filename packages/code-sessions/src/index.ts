@@ -260,14 +260,15 @@ export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = proc
 }
 
 const isLive = (s: { state: string }) => s.state !== "ended" && s.state !== "lost";
+type SessionView = ReturnType<CodeLink["sessionsOf"]>[number];
 
 /** How many of a project's sessions wait on the person: the sidebar's count, without building every row. */
 export function needingYou(codeLink: Pick<CodeLink, "sessionsOf">, projectId: string): number {
   return codeLink.sessionsOf(projectId, undefined, { live: true }).filter((s) => isLive(s) && !!s.blocked).length;
 }
 
-/** A project's code sessions, live ones first and needs-you before the rest, then every ended one code link keeps. */
-export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform): SessionRow[] {
+/** A project's code sessions (`sessions`, else every one code link keeps), live ones first and needs-you before the rest, then the ended ones. */
+export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform, sessions?: ReturnType<CodeLink["sessionsOf"]>): SessionRow[] {
   const prs = new Map(codeLink.links(projectId).filter((l) => l.prUrl).map((l) => [l.branch, l.prUrl]));
   // Code link keeps every ended session, and many of them name the same ticket.
   const known = new Map<string, { key: string; title: string } | null | undefined>();
@@ -275,8 +276,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
     if (!known.has(id)) known.set(id, items.get(projectId, id));
     return known.get(id);
   };
-  return codeLink
-    .sessionsOf(projectId)
+  return (sessions ?? codeLink.sessionsOf(projectId))
     .map((s): SessionRow => {
       const itemId = s.itemIds[0] ?? null;
       const item = itemId ? itemOf(itemId) : null;
@@ -457,11 +457,11 @@ function apply(ctx: Context, config: Config) {
     return guess ? { key: guess.key, title: guess.title } : null;
   };
 
-  /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
-  const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
+  /** The sessions to list (`pick` reads which; every one without it); when they cannot be read the window says so and its terminals work on. */
+  const listed = (projectId: string, pick?: () => SessionView[]): { sessions: SessionRow[]; warning: string | null } => {
     try {
       const agents = ctx.get("agent");
-      const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
+      const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId, process.platform, pick?.());
       return {
         sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval, rawOutput: r.endedAt !== null && !!r.ranIn && recorder.has(r.ranIn, r.startedAt, r.endedAt), guess: guessOf(projectId, r) })),
         warning: null
@@ -820,20 +820,21 @@ function apply(ctx: Context, config: Config) {
 
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
-    const shown = listed(projectId);
+    const setting = terminal();
+    const { saved, broken } = readState();
+    const { remembered, presets, preset, layout } = layoutOf(saved, projectId);
+    // An ended session stays with the state while a cell shows it; the rest wait in History.
+    const inCells = new Set(leafIds(layout));
+    const win = open.get(projectId);
+    // Only the sessions a state uses are read: the ended ones code link keeps grow by the day.
+    const shown = listed(projectId, () => shownSessions(projectId, [...inCells, ...(win?.reveal?.sessionId ? [win.reveal.sessionId] : [])]));
     if (b.state === "ready") reviveFailed = false;
     if (b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) revive();
     // after the start is decided: the bridge read above must not go stale across this await
     if (b.state === "ready") shown.sessions = await withPrompts(shown.sessions);
-    const setting = terminal();
-    const { saved, broken } = readState();
-    const { remembered, presets, preset, layout } = layoutOf(saved, projectId);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
-    // An ended session stays with the state while a cell shows it; the rest wait in History.
-    const inCells = new Set(leafIds(layout));
     // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
     const ended = shown.sessions.filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
-    const win = open.get(projectId);
     // What ended lately stays in the bar's ended group for a day, as in the assistant panel, cell or no cell.
     const recent = new Set(ended.filter((s) => Date.now() - s.endedAt! < RECENT_ENDED_MS).sort((a, b) => b.endedAt! - a.endedAt!).slice(0, RECENT_ENDED_MAX).map((s) => s.id));
     const listedNow = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || recent.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
@@ -848,6 +849,11 @@ function apply(ctx: Context, config: Config) {
       return outcome || tail ? { ...s, ...(outcome ? { outcome } : {}), ...(tail ? { tail } : {}) } : s;
     });
     const opened = await fold(projectId, shown.sessions, await terminals(projectId));
+    // What ran before in the panes now open, also when it ended longer ago than the sessions read above.
+    const panes = [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)];
+    const before = new Set(ended.map((s) => s.id));
+    const earlier = listed(projectId, () => ctx.codeLink.sessionsOf(projectId, undefined, { panes: panes.filter((p): p is string => !!p) }))
+      .sessions.filter((s) => !before.has(s.id) && s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
     return {
       projectId,
       projectName: projectName(projectId),
@@ -873,11 +879,24 @@ function apply(ctx: Context, config: Config) {
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
       closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
-      history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
+      history: paneHistory([...ended, ...earlier], panes),
       folded: saved.folded?.[projectId] === true,
       tickets: openTickets(projectId),
       startAgent: startEngine()?.title ?? null
     };
+  };
+
+  /**
+   * The sessions a state reads, newest first as code link keeps them: every live one; those that ended within a day
+   * (the bar's ended group, and whether herdr is wanted); and those a cell or a reveal shows. The ended ones of the
+   * panes now open are read once those are known; every other ended session waits in History.
+   */
+  const shownSessions = (projectId: string, ids: string[]): SessionView[] => {
+    const read = (filter: Parameters<CodeLink["sessionsOf"]>[2]) => ctx.codeLink.sessionsOf(projectId, undefined, filter);
+    const since = Date.now() - Math.max(RECENT_ENDED_MS, RECENTLY_ENDED_MS);
+    const all = new Map<string, SessionView>();
+    for (const s of [...read({ live: true }), ...read({ endedSince: since }), ...read({ ids })]) all.set(s.id, s);
+    return [...all.values()].sort((a, b) => b.startedAt - a.startedAt);
   };
 
   /** Follow the panes of the terminals a window shows, and only those; one herdr stopped following is followed afresh. */
@@ -921,9 +940,13 @@ function apply(ctx: Context, config: Config) {
    * again for the panel, and a session beginning on a cell's pane still marks its recording, from code link alone.
    */
   const unseen = (projectId: string, win: Open) => {
-    const sessions = ctx.codeLink.sessionsOf(projectId).map((s): PaneSession => ({ id: s.id, pane: isLive(s) ? s.herdrPane : null, endedAt: isLive(s) ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt), startedAt: s.startedAt }));
+    // Numbering reads the cells' own sessions and the live ones on their panes; a new session is a live one.
+    const layout = layoutOf(stateOf(), projectId).layout;
+    const ids = layout ? leafIds(layout) : [];
+    const read = new Map([...ctx.codeLink.sessionsOf(projectId, undefined, { live: true }), ...ctx.codeLink.sessionsOf(projectId, undefined, { ids })].map((s) => [s.id, s]));
+    const sessions = [...read.values()].sort((a, b) => b.startedAt - a.startedAt).map((s): PaneSession => ({ id: s.id, pane: isLive(s) ? s.herdrPane : null, endedAt: isLive(s) ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt), startedAt: s.startedAt }));
     win.shown = { terminals: win.shown?.terminals ?? [], sessions };
-    renumber(projectId, win, layoutOf(stateOf(), projectId).layout);
+    renumber(projectId, win, layout);
     snapshotNewSessions(win, sessions);
   };
 
@@ -1156,7 +1179,7 @@ function apply(ctx: Context, config: Config) {
    */
   const historyRows = (projectId: string, rows: ReviewRow[]): { sessions: SessionRow[]; agents: Record<string, string> } => {
     const wanted = new Set(rows.filter((r) => r.kind === "session").map((r) => r.id));
-    const sessions = wanted.size ? listed(projectId).sessions.filter((s) => wanted.has(s.id)) : [];
+    const sessions = wanted.size ? listed(projectId, () => ctx.codeLink.sessionsOf(projectId, undefined, { ids: [...wanted] })).sessions.filter((s) => wanted.has(s.id)) : [];
     const engines = ctx.get("agent");
     const agents: Record<string, string> = {};
     for (const r of rows) {
@@ -1204,7 +1227,7 @@ function apply(ctx: Context, config: Config) {
     const itemId = s?.itemIds[0];
     return (itemId ? ctx.items.get(projectId, itemId)?.key : null) ?? s?.title ?? s?.agent ?? id;
   };
-  const sessionOf = (projectId: string, id: string) => ctx.codeLink.sessionsOf(projectId).find((s) => s.id === id);
+  const sessionOf = (projectId: string, id: string) => ctx.codeLink.sessionsOf(projectId, undefined, { ids: [id] }).find((s) => s.id === id);
 
   const turn = (win: Open, cell: string) => {
     const next = (win.turns.get(cell) ?? 0) + 1;
@@ -1306,7 +1329,7 @@ function apply(ctx: Context, config: Config) {
     if (!recording) return;
     win.recordings.set(cell, recording);
     // Whatever runs there now is not new: only a session beginning after this asks for a snapshot.
-    win.onPane.set(cell, newestOn(ctx.codeLink.sessionsOf(projectId).map((s) => ({ id: s.id, endedAt: isLive(s) ? null : (s.endedAt ?? 0), pane: s.herdrPane, startedAt: s.startedAt })), pane));
+    win.onPane.set(cell, newestOn(ctx.codeLink.sessionsOf(projectId, undefined, { live: true }).map((s) => ({ id: s.id, endedAt: isLive(s) ? null : (s.endedAt ?? 0), pane: s.herdrPane, startedAt: s.startedAt })), pane));
   };
 
   /**
@@ -1323,7 +1346,7 @@ function apply(ctx: Context, config: Config) {
     if (!s?.herdrPane) return null;
     const pane = s.herdrPane;
     const next = ctx.codeLink
-      .sessionsOf(projectId)
+      .sessionsOf(projectId, undefined, { panes: [pane] })
       .filter((o) => o.id !== s.id && o.herdrPane === pane && o.startedAt > s.startedAt)
       .sort((a, b) => a.startedAt - b.startedAt)[0];
     const ended = isLive(s) ? Date.now() : (s.endedAt ?? s.lastEventAt ?? Date.now());
@@ -1344,7 +1367,7 @@ function apply(ctx: Context, config: Config) {
 
   /** A pane's history from early to late: the sessions that ran in it, and the manual work between them as it was recorded. */
   const timeline = async (projectId: string, pane: string): Promise<TimelineEntry[]> => {
-    const rows = listed(projectId).sessions.filter((s) => s.ranIn === pane);
+    const rows = listed(projectId, () => ctx.codeLink.sessionsOf(projectId, undefined, { panes: [pane] })).sessions.filter((s) => s.ranIn === pane);
     const manual = manualStretches(await recorder.activity(pane), rows.map((s) => ({ from: s.startedAt, to: s.endedAt })), Date.now());
     return [
       ...rows.map((s): TimelineEntry => ({ kind: "session", id: s.id, from: s.startedAt, to: s.endedAt, session: s })),

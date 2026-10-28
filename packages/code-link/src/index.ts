@@ -29,6 +29,7 @@ export {
   type SessionAsk,
   type SessionPatch,
   type SessionState,
+  type SessionFilter,
   type SessionView
 } from "./store.js";
 export { BRIEF_FILES, GitMemo, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
