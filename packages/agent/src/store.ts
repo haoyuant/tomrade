@@ -430,8 +430,9 @@ export class AgentStore {
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET waivers_json = ? WHERE id = ?").run(JSON.stringify([...set]), threadId);
   }
 
-  messages(projectId: string, threadId: string): ThreadMessage[] {
-    const rows = this.db(projectId).prepare("SELECT * FROM plugin_agent_messages WHERE thread_id = ? ORDER BY seq ASC").all(threadId) as {
+  /** Oldest first; `afterSeq` leaves out what a reader already holds (messages are only ever appended). */
+  messages(projectId: string, threadId: string, afterSeq = 0): ThreadMessage[] {
+    const rows = this.db(projectId).prepare("SELECT * FROM plugin_agent_messages WHERE thread_id = ? AND seq > ? ORDER BY seq ASC").all(threadId, afterSeq) as {
       id: string;
       thread_id: string;
       seq: number;

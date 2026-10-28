@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import type { ThreadMessage } from "@tomradex/agent";
-import { catchUp, insertMessage, missedBefore } from "../src/lib/threadLive";
+import type { ThreadDetail, ThreadMessage } from "@tomradex/agent";
+import { catchUp, heldThrough, insertMessage, missedBefore, withHeld } from "../src/lib/threadLive";
 
 const msg = (seq: number, role: ThreadMessage["role"] = "agent"): ThreadMessage => ({
   id: `m${seq}`, threadId: "t", seq, role, block: { type: "text", text: `#${seq}` }, runId: null, at: seq
@@ -38,4 +38,21 @@ it("fetches once for a burst of wake signals and again after a pause", () => {
   expect(fetched).toBe(1);
   now = 5_000; wake();
   expect(fetched).toBe(2);
+});
+
+const detail = (messages: ThreadMessage[], threadId = "t") => ({ thread: { id: threadId }, messages, runs: [], cards: [], pending: null }) as unknown as ThreadDetail;
+
+it("asks a thread again only for what follows the messages it holds, and whole when it holds a gap or another thread", () => {
+  expect(heldThrough(undefined, "t")).toBeNull();
+  expect(heldThrough(detail([]), "t")).toBeNull();
+  expect(heldThrough(detail([msg(1), msg(2), msg(3)]), "t")).toBe(3);
+  // a dropped event left a hole: the whole thread is asked for
+  expect(heldThrough(detail([msg(1), msg(3)]), "t")).toBeNull();
+  expect(heldThrough(detail([msg(1)], "other"), "t")).toBeNull();
+  const held = detail([msg(1), msg(2)]);
+  const merged = withHeld(held, detail([msg(3)]));
+  expect(seqs(merged.messages)).toEqual([1, 2, 3]);
+  // what was held keeps its identity, so its rows do not render again
+  expect(merged.messages[0]).toBe(held.messages[0]);
+  expect(withHeld(held, detail([])).messages).toBe(held.messages);
 });
