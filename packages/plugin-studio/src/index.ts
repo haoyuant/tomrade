@@ -108,7 +108,10 @@ export default {
     };
     const idOf = (dir: string) => readManifest(dir).id;
     const viewOf = (id: string) => manager().snapshot().plugins.find((p) => p.id === id) ?? null;
-    const notify = () => ctx.get("ipc")?.send("studio.changed");
+    const notify = () => {
+      watched = known();
+      ctx.get("ipc")?.send("studio.changed");
+    };
 
     // A plugin's own log lines, and the manager's lines about it, for plugin_logs.
     const logs = new Map<string, string[]>();
@@ -122,7 +125,19 @@ export default {
     };
     let watched = known();
     ctx.effect(() => {
-      const refresh = setInterval(() => (watched = known()), 5_000);
+      // Which workspaces there are changes when Studio makes one (notify) or a folder comes or goes; nothing is polled.
+      let soon: ReturnType<typeof setTimeout> | null = null;
+      let folder: fs.FSWatcher | null = null;
+      try {
+        folder = fs.watch(config.devRoot, () => {
+          if (soon) clearTimeout(soon);
+          soon = setTimeout(() => (watched = known()), 300);
+          soon.unref?.();
+        });
+        folder.on("error", () => folder?.close());
+      } catch {
+        // no watch here: workspaces Studio makes are still picked up when it makes them
+      }
       const exporter = ctx.root.logger.exporter({
         export(message) {
           const first = String(message.args[0] ?? "");
@@ -134,7 +149,8 @@ export default {
         }
       });
       return () => {
-        clearInterval(refresh);
+        folder?.close();
+        if (soon) clearTimeout(soon);
         void exporter();
       };
     }, "studio.logs");

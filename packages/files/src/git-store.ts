@@ -235,7 +235,7 @@ export class GitFileStore implements FileStore {
     const fresh = !(await this.head());
     if (fresh) await this.commitAll("Files store created");
     // A first copy waits for the remote's files; an existing one shows what it has and catches up behind.
-    if (remote && fresh) await this.doSync();
+    if (remote && fresh) await this.doSync(false);
     else if (remote) void this.sync().catch((error) => this.opts.warn(`sync failed: ${errorMessage(error)}`));
     this.watch();
     return this;
@@ -973,10 +973,14 @@ export class GitFileStore implements FileStore {
     return { ...base, ahead: ahead ? 1 : 0, state: ahead ? "ahead" : "synced" };
   }
 
-  sync(): Promise<FilesStatus> {
+  watching(): boolean {
+    return !!this.watcher;
+  }
+
+  sync(opts: { quiet?: boolean } = {}): Promise<FilesStatus> {
     if (this.syncQueue) return this.syncQueue;
     this.syncQueue = (async () => {
-      if (!this.closed) await this.doSync();
+      if (!this.closed) await this.doSync(!!opts.quiet);
       return this.status();
     })().finally(() => {
       this.syncQueue = null;
@@ -992,9 +996,12 @@ export class GitFileStore implements FileStore {
    * app not responding. Fetch writes refs and objects only, and push reads
    * them, so a local commit landing beside either is safe.
    */
-  private async doSync(): Promise<void> {
+  private async doSync(quiet: boolean): Promise<void> {
     // Without a remote a sync only saves, at once: worth telling only when it saved or failed.
-    let told = !!this.opts.remote;
+    // The sweep is quiet too: it tells only when it saved, took or sent something, or how it stands changed.
+    let told = !!this.opts.remote && !quiet;
+    const headBefore = this.syncedHead;
+    const problemBefore = JSON.stringify(this.problem);
     this.syncing = true;
     if (told) this.opts.onChange();
     try {
@@ -1037,6 +1044,7 @@ export class GitFileStore implements FileStore {
       told = true;
     } finally {
       this.syncing = false;
+      if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
       if (told) this.opts.onChange();
     }
   }
