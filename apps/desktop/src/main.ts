@@ -21,6 +21,7 @@ import { askForMainWindow, provideMainWindow } from "./main-window.js";
 import { nodeRuntime } from "./node-runtime.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
+import { watchSeen } from "./seen.js";
 import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
@@ -205,6 +206,7 @@ app.whenReady().then(async () => {
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
   ctx.settings.register(SESSIONS_SECTION);
   installGlobalHotkey(ctx);
+  watchSeen(ctx);
   // A window shown at the `tomrade` command's word comes in front of the terminal it was typed in.
   ctx.on("desktop/activate", () => {
     if (process.platform === "darwin") app.focus({ steal: true });

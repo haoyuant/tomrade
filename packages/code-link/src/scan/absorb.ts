@@ -5,7 +5,7 @@ import type { Git } from "@tomradex/git";
 import { keysInText, parseBranch, subjectPr } from "../keys.js";
 import { githubPull, type ForgePull } from "../forge.js";
 import { decide, type Decision, type Evidence } from "../rules.js";
-import { scanRepo, uncommittedBranches, type MergedCommit, type ScanResult, type ScannedBranch } from "../scanner.js";
+import { GitMemo, scanRepo, uncommittedBranches, type MergedCommit, type ScanResult, type ScannedBranch } from "../scanner.js";
 import type { Sessions } from "../sessions.js";
 import type { CodeLinkStore, CodeLinkView, ProposalView, SessionView } from "../store.js";
 import { errorMessage } from "@tomradex/contracts";
@@ -108,6 +108,8 @@ export class GitScan {
   readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Per repository, the ticket branches with uncommitted changes in a worktree, as the last scan saw them. */
   private readonly uncommitted = new Map<string, Set<string>>();
+  /** git's answers about fixed commits, kept between passes: a repository whose refs did not move is read in a few calls. */
+  private readonly memo = new GitMemo();
   private readonly ctx: Context;
   private readonly store: CodeLinkStore;
   private readonly sessions: Sessions;
@@ -196,6 +198,8 @@ export class GitScan {
     }
     const repos = this.ctx.repos.list(projectId);
     summary.repos = repos.length;
+    // Which ticket each key number is, read once a pass; a ticket is read whole only when a branch names it.
+    const keyed = new Map((this.ctx.db.for(projectId).prepare("SELECT key_num AS n, id FROM items WHERE project_id = ?").all(projectId) as { n: number; id: string }[]).map((r) => [r.n, r.id]));
     const unlinked: UnlinkedBranch[] = [];
     const now = Date.now();
     await this.migrateCredentialHelpers(projectId);
@@ -220,7 +224,7 @@ export class GitScan {
       const before = this.store.repoState(projectId, repo.id);
       let result: ScanResult;
       try {
-        result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch });
+        result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch, memo: this.memo });
       } catch (err) {
         summary.skipped.push({ repoId: repo.id, reason: errorMessage(err) });
         continue;
@@ -244,13 +248,13 @@ export class GitScan {
           if (session.repoId === repo.id && session.blocked === "credentials") this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
         }
       }
-      const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
+      const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked, keyed);
       this.releaseMerged(projectId, repo.id);
       summary.links += outcome.links;
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
     }
-    for (const item of this.ctx.items.list({ projectId })) this.closeEmptyScannedDelivery(projectId, item, now);
+    for (const item of this.closable(projectId)) this.closeEmptyScannedDelivery(projectId, item, now);
     this.unlinkedByProject.set(projectId, unlinked);
     this.scannedAt.set(projectId, now);
     // A pass that found nothing new tells no one: every window would read the project's tickets and threads again.
@@ -259,9 +263,11 @@ export class GitScan {
   }
 
   /** Turn one repository's scan into links, then judge every ticket the repository touches. */
-  private async absorb(projectId: string, repo: Repo, result: ScanResult, autoDone: boolean, now: number, unlinked: UnlinkedBranch[]): Promise<{ links: number; changed: number; proposals: number }> {
-    const items = this.ctx.items.list({ projectId });
-    const byNum = new Map(items.map((i) => [i.keyNum, i]));
+  private async absorb(projectId: string, repo: Repo, result: ScanResult, autoDone: boolean, now: number, unlinked: UnlinkedBranch[], keyed: Map<number, string>): Promise<{ links: number; changed: number; proposals: number }> {
+    const ticketOf = (keyNum: number) => {
+      const id = keyed.get(keyNum);
+      return id ? this.ctx.items.get(projectId, id) : null;
+    };
     const previous = new Map(this.store.linksForRepo(projectId, repo.id).map((l) => [l.id, l]));
     const seen = new Set<string>();
     const touched = new Set<string>(previous.size ? [...previous.values()].map((l) => l.itemId) : []);
@@ -269,7 +275,7 @@ export class GitScan {
 
     for (const b of result.branches) {
       for (const keyNum of b.keyNums) {
-        const item = byNum.get(keyNum);
+        const item = ticketOf(keyNum);
         if (!item) {
           unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum, sha: b.sha, committedAt: b.committedAt });
           continue;
@@ -339,10 +345,13 @@ export class GitScan {
         const item = this.ctx.items.get(projectId, l.itemId);
         if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
         const sha = result.branches.find((b) => b.name === l.branch)?.sha ?? l.headSha;
-        const log = await this.git(["log", "--format=%s%x1f%b%x1e", `${result.defaultSha}..${sha}`], { cwd, ok: true });
-        if (log.code !== 0) continue;
+        const stdout = await this.memo.once([cwd, "ahead", result.defaultSha, sha].join("\u0000"), async () => {
+          const log = await this.git(["log", "--format=%s%x1f%b%x1e", `${result.defaultSha}..${sha}`], { cwd, ok: true });
+          return log.code === 0 ? log.stdout : undefined;
+        });
+        if (stdout === undefined) continue;
         // A branch named for the ticket is all its work; one found by commit keys owes only the commits naming it.
-        const pending = parseBranch(l.branch, prefix) === item.keyNum ? !!log.stdout.trim() : keysInText(log.stdout, prefix).includes(item.keyNum);
+        const pending = parseBranch(l.branch, prefix) === item.keyNum ? !!stdout.trim() : keysInText(stdout, prefix).includes(item.keyNum);
         if (pending) continue;
         this.store.patchLink(projectId, l.id, { mergedSha: result.defaultSha, ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
         touched.add(item.id);
@@ -380,7 +389,7 @@ export class GitScan {
       }
     }
 
-    for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
+    for (const item of this.closable(projectId)) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
 
     // A link's pull request is settled by what GitHub says about it; the commit-message rules
     // below are for links it cannot answer for (no pull request, not GitHub, no account, offline).
@@ -390,7 +399,7 @@ export class GitScan {
       for (const { link: l, item, pull } of await this.askPulls(projectId, repo, cwd)) {
         if (pull.merged && pull.mergeSha) {
           // Merged into the default branch, or into another branch that has not reached it yet.
-          const landed = await this.git(["merge-base", "--is-ancestor", pull.mergeSha, result.defaultRef], { cwd, ok: true });
+          const landed = { code: await this.isAncestor(cwd, pull.mergeSha, result.defaultSha ?? result.defaultRef) };
           if (landed.code > 1) continue; // the merge commit is not here yet: the local rules decide
           answered.add(l.id);
           if (landed.code === 0) {
@@ -409,7 +418,7 @@ export class GitScan {
 
     let passed = 0;
     for (const [keyNum, commit] of result.mergedKeys) {
-      const item = byNum.get(keyNum);
+      const item = ticketOf(keyNum);
       if (!item) continue;
       let active = this.store.activeDelivery(projectId, item.id);
       if (!active && item.status !== "done" && item.status !== "cancelled") active = this.store.ensureActiveDelivery(projectId, item.id, commit.at);
@@ -417,8 +426,7 @@ export class GitScan {
       const base = active.bases[repo.id];
       if (base && active.sequence > 1) {
         const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-        const ancestor = await this.git(["merge-base", "--is-ancestor", commit.sha, base], { cwd, ok: true });
-        if (ancestor.code !== 1) continue;
+        if ((await this.isAncestor(cwd, commit.sha, base)) !== 1) continue;
       } else if (active.sequence > 1) {
         // Without a known starting ref, require branch/PR evidence instead of
         // assigning a historical ticket mention to a reopened delivery.
@@ -583,6 +591,24 @@ export class GitScan {
       if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true, "another session took over from it");
       else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     }
+  }
+
+  /** `git merge-base --is-ancestor`'s exit code: 0 yes, 1 no — fixed for two commits, so asked once — above 1 when git cannot tell. */
+  private async isAncestor(cwd: string, sha: string, of: string): Promise<number> {
+    const ask = async () => (await this.git(["merge-base", "--is-ancestor", sha, of], { cwd, ok: true })).code;
+    if (!/^[0-9a-f]{40,64}$/.test(of)) return ask();
+    return (await this.memo.once([cwd, "ancestor", sha, of].join("\u0000"), async () => {
+      const code = await ask();
+      return code <= 1 ? code : undefined;
+    })) ?? 2;
+  }
+
+  /** Finished tickets still holding an open delivery: the only ones `closeEmptyScannedDelivery` can act on. */
+  private closable(projectId: string): Item[] {
+    const ids = this.ctx.db.for(projectId).prepare(
+      "SELECT i.id FROM items i WHERE i.project_id = ? AND i.status IN ('done', 'cancelled') AND EXISTS (SELECT 1 FROM deliveries d WHERE d.project_id = i.project_id AND d.item_id = i.id AND d.state = 'active')"
+    ).all(projectId) as { id: string }[];
+    return ids.flatMap(({ id }) => this.ctx.items.get(projectId, id) ?? []);
   }
 
   private closeEmptyScannedDelivery(projectId: string, item: Item, now: number, repoId?: string): void {
