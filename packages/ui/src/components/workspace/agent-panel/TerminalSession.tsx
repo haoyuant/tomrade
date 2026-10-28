@@ -17,7 +17,7 @@ import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
+import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -73,6 +73,9 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   // ── the conversation, from the agent's record ──────────────────────────
   const [convo, setConvo] = useState<ConvoState | null>(null);
+  /** Where the shown conversation's next read goes on from. */
+  const goesOnAt = useRef<number | null>(null);
+  goesOnAt.current = convo?.next ?? null;
   const [readingEarlier, setReadingEarlier] = useState(false);
   const [open, toggle, closeAll] = useOpenLines();
   const box = useRef<HTMLDivElement>(null);
@@ -96,10 +99,12 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const readTail = useCallback(async (first: boolean) => {
     const mine = ++generation.current;
     readAt.current = Date.now();
-    const read = await invoke("codeLink.conversation", projectId, session.id).catch(() => null);
+    // Past the first read, only what came after where the last one stopped.
+    const after = first ? null : goesOnAt.current;
+    const read = await invoke("codeLink.conversation", projectId, session.id, undefined, after ?? undefined).catch(() => null);
     if (mine !== generation.current) return;
     kept.current = first || following.current ? -1 : null;
-    setConvo((now) => (first || !now ? convoFromTail(read) : convoRefreshed(now, read)));
+    setConvo((now) => (first || !now ? convoFromTail(read) : after !== null ? convoContinued(now, after, read) : convoRefreshed(now, read)));
   }, [projectId, session.id]);
 
   useEffect(() => {

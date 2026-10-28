@@ -52,8 +52,10 @@ const FRAME_BATCH_MAX = 256 * 1024;
 const ECHO_MS = 100;
 /** How soon a waiting session whose screen showed no prompt is looked at again. */
 const PROMPT_RECHECK_MS = 2000;
-/** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
-const THREADS_SETTLE_MS = 100;
+/** How long events settle before the window's state is computed for them: a turn ends in a burst of them. */
+const REFRESH_SETTLE_MS = 100;
+/** The least time between two states computed for events that change no session's standing: a busy agent's stream of them costs one a second. */
+const REFRESH_GAP_MS = 1000;
 /** How soon what is recorded in the background is looked at again after something changed: changes come in bursts. */
 const BACKGROUND_SETTLE_MS = 250;
 /** How long a pane whose observer would not open is left alone before it is tried again. */
@@ -173,28 +175,50 @@ const leafOf = (layout: Layout | undefined, cell: string): Extract<Layout, { typ
 
 const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { type: "leaf", id: layout.id, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
 
-/** The saved state, and whether the file is there but cannot be read: then it starts over, and the window says so. */
-const readState = (file: string | undefined): { saved: Saved; broken: boolean } => {
-  if (!file || !fs.existsSync(file)) return { saved: {}, broken: false };
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { saved: parsed as Saved, broken: false } : { saved: {}, broken: true };
-  } catch {
-    return { saved: {}, broken: true };
-  }
-};
-
-const stateOf = (file: string | undefined): Saved => readState(file).saved;
-
-const save = (file: string | undefined, patch: Saved) => {
-  if (!file) return;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ ...stateOf(file), ...patch }));
-  } catch {
-    // The layout comes back as one cell next time; nothing else depends on it.
-  }
-};
+/**
+ * The saved state, kept in memory: read once, and again only when something else wrote the file (its time or size
+ * moved); every save writes through. `broken`: the file is there but cannot be read — it starts over, and the window says so.
+ */
+function savedState(file: string | undefined) {
+  let held: { stamp: string; saved: Saved; broken: boolean } | null = null;
+  const stampOf = (): string | null => {
+    try {
+      const s = fs.statSync(file!);
+      return `${s.mtimeMs}:${s.size}`;
+    } catch {
+      return null;
+    }
+  };
+  const read = (): { saved: Saved; broken: boolean } => {
+    if (!file) return { saved: {}, broken: false };
+    const stamp = stampOf() ?? "none";
+    if (held?.stamp === stamp) return held;
+    let next: { saved: Saved; broken: boolean };
+    if (stamp === "none") next = { saved: {}, broken: false };
+    else {
+      try {
+        const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+        next = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { saved: parsed as Saved, broken: false } : { saved: {}, broken: true };
+      } catch {
+        next = { saved: {}, broken: true };
+      }
+    }
+    held = { stamp, ...next };
+    return held;
+  };
+  const save = (patch: Saved) => {
+    if (!file) return;
+    const saved = { ...read().saved, ...patch };
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(saved));
+      held = { stamp: stampOf() ?? "none", saved, broken: false };
+    } catch {
+      // The layout comes back as one cell next time; nothing else depends on it.
+    }
+  };
+  return { read, save };
+}
 
 /** Terminal apps by `TERM_PROGRAM`: the name the window shows, and the macOS app that brings it forward, where there is one. */
 const TERMINAL_APPS: Record<string, { name: string; app?: string }> = {
@@ -335,7 +359,8 @@ interface Open {
   detached: Set<string>;
   /** What was typed into each cell while its terminal attached, sent once it is live; `over` once some did not fit. */
   held: Map<string, { text: string; over: boolean }>;
-  timer: NodeJS.Timeout;
+  /** The poll of herdr's state, while the window can be seen. */
+  timer: NodeJS.Timeout | null;
   closed: boolean;
   /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
   reveal: WindowState["reveal"];
@@ -358,8 +383,19 @@ interface Open {
   /** Which cell shows each session, as the last state laid them out; what the panel names a session's cell by. */
   cells: Record<string, number>;
   /** The terminals and sessions of the last state, to number the cells again when only the layout changes. */
-  shown: { terminals: TerminalRow[]; sessions: SessionRow[] } | null;
+  shown: { terminals: TerminalRow[]; sessions: PaneSession[] } | null;
+  /** The state computed for events: its settle timer and when it is due, one being computed, another asked for meanwhile. */
+  soon: { timer: NodeJS.Timeout | null; due: number; running: boolean; again: boolean; urgent: boolean; last: number };
+  /** The window says nobody can see it (minimised, hidden, covered): nothing is asked of herdr for it or sent to it, but cells' frames. */
+  hidden: boolean;
+  /** The last state sent, as JSON: one that comes out the same is not sent again. */
+  sent: string | null;
+  /** The sessions' standing as the last session event found it: an event that changes it is shown without waiting. */
+  standing: string;
 }
+
+/** What numbering cells and following new sessions on a pane needs of a session. */
+type PaneSession = Pick<SessionRow, "id" | "pane" | "endedAt" | "startedAt">;
 
 /** A pane recorded with no cell on it: herdr's observer stream of it, and the newest session it had when watching began. */
 interface Watched {
@@ -393,6 +429,8 @@ interface PendingFrames {
 function apply(ctx: Context, config: Config) {
   const words = () => CODE_SESSIONS_WORDS(ctx.settings.locale());
   const open = new Map<string, Open>();
+  const { read: readState, save } = savedState(config.stateFile);
+  const stateOf = (): Saved => readState().saved;
 
   const projectName = (projectId: string) => (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? projectId;
   const terminal = () => (ctx.settings.get().codeLink as { terminal?: string } | undefined)?.terminal ?? "auto";
@@ -493,19 +531,62 @@ function apply(ctx: Context, config: Config) {
     threadsOf.set(projectId, next);
     return next;
   };
-  const refreshSoon = new Map<string, NodeJS.Timeout>();
   /** The project's assistant conversations changed: its window reads them again, once the burst settles. */
   const threadsChanged = (projectId: string) => {
     if (!open.has(projectId)) return;
     staleThreads.add(projectId);
     historyChanged(projectId);
-    if (refreshSoon.has(projectId)) return;
-    const timer = setTimeout(() => {
-      refreshSoon.delete(projectId);
-      void refresh(projectId);
-    }, THREADS_SETTLE_MS);
-    timer.unref?.();
-    refreshSoon.set(projectId, timer);
+    refreshSoon(projectId, true);
+  };
+
+  /**
+   * The window's state computed again for events, never two at once: a burst settles first, an event arriving while one
+   * is computed is noted and one more follows it. One that changes no session's standing (`urgent` false: an agent's
+   * activity, the poll) waits REFRESH_GAP_MS after the last. The person's own actions call `refresh` and go at once.
+   */
+  const refreshSoon = (projectId: string, urgent: boolean) => {
+    const win = open.get(projectId);
+    if (!win || win.closed) return;
+    const soon = win.soon;
+    soon.urgent ||= urgent;
+    if (soon.running) {
+      soon.again = true;
+      return;
+    }
+    const now = Date.now();
+    const wait = soon.urgent ? REFRESH_SETTLE_MS : Math.max(REFRESH_SETTLE_MS, soon.last + REFRESH_GAP_MS - now);
+    if (soon.timer) {
+      if (soon.due <= now + wait) return;
+      clearTimeout(soon.timer);
+    }
+    soon.due = now + wait;
+    soon.timer = setTimeout(() => {
+      soon.timer = null;
+      soon.urgent = false;
+      soon.running = true;
+      void refresh(projectId)
+        .catch((error: unknown) => ctx.logger.warn(`code sessions: refreshing the window failed: ${errorMessage(error)}`))
+        .finally(() => {
+          soon.running = false;
+          if (!soon.again) return;
+          soon.again = false;
+          refreshSoon(projectId, false);
+        });
+    }, wait);
+    soon.timer.unref?.();
+  };
+
+  /** What a session event may change that the person waits on: which sessions are live, how each stands, where, on which ticket. */
+  const standing = (projectId: string): string => {
+    try {
+      const live = ctx.codeLink.store?.sessions?.(projectId, { live: true }) ?? ctx.codeLink.sessionsOf(projectId);
+      return live
+        .filter(isLive)
+        .map((s) => `${s.id}:${s.state}:${s.blocked ? 1 : 0}:${s.herdrPane ?? ""}:${s.itemIds[0] ?? ""}`)
+        .join("|");
+    } catch {
+      return "";
+    }
   };
 
   /** Who hears each layout a window saves: the `tomrade` command, waiting to say which cell it opened. */
@@ -513,17 +594,17 @@ function apply(ctx: Context, config: Config) {
 
   /** Terminals herdr is still opening, by project: shown as starting, never saved. */
   const pending = new Map<string, Map<string, StartingTerminal>>();
-  const savedTerminals = (projectId: string) => stateOf(config.stateFile).terminals?.[projectId] ?? [];
-  const saveTerminals = (projectId: string, list: SavedTerminal[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
+  const savedTerminals = (projectId: string) => stateOf().terminals?.[projectId] ?? [];
+  const saveTerminals = (projectId: string, list: SavedTerminal[]) => save({ terminals: { ...stateOf().terminals, [projectId]: list } });
 
   /** A project's closed terminals with a recording still there to play back. */
-  const closedTerminals = (projectId: string): ClosedTerminalRow[] => (stateOf(config.stateFile).closed?.[projectId] ?? []).filter((t) => recorder.has(t.pane, t.startedAt, t.endedAt));
+  const closedTerminals = (projectId: string): ClosedTerminalRow[] => (stateOf().closed?.[projectId] ?? []).filter((t) => recorder.has(t.pane, t.startedAt, t.endedAt));
   /** A terminal that went: kept for History when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
   const rememberClosed = (projectId: string, gone: SavedTerminal[], endedAt = Date.now()) => {
     const kept = gone.filter((t) => recorder.has(t.pane, t.startedAt, endedAt)).map((t): ClosedTerminalRow => ({ id: t.id, title: t.title, cwd: t.cwd, pane: t.pane, startedAt: t.startedAt, endedAt }));
     if (!kept.length) return;
-    const saved = stateOf(config.stateFile);
-    save(config.stateFile, { closed: { ...saved.closed, [projectId]: [...(saved.closed?.[projectId] ?? []), ...kept].slice(-CLOSED_TERMINALS_MAX) } });
+    const saved = stateOf();
+    save({ closed: { ...saved.closed, [projectId]: [...(saved.closed?.[projectId] ?? []), ...kept].slice(-CLOSED_TERMINALS_MAX) } });
   };
 
   /**
@@ -729,6 +810,14 @@ function apply(ctx: Context, config: Config) {
       .slice(0, TICKETS_LISTED)
       .map((i) => ({ id: i.id, key: i.key, title: i.title, status: i.status }));
 
+  /** The project's layout as saved, else the default preset's, else one cell; and the presets that are layouts. */
+  const layoutOf = (saved: Saved, projectId: string) => {
+    const remembered = saved.layouts?.[projectId];
+    const presets = (saved.presets ?? []).filter((p) => p && typeof p.id === "string" && typeof p.name === "string" && isLayout(p.layout));
+    const preset = presets.find((p) => p.id === saved.defaultPreset);
+    return { remembered, presets, preset, layout: isLayout(remembered) ? remembered : preset ? preset.layout : fresh() };
+  };
+
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
     const shown = listed(projectId);
@@ -737,12 +826,9 @@ function apply(ctx: Context, config: Config) {
     // after the start is decided: the bridge read above must not go stale across this await
     if (b.state === "ready") shown.sessions = await withPrompts(shown.sessions);
     const setting = terminal();
-    const { saved, broken } = readState(config.stateFile);
-    const remembered = saved.layouts?.[projectId];
-    const presets = (saved.presets ?? []).filter((p) => p && typeof p.id === "string" && typeof p.name === "string" && isLayout(p.layout));
-    const preset = presets.find((p) => p.id === saved.defaultPreset);
+    const { saved, broken } = readState();
+    const { remembered, presets, preset, layout } = layoutOf(saved, projectId);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
-    const layout = isLayout(remembered) ? remembered : preset ? preset.layout : fresh();
     // An ended session stays with the state while a cell shows it; the rest wait in History.
     const inCells = new Set(leafIds(layout));
     // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
@@ -812,15 +898,33 @@ function apply(ctx: Context, config: Config) {
     watchSoon();
     const win = open.get(projectId);
     if (!win || win.closed || !win.surface) return;
+    if (win.hidden) return unseen(projectId, win);
     const turn = ++win.states.begun;
+    win.soon.last = Date.now();
     const next = await state(projectId);
     if (win.closed || turn < win.states.shown) return;
     win.states.shown = turn;
     follow(win, next.terminals);
     win.shown = { terminals: next.terminals, sessions: next.sessions };
     renumber(projectId, win, next.layout);
-    win.surface.setState(next);
+    // Hidden meanwhile: it is computed again when shown.
+    const sent = win.hidden ? null : JSON.stringify(next);
+    if (sent !== null && sent !== win.sent) {
+      win.sent = sent;
+      win.surface.setState(next);
+    }
     snapshotNewSessions(win, next.sessions);
+  };
+
+  /**
+   * A refresh while nobody can see the window: herdr is not asked and the window hears nothing. The cells are numbered
+   * again for the panel, and a session beginning on a cell's pane still marks its recording, from code link alone.
+   */
+  const unseen = (projectId: string, win: Open) => {
+    const sessions = ctx.codeLink.sessionsOf(projectId).map((s): PaneSession => ({ id: s.id, pane: isLive(s) ? s.herdrPane : null, endedAt: isLive(s) ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt), startedAt: s.startedAt }));
+    win.shown = { terminals: win.shown?.terminals ?? [], sessions };
+    renumber(projectId, win, layoutOf(stateOf(), projectId).layout);
+    snapshotNewSessions(win, sessions);
   };
 
   /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. Before the first state, by what the cells hold. */
@@ -838,7 +942,7 @@ function apply(ctx: Context, config: Config) {
    * A session beginning on a pane a cell shows (another agent, or the same one again): the recording asks the cell
    * for its screen, so the session's replay can begin there rather than catch up from where the cell attached.
    */
-  const snapshotNewSessions = (win: Open, sessions: SessionRow[]) => {
+  const snapshotNewSessions = (win: Open, sessions: PaneSession[]) => {
     for (const [cell, stream] of win.terminals) {
       const id = newestOn(sessions, stream.paneId);
       const before = win.onPane.get(cell);
@@ -872,12 +976,12 @@ function apply(ctx: Context, config: Config) {
   /** Panes whose observer would not open, and when: not tried again before BACKGROUND_RETRY_MS. */
   const unwatchable = new Map<string, number>();
   /** The size each pane was last attached at here: a controller's size stays with the pane after it leaves. */
-  const sizes = new Map<string, { cols: number; rows: number }>(Object.entries(stateOf(config.stateFile).sizes ?? {}));
+  const sizes = new Map<string, { cols: number; rows: number }>(Object.entries(stateOf().sizes ?? {}));
   const keepSize = (pane: string) => {
     const size = sizes.get(pane);
     if (!size) return;
-    const kept = Object.entries({ ...stateOf(config.stateFile).sizes, [pane]: size }).slice(-SIZES_MAX);
-    save(config.stateFile, { sizes: Object.fromEntries(kept) });
+    const kept = Object.entries({ ...stateOf().sizes, [pane]: size }).slice(-SIZES_MAX);
+    save({ sizes: Object.fromEntries(kept) });
   };
 
   /** The panes to record with no cell on them, each with the newest live session in it: a new one there begins a new stretch. */
@@ -903,7 +1007,7 @@ function apply(ctx: Context, config: Config) {
         if (!known || known.at < s.startedAt) out.set(s.herdrPane, { id: s.id, at: s.startedAt });
       }
     }
-    for (const list of Object.values(stateOf(config.stateFile).terminals ?? {})) for (const t of list) if (!out.has(t.pane)) out.set(t.pane, { id: null, at: 0 });
+    for (const list of Object.values(stateOf().terminals ?? {})) for (const t of list) if (!out.has(t.pane)) out.set(t.pane, { id: null, at: 0 });
     return new Map([...out].map(([pane, s]) => [pane, s.id]));
   };
 
@@ -1141,7 +1245,7 @@ function apply(ctx: Context, config: Config) {
     // longer shows it in is a move, and lets go.
     const other = [...win.terminals].find(([c, stream]) => c !== cell && stream.paneId === pane)?.[0];
     if (other) {
-      const still = leafOf(stateOf(config.stateFile).layouts?.[projectId], other)?.sessionId;
+      const still = leafOf(stateOf().layouts?.[projectId], other)?.sessionId;
       if (still && paneOf(projectId, still) === pane) return post(win, { type: "shownIn", cell, other });
       detach(win, other);
     }
@@ -1324,22 +1428,22 @@ function apply(ctx: Context, config: Config) {
       case "savePreset": {
         if (!isLayout(m.layout)) return;
         const preset = { id: randomUUID(), name: m.name.trim() || words()("presetName"), layout: emptied(m.layout) };
-        save(config.stateFile, { presets: [...(stateOf(config.stateFile).presets ?? []), preset] });
+        save({ presets: [...(stateOf().presets ?? []), preset] });
         return refreshAll();
       }
       case "renamePreset":
-        save(config.stateFile, { presets: (stateOf(config.stateFile).presets ?? []).map((p) => (p.id === m.id && m.name.trim() ? { ...p, name: m.name.trim() } : p)) });
+        save({ presets: (stateOf().presets ?? []).map((p) => (p.id === m.id && m.name.trim() ? { ...p, name: m.name.trim() } : p)) });
         return refreshAll();
       case "deletePreset": {
-        const saved = stateOf(config.stateFile);
-        save(config.stateFile, { presets: (saved.presets ?? []).filter((p) => p.id !== m.id), ...(saved.defaultPreset === m.id ? { defaultPreset: null } : {}) });
+        const saved = stateOf();
+        save({ presets: (saved.presets ?? []).filter((p) => p.id !== m.id), ...(saved.defaultPreset === m.id ? { defaultPreset: null } : {}) });
         return refreshAll();
       }
       case "defaultPreset":
-        save(config.stateFile, { defaultPreset: m.id });
+        save({ defaultPreset: m.id });
         return refreshAll();
       case "autoPlace":
-        save(config.stateFile, { autoPlace: m.on });
+        save({ autoPlace: m.on });
         return refreshAll();
       case "history":
         win.history = m.open;
@@ -1360,7 +1464,7 @@ function apply(ctx: Context, config: Config) {
         return post(win, { type: "historySaid", token: m.token, found, ...historyRows(projectId, found.rows) });
       }
       case "fold":
-        save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
+        save({ folded: { ...stateOf().folded, [projectId]: m.folded } });
         return refresh(projectId);
       case "input": {
         const stream = win.terminals.get(m.cell);
@@ -1404,7 +1508,7 @@ function apply(ctx: Context, config: Config) {
         return win.terminals.get(m.cell)?.mouse(m);
       case "layout":
         if (!isLayout(m.layout)) return;
-        save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
+        save({ layouts: { ...stateOf().layouts, [projectId]: m.layout } });
         for (const listener of laidOut) listener(projectId, m.layout);
         renumber(projectId, win, m.layout);
         return;
@@ -1476,6 +1580,7 @@ function apply(ctx: Context, config: Config) {
         return post(win, { type: "toast", text: words()("answeredStay", { name: thread?.key ?? (thread?.title || m.threadId) }) });
       }
       case "tails": {
+        if (win.hidden) return;
         const provider = backend();
         const panes = [...new Set([...ctx.codeLink.sessionsOf(projectId).flatMap((s) => (isLive(s) && s.herdrPane ? [s.herdrPane] : [])), ...savedTerminals(projectId).map((t) => t.pane)])];
         const read = provider ? await Promise.all(panes.map((pane) => provider.readTail(pane, TAIL_LINES).catch(() => null))) : [];
@@ -1530,7 +1635,7 @@ function apply(ctx: Context, config: Config) {
         return;
       }
       case "switchTerminal": {
-        save(config.stateFile, { asked: true });
+        save({ asked: true });
         if (m.switch) {
           const settings = ctx.settings.get();
           ctx.settings.set({ ...settings, codeLink: { ...(settings.codeLink as object), terminal: builtin() ? BUILTIN_TERMINAL : "herdr" } });
@@ -1542,34 +1647,58 @@ function apply(ctx: Context, config: Config) {
         return revive(true);
       case "refresh":
         return refresh(projectId);
+      case "visible":
+        if (seen(projectId, win, m.visible) && m.visible) return refresh(projectId);
+        return;
     }
+  };
+
+  /** herdr asked how it is every BRIDGE_POLL_MS, besides every session change, while the window can be seen. */
+  const poll = (projectId: string) => {
+    const timer = setInterval(() => refreshSoon(projectId, false), BRIDGE_POLL_MS);
+    timer.unref?.();
+    return timer;
+  };
+  const stopTimers = (win: Open) => {
+    if (win.timer) clearInterval(win.timer);
+    win.timer = null;
+    if (win.soon.timer) clearTimeout(win.soon.timer);
+    win.soon.timer = null;
+  };
+  /** The window seen again, or no longer: the poll runs only while it can be. Says whether that changed. */
+  const seen = (projectId: string, win: Open, visible: boolean): boolean => {
+    if (win.closed || win.hidden === !visible) return false;
+    win.hidden = !visible;
+    if (win.timer) clearInterval(win.timer);
+    win.timer = visible ? poll(projectId) : null;
+    return true;
   };
 
   let asks = 0;
   const show = async (projectId: string, reveal?: string) => {
     const asked = reveal ? { sessionId: reveal, at: ++asks } : null;
-    const used = () => ({ used: { ...stateOf(config.stateFile).used, [projectId]: Date.now() } });
+    const used = () => ({ used: { ...stateOf().used, [projectId]: Date.now() } });
     const already = open.get(projectId);
     if (already && !already.closed) {
-      save(config.stateFile, used());
+      save(used());
       if (asked) already.reveal = asked;
       // Still opening: that call brings it up.
       if (!already.surface) return;
+      seen(projectId, already, true);
       already.surface.focus();
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), typed: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null };
-    win.timer.unref?.();
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: poll(projectId), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), typed: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null, soon: { timer: null, due: 0, running: false, again: false, urgent: false, last: 0 }, hidden: false, sent: null, standing: standing(projectId) };
     open.set(projectId, win);
     try {
       await opening(projectId, win, w);
       // after the state is read, so a file that could not be read is still said to be unreadable
-      save(config.stateFile, { lastProject: projectId, ...used() });
+      save({ lastProject: projectId, ...used() });
     } catch (error) {
       // A failed open leaves nothing behind, so the next try opens afresh.
       win.closed = true;
-      clearInterval(win.timer);
+      stopTimers(win);
       follow(win, []);
       if (open.get(projectId) === win) open.delete(projectId);
       ctx.logger.warn(`code sessions: window did not open: ${errorMessage(error)}`);
@@ -1582,6 +1711,7 @@ function apply(ctx: Context, config: Config) {
     follow(win, initialState.terminals);
     win.shown = { terminals: initialState.terminals, sessions: initialState.sessions };
     renumber(projectId, win, initialState.layout);
+    win.sent = JSON.stringify(initialState);
     win.surface = ctx.desktopSurfaces.open({
       id: `code-sessions.${projectId}`,
       title: w("windowTitle", { project: projectName(projectId) }),
@@ -1598,7 +1728,7 @@ function apply(ctx: Context, config: Config) {
       }),
       onClose: () => {
         win.closed = true;
-        clearInterval(win.timer);
+        stopTimers(win);
         renumber(projectId, win, null);
         dropFramesOf(win);
         follow(win, []);
@@ -1614,8 +1744,14 @@ function apply(ctx: Context, config: Config) {
 
   ctx.on("codeLink/changed", (projectId) => {
     historyChanged(projectId);
-    void refresh(projectId);
     watchSoon();
+    const win = open.get(projectId);
+    if (!win || win.closed) return;
+    // A session beginning, ending, waiting or claiming a ticket shows at once; its activity can wait for the next.
+    const now = standing(projectId);
+    const urgent = now !== win.standing;
+    win.standing = now;
+    refreshSoon(projectId, urgent);
   });
   // A question asked or answered, a run beginning or ending: what a conversation's card shows. Not each message or
   // streamed word. The event names only the thread: a conversation no window lists yet comes in with its run's start.
@@ -1629,7 +1765,7 @@ function apply(ctx: Context, config: Config) {
   // An agent in a terminal changing how it stands, or the terminal ending, shows at once.
   ctx.inject(["terminals"], (ctx) => {
     ctx.terminals.onPane((event) => {
-      for (const [projectId, win] of open) if (win.follows.has(event.paneId)) void refresh(projectId);
+      for (const [projectId, win] of open) if (win.follows.has(event.paneId)) refreshSoon(projectId, true);
       if (event.kind === "exited") watchSoon();
     });
   });
@@ -1670,7 +1806,7 @@ function apply(ctx: Context, config: Config) {
   });
   // Projects with a window before `used` was kept count as used long ago, the last one opened first.
   ctx.on("codeLink/terminal-windows", () => {
-    const saved = stateOf(config.stateFile);
+    const saved = stateOf();
     const ids = new Set([...Object.keys(saved.used ?? {}), ...Object.keys(saved.layouts ?? {}), ...(saved.lastProject ? [saved.lastProject] : [])]);
     const openIds = ctx.db.openIds();
     const usedAt = (id: string) => saved.used?.[id] ?? (id === saved.lastProject ? 1 : 0);
@@ -1703,7 +1839,7 @@ function apply(ctx: Context, config: Config) {
     run: async ({ projectId }) => {
       // Asked without a project (a start that opens this window first): the one it showed last, else one on this machine.
       const open = ctx.db.openIds();
-      const last = stateOf(config.stateFile).lastProject;
+      const last = stateOf().lastProject;
       const target = projectId ?? (last && open.includes(last) ? last : open[0]);
       if (!target) return { toast: words()("openProject") };
       await show(target);
@@ -1720,7 +1856,7 @@ function apply(ctx: Context, config: Config) {
 
   // `tomrade term` in the person's own terminal, over the MCP port.
   const term: TermWindow = {
-    lastProject: () => stateOf(config.stateFile).lastProject,
+    lastProject: () => stateOf().lastProject,
     name: projectName,
     show: (projectId) => show(projectId),
     openTerminal: async (projectId, cwd) => {
@@ -1736,7 +1872,7 @@ function apply(ctx: Context, config: Config) {
       return id;
     },
     layout: (projectId) => {
-      const layout = stateOf(config.stateFile).layouts?.[projectId];
+      const layout = stateOf().layouts?.[projectId];
       return isLayout(layout) ? layout : null;
     },
     terminal: (projectId, id) => savedTerminals(projectId).find((t) => t.id === id),
@@ -1755,7 +1891,7 @@ function apply(ctx: Context, config: Config) {
     disposed = true;
     if (watchTimer) clearTimeout(watchTimer);
     for (const pane of [...background.keys()]) unwatch(pane);
-    for (const timer of refreshSoon.values()) clearTimeout(timer);
+    for (const win of open.values()) stopTimers(win);
     for (const win of open.values()) win.surface.close();
     recorder.closeAll();
   });

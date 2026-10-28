@@ -251,7 +251,7 @@ declare module "@tomradex/ipc" {
     "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
     /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
-    "codeLink.conversation": (projectId: string, sessionId: string, before?: number) => RecordRead | null;
+    "codeLink.conversation": (projectId: string, sessionId: string, before?: number, after?: number) => RecordRead | null;
     /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
     "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
@@ -408,6 +408,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private repoConnect!: RepoConnect;
   /** Repositories whose files are being filled in right now, so two triggers do not write at once. */
   private readonly autoConnecting = new Set<string>();
+  /** Records found by looking through an agent's folder, by agent and its session id. */
+  private readonly recordFiles = new Map<string, string>();
   /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
   private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
@@ -722,6 +724,10 @@ export class CodeLink extends Service implements CodeLinkReader {
         if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
+      // a session left pointing at a deleted thread would open a blank conversation
+      for (const projectId of this.ctx.db.openIds()) this.cutDeadThreads(ctx.agent, projectId);
+      ctx.on("db/opened", (projectId) => this.cutDeadThreads(ctx.agent, projectId));
+      ctx.on("agent/thread-deleted", (projectId) => this.cutDeadThreads(ctx.agent, projectId));
       ctx.on("agent/run-ended", (run, thread) => {
         this.running.delete(thread.id);
         this.archiveCompletedSessions(thread.projectId);
@@ -780,7 +786,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
-      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before) => ctx.codeLink.conversation(projectId, sessionId, before));
+      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => ctx.codeLink.conversation(projectId, sessionId, before, after));
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
@@ -965,19 +971,30 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /**
-   * A session's conversation from its agent's own record, read-only: its end, or the stretch `before` an earlier
-   * read's start. Null when Tomrade cannot read that agent's record.
+   * A session's conversation from its agent's own record, read-only: its end, the stretch `before` an earlier read's
+   * start, or what came `after` an earlier read's `next`. Null when Tomrade cannot read that agent's record.
    */
-  conversation(projectId: string, sessionId: string, before?: number): RecordRead | null {
+  conversation(projectId: string, sessionId: string, before?: number, after?: number): RecordRead | null {
     const s = this.store.session(projectId, sessionId);
     if (!s?.externalId) return null;
     const record = recordOf(this.ctx, s.agent);
-    const file = record ? (s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null })) : null;
-    const read = record && file ? record.read(file, before === undefined ? undefined : { before }) : null;
+    const file = record ? (s.transcript ?? this.recordFile(s.agent, s.externalId, record, s.cwd ?? null)) : null;
+    const read = record && file ? record.read(file, before !== undefined ? { before } : after !== undefined ? { after } : undefined) : null;
     if (read || !s.recordSavedAt) return read;
     // The agent's own record is gone (its CLI cleans old ones up) or unreadable here: what was saved when it ended.
     const saved = snapshotFile(this.recordsDir(), s.agent, s.externalId);
     return saved ? readSnapshot(saved, before) : null;
+  }
+
+  /** Where an agent keeps a conversation's record, looked for once: the agent's folder is not read through on every read. */
+  private recordFile(agent: string, externalId: string, record: NonNullable<ReturnType<typeof recordOf>>, cwd: string | null): string | null {
+    const key = `${agent}:${externalId}`;
+    const known = this.recordFiles.get(key);
+    if (known && fs.existsSync(known)) return known;
+    const found = record.find(externalId, { cwd });
+    if (found) this.recordFiles.set(key, found);
+    else this.recordFiles.delete(key);
+    return found;
   }
 
   /**
@@ -1002,6 +1019,15 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   private recordsDir(): string {
     return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", "records");
+  }
+
+  /** Ends the sessions whose conversation no longer exists and drops the link to it. */
+  private cutDeadThreads(agent: Context["agent"], projectId: string): void {
+    for (const s of this.store.sessions(projectId)) {
+      if (!s.threadId || agent.store.thread(projectId, s.threadId)) continue;
+      if (s.state !== "ended" && s.state !== "lost") this.sessions.end(projectId, s.id, "ended", true, "its conversation was deleted");
+      this.store.patchSession(projectId, s.id, { threadId: null });
+    }
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {

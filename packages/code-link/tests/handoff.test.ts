@@ -229,3 +229,27 @@ it("starts a coding agent on the person's own words with no ticket: a terminal s
     await ctx.fiber.dispose();
   }
 });
+
+it("ends a terminal session and cuts its link when its conversation is deleted, so nothing lists a thread that is gone", { timeout: 30_000 }, async () => {
+  const { ctx, project, codeLink, agent, fake } = await machine();
+  try {
+    const thread = agent.newThread(project.id, "fake-cli", null, { title: "Doomed chat" });
+    const sent = agent.send(project.id, thread.id, { kind: "text", text: "hi" });
+    await until(() => agent.store.run(project.id, sent.runId)?.status === "done");
+    const moved = await codeLink.toTerminal(project.id, thread.id);
+    const sessionId = moved.ok ? moved.sessionId : "";
+    expect(codeLink.store.session(project.id, sessionId)).toMatchObject({ threadId: thread.id, state: "running" });
+    expect(agent.deleteThread(project.id, thread.id)).toBe(true);
+    expect(codeLink.store.session(project.id, sessionId)).toMatchObject({ threadId: null, state: "ended" });
+  } finally {
+    // a session an older version left behind: its conversation is gone, the link stays until the project opens
+    const old = agent.newThread(project.id, "fake-cli", null, { title: "Old chat" });
+    const left = codeLink.store.createSession(project.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "fake-cli", threadId: old.id, device: "d" });
+    agent.store.deleteThread(project.id, old.id);
+    expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: old.id });
+    ctx.emit("db/opened", project.id);
+    expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: null, state: "ended" });
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});
