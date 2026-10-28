@@ -1709,7 +1709,11 @@ export class Agent extends Service implements AgentReader {
         if (wait <= 0) progress({});
         else progressSoon ??= setTimeout(() => {
           progressSoon = null;
-          if (this.store.run(thread.projectId, run.id)?.status === "running") progress({});
+          try {
+            if (this.store.run(thread.projectId, run.id)?.status === "running") progress({});
+          } catch {
+            // The run's project, or the app, closed while this waited.
+          }
         }, wait);
       },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
