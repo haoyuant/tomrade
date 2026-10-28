@@ -1,4 +1,4 @@
-import type { ThreadMessage } from "@tomradex/agent";
+import type { ThreadDetail, ThreadMessage } from "@tomradex/agent";
 
 /**
  * A pushed message, put where the thread's own order (seq) says. Events held
@@ -30,4 +30,19 @@ export function catchUp(refetch: () => void, gapMs = 2_000, now: () => number = 
     last = t;
     refetch();
   };
+}
+
+/**
+ * The seq a cached thread holds every message through, so asking again sends only what is newer — a long conversation
+ * refetched on focus or mount is otherwise sent whole. null asks for it whole: nothing held, another thread, or a gap
+ * (seq counts from 1 without one, so a complete list is as long as its last seq).
+ */
+export function heldThrough(held: ThreadDetail | undefined, threadId: string): number | null {
+  const last = held?.messages.at(-1)?.seq;
+  return held && held.thread.id === threadId && last !== undefined && held.messages.length === last ? last : null;
+}
+
+/** A thread asked for after `heldThrough`: everything fresh, the held messages kept as they are with the new ones after them. */
+export function withHeld(held: ThreadDetail, fresh: ThreadDetail): ThreadDetail {
+  return { ...fresh, messages: fresh.messages.length ? [...held.messages, ...fresh.messages] : held.messages };
 }

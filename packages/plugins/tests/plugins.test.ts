@@ -372,3 +372,39 @@ describe("contracts", () => {
     expect(viewOf(h, "store").implements).toEqual([]);
   });
 });
+
+describe("reading the rows at boot", () => {
+  it("asks for every row's module before starting the first, and starts them in order", async () => {
+    const ctx = new Context();
+    const events: string[] = [];
+    const gates = new Map<string, () => void>();
+    const plugin = (id: string): Plugin => ({ name: id, apply: () => void events.push(`start ${id}`) });
+    const booting = ctx.plugin(Plugins, {
+      rows: [{ id: "a", name: "a" }, { id: "b", name: "b" }, { id: "c", name: "c" }],
+      modules: [],
+      contracts: [],
+      resolve: ({ id }) => {
+        events.push(`read ${id}`);
+        return new Promise<Plugin>((resolve) => gates.set(id, () => resolve(plugin(id))));
+      }
+    });
+    await settle();
+    expect(events).toEqual(["read a", "read b", "read c"]);
+    // The last read arrives first: it still starts last.
+    gates.get("c")!();
+    gates.get("b")!();
+    await settle();
+    expect(events).toEqual(["read a", "read b", "read c"]);
+    gates.get("a")!();
+    await booting;
+    await settle();
+    expect(events).toEqual(["read a", "read b", "read c", "start a", "start b", "start c"]);
+  });
+
+  it("tells a row that failed to read when its turn to start comes, not before", async () => {
+    const h = await boot([{ id: "store", name: "store" }, { id: "missing", name: "nowhere" }, { id: "ledger", name: "ledger" }]);
+    expect(viewOf(h, "missing").state).toBe("failed");
+    expect(h.failures).toHaveLength(1);
+    expect(viewOf(h, "ledger").state).toBe("active");
+  });
+});

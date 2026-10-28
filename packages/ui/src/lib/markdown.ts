@@ -107,6 +107,21 @@ const renderer = {
   }
 };
 
+// A parser per resolver and line-break rule, built once: a streamed or re-rendered reply parses without building one each time.
+const NO_RESOLVER = {};
+const parsers = new WeakMap<object, Map<boolean, Marked>>();
+function markedFor(resolve: LinkResolver | typeof NO_RESOLVER | null, breaks: boolean): Marked {
+  const key = resolve ?? parsers;
+  let byBreaks = parsers.get(key);
+  if (!byBreaks) parsers.set(key, (byBreaks = new Map()));
+  let marked = byBreaks.get(breaks);
+  if (!marked) {
+    marked = new Marked({ extensions: resolve === null ? [] : extensions(resolve === NO_RESOLVER ? undefined : (resolve as LinkResolver)), renderer, breaks, async: false });
+    byBreaks.set(breaks, marked);
+  }
+  return marked;
+}
+
 /**
  * Markdown as the viewer shows it: wiki links and tags drawn as the app's own
  * links, a dangling link marked as one, and the whole tree through the same
@@ -115,7 +130,7 @@ const renderer = {
  * newline as a line break, as a GitHub issue does.
  */
 export function renderMarkdown(text: string, resolve?: LinkResolver, opts: { lines?: boolean; notes?: boolean; breaks?: boolean } = {}): string {
-  const marked = new Marked({ extensions: opts.notes === false ? [] : extensions(resolve), renderer, breaks: !!opts.breaks, async: false });
+  const marked = markedFor(opts.notes === false ? null : resolve ?? NO_RESOLVER, !!opts.breaks);
   const html = opts.lines ? withLines(marked, text) : (marked.parse(text, { async: false }) as string);
   // A relative markdown link is a note of this store; mark the ones that lead nowhere.
   const decode = decodeHref;

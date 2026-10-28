@@ -31,7 +31,7 @@ export {
   type SessionState,
   type SessionView
 } from "./store.js";
-export { BRIEF_FILES, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
+export { BRIEF_FILES, GitMemo, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
 export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput, type RemoteFailure, type RemoteIdentity, type RemoteProbe } from "./remote.js";
 export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";

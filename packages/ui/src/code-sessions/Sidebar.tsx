@@ -28,7 +28,7 @@ const shortOf = (r: HereRow, name: string): string => {
 
 /** `cells`: the number of the cell that shows each row, by row or session id. */
 type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, number>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
-type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void };
+type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
 const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
@@ -453,8 +453,8 @@ type SidebarProps = {
   onTerminal: (t: TerminalRow, beside?: boolean) => void;
   onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
-  onAnswer: (s: SessionRow, which: "allow" | "deny") => void;
-  onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void;
+  onAnswer: (s: SessionRow, which: "allow" | "deny") => Promise<void> | void;
+  onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void;
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
   onSavePreset: (name: string) => void;

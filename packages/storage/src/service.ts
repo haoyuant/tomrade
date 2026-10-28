@@ -84,6 +84,8 @@ declare module "cordis" {
     "storage/attention"(projectId: string, notes: Attention[]): void;
     /** The folder's copy replaced the local rows; caches for this project are stale. */
     "storage/imported"(projectId: string): void;
+    /** The app's first window has loaded, or it opens none: work that would slow the first screen can start. */
+    "app/started"(): void;
     /** A project the Hub named came back to this machine. */
     "storage/restored"(projectId: string): void;
   }
@@ -111,7 +113,9 @@ export const StorageConfig = z.preprocess(
     /** After the remote could not be reached, the first wait before asking again; it doubles each time, up to ten minutes. */
     remoteRetryMs: z.number().int().min(0).default(15_000),
     /** How long a folder may disagree with its manifest and still read as mid-sync; past it, the status is an error and the person is told once. */
-    tornErrorMs: z.number().int().min(0).default(600_000)
+    tornErrorMs: z.number().int().min(0).default(600_000),
+    /** The boot reconcile waits for the app's first window to load (`app/started`), at most this long. 0 starts it at once. */
+    bootWaitMs: z.number().int().min(0).default(0)
   })
 );
 export type StorageConfig = z.infer<typeof StorageConfig>;
@@ -308,7 +312,7 @@ export class Storage extends Service implements StorageReader {
       });
     });
 
-    this.ready = this.reconcileAll("boot");
+    this.ready = this.untilStarted().then(() => (this.closing ? undefined : this.reconcileAll("boot")));
     // Destinations register just after this service; let them arrive before anything is judged missing.
     let restoreBoot: ReturnType<typeof setTimeout> | null = null;
     void this.ready.then(() => {
@@ -330,6 +334,24 @@ export class Storage extends Service implements StorageReader {
       for (const w of this.watchers.values()) w.close();
       this.watchers.clear();
     };
+  }
+
+  /**
+   * Until the app's first window has loaded, at most `bootWaitMs`: the boot reconcile reads every project's folder in
+   * this process, which the first screen's own asks are waiting on. The cache already holds what that screen shows.
+   */
+  private untilStarted(): Promise<void> {
+    const ms = this.config.bootWaitMs;
+    if (!ms) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        off();
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      const off = this.home.on("app/started", done);
+    });
   }
 
   // ── plumbing ────────────────────────────────────────────────────────────────
@@ -1159,6 +1181,9 @@ export class Storage extends Service implements StorageReader {
   private absorbFolder(projectId: string): void {
     const entry = this.mustEntry(projectId);
     if (!entry.dir) return;
+    // The folder unchanged since it was last read, and holding what was published: nothing to take, nothing to parse.
+    const known = this.folderDigest(entry.dir, this.verifies(projectId));
+    if (!known.problem && known.digest !== null && known.digest === entry.lastPublishedDigest) return;
     const { state, problem } = this.readFolder(entry.dir, this.verifies(projectId));
     if (problem) this.gaveUp(projectId, "not read", problem);
     if (!state) return;

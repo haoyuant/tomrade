@@ -1,5 +1,5 @@
 export { keys } from "./keys";
-export { invalidateContributions, invalidateProject, invalidateWorkspace, sessionsRefresher } from "./invalidate";
+export { invalidateContributions, invalidateFiles, invalidateProject, invalidateWorkspace, invalidateWrites, sessionsRefresher } from "./invalidate";
 export * from "./projects";
 export * from "./settings";
 export * from "./items";

@@ -91,5 +91,7 @@ declare module "cordis" {
     "desktop/open-path"(target: string): void;
     /** The app comes in front of the one the person is in, for a window it shows at their word from outside (the `tomrade` command). */
     "desktop/activate"(): void;
+    /** Whether any of the app's windows can be seen (shown, not minimized) changed; background work may slow down while none can. */
+    "desktop/seen"(seen: boolean): void;
   }
 }

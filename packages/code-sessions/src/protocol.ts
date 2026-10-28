@@ -279,9 +279,9 @@ export type WindowMessage =
   | { type: "takeGuess"; sessionId: string }
   | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
-  | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  | { type: "answer"; sessionId: string; which: "allow" | "deny"; token?: number }
   /** An assistant conversation's question answered from its card with one of its choices. */
-  | { type: "answerThread"; threadId: string; questionId: string; value: string }
+  | { type: "answerThread"; threadId: string; questionId: string; value: string; token?: number }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
   /** The recording of an ended session, a closed terminal or a stretch of manual work a cell shows: answered with `replay`. */
@@ -328,6 +328,8 @@ export type WindowPost =
   /** The pane the cell asked for streams in `other` already: one pane, one cell. */
   | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string }
+  /** A card's answer went, or failed to: its buttons may be pressed again. Echoes the answer's token. */
+  | { type: "answered"; token: number }
   /**
    * A page of History: its rows, and with them the session rows behind the coding sessions on it (so one picked goes
    * into a cell), the agents' names by id, and — with the first page — the closed terminals whose output was recorded.

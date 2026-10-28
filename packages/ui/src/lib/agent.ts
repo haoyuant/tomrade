@@ -7,7 +7,7 @@ import { useI18n, type MessageKey } from "./i18n";
 import { invalidateWorkspace, keys, useSaveSettings, useSettings } from "./queries";
 import { useToast } from "./toast";
 import { useErrorToast } from "~/lib/toast";
-import { catchUp, insertMessage, missedBefore } from "./threadLive";
+import { catchUp, heldThrough, insertMessage, missedBefore, withHeld } from "./threadLive";
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: keys.agent.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
@@ -27,8 +27,18 @@ export function useUnarchiveThread(projectId: string) {
 
 // Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
 // (even finishing, which left the panel "working" for good): always refetch when it comes back into view.
-export const useAgentThread = (projectId: string, threadId: string | null) =>
-  useQuery({ queryKey: keys.agent.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId, staleTime: 0 });
+export function useAgentThread(projectId: string, threadId: string | null) {
+  const qc = useQueryClient();
+  const key = keys.agent.thread(projectId, threadId ?? "");
+  return useQuery({ queryKey: key, queryFn: () => fetchThread(projectId, threadId!, qc.getQueryData<ThreadDetail>(key)), enabled: !!threadId, staleTime: 0 });
+}
+
+/** The thread again, its messages only from after the last one held when the cache holds them all. */
+export async function fetchThread(projectId: string, threadId: string, held: ThreadDetail | undefined): Promise<ThreadDetail> {
+  const after = heldThrough(held, threadId);
+  if (after === null) return invoke("agent.thread", projectId, threadId);
+  return withHeld(held!, await invoke("agent.thread", projectId, threadId, after));
+}
 
 /**
  * The playbooks a ticket of this work type can run as its method — the built-in

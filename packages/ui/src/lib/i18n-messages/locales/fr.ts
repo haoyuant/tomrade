@@ -2183,6 +2183,7 @@ export const fr: PartialMessages = {
     archiveThread: "Archiver la conversation",
     deleteThread: "Supprimer la conversation",
     deleteThreadConfirm: "Supprimer définitivement cette conversation ?",
+    deleteThreadEndsSession: "Supprimer définitivement cette conversation ? Sa session de terminal se termine aussi.",
     collapsePanel: "Replier le panneau — [[cmd:assistant]]",
     collapseAssistantAria: "Replier le panneau de l’assistant",
     introMessage: "Je peux lire ce tableau et y écrire. Chaque écriture que je fais m’est attribuée, regroupée par exécution et annulable en un clic.",

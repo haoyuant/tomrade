@@ -21,6 +21,8 @@ export interface BootOptions {
    * `appVersion` is what a full-mode plugin's `engines.tomrade` is held to; a checkout passes none.
    */
   extensions?: { root: string; trustedKeys: Record<string, string>; appVersion?: string | null };
+  /** The caller opens a window and emits `app/started` once it has loaded; otherwise boot does as it returns. */
+  windowComing?: boolean;
 }
 
 export interface Booted {
@@ -121,6 +123,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     rowsFrom,
     leftSwitches
   });
+  if (!opts.windowComing) ctx.emit("app/started");
 
   return { ctx, rows, dump: () => stringify(ctx.plugins.snapshot()) };
 }

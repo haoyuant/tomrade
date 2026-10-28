@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { invalidateSessions, invalidateWorkspace, SESSIONS_GAP_MS, SESSIONS_SETTLE_MS, sessionsRefresher } from "../src/lib/queries/invalidate";
+import { invalidateFiles, invalidateSessions, invalidateWorkspace, invalidateWrites, SESSIONS_GAP_MS, SESSIONS_SETTLE_MS, sessionsRefresher } from "../src/lib/queries/invalidate";
+import { putItem } from "../src/lib/queries/items";
 import { keys } from "../src/lib/queries/keys";
 
 describe("a ticket write", () => {
@@ -22,6 +23,98 @@ describe("a ticket write", () => {
     invalidateWorkspace(qc, "p");
     const stale = Object.entries(cached).filter(([, key]) => qc.getQueryState(key)?.isInvalidated).map(([name]) => name);
     expect(stale).toEqual(["badges", "sidebar", "section", "edges", "status", "statusAnywhere"]);
+  });
+});
+
+describe("writes heard from the main process", () => {
+  const cachedProject = () => ({
+    window: keys.itemsWindow("p", 50, 30),
+    labels: keys.labels("p"),
+    badges: keys.badges("p"),
+    views: keys.views("p"),
+    ranks: keys.ranks("view"),
+    boards: keys.boards("p"),
+    fields: keys.fields("p"),
+    projects: keys.projects,
+    storage: keys.storageStatus("p")
+  });
+  const staleAfter = (entities: string[]) => {
+    const qc = new QueryClient();
+    const cached = cachedProject();
+    for (const key of Object.values(cached)) qc.setQueryData(key, []);
+    invalidateWrites(qc, "p", entities);
+    return Object.entries(cached).filter(([, key]) => qc.getQueryState(key)?.isInvalidated).map(([name]) => name);
+  };
+
+  it("a dragged card's rank asks again for views and ranks only", () => {
+    expect(staleAfter(["view"])).toEqual(["views", "ranks"]);
+  });
+
+  it("a ticket asks again for what reads tickets, not boards, fields or the projects list", () => {
+    expect(staleAfter(["item"])).toEqual(["window", "labels", "badges"]);
+  });
+
+  it("a card dropped in another column, a ticket and its rank, asks for both", () => {
+    expect(staleAfter(["item", "view"])).toEqual(["window", "labels", "badges", "views", "ranks"]);
+  });
+
+  it("a board, an undo of all three, or anything unknown asks for everything, as before", () => {
+    const all = ["window", "labels", "badges", "views", "ranks", "boards", "fields", "projects", "storage"];
+    expect(staleAfter(["board"])).toEqual(all);
+    expect(staleAfter(["item", "board", "view"])).toEqual(all);
+    expect(staleAfter(["something-new"])).toEqual(all);
+  });
+});
+
+describe("a ticket written from this window", () => {
+  it("is put in every list that holds it, and nothing is asked again until its broadcast", () => {
+    const qc = new QueryClient();
+    const before = { id: "a", title: "Old", version: 1 };
+    const other = { id: "b", title: "Other", version: 1 };
+    qc.setQueryData(keys.itemsWindow("p", 50, 30), [before, other]);
+    qc.setQueryData(keys.item("p", "a"), before);
+    qc.setQueryData(keys.itemQuery("p", "count", {}), 2);
+    qc.setQueryData(keys.itemsWindow("q", 50, 30), [before]);
+    const after = { ...before, title: "New", version: 2 };
+    putItem(qc, "p", after as never);
+    expect(qc.getQueryData(keys.itemsWindow("p", 50, 30))).toEqual([after, other]);
+    expect(qc.getQueryData(keys.item("p", "a"))).toEqual(after);
+    expect(qc.getQueryData(keys.itemQuery("p", "count", {}))).toBe(2);
+    expect(qc.getQueryData(keys.itemsWindow("q", 50, 30))).toEqual([before]);
+    expect(qc.getQueryState(keys.itemsWindow("p", 50, 30))?.isInvalidated).toBe(false);
+  });
+});
+
+describe("a change to a project's files", () => {
+  const cachedFiles = () => ({
+    tree: keys.files.tree("p"),
+    status: keys.files.status("p"),
+    edited: keys.files.content("p", "notes/a.md"),
+    editedHistory: keys.files.history("p", "notes/a.md"),
+    inMovedFolder: keys.files.content("p", "notes/sub/b.md"),
+    untouched: keys.files.content("p", "other.md"),
+    untouchedHistory: keys.files.history("p", "other.md"),
+    version: keys.files.version("p", "f1", "v1"),
+    attachments: keys.files.attachmentsOf("p", "item"),
+    timeline: keys.timeline("p"),
+    otherProject: keys.files.tree("q")
+  });
+  const staleAfter = (paths?: string[]) => {
+    const qc = new QueryClient();
+    const cached = cachedFiles();
+    for (const key of Object.values(cached)) qc.setQueryData(key, []);
+    invalidateFiles(qc, "p", paths);
+    return Object.entries(cached).filter(([, key]) => qc.getQueryState(key)?.isInvalidated).map(([name]) => name);
+  };
+
+  it("naming its paths asks again for the tree, status and those files, keeping every other open file", () => {
+    expect(staleAfter(["notes/a.md"])).toEqual(["tree", "status", "edited", "editedHistory", "attachments", "timeline"]);
+    // A folder moved or removed takes what is under it along.
+    expect(staleAfter(["notes"])).toEqual(["tree", "status", "edited", "editedHistory", "inMovedFolder", "attachments", "timeline"]);
+  });
+
+  it("naming none (a sync, an outside edit) asks again for everything, as before", () => {
+    expect(staleAfter()).toEqual(["tree", "status", "edited", "editedHistory", "inMovedFolder", "untouched", "untouchedHistory", "version", "attachments", "timeline"]);
   });
 });
 

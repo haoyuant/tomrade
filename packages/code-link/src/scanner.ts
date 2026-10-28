@@ -44,6 +44,41 @@ const isIncidental = (file: string): boolean => {
 /** What a coding agent reads first; its presence is what makes a repository "documented". */
 export const BRIEF_FILES = ["CLAUDE.md", "AGENTS.md"];
 
+/**
+ * What git answers about commits it names by their hashes never changes, so a scan asks once: a ref that did not move
+ * costs no rev-list, log or ls-tree on the next pass. Answers that only the newest commit needs (the tree, the first-parent
+ * line) keep one version per repository; the rest are bounded by count.
+ */
+export class GitMemo {
+  private readonly answers = new Map<string, unknown>();
+  private readonly latest = new Map<string, { version: string; value: unknown }>();
+  constructor(private readonly max = 4000) {}
+
+  /** `compute` answering undefined (git failed) is not kept. */
+  async once<T>(key: string, compute: () => Promise<T | undefined>): Promise<T | undefined> {
+    if (this.answers.has(key)) {
+      const value = this.answers.get(key) as T;
+      // Most recently used goes last, so the oldest goes first when full.
+      this.answers.delete(key);
+      this.answers.set(key, value);
+      return value;
+    }
+    const value = await compute();
+    if (value === undefined) return value;
+    this.answers.set(key, value);
+    if (this.answers.size > this.max) this.answers.delete(this.answers.keys().next().value!);
+    return value;
+  }
+
+  async newest<T>(key: string, version: string, compute: () => Promise<T | undefined>): Promise<T | undefined> {
+    const kept = this.latest.get(key);
+    if (kept?.version === version) return kept.value as T;
+    const value = await compute();
+    if (value !== undefined) this.latest.set(key, { version, value });
+    return value;
+  }
+}
+
 export interface ScanOptions {
   defaultBranch: string;
   /** The project's key prefix, e.g. TOM. */
@@ -53,6 +88,8 @@ export interface ScanOptions {
   /** Fetch from origin first. Off, only what this machine already has is read. */
   fetch?: boolean;
   logCap?: number;
+  /** Answers kept across passes; without one every pass asks git everything again. */
+  memo?: GitMemo;
 }
 
 export interface ScannedBranch {
@@ -115,6 +152,8 @@ const RS = "\u001e";
  */
 export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): Promise<ScanResult> {
   const run = (args: string[]) => git(args, { cwd: checkout, ok: true });
+  const memo = opts.memo ?? new GitMemo();
+  const key = (...parts: string[]) => [checkout, ...parts].join(NUL);
   let remote: ScanResult["remote"] = "unknown";
   let remoteDetail: string | null = null;
   const hasOrigin = (await run(["remote", "get-url", "origin"])).code === 0;
@@ -156,11 +195,15 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
 
   const branches = [...byName.values()];
   if (defaultRef) {
+    const tip = defaultSha ?? defaultRef;
     let mainline: Set<string> | null = null;
     for (const b of branches) {
-      const counts = await run(["rev-list", "--left-right", "--count", `${b.sha}...${defaultRef}`]);
-      if (counts.code === 0) {
-        const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
+      const counts = await memo.once(key("counts", b.sha, tip), async () => {
+        const out = await run(["rev-list", "--left-right", "--count", `${b.sha}...${tip}`]);
+        return out.code === 0 ? out.stdout.trim().split(/\s+/).map(Number) : undefined;
+      });
+      if (counts) {
+        const [ahead, behind] = counts;
         b.ahead = ahead || 0;
         b.behind = behind || 0;
         b.contained = b.ahead === 0;
@@ -172,7 +215,7 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
       // first-parent line; a fast-forward or squash is read from links and
       // commit keys instead.
       if (b.contained && b.behind > 0) {
-        mainline ??= new Set((await run(["rev-list", "--first-parent", defaultRef])).stdout.split("\n").map((s) => s.trim()).filter(Boolean));
+        mainline ??= (await memo.newest(key("mainline"), tip, async () => new Set((await run(["rev-list", "--first-parent", tip])).stdout.split("\n").map((s) => s.trim()).filter(Boolean)))) ?? new Set();
         b.merged = !mainline.has(b.sha);
       }
       // Work started outside Tomrade does not necessarily follow the branch
@@ -180,8 +223,11 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
       // no forge API are needed to discover it. A branch whose name already
       // says its ticket keeps that one; another ticket a commit mentions is a reference.
       if (b.ahead > 0 && b.keyNum === null) {
-        const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), `${defaultRef}..${b.sha}`]);
-        for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
+        const keys = await memo.once(key("keys", tip, b.sha, opts.prefix), async () => {
+          const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), `${tip}..${b.sha}`]);
+          return log.code === 0 ? keysInText(log.stdout, opts.prefix) : undefined;
+        });
+        for (const keyNum of keys ?? []) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
       }
     }
   } else {
@@ -189,18 +235,25 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     // unique work and can still identify a ticket started from another tool.
     for (const b of branches) {
       if (b.keyNum !== null) continue;
-      const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), b.sha]);
-      for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
+      const keys = await memo.once(key("keys", "", b.sha, opts.prefix), async () => {
+        const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), b.sha]);
+        return log.code === 0 ? keysInText(log.stdout, opts.prefix) : undefined;
+      });
+      for (const keyNum of keys ?? []) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
     }
   }
 
   const mergedKeys = new Map<number, MergedCommit>();
   if (defaultRef) {
     const format = "--format=%H%x1f%ct%x1f%s%x1f%b%x1e";
-    let log = opts.sinceSha ? await run(["log", format, defaultRef, `^${opts.sinceSha}`]) : { code: 1, stdout: "" };
-    // The old anchor may be gone (a rewritten default branch): fall back to a window.
-    if (log.code !== 0) log = await run(["log", format, `-n`, String(opts.logCap ?? 500), defaultRef]);
-    for (const record of log.stdout.split(RS)) {
+    const tip = defaultSha ?? defaultRef;
+    const stdout = await memo.newest(key("merged"), `${tip}${NUL}${opts.sinceSha ?? ""}`, async () => {
+      let log = opts.sinceSha ? await run(["log", format, tip, `^${opts.sinceSha}`]) : { code: 1, stdout: "" };
+      // The old anchor may be gone (a rewritten default branch): fall back to a window.
+      if (log.code !== 0) log = await run(["log", format, `-n`, String(opts.logCap ?? 500), tip]);
+      return log.code === 0 ? log.stdout : undefined;
+    });
+    for (const record of (stdout ?? "").split(RS)) {
       const [sha, ct, subject, body] = record.replace(/^\n/, "").split(US);
       if (!sha?.trim()) continue;
       const owner = subjectKey(subject ?? "", opts.prefix);
@@ -216,13 +269,16 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   let sources = 0;
   let hasBrief = false;
   if (defaultRef) {
-    const tree = await run(["ls-tree", "-r", "--name-only", defaultRef]);
-    const names = tree.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
-    manifests = names.filter(isManifest);
-    sources = names.filter((name) => !isIncidental(name)).length;
-    // A repository-level brief governs every workstream beneath it. Nested
-    // briefs may describe only that subtree and are not equivalent here.
-    hasBrief = BRIEF_FILES.some((file) => names.includes(file));
+    const tip = defaultSha ?? defaultRef;
+    const read = await memo.newest(key("tree"), tip, async () => {
+      const tree = await run(["ls-tree", "-r", "--name-only", tip]);
+      if (tree.code !== 0) return undefined;
+      const names = tree.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+      // A repository-level brief governs every workstream beneath it. Nested
+      // briefs may describe only that subtree and are not equivalent here.
+      return { manifests: names.filter(isManifest), sources: names.filter((name) => !isIncidental(name)).length, hasBrief: BRIEF_FILES.some((file) => names.includes(file)) };
+    });
+    if (read) ({ manifests, sources, hasBrief } = read);
   }
   // No default branch anywhere and the fetch failed: that is not an empty
   // repository, it is a repository this machine cannot see — credentials, most often.

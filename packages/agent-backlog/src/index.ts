@@ -87,11 +87,11 @@ export default {
         execute: async ({ title, body, titles, limit }, inv) => {
           const existing = existingOf(inv.projectId);
           if (titles?.length) {
-            const results = await findSimilarBatch(llm(), titles.map((t) => ({ title: t })), existing, limit);
+            const results = await findSimilarBatch(llm(), titles.map((t) => ({ title: t })), existing, limit, { signal: inv.signal });
             return { results: titles.map((t, i) => ({ title: t, ...results[i] })) };
           }
           if (!title) throw new Error("pass title, or titles for a batch");
-          return findSimilar(llm(), { title, body }, existing, limit);
+          return findSimilar(llm(), { title, body }, existing, limit, { signal: inv.signal });
         }
       })
     );

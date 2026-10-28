@@ -18,8 +18,9 @@ import { isCancelKey, isCommitKey } from "~/lib/keys";
  *
  * Every edit asserts the version it read, so a field the user reaches for
  * while an agent is writing is refused rather than merged — and the refusal
- * says so. `usePatchItem` re-fetches on settle either way, so the retry is
- * made against a fresh version instead of the stale one that was just refused.
+ * says so. `usePatchItem` re-fetches on a refusal (a write that lands is heard
+ * through its broadcast), so the retry is made against a fresh version instead
+ * of the stale one that was just refused.
  */
 export type IssueWrite = (item: Item, patch: Patch, said: ReactNode) => Promise<boolean>;
 

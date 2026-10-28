@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { CLOSED_STATUSES, type ClosedStatus, type ClosedWindow, type CreateItemInput, type FilterClause, type Item, type Patch } from "@tomradex/domain";
 import { invoke } from "../api";
@@ -115,20 +115,35 @@ export function useTicketCounts(projectId: string, specs: { id: string; filter: 
 const NO_COUNTS: Record<string, number> = {};
 export const useLabels = (projectId: string) => useQuery({ queryKey: keys.labels(projectId), queryFn: () => invoke("items.labels", projectId) });
 
-export function useCreateItem(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: Omit<CreateItemInput, "by">) => invoke("items.create", { ...input, projectId }),
-    onSuccess: () => invalidateWorkspace(qc, projectId)
+/**
+ * A ticket this window just wrote, put in every list that holds it. Asking again is left to the write's own
+ * broadcast (items.changed, within 100 ms), which every window hears: asking here too fetched the board twice.
+ */
+export function putItem(qc: QueryClient, projectId: string, item: Item): void {
+  qc.setQueriesData({ queryKey: keys.items(projectId) }, (data: unknown) => {
+    if (Array.isArray(data)) return data.some((i: Item | undefined) => i?.id === item.id) ? data.map((i: Item | undefined) => (i?.id === item.id ? item : i)) : data;
+    return data && typeof data === "object" && (data as Item).id === item.id ? item : data;
   });
 }
 
-/** A refusal re-fetches too: the retry needs a fresh version or it is refused for ever. */
+/** A ticket purged here, out of every list that held it; the broadcast asks again as with `putItem`. */
+function dropItem(qc: QueryClient, projectId: string, id: string): void {
+  qc.setQueriesData({ queryKey: keys.items(projectId) }, (data: unknown) => (Array.isArray(data) ? data.filter((i: Item | undefined) => i?.id !== id) : data));
+}
+
+export function useCreateItem(projectId: string) {
+  return useMutation({
+    mutationFn: (input: Omit<CreateItemInput, "by">) => invoke("items.create", { ...input, projectId })
+  });
+}
+
+/** A refusal re-fetches here: nothing was written, so no broadcast comes, and the retry needs a fresh version or it is refused for ever. */
 export function usePatchItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; patch: Patch; baseVersion: number }) => invoke("items.update", projectId, args.id, args.patch, args.baseVersion),
-    onSettled: () => invalidateWorkspace(qc, projectId)
+    onSuccess: (item) => putItem(qc, projectId, item),
+    onError: () => invalidateWorkspace(qc, projectId)
   });
 }
 
@@ -137,6 +152,7 @@ export function usePurgeItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; baseVersion: number }) => invoke("items.purge", projectId, args.id, args.baseVersion),
-    onSettled: () => invalidateWorkspace(qc, projectId)
+    onSuccess: (_done, args) => dropItem(qc, projectId, args.id),
+    onError: () => invalidateWorkspace(qc, projectId)
   });
 }

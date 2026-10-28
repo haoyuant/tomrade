@@ -188,8 +188,10 @@ export interface FileStore {
   setAgentRules?(paths: string[], mode: ListMode | "inherit"): Promise<FilesAgentPolicy>;
   /** Literal or regular-expression search over the working copy. Absent when a backend cannot search. */
   search?(input: FileSearchInput): Promise<FileSearchResult>;
-  /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. */
-  sync(): Promise<FilesStatus>;
+  /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. `quiet`: the periodic sweep, which tells only of what changed. */
+  sync(opts?: { quiet?: boolean }): Promise<FilesStatus>;
+  /** Whether outside edits are being watched, so a sweep is not what saves them. */
+  watching?(): boolean;
   conflicts(): Promise<FileConflict[]>;
   resolve(path: string, choice: ConflictChoice): Promise<void>;
   close(): void;
@@ -234,8 +236,8 @@ export interface OpenStoreOptions<C> {
   remote: C | null;
   /** Non-fatal trouble goes here, prefixed by the caller. */
   warn(message: string): void;
-  /** The store's files changed underneath the app: a sync, an outside edit. */
-  onChange(): void;
+  /** The store's files changed underneath the app: a sync, an outside edit. `paths` when the store knows which. */
+  onChange(paths?: string[]): void;
   /** What the service was configured with; a backend takes what applies to it. */
   env: StoreEnv;
   /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root and the store's folder. */

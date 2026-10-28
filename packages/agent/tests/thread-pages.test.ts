@@ -36,3 +36,16 @@ it("pages open and put-away conversations apart, newest first without overlap, a
   expect(store.threadsMatching(project.id, "assistant", false, "%", 10)).toEqual([]);
   await ctx.fiber.dispose();
 });
+
+it("sends a thread's messages after the one a reader holds, with the rest of the thread whole", async () => {
+  const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings-after.json") }], Agent] });
+  const th = ctx.agent.newThread(project.id, undefined, null, { title: "Long chat" });
+  for (let i = 1; i <= 5; i++) ctx.agent.store.appendMessage(project.id, th.id, i % 2 ? "user" : "agent", { type: "text", text: `line ${i}` }, null);
+  const whole = ctx.agent.thread(project.id, th.id);
+  expect(whole.messages.map((m) => m.seq)).toEqual([1, 2, 3, 4, 5]);
+  const after = ctx.agent.thread(project.id, th.id, 3);
+  expect(after.messages.map((m) => m.seq)).toEqual([4, 5]);
+  expect(after.thread.id).toBe(th.id);
+  expect(ctx.agent.thread(project.id, th.id, 5).messages).toEqual([]);
+  await ctx.fiber.dispose();
+});

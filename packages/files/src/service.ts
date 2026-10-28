@@ -66,6 +66,8 @@ declare module "cordis" {
     files: Files;
   }
   interface Events {
+    /** From the desktop shell: whether any of the app's windows can be seen. */
+    "desktop/seen"(seen: boolean): void;
     "files/registered"(backendId: string): void;
     "files/unregistered"(backendId: string): void;
     /** A project's files or their sync state moved. */
@@ -82,6 +84,8 @@ export const FilesConfig = z.preprocess(
     gitBinary: z.string().default("git"),
     /** Every open project's files are saved and synced this often; 0 leaves it to the watcher and explicit syncs. */
     autoSyncMs: z.number().int().min(0).default(60_000),
+    /** The sweep's pace for a watched folder with no remote, and for a remote while no window shows. */
+    rareSyncMs: z.number().int().min(0).default(600_000),
     /** Outside edits are saved this long after the last one. */
     settleMs: z.number().int().min(0).default(1_500),
     /** A save is pushed this long after it. */
@@ -238,6 +242,10 @@ export class Files extends Service implements FilesReader {
   private readonly lastState = new Map<string, FilesSyncState>();
   /** How often each project's files were said to change, so a sync knows whether its store said anything. */
   private readonly told = new Map<string, number>();
+  /** When the sweep last synced each project. */
+  private readonly swept = new Map<string, number>();
+  /** Whether a window of the app can be seen, as the desktop shell last said. */
+  private seen = true;
   /** Titles cost a read each; a file that has not changed has not retitled itself. */
   private readonly titles = new Map<string, { stamp: string; title: string | null }>();
   private remotes!: RemoteStore;
@@ -365,6 +373,9 @@ export class Files extends Service implements FilesReader {
 
     const timer = this.config.autoSyncMs > 0 ? setInterval(() => void this.syncAll(), this.config.autoSyncMs) : null;
     timer?.unref?.();
+    this.home.on("desktop/seen", (seen) => {
+      this.seen = seen;
+    });
     return () => {
       if (timer) clearInterval(timer);
       for (const projectId of [...this.open.keys()]) this.close(projectId);
@@ -375,9 +386,11 @@ export class Files extends Service implements FilesReader {
     this.home.logger.warn(`files: ${projectId}: ${errorMessage(error)}`);
   }
 
-  private notify(projectId: string): void {
+  /** `paths`, when the change is known to touch only them, lets a window keep what it read of every other file. */
+  private notify(projectId: string, paths?: string[]): void {
     this.told.set(projectId, (this.told.get(projectId) ?? 0) + 1);
-    this.home.get("ipc")?.send("files.changed", projectId);
+    const named = paths?.map((p) => normalizeRel(p)).filter((p): p is string => !!p);
+    this.home.get("ipc")?.send("files.changed", projectId, ...(named?.length ? [named] : []));
     this.home.emit("files/changed", projectId);
   }
 
@@ -533,7 +546,7 @@ export class Files extends Service implements FilesReader {
         dir,
         remote: backend ? config : null,
         warn: (m) => this.warn(projectId, m),
-        onChange: () => this.notify(projectId),
+        onChange: (paths) => this.notify(projectId, paths),
         projectRepository: () => this.projectRepository(projectId),
         env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
       });
@@ -542,7 +555,7 @@ export class Files extends Service implements FilesReader {
       if (!(error instanceof GitMissingError)) throw error;
       // No git here: the folder still works as it is, and versions and sharing wait for git.
       if (backend) this.warn(projectId, `git is not installed; sharing through "${chosen.id}" waits for it`);
-      store = new FolderFileStore(dir, { detail: this.words()(backend ? "noGitShared" : "noGit"), onChange: () => this.notify(projectId) });
+      store = new FolderFileStore(dir, { detail: this.words()(backend ? "noGitShared" : "noGit"), onChange: (paths) => this.notify(projectId, paths) });
     }
     const raced = this.open.get(projectId);
     if (raced) {
@@ -820,7 +833,7 @@ export class Files extends Service implements FilesReader {
   async write(projectId: string, p: string, body: Buffer | string, opts: WriteOptions = {}): Promise<FileContent> {
     const store = await this.store(projectId);
     const { result } = await this.recordOp(projectId, store, { kind: "write", path: p, paths: [p] }, () => store.write(p, Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"), opts));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return result;
   }
 
@@ -843,7 +856,7 @@ export class Files extends Service implements FilesReader {
     if (!store.writeMany) throw new Error("This Files backend cannot save several files at once");
     const files = entries.map((e) => ({ path: e.path, body: Buffer.isBuffer(e.body) ? e.body : Buffer.from(e.body, "utf8"), expect: e.expect }));
     const { ref } = await this.recordOp(projectId, store, { kind: "write", path: entries[0]?.path ?? "", paths: entries.map((e) => e.path) }, () => store.writeMany!(files, opts));
-    this.notify(projectId);
+    this.notify(projectId, entries.map((e) => e.path));
     return ref;
   }
 
@@ -878,7 +891,7 @@ export class Files extends Service implements FilesReader {
       if (folders.length) await store.settle(folders.length === 1 ? `Imported folder ${folders[0]!.rel}` : `Imported ${folders.length} folders`);
       for (const file of files) await store.write(file.rel, fs.readFileSync(file.src), { message: `Imported ${file.rel}` });
     });
-    this.notify(projectId);
+    this.notify(projectId, [...folders, ...files].map((f) => f.rel));
     return (await store.list(target)).filter((e) => names.has(e.name));
   }
 
@@ -886,14 +899,14 @@ export class Files extends Service implements FilesReader {
   async mkdir(projectId: string, p: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "mkdir", path: p, paths: [p] }, () => store.mkdir(p));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return ref;
   }
 
   async move(projectId: string, from: string, to: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "move", path: from, target: to, paths: [from, to] }, () => store.move(from, to));
-    this.notify(projectId);
+    this.notify(projectId, [from, to]);
     if (ref) await this.home.parallel("files/moved", projectId, normalizeRel(from), normalizeRel(to));
     return ref;
   }
@@ -901,14 +914,14 @@ export class Files extends Service implements FilesReader {
   async copy(projectId: string, from: string, to: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "copy", path: from, target: to, paths: [to] }, () => store.copy(from, to));
-    this.notify(projectId);
+    this.notify(projectId, [to]);
     return ref;
   }
 
   async remove(projectId: string, p: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "remove", path: p, paths: [p] }, () => store.remove(p));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return ref;
   }
 
@@ -1022,12 +1035,12 @@ export class Files extends Service implements FilesReader {
     return this.agentIndex(projectId, { budget, focus, native });
   }
 
-  async sync(projectId: string): Promise<FilesStatus> {
+  async sync(projectId: string, opts: { quiet?: boolean } = {}): Promise<FilesStatus> {
     // Git installed since the folder was opened without it: the same folder becomes a git store.
     if (this.open.get(projectId)?.store instanceof FolderFileStore && (await gitInstalled(this.config.gitBinary))) await this.reopen(projectId, true);
     const before = this.lastState.get(projectId);
     const toldBefore = this.told.get(projectId) ?? 0;
-    const status = await (await this.store(projectId)).sync();
+    const status = await (await this.store(projectId)).sync(opts);
     this.lastState.set(projectId, status.state);
     this.home.emit("files/synced", projectId, status);
     // Said once more once the sync settles, unless it was the minute's sweep over a quiet project.
@@ -1037,12 +1050,18 @@ export class Files extends Service implements FilesReader {
 
   /** The sweep: every project open on this machine with files, or a remote, is saved and synced. */
   async syncAll(): Promise<void> {
+    const now = Date.now();
     for (const projectId of this.ctx.db.openIds()) {
       const dir = this.dirFor(projectId);
       if (!dir) continue;
       if (!this.open.has(projectId) && !this.remoteOf(projectId) && !fs.existsSync(dir)) continue;
+      // A folder watched for edits, with no remote to hear from, is saved as it changes; the sweep is only a safety net.
+      // With a remote, its news is fetched every sweep while a window shows, and rarely while none does.
+      const rare = this.remoteOf(projectId) ? !this.seen : !!this.open.get(projectId)?.store.watching?.();
+      if (rare && now - (this.swept.get(projectId) ?? 0) < this.config.rareSyncMs) continue;
+      this.swept.set(projectId, now);
       try {
-        await this.sync(projectId);
+        await this.sync(projectId, { quiet: true });
       } catch (error) {
         this.warn(projectId, error);
       }

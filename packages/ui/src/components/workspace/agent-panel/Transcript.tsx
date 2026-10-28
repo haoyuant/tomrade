@@ -1,4 +1,4 @@
-import { createContext, Fragment, memo, useContext } from "react";
+import { createContext, Fragment, memo, useContext, useLayoutEffect, useMemo, useState } from "react";
 import type { CardAction, CardView, ChecklistCard, EngineView, FindingCard, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
@@ -14,6 +14,8 @@ import { ClaimCard, type ClaimOffer } from "./ClaimCard";
 import { looksLikeMarkdown } from "~/lib/markdownDetect";
 import { AgentMarkdown, CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
 import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
+import { mentionSignature } from "./links";
+import { liveStore, useLive, type LiveStore } from "./liveStore";
 
 /** What every row reads besides its own message; the handlers keep their identity, so a streamed reply re-renders only its own line. */
 export interface TranscriptActionsValue {
@@ -49,9 +51,13 @@ export function BackgroundOffer({ busy, onPick }: { busy: boolean; onPick: () =>
   );
 }
 
-const TranscriptActions = createContext<TranscriptActionsValue | null>(null);
+type StableActions = Pick<TranscriptActionsValue, "projectId" | "engines" | "retryEngines" | "onOpenIssue" | "onOpenThread" | "onAnswer" | "onRevert" | "onOpenSettings" | "onCardAction">;
 
-const useTranscriptActions = (): TranscriptActionsValue => {
+// What rows read is split: the handlers and engines, which rarely change, by context; the rest (runs, tickets, what is
+// pending) from a store each row selects its own part of, so a ticket refetch or a run starting re-renders only the rows it touches.
+const TranscriptActions = createContext<{ stable: StableActions; live: LiveStore<TranscriptActionsValue> } | null>(null);
+
+const useTranscriptActions = () => {
   const value = useContext(TranscriptActions);
   if (!value) throw new Error("A transcript row rendered outside <Transcript>");
   return value;
@@ -76,8 +82,16 @@ export function Transcript({ actions, folded, briefId, codeFrom, claim, lastErro
 }) {
   const { t } = useI18n();
   const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
+  const [live] = useState(() => liveStore(actions));
+  useLayoutEffect(() => live.set(actions), [live, actions]);
+  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction } = actions;
+  const stable = useMemo(
+    () => ({ projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction }),
+    [projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction]
+  );
+  const provided = useMemo(() => ({ stable, live }), [stable, live]);
   return (
-    <TranscriptActions.Provider value={actions}>
+    <TranscriptActions.Provider value={provided}>
       {folded.map((entry) => {
         const row = "fold" in entry ? (
           // writing code folds whole, under what it came to; chat folds only its earlier steps
@@ -121,6 +135,8 @@ export function Transcript({ actions, folded, briefId, codeFrom, claim, lastErro
   );
 }
 
+const NO_ITEMS = new Map<string, Item>();
+
 const TranscriptRow = memo(Row);
 
 function Row(props: Parameters<typeof RowBody>[0]) {
@@ -139,8 +155,22 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
   const { t } = useI18n();
-  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
+  const { stable, live } = useTranscriptActions();
+  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction } = stable;
   const b = m.block;
+  // each row hears only what it shows: its run, its card, the tickets its text names, the question waiting
+  const run = useLive(live, (a) => (m.runId ? a.runs.get(m.runId) : undefined));
+  const changesRun = useLive(live, (a) => (b.type === "changes" ? a.runs.get(b.runId) : undefined));
+  const card = useLive(live, (a) => (b.type === "card" ? a.cards.get(b.id) : undefined));
+  const status = useLive(live, (a) => (b.type === "note" && b.threadFor ? a.threadStatus.get(b.threadFor) : undefined));
+  const asking = b.type === "question";
+  const pending = useLive(live, (a) => (asking ? a.pending : null));
+  const commandAsk = useLive(live, (a) => asking && !!a.commandAsk);
+  const goesOnNext = useLive(live, (a) => asking && !!a.goesOnNext);
+  const busy = useLive(live, (a) => (asking || b.type === "changes") && a.busy);
+  // a text names tickets by key: its map changes when one of those does, not when any ticket does
+  const mentions = useLive(live, (a) => (b.type === "text" && m.role === "agent" ? mentionSignature(b.text, a.byKey) : b.type === "changes" ? a.byKey : ""));
+  const byKey = useMemo(() => (mentions === "" ? NO_ITEMS : live.get().byKey), [live, mentions]);
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
     return (
@@ -166,7 +196,6 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
   }
   if (b.type === "note") {
     // the conversation the note is about, with how it stands now: running, or waiting on the person
-    const status = b.threadFor ? threadStatus.get(b.threadFor) : undefined;
     return (
       <p className="agent-note">
         {b.text}
@@ -190,14 +219,14 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       </p>
     );
   }
-  const failedEngine = b.type === "error" && m.runId ? findEngine(engines, runs.get(m.runId!)?.engine) : undefined;
+  const failedEngine = b.type === "error" && m.runId ? findEngine(engines, run?.engine) : undefined;
   const body =
     b.type === "text" ? (
       <>
         {m.role === "agent" && looksLikeMarkdown(b.text)
           ? <AgentMarkdown text={b.text} byKey={byKey} onOpenIssue={onOpenIssue} projectId={projectId} />
           : b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue, projectId)}</p>)}
-        {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
+        {m.role === "agent" && m.runId && (run?.changes ?? 0) === 0 && <RunMetrics run={run} />}
       </>
     ) : b.type === "media" ? (
       <AgentMedia projectId={projectId} threadId={m.threadId} media={b.media} caption={b.caption} />
@@ -207,22 +236,22 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} goesOnNext={goesOnNext} onCommandSettings={commandAsk ? () => { if (!openSettingsPane("shell")) onOpenSettings(); } : undefined} />
     ) : b.type === "card" && b.schema === "checklist" ? (
       // the stream holds the card as it was first posted; the live one ticks as checks finish
-      <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
+      <ChecklistBlock title={b.title} card={(card?.data ?? b.data) as ChecklistCard} />
     ) : b.type === "card" && b.schema === "finding" ? (
       <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" && b.schema === "start" ? (
       <StartOffer card={b.data as StartOfferCard} projectId={projectId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "start-batch" ? (
       // the live card carries what came of each ticket once started
-      <StartBatchBlock card={(cards.get(b.id)?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
+      <StartBatchBlock card={(card?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "merge" ? (
-      <MergeBlock card={(cards.get(b.id)?.data ?? b.data) as MergeCard} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
+      <MergeBlock card={(card?.data ?? b.data) as MergeCard} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "backlog.proposal" ? (
       <ProposalBlock card={b.data as ProposalCard} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
-      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
+      <RunFoot block={b} run={changesRun} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
     ) : b.type === "error" ? (
       <ErrorBlock
         text={b.text}
