@@ -366,6 +366,17 @@ export const es: PartialMessages = {
     purposeBranch: "Nombre de rama",
     purposeOther: "Otros"
   },
+  webSearch: {
+    label: "Búsqueda web",
+    lede: "Cómo busca el asistente en la web y lee páginas. Un modelo que busca por sí mismo usa su propia búsqueda; para cualquier otro responde el primer servicio configurado de abajo, y los ajustes de cada servicio aparecen después de la lista.",
+    answering: "En uso",
+    standby: "En reserva",
+    notSetUp: "Sin configurar",
+    setUpBelow: "Configúralo abajo",
+    openSettings: "Abrir sus ajustes",
+    none: "No hay ningún servicio de búsqueda web activo. Activa o instala uno en Plugins.",
+    findPlugin: "Buscar un plugin de búsqueda"
+  },
   background: {
     label: "Segundo plano",
     title: "Ejecución en segundo plano",

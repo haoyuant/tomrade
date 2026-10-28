@@ -366,6 +366,17 @@ export const de: PartialMessages = {
     purposeBranch: "Branch-Name",
     purposeOther: "Sonstiges"
   },
+  webSearch: {
+    label: "Websuche",
+    lede: "Wie der Assistent im Web sucht und Seiten liest. Ein Modell, das selbst sucht, nutzt seine eigene Suche; für jedes andere antwortet der erste eingerichtete Dienst unten, und die Einstellungen jedes Dienstes folgen auf die Liste.",
+    answering: "In Gebrauch",
+    standby: "Bereit",
+    notSetUp: "Nicht eingerichtet",
+    setUpBelow: "Unten einrichten",
+    openSettings: "Einstellungen öffnen",
+    none: "Kein Websuche-Dienst ist aktiv. Schalte unter Plugins einen ein oder installiere einen.",
+    findPlugin: "Such-Plugin finden"
+  },
   background: {
     label: "Hintergrund",
     title: "Im Hintergrund ausführen",
