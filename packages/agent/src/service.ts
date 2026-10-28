@@ -1154,6 +1154,7 @@ export class Agent extends Service implements AgentReader {
     if (!this.store.thread(projectId, threadId)) return false;
     this.store.deleteThread(projectId, threadId);
     this.media().removeThread(projectId, threadId);
+    this.ctx.emit("agent/thread-deleted", projectId, threadId);
     return true;
   }
 

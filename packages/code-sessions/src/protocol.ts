@@ -306,7 +306,9 @@ export type WindowMessage =
   | { type: "reviewSearch"; query: string }
   /** An ended session the look back found, put in a cell to read. */
   | { type: "show"; sessionId: string }
-  | { type: "refresh" };
+  | { type: "refresh" }
+  /** Whether anyone can see the window (not minimised, hidden or covered): while nobody can, herdr is not asked for it and it hears no state. */
+  | { type: "visible"; visible: boolean };
 
 /** What the plugin posts to the window, one by one. */
 export type WindowPost =
