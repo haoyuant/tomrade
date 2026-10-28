@@ -721,6 +721,13 @@ export class CodeLink extends Service implements CodeLinkReader {
         if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
+      // a session left pointing at a deleted thread would open a blank conversation
+      ctx.on("agent/thread-deleted", (projectId, threadId) => {
+        for (const s of this.store.sessions(projectId).filter((x) => x.threadId === threadId)) {
+          if (s.state !== "ended" && s.state !== "lost") this.sessions.end(projectId, s.id, "ended", true, "its conversation was deleted");
+          this.store.patchSession(projectId, s.id, { threadId: null });
+        }
+      });
       ctx.on("agent/run-ended", (run, thread) => {
         this.running.delete(thread.id);
         this.archiveCompletedSessions(thread.projectId);
