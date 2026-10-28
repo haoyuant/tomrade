@@ -152,12 +152,14 @@ async function until(check: () => boolean, timeout = 3000): Promise<void> {
   }
 }
 
-it("offers the terminal on automatic first in Settings, and keeps it unset while other settings are saved", async () => {
+it("offers no terminal app of your own first in Settings — automatic — and keeps it unset while other settings are saved", async () => {
   const { ctx } = await machine(null);
   const field = (ctx.settings.sections("en").find((s) => s.id === "codeLink")!.schema.properties as Record<string, { enum: string[]; enumLabels: Record<string, string> }>).terminal;
   expect(field.enum[0]).toBe("auto");
-  expect(field.enumLabels.auto).toBe("Automatic: herdr if installed, else the system terminal");
-  expect((ctx.settings.sections("zh").find((s) => s.id === "codeLink")!.schema.properties as Record<string, { enumLabels: Record<string, string> }>).terminal.enumLabels.auto).toBe("自动：装了 herdr 用 herdr，否则用系统终端");
+  expect(field.enumLabels.auto).toBe("No — Tomrade's own terminal (automatic)");
+  expect(field.enum).not.toContain("herdr");
+  expect(field.enum.at(-1)).toBe("none");
+  expect((ctx.settings.sections("zh").find((s) => s.id === "codeLink")!.schema.properties as Record<string, { enumLabels: Record<string, string> }>).terminal.enumLabels.auto).toBe("不用：Tomrade 自己的终端（自动）");
   // The window saves every section at once: an untouched terminal goes along as automatic, never as what it resolved to.
   ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
   expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
@@ -363,16 +365,17 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   expect(plain).toMatchObject({ ok: true, launched: true, pane: null });
   expect(plain).not.toHaveProperty("warnings");
   expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(plain.ok ? plain.sessionId : ""), "run.command"), expect.any(String));
-  // herdr picked by the person stays picked: the system terminal stands in, and says why.
+  // herdr picked by name back when it was a choice reads as automatic: the system terminal, nothing to explain.
   ctx.settings.set({ ...ctx.settings.get(), codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
-  expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("install guide")] });
+  expect(without).toMatchObject({ ok: true, launched: true, pane: null });
+  expect(without).not.toHaveProperty("warnings");
   expect(without.ok && without.command).toMatch(/^"claude" /);
   expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"), expect.any(String));
-  // the worktree's own terminal too
+  // the worktree's own terminal too: the system terminal, as on automatic
   const shell = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: alone.id });
-  expect(shell.toast).toContain("herdr is not installed");
+  expect(shell.toast).toMatch(/^Opened /);
   expect(opened).toHaveBeenCalledTimes(4);
   opened.mockRestore();
   fake.close();

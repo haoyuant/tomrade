@@ -7,11 +7,11 @@ import { defineWords, type Slots, type Speak } from "@tomradex/domain";
  */
 export const CODE_WORDS = defineWords("code-link", {
   en: {
-    terminalHelp: '1. Install herdr the way its install guide says. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, the session opens in the system terminal instead. Choose another terminal app where there is one, or "none" to only prepare the script.',
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json, .cursor/hooks/tomrade and .cursor/hooks/tomrade.ps1 — or “Connect on this machine only”, which writes them into the checkout kept out of git — (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
     connected: "Connected",
-    terminalAuto: "Automatic: herdr if installed, else the system terminal",
-    terminalAutoHelp: "Automatic, the default, uses herdr once it is installed on this computer and the system terminal until then; on Windows, Tomrade's own terminal (builtin), shown in its Terminal window.",
+    terminalAuto: "No — Tomrade's own terminal (automatic)",
+    terminalOwnHelp: "No: new sessions run in Tomrade's own terminal — herdr's panes, or on Windows its built-in terminal — and the system terminal where there is neither. A terminal app of your own runs them outside Tomrade: it follows their state through hooks, but they get no Terminal window cell, nothing is typed or allowed from the panel, and nothing is recorded. none only prepares the script.",
+    terminalNone: "None — only prepare the script",
     connectedLocallyOne: "Connected on this machine only: {{n}} file written into the checkout and kept out of git through .git/info/exclude. Start a new agent session; in Codex, trust the project and review its hooks with /hooks.",
     connectedLocallyMany: "Connected on this machine only: {{n}} files written into the checkout and kept out of git through .git/info/exclude. Start a new agent session; in Codex, trust the project and review its hooks with /hooks.",
     linkFirst: "{{title}} reaches Tomrade in a terminal through its own settings. Connect it under {{title}} in Settings, then start again.",
@@ -212,11 +212,11 @@ export const CODE_WORDS = defineWords("code-link", {
     ghMissing: "Not installed. Optional: Tomrade uses gh to open and merge pull requests, and everything else works without it. Install it from {{url}}, then run `gh auth login`"
   },
   zh: {
-    terminalHelp: '1. 按 herdr 的安装文档安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，改在系统终端里打开。系统里有别的终端应用也可以选，或选 none 只准备脚本。',
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json、.cursor/hooks/tomrade 和 .cursor/hooks/tomrade.ps1——或选「仅连接本机」，把它们写进本机仓库目录并不纳入 git——（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
     connected: "已连接",
-    terminalAuto: "自动：装了 herdr 用 herdr，否则用系统终端",
-    terminalAutoHelp: "默认是「自动」：本机装了 herdr 就用 herdr，没装就用系统终端；Windows 上用 Tomrade 自带的终端（builtin），显示在它的终端窗口里。",
+    terminalAuto: "不用：Tomrade 自己的终端（自动）",
+    terminalOwnHelp: "不用：新会话在 Tomrade 自己的终端里跑——herdr 的窗格，Windows 上是自带终端；都没有时用系统终端。选自己的终端 app：会话跑在 Tomrade 外面，只靠 hook 跟进状态，终端窗口里没有它的格子，面板里不能输入、不能允许，也没有录制。none 只准备脚本。",
+    terminalNone: "不打开，只准备脚本",
     connectedLocallyOne: "已仅连接本机：{{n}} 个文件写入了本机仓库目录，并通过 .git/info/exclude 排除在 git 之外。请新开智能体会话；Codex 还需信任项目并用 /hooks 审阅其 hooks。",
     connectedLocallyMany: "已仅连接本机：{{n}} 个文件写入了本机仓库目录，并通过 .git/info/exclude 排除在 git 之外。请新开智能体会话；Codex 还需信任项目并用 /hooks 审阅其 hooks。",
     linkFirst: "{{title}} 在终端里要通过它自己的设置连到 Tomrade。请先在设置里的 {{title}} 下连接，再重新开始。",

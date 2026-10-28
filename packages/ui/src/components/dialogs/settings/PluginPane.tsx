@@ -1,6 +1,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import type { SettingsSectionView } from "@tomradex/settings";
-import { BuiltinTerminalNote, HerdrRecommendation } from "~/components/setup/HerdrRecommend";
+import { HerdrRecommendation } from "~/components/setup/HerdrRecommend";
 import { Fold, SectionHead } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -67,7 +67,7 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
           id={section.id}
           name={name}
           schema={labels ? { ...field, enumLabels: { ...field.enumLabels, ...labels } } : field}
-          value={record(value)[name]}
+          value={extra?.shown ? extra.shown(record(value)[name]) : record(value)[name]}
           error={problems[name]}
           onChange={(v) => change(name, v)}
           onCommit={(v) => commit(name, field, v)}
@@ -83,6 +83,7 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
       </SectionHead>
       {fields ? (
         <>
+          {SECTION_TOP[section.id]?.()}
           {basic.length > 0 && <div className="panel stack-3">{basic.map(draw)}</div>}
           {advanced.length > 0 && (
             <Fold id={`${section.id}-advanced`} title={t("common.advanced")} open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)}>
@@ -101,9 +102,15 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
 }
 
 /** What one plugin field shows beyond its schema: words for some of its options, and a line under it. */
-const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode }> = {
+/** Above a section's fields: code link's way to herdr while this machine has none, for the Terminal window's panes. */
+const SECTION_TOP: Record<string, () => ReactNode> = {
+  codeLink: () => (isWindows ? null : <HerdrRecommendation />)
+};
+
+const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode; shown?: (value: unknown) => unknown }> = {
   // On Windows the choice is Tomrade's own terminal; herdr does not run there.
-  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption", builtin: "codeLink.builtinOption" }, below: () => (isWindows ? <BuiltinTerminalNote /> : <HerdrRecommendation />) },
+  // herdr or the built-in terminal picked by name, from when they were choices, run as automatic and show so
+  "codeLink.terminal": { shown: (v) => (v === "herdr" || v === "builtin" ? "auto" : v) },
   // The shell's own setting, offered where sessions are set too.
   "sessions.afterAnswer": { below: () => <ShellApprovalField /> },
   // The key for the whole computer, the same one Keyboard shortcuts keeps.

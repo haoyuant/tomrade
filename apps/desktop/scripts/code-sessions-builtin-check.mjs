@@ -110,7 +110,7 @@ app.whenReady().then(async () => {
     const bridge = await terminals.bridge();
     check("内置 host 的 bridge 状态是 ready", bridge.state === "ready", JSON.stringify(bridge));
     const field = ctx.settings.sections("zh").find((s) => s.id === "codeLink").schema.properties.terminal;
-    check("终端设置里有内置终端这个选项，默认仍是自动", field.enum.includes("builtin") && !field.enum.includes("herdr") && ctx.settings.get().codeLink.terminal === "auto", JSON.stringify(field.enum));
+    check("终端设置只问要不要用自己的终端 app：内置终端就是自动，不单列，默认仍是自动", !field.enum.includes("builtin") && !field.enum.includes("herdr") && field.enum[0] === "auto" && ctx.settings.get().codeLink.terminal === "auto", JSON.stringify(field.enum));
     ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] } });
     const project = ctx.projects.create({ name: "内置终端检查", keyPrefix: "BTC" });
     const board = ctx.boards.list(project.id)[0];

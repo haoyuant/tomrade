@@ -20,13 +20,7 @@ function useInstallHerdr() {
     );
 }
 
-/** Under Settings' terminal picker on Windows: what Tomrade's own terminal does. */
-export function BuiltinTerminalNote() {
-  const { t } = useI18n();
-  return <div className="meta-txt" data-testid="builtin-terminal-note">{t("codeLink.builtinPitch")}</div>;
-}
-
-/** Under Settings' terminal picker: why herdr, and a way to get it while it is missing. */
+/** Atop Settings' code link while this machine has no herdr: why it, and a way to get it. Nothing once it is there. */
 export function HerdrRecommendation() {
   const { t } = useI18n();
   const status = useHerdrStatus(true);
@@ -34,8 +28,9 @@ export function HerdrRecommendation() {
   const plan = useHerdrInstall(missing).data;
   const install = useInstallHerdr();
   const [busy, setBusy] = useState(false);
+  if (!missing) return null;
   return (
-    <div className="meta-txt" data-testid="herdr-recommendation">
+    <div className="panel meta-txt" data-testid="herdr-recommendation">
       <Tag tone="strong">{t("codeLink.herdrRecommended")}</Tag> {t("codeLink.herdrPitch")}
       {missing && plan && (
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
