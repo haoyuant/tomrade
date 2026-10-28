@@ -1,4 +1,4 @@
-import { Context, Service, type EffectMeta, type Fiber } from "cordis";
+import { Context, Service, type EffectMeta, type Fiber, type Plugin } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { Manifest } from "@tomradex/plugin-sdk";
 import { ExtensionRefused } from "./extensions.js";
@@ -95,8 +95,18 @@ export class Plugins extends Service {
   }
 
   async [Service.init]() {
+    // Every built-in's module is read at once; they still start one by one, in order, as before.
+    const store = this.config.extensions;
+    const reading = new Map<string, Promise<Plugin>>();
     for (const row of this.config.rows) {
-      if (!row.disabled) await this.start(row);
+      if (row.disabled || (row.name.startsWith("ext:") && store)) continue;
+      const read = this.config.resolve(row);
+      // Its failure is told when the row starts, not as an unhandled rejection before.
+      read.catch(() => {});
+      reading.set(row.id, read);
+    }
+    for (const row of this.config.rows) {
+      if (!row.disabled) await this.start(row, reading.get(row.id));
     }
     await this.settle();
     await this.keepRequired();
@@ -412,11 +422,11 @@ export class Plugins extends Service {
     await this.settle();
   }
 
-  private async start(row: PluginRow): Promise<void> {
+  private async start(row: PluginRow, read?: Promise<Plugin>): Promise<void> {
     this.errors.delete(row.id);
     try {
       const store = this.config.extensions;
-      const plugin = row.name.startsWith("ext:") && store ? await store.load(row.id) : await this.config.resolve(row);
+      const plugin = row.name.startsWith("ext:") && store ? await store.load(row.id) : await (read ?? this.config.resolve(row));
       if (row.from) store?.claim(plugin as object, row.from);
       this.fibers.set(row.id, this.home.plugin(plugin, row.config));
     } catch (error) {

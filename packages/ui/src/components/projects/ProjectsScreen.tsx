@@ -4,7 +4,7 @@ import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import type { Board, Project } from "@tomradex/domain";
 import type { ItemCounts } from "@tomradex/items";
 import { Icon } from "~/components/icons";
-import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
+import { SettingsDialog } from "~/components/onDemand";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";

@@ -156,6 +156,28 @@ describe("the artifact", () => {
   });
 });
 
+describe("the boot reconcile", () => {
+  it("waits for the app's first window, at most bootWaitMs, before reading the folders", async () => {
+    const hubDir = tmp("hub");
+    const bag = await fresh({ hubDir, plugins: [[Storage, { ...QUIET, bootWaitMs: 60_000 }]] });
+    await settle();
+    let ready = false;
+    void bag.ctx.storage.ready.then(() => (ready = true));
+    await sleep(50);
+    expect(ready).toBe(false);
+    bag.ctx.emit("app/started");
+    await bag.ctx.storage.ready;
+    expect(ready).toBe(true);
+    await bag.ctx.fiber.dispose();
+
+    const late = await fresh({ hubDir: tmp("hub"), plugins: [[Storage, { ...QUIET, bootWaitMs: 50 }]] });
+    await settle();
+    // Nobody says so (a window that never loads): it goes anyway.
+    await late.ctx.storage.ready;
+    await late.ctx.fiber.dispose();
+  });
+});
+
 describe("the log", () => {
   it("appends lines with a header, reads them back, and drops a torn tail", () => {
     const dir = tmp("log");

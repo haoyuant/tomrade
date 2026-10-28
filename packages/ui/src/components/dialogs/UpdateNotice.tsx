@@ -5,7 +5,7 @@ import { useI18n } from "~/lib/i18n";
 import { isWindows } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { updatesOnScreen, useUpdateActions, useUpdateStatus } from "~/lib/updates";
-import { SettingsDialog } from "./SettingsDialog";
+import { SettingsDialog } from "~/components/onDemand";
 
 /**
  * Says so once per version and step: a newer release is out, then it is

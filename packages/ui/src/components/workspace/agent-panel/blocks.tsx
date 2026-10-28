@@ -22,7 +22,7 @@ import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { useFilesInfo } from "~/lib/files";
 import { useItems } from "~/lib/queries/items";
 import { openExternal, openPath } from "~/lib/shell";
-import { renderMarkdown } from "~/lib/markdown";
+import { useRenderMarkdown } from "~/lib/markdownLater";
 import { useToast } from "~/lib/toast";
 import { duration, liveTokens, retryReason, runTokensLabel } from "./format";
 import { decorate, KEY_RE, LINK_RE, localPath, ON_DISK, trimTrailing, withoutFileUrls } from "./links";
@@ -186,8 +186,9 @@ export function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id
 export function AgentMarkdown({ text, byKey, onOpenIssue, projectId }: { text: string; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; projectId: string }) {
   const { t } = useI18n();
   const openLocal = useOpenPath(projectId);
-  const base = useMemo(() => renderMarkdown(withoutFileUrls(text), undefined, { notes: false, breaks: true }), [text]);
-  const inner = useMemo(() => ({ __html: decorate(base, byKey) }), [base, byKey]);
+  const render = useRenderMarkdown();
+  const base = useMemo(() => (render ? render(withoutFileUrls(text), undefined, { notes: false, breaks: true }) : null), [render, text]);
+  const inner = useMemo(() => (base === null ? null : { __html: decorate(base, byKey) }), [base, byKey]);
   const onClick = (e: MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
     const key = target.closest<HTMLElement>("button.kref[data-item-id]");
@@ -205,6 +206,8 @@ export function AgentMarkdown({ text, byKey, onOpenIssue, projectId }: { text: s
     if (anchor.dataset.url) anchor.title = t("agentPanel.openLink", { target: anchor.dataset.url });
     else if (anchor.dataset.path) anchor.title = t("agentPanel.openPath", { target: anchor.dataset.path });
   };
+  // Until the renderer arrives (the first reply of a window's life), the words as they are.
+  if (!inner) return <div className="md-view agent-md" style={{ whiteSpace: "pre-wrap" }}>{text}</div>;
   return <div className="md-view agent-md" dangerouslySetInnerHTML={inner} onClick={onClick} onMouseOver={onOver} />;
 }
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
+import { SettingsDialog } from "~/components/onDemand";
 import { GlobalHotkeyField } from "~/components/dialogs/settings/GlobalHotkeyField";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
