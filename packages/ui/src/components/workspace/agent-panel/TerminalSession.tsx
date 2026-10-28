@@ -221,6 +221,13 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       setSending(false);
     }
   };
+  const pressEscape = async () => {
+    try {
+      if (!(await invoke("codeLink.sessionEscape", projectId, session.id))) toast({ body: t("sessionBar.notTaken") });
+    } catch (error) {
+      reportError(error);
+    }
+  };
   const answer = async (which: "allow" | "deny") => {
     if (sending) return;
     setSending(true);
@@ -260,12 +267,14 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     const timer = setTimeout(() => setElsewhere(null), ANSWERED_MS);
     return () => clearTimeout(timer);
   }, [asks, live, session.id, session.lastEventAt, session.state, cell, t]);
-  // The drawer closes on Esc, wherever in the panel the keyboard is.
+  // The drawer closes on Esc, wherever in the panel the keyboard is, or with nothing holding it; its empty input sends Esc to the pane instead.
   const drawerBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!drawer) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || isComposing(e) || !drawerBox.current?.closest(".ai")?.contains(e.target as Node)) return;
+      const at = e.target as Node;
+      const held = drawerBox.current?.closest(".ai")?.contains(at) || at === document.body || at === document.documentElement;
+      if (e.key !== "Escape" || isComposing(e) || e.defaultPrevented || !held) return;
       e.preventDefault();
       setDrawer(false);
     };
@@ -398,7 +407,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               <span className="ai-drawer-title" data-testid="ai-drawer-title">{[title || t("agentPanel.newThread"), cell ? t("sessionBar.whereCell", { n: cell }) : null, canType ? t("sessionBar.drawerTypes") : null].filter(Boolean).join(" · ")}</span>
               <button type="button" className="btn btn-ghost btn-xs" data-testid="ai-drawer-close" onClick={() => setDrawer(false)}>{t("sessionBar.drawerClose")}</button>
             </div>
-            <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")}>{screen ?? ""}</pre>
+            <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")} tabIndex={0}>{screen ?? ""}</pre>
             {canType && (
               <label className="ai-drawer-input">
                 <span aria-hidden="true">&gt;</span>
@@ -407,11 +416,18 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
                   placeholder={t("sessionBar.drawerInput")}
                   aria-label={t("sessionBar.sayAria")}
                   value={drawerDraft}
-                  disabled={sending}
+                  // read-only, not disabled, while it sends: a disabled input loses the keyboard and Esc reaches nothing
+                  readOnly={sending}
                   autoFocus
                   onChange={(e) => setDrawerDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (isComposing(e) || e.key !== "Enter") return;
+                    if (isComposing(e)) return;
+                    if (e.key === "Escape" && !drawerDraft) {
+                      e.preventDefault();
+                      void pressEscape();
+                      return;
+                    }
+                    if (e.key !== "Enter") return;
                     e.preventDefault();
                     void sayToPane(drawerDraft, () => setDrawerDraft(""));
                   }}

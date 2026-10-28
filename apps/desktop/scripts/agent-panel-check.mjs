@@ -873,9 +873,32 @@ const run = async () => {
   await $(`(() => { const i = document.querySelector('[data-testid="ai-drawer-input"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'from the drawer'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
   await sleep(400);
   check("the drawer's input line types into the pane, with Enter", typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.text === "from the drawer" && typed.at(-1)?.keys?.join() === "enter", typed.at(-1));
-  await $(`document.querySelector('[data-testid="ai-drawer-input"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  check("the drawer's input line keeps the keyboard after it sends", await $(`document.activeElement?.dataset?.testid === 'ai-drawer-input'`), await $(`document.activeElement?.outerHTML?.slice(0, 80) ?? null`));
+  const drawerEsc = (target) => $(`(${target})?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  const drawerOpen = () => $(`!!document.querySelector('[data-testid="ai-drawer-box"]')`);
+  // Esc in the empty input goes to the pane, as at its keyboard (what closes the agent's own menus); the drawer stays
+  await drawerEsc(`document.querySelector('[data-testid="ai-drawer-input"]')`);
   await sleep(300);
-  check("Esc closes the drawer", !(await $(`!!document.querySelector('[data-testid="ai-drawer-box"]')`)));
+  check("Esc in the drawer's empty input is pressed in the pane, and the drawer stays", typed.at(-1)?.paneId === "w1:p1" && !typed.at(-1)?.text && typed.at(-1)?.keys?.join() === "esc" && (await drawerOpen()), typed.at(-1));
+  // with words in it, Esc hides the drawer
+  await $(`(() => { const i = document.querySelector('[data-testid="ai-drawer-input"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'half a thought'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(100);
+  await drawerEsc(`document.querySelector('[data-testid="ai-drawer-input"]')`);
+  await sleep(300);
+  check("Esc with words in the drawer's input hides the drawer", !(await drawerOpen()));
+  // the pane's output takes the keyboard when clicked, and Esc there hides the drawer; so does Esc with nothing holding the keyboard
+  await press(`document.querySelector('[data-testid="ai-strip"]')`);
+  await sleep(800);
+  await $(`(() => { const pre = document.querySelector('[data-testid="ai-drawer"]'); pre.focus(); return document.activeElement === pre; })()`);
+  await drawerEsc(`document.activeElement`);
+  await sleep(300);
+  check("Esc after clicking the drawer's output hides the drawer", !(await drawerOpen()));
+  await press(`document.querySelector('[data-testid="ai-strip"]')`);
+  await sleep(800);
+  await $(`(() => { document.activeElement?.blur(); return document.activeElement === document.body; })()`);
+  await drawerEsc(`document.body`);
+  await sleep(300);
+  check("Esc with nothing holding the keyboard hides the drawer", !(await drawerOpen()));
   // said in the cell while the panel shows it: its line in the conversation says where it came from
   fs.appendFileSync(record, JSON.stringify({ type: "user", timestamp: new Date().toISOString(), message: { content: "typed in cell three" } }) + "\n");
   moved({});
