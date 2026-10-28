@@ -329,18 +329,18 @@ export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
-  description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {bin} (the CLI Tomrade found), {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
+  description: "How Claude Code, Codex or Pi is invoked in a terminal. {bin} (the CLI Tomrade found), {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
   choices: () => ({ terminal: [AUTO_TERMINAL, ...terminalApps()] }),
   order: 30,
   words: {
-    en: { fields: { terminal: { options: { [AUTO_TERMINAL]: CODE_WORDS("en")("terminalAuto") } } } },
+    en: { fields: { terminal: { options: { [AUTO_TERMINAL]: CODE_WORDS("en")("terminalAuto"), none: CODE_WORDS("en")("terminalNone") } } } },
     zh: {
       title: "代码关联",
-      description: "用哪个终端打开工单，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {bin}（Tomrade 找到的命令行工具）、{prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
+      description: "在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {bin}（Tomrade 找到的命令行工具）、{prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
-        terminal: { title: "终端应用", description: `${CODE_WORDS("zh")("terminalAutoHelp")}${CODE_WORDS("zh")("terminalHelp")}`, options: { [AUTO_TERMINAL]: CODE_WORDS("zh")("terminalAuto") } },
+        terminal: { title: "在自己的终端 app 里开", description: CODE_WORDS("zh")("terminalOwnHelp"), options: { [AUTO_TERMINAL]: CODE_WORDS("zh")("terminalAuto"), none: CODE_WORDS("zh")("terminalNone") } },
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },

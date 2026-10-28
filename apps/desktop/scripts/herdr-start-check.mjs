@@ -52,8 +52,8 @@ app.whenReady().then(async () => {
       const field = ctx.settings.sections(locale).find(s => s.id === "codeLink").schema.properties.terminal;
       assert(`${locale} 终端选项以自动开头并有说明`, field.enum[0] === "auto" && !!field.enumLabels?.auto);
       const help = field.description;
-      // The install command depends on the machine (TOM-556): the static text points at herdr's install guide; Settings' install button carries the command.
-      assert(`${locale} 设置说明包含安装指引和启动命令`, help.includes(locale === "zh" ? "安装文档" : "install guide") && help.includes("`herdr`") && !help.includes("brew"));
+      // How to get herdr is the install button atop the section while it is missing; the field says what an app of your own costs.
+      assert(`${locale} 设置说明讲清用自己的终端 app 的代价，不再教手动装 herdr`, help.includes(locale === "zh" ? "没有它的格子" : "no Terminal window cell") && !help.includes("brew") && !help.includes("`herdr`"));
       assert(`${locale} 设置说明不含错误插件命令`, !help.includes("plugin install"));
     }
     let state = "notInstalled";
@@ -99,8 +99,13 @@ app.whenReady().then(async () => {
     };
     await openCodeLink();
     const recommendation = () => js(`document.querySelector('[data-testid="herdr-recommendation"]').textContent`);
-    assert("终端选择下方推荐 herdr 并说明好处", (await recommendation()).includes("推荐") && (await recommendation()).includes("Tomrade 退出后"));
-    assert("终端选项里 herdr 标为推荐", await js(`[...document.querySelectorAll('#sf-codeLink-terminal option')].find(o => o.value === 'herdr')?.textContent === 'herdr（推荐）'`));
+    assert("没装 herdr 时，代码关联顶上推荐 herdr 并说明好处", (await recommendation()).includes("推荐") && (await recommendation()).includes("Tomrade 退出后"));
+    // the terminal is no longer picked up top: an app of your own waits under Advanced, herdr and the built-in terminal are what automatic means
+    assert("代码关联顶上不再有终端下拉", await js(`!document.querySelector('#sf-codeLink-terminal')`));
+    await js(`document.querySelector('[data-fold="codeLink-advanced"] .fold-head').click(); true`);
+    await wait(() => js(`!!document.querySelector('#sf-codeLink-terminal')`));
+    const ownApp = await js(`(() => { const s = document.querySelector('#sf-codeLink-terminal'); return { label: s.closest('.panel')?.textContent ?? '', options: [...s.querySelectorAll('option')].map(o => [o.value, o.textContent]) }; })()`);
+    assert("高级里是「在自己的终端 app 里开」，默认「不用：Tomrade 自己的终端（自动）」，没有 herdr 这一项", ownApp.label.includes("在自己的终端 app 里开") && JSON.stringify(ownApp.options[0]) === JSON.stringify(["auto", "不用：Tomrade 自己的终端（自动）"]) && !ownApp.options.some(([v]) => v === "herdr" || v === "builtin") && ownApp.options.at(-1)?.[0] === "none", JSON.stringify(ownApp));
     await wait(() => js(`!!document.querySelector('[data-testid="herdr-install-guide"]')`));
     assert("没有 Homebrew 时只给安装指南", await js(`!document.querySelector('[data-testid="herdr-install"]')`));
     win.webContents.reload();
@@ -115,7 +120,7 @@ app.whenReady().then(async () => {
     assert("点击后才安装", installs === 1);
     state = "running";
     await wait(() => js(`!document.querySelector('[data-testid="herdr-install"]')`));
-    assert("装好后不再显示安装按钮，推荐仍在", (await recommendation()).includes("推荐"));
+    assert("装好后代码关联顶上的推荐和安装按钮一起消失", await js(`!document.querySelector('[data-testid="herdr-recommendation"]')`));
 
     // After a launch in a plain terminal: one hint with the same pitch and the install, then never again.
     state = "notInstalled";

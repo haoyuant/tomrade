@@ -11,14 +11,14 @@ it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
   try {
     for (const name of ["Warp.app", "Utilities/Terminal.app", "Notes.app"]) fs.mkdirSync(path.join(root, name), { recursive: true });
-    expect(terminalApps([root], "darwin")).toEqual(["Terminal", "Warp", "herdr", "none"]);
+    expect(terminalApps([root], "darwin")).toEqual(["Terminal", "Warp", "none"]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
 it("offers Tomrade's own terminal on Windows, where herdr does not run", () => {
-  expect(terminalApps([], "win32")).toEqual([BUILTIN_TERMINAL, "none"]);
+  expect(terminalApps([], "win32")).toEqual(["none"]);
 });
 
 it.skipIf(process.platform === "win32")("lists the Linux emulators on PATH, $TERMINAL first", () => {
@@ -28,10 +28,10 @@ it.skipIf(process.platform === "win32")("lists the Linux emulators on PATH, $TER
     fs.mkdirSync(bin);
     for (const name of ["kitty", "gnome-terminal", "foot"]) fs.writeFileSync(path.join(bin, name), "#!/bin/sh\n", { mode: 0o755 });
     fs.writeFileSync(path.join(bin, "konsole"), "not runnable", { mode: 0o644 });
-    expect(terminalApps([], "linux", { PATH: `${path.join(root, "missing")}:${bin}`, TERMINAL: "foot" })).toEqual(["foot", "gnome-terminal", "kitty", "herdr", "none"]);
-    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: path.join(bin, "foot") })).toEqual([path.join(bin, "foot"), "gnome-terminal", "kitty", "herdr", "none"]);
+    expect(terminalApps([], "linux", { PATH: `${path.join(root, "missing")}:${bin}`, TERMINAL: "foot" })).toEqual(["foot", "gnome-terminal", "kitty", "none"]);
+    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: path.join(bin, "foot") })).toEqual([path.join(bin, "foot"), "gnome-terminal", "kitty", "none"]);
     // a $TERMINAL that is not there is not offered
-    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: "st" })).toEqual(["gnome-terminal", "kitty", "herdr", "none"]);
+    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: "st" })).toEqual(["gnome-terminal", "kitty", "none"]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -270,11 +270,18 @@ describe("Gemini CLI's session home", () => {
 describe("an unset terminal", () => {
   const herdrThat = (version: string | null) => ({ kind: "herdr" as const, installed: async () => version });
 
-  it("never changes a terminal the person picked, herdr installed or not", async () => {
-    for (const terminal of ["Warp", "Terminal", "herdr", "none"]) {
+  it("never changes a terminal app of the person's own, or none, herdr installed or not", async () => {
+    for (const terminal of ["Warp", "Terminal", "none"]) {
       expect((await machineTerminalSettings({ terminal }, herdrThat("0.9.5"))).terminal).toBe(terminal);
       expect((await machineTerminalSettings({ terminal }, herdrThat(null))).terminal).toBe(terminal);
     }
+  });
+
+  it("reads herdr or the built-in terminal picked by name, from when they were choices, as automatic", async () => {
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat("0.9.5"))).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, { kind: "builtin", installed: async () => "1" }, "win32")).terminal).toBe(BUILTIN_TERMINAL);
   });
 
   it("is herdr where herdr is installed, and the system terminal where it is not", async () => {

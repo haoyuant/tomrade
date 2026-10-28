@@ -14,7 +14,7 @@ export const BUILTIN_TERMINAL = "builtin";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  terminal: z.string().default(AUTO_TERMINAL).meta({ title: "Terminal app" }).describe(`${CODE_WORDS("en")("terminalAutoHelp")} ${CODE_WORDS("en")("terminalHelp")}`),
+  terminal: z.string().default(AUTO_TERMINAL).meta({ title: "Open in a terminal app of your own", advanced: true }).describe(CODE_WORDS("en")("terminalOwnHelp")),
   claudeCommand: z.string().default('"{bin}" {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command", advanced: true }),
   codexCommand: z.string().default('"{bin}" {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command", advanced: true }),
   piCommand: z.string().default('"{bin}" {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command", advanced: true }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
@@ -37,18 +37,22 @@ export type TerminalSettings = z.infer<typeof TerminalSettings>;
 /**
  * The section as this machine runs it. A terminal left on automatic is looked
  * at again each time — herdr once it is installed (on Windows, Tomrade's own
- * terminal host), the system terminal until then — and one the person picked
- * stays as it is.
+ * terminal host), the system terminal until then — and an app of the person's
+ * own stays as it is. herdr or the built-in terminal picked by name, from when
+ * they were choices, reads as automatic: the same panes where there are any.
  */
 export async function machineTerminalSettings(stored: unknown, panes: Pick<PaneTerminal, "kind" | "installed"> | null | undefined, platform: NodeJS.Platform = process.platform): Promise<TerminalSettings> {
   const settings = TerminalSettings.parse(stored ?? {});
-  if (settings.terminal !== AUTO_TERMINAL) return settings;
+  if (!isAutoTerminal(settings.terminal)) return settings;
   // herdr has no Windows build and its bridge refuses Windows; the pty host runs only there.
   const own = platform === "win32" ? "builtin" : "herdr";
   return { ...settings, terminal: panes?.kind === own && (await panes.installed()) ? terminalOf(own) : SYSTEM_TERMINAL };
 }
 
 const terminalOf = (kind: PaneTerminal["kind"]) => (kind === "builtin" ? BUILTIN_TERMINAL : "herdr");
+
+/** Automatic, or a pane backend picked by name before it stopped being a choice. */
+export const isAutoTerminal = (terminal: string): boolean => terminal === AUTO_TERMINAL || terminal === "herdr" || terminal === BUILTIN_TERMINAL;
 
 /** The backend whose panes a terminal setting opens; null for a terminal app. */
 export const panesOf = (terminal: string): PaneTerminal["kind"] | null => (terminal === "herdr" ? "herdr" : terminal === BUILTIN_TERMINAL ? "builtin" : null);
@@ -91,10 +95,10 @@ function isExecutable(file: string): boolean {
   }
 }
 
-/** The terminal choices on this machine: installed macOS bundles that `open -a` can launch, the Linux emulators found, then herdr (on Windows, Tomrade's own) and none. */
+/** A terminal app of the person's own to open sessions in instead: installed macOS bundles that `open -a` can launch, the Linux emulators found, then none. */
 export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "Applications"), "/System/Applications"], platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
-  if (platform === "win32") return [BUILTIN_TERMINAL, "none"];
-  if (platform !== "darwin") return [...linuxTerminals(env), "herdr", "none"];
+  if (platform === "win32") return ["none"];
+  if (platform !== "darwin") return [...linuxTerminals(env), "none"];
   const found = new Set<string>();
   const scan = (dir: string, depth: number) => {
     let entries: fs.Dirent[];
@@ -108,7 +112,7 @@ export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "
     }
   };
   for (const root of roots) scan(root, 0);
-  return [...found].sort((a, b) => a.localeCompare(b)).concat("herdr", "none");
+  return [...found].sort((a, b) => a.localeCompare(b)).concat("none");
 }
 
 /** Each engine's template setting, and the bare command its default ran before it named the located CLI. */
