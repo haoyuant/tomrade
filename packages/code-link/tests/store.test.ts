@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CodeLinkStore, MIGRATIONS, TABLES } from "@tomradex/code-link";
+import { BOOKKEEPING_REFRESH_MS, CodeLinkStore, MIGRATIONS, TABLES } from "@tomradex/code-link";
 import { ProjectDb, migrateCore } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
 import { exportState, importState } from "@tomradex/storage";
@@ -144,6 +144,34 @@ describe("the repository's merge policy", () => {
     // A patch about something else leaves the policy alone.
     store.upsertRepoState(project.id, "old-on", { mergePolicy: "ask" });
     expect(store.upsertRepoState(project.id, "old-on", { autoDone: false })).toMatchObject({ mergePolicy: "ask", autoDone: false });
+    await ctx.fiber.dispose();
+  });
+});
+
+describe("a scan that only looks again", () => {
+  it("leaves a link and a repository row as they were, and refreshes the sighting once it is old", async () => {
+    const { ctx, db, items, project, board } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Seen again", by: "human" });
+    const link = store.upsertLink(project.id, { itemId: item.id, repoId: "repo-1", branch: "tom-1/seen" }, { headSha: "a1", headAt: 10, ahead: 1, lastSeenAt: 1_000 });
+    store.upsertRepoState(project.id, "repo-1", { readiness: "scaffolded", remote: "ok", remoteAt: 1_000, scannedSha: "m1", defaultSha: "m1", scannedAt: 1_000 });
+    const rows = () => JSON.stringify([db.prepare("SELECT * FROM plugin_code_link_links").all(), db.prepare("SELECT * FROM plugin_code_link_repos").all()]);
+    const before = rows();
+
+    store.patchLink(project.id, link.id, { headSha: "a1", headAt: 10, ahead: 1, behind: 0, lastSeenAt: 2_000 });
+    store.upsertRepoState(project.id, "repo-1", { readiness: "scaffolded", remote: "ok", remoteAt: 2_000, scannedSha: "m1", defaultSha: "m1", scannedAt: 2_000 });
+    expect(rows()).toBe(before);
+
+    // A day on, the sighting is written alone: when the row last changed stays put.
+    const later = 1_000 + BOOKKEEPING_REFRESH_MS;
+    store.patchLink(project.id, link.id, { headSha: "a1", lastSeenAt: later });
+    expect(store.link(project.id, link.id)).toMatchObject({ lastSeenAt: later, updatedAt: link.updatedAt });
+    expect(store.upsertRepoState(project.id, "repo-1", { scannedAt: later })).toMatchObject({ scannedAt: later });
+
+    // Real news is written at once, with the sighting.
+    expect(store.patchLink(project.id, link.id, { headSha: "a2", lastSeenAt: later + 1 })).toMatchObject({ headSha: "a2", lastSeenAt: later + 1 });
+    expect(store.upsertRepoState(project.id, "repo-1", { defaultSha: "m2", scannedAt: later + 1 })).toMatchObject({ defaultSha: "m2", scannedAt: later + 1 });
     await ctx.fiber.dispose();
   });
 });

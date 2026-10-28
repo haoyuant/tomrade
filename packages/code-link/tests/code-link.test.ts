@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { CodeLink, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, TABLES, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { CODE_WORDS } from "../src/words.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
@@ -395,6 +395,32 @@ describe("code link", () => {
 
     // Nothing left to say: a third scan is quiet.
     expect((await codeLink.scan(project.id)).changed).toBe(0);
+  });
+
+  it("writes nothing the project's folder carries when a scan finds nothing new", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Quiet scans", "todo");
+      const branch = `tom-${item.keyNum}/quiet`;
+      commitOn(checkout, branch, "quiet.ts", `TOM-${item.keyNum}: quiet`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      const db = ctx.db.for(project.id);
+      const carried = () => JSON.stringify(Object.keys(TABLES).filter((t) => TABLES[t as keyof typeof TABLES].export).map((t) => db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()));
+      const before = carried();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await codeLink.scan(project.id);
+      expect(carried()).toBe(before);
+
+      // A new commit is news, and lands in the rows at once.
+      const sha = commitOn(checkout, branch, "quiet.ts", `TOM-${item.keyNum}: louder`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      expect(carried()).not.toBe(before);
+      expect(codeLink.links(project.id, item.id)[0].headSha).toBe(sha);
+    } finally {
+      await ctx.fiber.dispose();
+    }
   });
 
   it("discovers work started outside Tomrade from ticket keys in commits on an arbitrary branch", async () => {
