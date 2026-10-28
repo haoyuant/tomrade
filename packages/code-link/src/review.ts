@@ -283,7 +283,7 @@ export class Review {
     const agent = this.deps.ctx.get("agent");
     if (session) {
       const row = this.sessionRows(projectId, [session])[0]!;
-      const read = session.threadId && !session.externalId && agent ? { lines: threadLines(agent.store.messages(projectId, session.threadId)), cut: false } : await this.readWhole(projectId, session);
+      const read = session.threadId && !session.externalId && agent ? { lines: threadLines(agent.store.messages(projectId, session.threadId)), cut: false } : this.withThread(projectId, session, await this.readWhole(projectId, session));
       const items = new Map(row.tickets.map((t) => [t.itemId, t]));
       const keys = new Map(row.tickets.map((t) => [t.key, t.itemId]));
       const segments = read ? cutByTicket(read.lines, session.marks, (key) => keys.get(key) ?? this.deps.ctx.items.getByKey(projectId, key)?.id ?? null).map((c) => this.segment(c.itemId, items.get(c.itemId ?? "") ?? null, c.lines)) : [];
@@ -331,6 +331,21 @@ export class Review {
       read = earlier;
     }
     return { lines: stretches.flat(), cut: !!read.cut };
+  }
+
+  /**
+   * A session a conversation went on in from the panel, with what was said there first: the record of an agent that
+   * started afresh in a terminal begins after the session did, so the thread's earlier lines lead it. A record resumed
+   * from the panel already holds them, and one read only from its end is left as it is. Without a record, the thread's.
+   */
+  private withThread(projectId: string, session: SessionView, read: { lines: RecordLine[]; cut: boolean } | null): { lines: RecordLine[]; cut: boolean } | null {
+    const agent = this.deps.ctx.get("agent");
+    if (!session.threadId || !agent || read?.cut) return read;
+    const first = read?.lines.find((l) => l.at !== undefined)?.at;
+    if (first !== undefined && first < session.startedAt) return read;
+    const earlier = threadLines(agent.store.messages(projectId, session.threadId).filter((m) => m.at < session.startedAt));
+    if (!earlier.length) return read;
+    return { lines: [...earlier, ...(read?.lines ?? [])], cut: false };
   }
 
   private readOf(projectId: string, session: SessionView): RecordRead | null {

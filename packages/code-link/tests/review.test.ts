@@ -186,3 +186,43 @@ describe("the look back over the store", () => {
     await ctx.fiber.dispose();
   });
 });
+
+describe("a conversation that went on in a terminal", () => {
+  it("leads a record begun afresh there with what the panel said first, and leaves a resumed one as its record reads", async () => {
+    const { ctx, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const mk = (threadId: string) => {
+      const s = store.createSession(project.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "pi", threadId, device: "d", externalId: `pi-${threadId}` });
+      store.patchSession(project.id, s.id, { state: "ended", endedAt: s.startedAt + 100, prompted: true });
+      return store.session(project.id, s.id)!;
+    };
+    const handed = mk("t-handed");
+    const resumed = mk("t-resumed");
+    const gone = mk("t-gone");
+    const at = handed.startedAt;
+    const said = (threadId: string, seq: number, role: "user" | "agent", text: string, when: number): ThreadMessage => ({ id: `${threadId}-${seq}`, threadId, seq, role, block: { type: "text", text }, runId: null, at: when });
+    const messages: Record<string, ThreadMessage[]> = {
+      "t-handed": [said("t-handed", 1, "user", "首次运行后提供一件小事", at - 50), said("t-handed", 2, "agent", "好，交给终端来写", at - 40)],
+      "t-resumed": [said("t-resumed", 1, "user", "看看目录", resumed.startedAt - 50)],
+      "t-gone": [said("t-gone", 1, "user", "先在这里聊", gone.startedAt - 50)]
+    };
+    ctx.provide("agent", { store: { messages: (_projectId: string, threadId: string) => messages[threadId] ?? [], thread: () => null } } as never);
+    const records: Record<string, RecordLine[]> = {
+      [handed.id]: [me("Tomrade: this conversation was handed to you", at + 5), ag("改好了", at + 30)],
+      [resumed.id]: [me("看看目录", resumed.startedAt - 45), ag("有 a.ts", resumed.startedAt + 10)]
+    };
+    const review = new Review({ ctx, store, read: (_projectId, sessionId) => (records[sessionId] ? { lines: records[sessionId], cut: false } : null), recorded: async () => false });
+
+    const lines = async (id: string) => {
+      const view = (await review.open(project.id, { sessionId: id }))!;
+      return { texts: view.segments.flatMap((s) => s.lines.map((l) => l.text)), unreadable: view.unreadable };
+    };
+    expect(await lines(handed.id)).toEqual({ texts: ["首次运行后提供一件小事", "好，交给终端来写", "Tomrade: this conversation was handed to you", "改好了"], unreadable: false });
+    // pi resumed the panel's own session: its record already holds what was said there
+    expect(await lines(resumed.id)).toEqual({ texts: ["看看目录", "有 a.ts"], unreadable: false });
+    // the record is gone: the panel's part still reads
+    expect(await lines(gone.id)).toEqual({ texts: ["先在这里聊"], unreadable: false });
+    await ctx.fiber.dispose();
+  });
+});
