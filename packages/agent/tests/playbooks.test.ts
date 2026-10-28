@@ -153,7 +153,23 @@ describe("playbook sources", () => {
       expect(created).toMatchObject({ workType: "coding", playbookId: "code.implement" });
       // never a general ticket's method
       await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Plan the offsite", workType: "general" });
-      expect(asked[2].candidates.map((c) => c.id)).not.toContain("code.implement");
+      expect(asked.find((a) => (a as unknown as { title: string }).title === "Plan the offsite")!.candidates.map((c) => c.id)).not.toContain("code.implement");
+      await base.ctx.fiber.dispose();
+    });
+
+    it("stops asking a worker model that missed three times running, and answers from the keywords without waiting", async () => {
+      const requests: CompletionRequest[] = [];
+      const base = await fresh({ plugins: [Tools, [...tmpSettings()], hung(requests), [Agent, {}], codeLink, engineLoop] });
+      await settle();
+      for (let i = 0; i < 3; i++) await base.ctx.agent.recommendPlaybook(base.project.id, { title: `Fix bug ${i}`, workType: "coding" }, { withinMs: 20 });
+      expect(requests).toHaveLength(3);
+      const started = Date.now();
+      expect(await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Fix another bug", workType: "coding" }, { withinMs: 5_000 })).toMatchObject({ source: "fallback", playbookId: "code.implement" });
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(requests).toHaveLength(3);
+      // The keywords alone never ask it.
+      expect(await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Write the guide" }, { keywordsOnly: true })).toMatchObject({ source: "fallback", workType: "general" });
+      expect(requests).toHaveLength(3);
       await base.ctx.fiber.dispose();
     });
 

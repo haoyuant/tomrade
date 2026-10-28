@@ -62,6 +62,8 @@ export interface ToolHost {
   notify(projectId: string): void;
   /** A scan that starts now, after any running one: what git and GitHub say at this moment. */
   rescan(projectId: string): Promise<unknown>;
+  /** What GitHub says now of one ticket's open pull requests: no fetch, no other repository. */
+  settleTicket(projectId: string, itemId: string): Promise<void>;
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
   mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
@@ -83,6 +85,8 @@ interface Subject {
   session: SessionView | null;
 }
 
+/** A claim that waits on GitHub longer than this says so in the log. */
+const SLOW_SETTLE_MS = 2_000;
 const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
 
 /** Two rows of one outside agent's conversation: the same agent under the same id, neither a thread's. */
@@ -550,7 +554,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         let owed = owing();
         // The agent may have merged its pull request a moment ago, long before the next timed scan: look now rather than refuse.
         if (owed?.status === "verifying" && !tokened && !args.parallel && host.store.links(projectId, owed.id).some((l) => l.prState === "open")) {
-          await host.rescan(projectId).catch((err) => ctx.logger.warn(`claim_ticket: scan before claiming ${item.key} failed: ${errorMessage(err)}`));
+          const verifying = owed;
+          const asked = Date.now();
+          await host.settleTicket(projectId, verifying.id).catch((err) => ctx.logger.warn(`claim_ticket: asking GitHub about ${verifying.key}'s pull request failed: ${errorMessage(err)}`));
+          if (Date.now() - asked > SLOW_SETTLE_MS) ctx.logger.warn(`claim_ticket: asking GitHub about ${verifying.key}'s pull request took ${Date.now() - asked}ms`);
           others = held();
           owed = owing();
         }

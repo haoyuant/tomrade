@@ -622,6 +622,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         successor: (projectId, from, repoId, worktree) => this.successor(projectId, from, repoId, worktree),
         letGo: (projectId, connection, sessionId, itemId) => this.letGo(projectId, connection, sessionId, itemId),
         rescan: (projectId) => this.rescan(projectId),
+        settleTicket: (projectId, itemId) => this.scans.settleTicket(projectId, itemId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts),
