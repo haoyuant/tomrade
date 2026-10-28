@@ -31,7 +31,7 @@ import type { ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
-import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { barModeFor, barPrefsOf, barShown, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
@@ -641,6 +641,9 @@ export function AgentPanel({
     }),
     [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );
+  // the bar itself keeps only the last few to end; the rest, like ⌘K's, are in History
+  const barOpenKey = shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null;
+  const shownBarRows = useMemo(() => barShown(barRows, barOpenKey, Date.now()), [barRows, barOpenKey]);
   // How the conversations writing code in the background for this one stand, for the notes that point at them.
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
   const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
@@ -1216,9 +1219,9 @@ export function AgentPanel({
       </>
       )}
       <SessionBar
-        rows={barRows}
+        rows={shownBarRows}
         starting={starting}
-        openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
+        openKey={barOpenKey}
         mode={barMode}
         peeks={barPrefs.peek}
         engines={engines.data}

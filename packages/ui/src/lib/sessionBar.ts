@@ -168,6 +168,18 @@ function nest(rows: BarRow[]): BarRow[] {
   return out;
 }
 
+/** Ended sessions the bar keeps: the last few to end within this while; the rest are in History. */
+export const DONE_SHOWN_FOR_MS = 60 * 60_000;
+export const DONE_SHOWN = 3;
+
+/** What the bar shows of its rows: every one still going, the last few to end, the open one, and a parent of any kept. */
+export function barShown(rows: BarRow[], openKey: string | null, now: number): BarRow[] {
+  let done = 0;
+  const keep = new Set(rows.filter((r) => r.status !== "done" || r.key === openKey || (now - r.at <= DONE_SHOWN_FOR_MS && ++done <= DONE_SHOWN)).map((r) => r.key));
+  for (const r of rows) if (r.parentKey && keep.has(r.key)) keep.add(r.parentKey);
+  return rows.filter((r) => keep.has(r.key));
+}
+
 /** ⌘K's sessions, each group in the bar's order: waiting on the person, in progress (running or idle), and ended. */
 export function paletteSessionGroups(rows: BarRow[]): { waiting: BarRow[]; active: BarRow[]; history: BarRow[] } {
   return { waiting: rows.filter((r) => r.status === "wait"), active: rows.filter((r) => r.status === "run" || r.status === "idle"), history: rows.filter((r) => r.status === "done") };
