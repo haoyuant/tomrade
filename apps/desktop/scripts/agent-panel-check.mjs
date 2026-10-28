@@ -792,7 +792,7 @@ const run = async () => {
     { type: "user", message: { content: "please record the pane output" } },
     { type: "assistant", message: { content: [{ type: "text", text: "On it: reading the pane first." }, { type: "tool_use", id: "t1", name: "Bash", input: { command: "herdr pane read w1:p1" } }] } },
     { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "line one\nline two" }] } },
-    { type: "assistant", message: { content: [{ type: "text", text: "The pane says line one and line two." }] } }
+    { type: "assistant", message: { content: [{ type: "text", text: "The pane says **line one** and line two." }] } }
   ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
   const tailTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Tail the pane", by: "human" });
   const inPane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [tailTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
@@ -849,6 +849,8 @@ const run = async () => {
   view = await sessionView();
   check("opened from a notification or the tray, a terminal session shows in the panel", awayFrom === null && view?.id === inPane.id && !(await $(`location.hash.includes('/i/')`)), { awayFrom, view });
   check("its conversation is read from the agent's record, tool calls folded",view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
+  const reply = await $(`(() => { const l = [...document.querySelectorAll('.ai-session-convo .cs-convo-line[data-who="agent"]')].at(-1); return l ? { strong: l.querySelector('.agent-md strong')?.textContent ?? null, text: l.textContent } : null; })()`);
+  check("a reply written in Markdown reads as Markdown there, as in the panel's own conversations", reply?.strong === "line one" && !reply.text.includes("**"), reply);
   check("the strip shows the pane's last lines that say something", view?.strip.join("|") === "❯ claude|⏺ Reading the pane…", view?.strip);
   // The Terminal window shows it in its third cell: the head and the bar say which, once the window says its cells changed.
   ctx.codeLink.sessionCells = async () => ({ [inPane.id]: 3 });
