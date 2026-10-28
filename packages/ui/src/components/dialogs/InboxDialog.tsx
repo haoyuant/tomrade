@@ -239,7 +239,9 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
     return (others.data ?? []).filter((e) => e.id !== entry.id && e.status !== "closed" && (!q || e.externalId.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))).slice(0, 6);
   }, [others.data, search, mode, entry.id]);
 
-  const closeAsDuplicate = (duplicateOf?: string) => actions.close.mutate({ id: entry.id, reason: "duplicate", ...(duplicateOf ? { duplicateOf } : {}) }, { onError: reportError });
+  // Closed, with a way back: Reopen is otherwise only on the closed tab.
+  const closed = { onSuccess: () => toast({ body: t("inbox.closedToast", { title: entry.title }), onUndo: () => actions.reopen.mutate(entry.id, { onError: reportError }) }), onError: reportError };
+  const closeAsDuplicate = (duplicateOf?: string) => actions.close.mutate({ id: entry.id, reason: "duplicate", ...(duplicateOf ? { duplicateOf } : {}) }, closed);
 
   const accept = () =>
     actions.accept.mutate(
@@ -352,7 +354,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
             <button type="button" className="btn btn-ghost" aria-pressed={mode === "duplicate"} disabled={busy} onClick={() => setMode(mode === "duplicate" ? null : "duplicate")}>
               {t("inbox.duplicate")}
             </button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.close.mutate({ id: entry.id, reason: "wontfix" }, { onError: reportError })}>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.close.mutate({ id: entry.id, reason: "wontfix" }, closed)}>
               {t("inbox.wontfix")}
             </button>
           </>

@@ -1439,6 +1439,13 @@ function apply(ctx: Context, config: Config) {
         save({ presets: (saved.presets ?? []).filter((p) => p.id !== m.id), ...(saved.defaultPreset === m.id ? { defaultPreset: null } : {}) });
         return refreshAll();
       }
+      case "restorePreset": {
+        const saved = stateOf();
+        const presets = saved.presets ?? [];
+        if (!isLayout(m.preset.layout) || presets.some((p) => p.id === m.preset.id)) return;
+        save({ presets: [...presets.slice(0, m.at), m.preset, ...presets.slice(m.at)], ...(m.isDefault ? { defaultPreset: m.preset.id } : {}) });
+        return refreshAll();
+      }
       case "defaultPreset":
         save({ defaultPreset: m.id });
         return refreshAll();

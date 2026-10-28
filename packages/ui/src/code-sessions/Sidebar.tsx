@@ -280,7 +280,7 @@ function HistoryList({ projectId, locale, history, omit, onPick, onClosed }: { p
 }
 
 /** Saved layouts: apply one, keep the current one under a name, pick the one new windows open with; and the auto-place switch. */
-function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { presets: LayoutPreset[]; defaultPreset: string | null; autoPlace: boolean; onApply: (p: LayoutPreset) => void; onSave: (name: string) => void }) {
+function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, onDelete }: { presets: LayoutPreset[]; defaultPreset: string | null; autoPlace: boolean; onApply: (p: LayoutPreset) => void; onSave: (name: string) => void; onDelete: (p: LayoutPreset) => void }) {
   const say = useSay();
   const [naming, setNaming] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -299,12 +299,13 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { prese
           className="cs-layout-form"
           onSubmit={(e) => {
             e.preventDefault();
-            onSave(naming);
+            if (!naming.trim()) return;
+            onSave(naming.trim());
             setNaming(null);
           }}
         >
-          <input autoFocus value={naming} placeholder={say("layoutName")} aria-label={say("layoutName")} onChange={(e) => setNaming(e.target.value)} />
-          <button type="submit" className="btn btn-primary btn-xs">{say("save")}</button>
+          <input autoFocus value={naming} placeholder={say("layoutName")} aria-label={say("layoutName")} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setNaming(null); } }} />
+          <button type="submit" className="btn btn-primary btn-xs" disabled={!naming.trim()}>{say("save")}</button>
           <button type="button" className="btn btn-secondary btn-xs" onClick={() => setNaming(null)}>{say("cancel")}</button>
         </form>
       )}
@@ -316,12 +317,14 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { prese
                 className="cs-layout-form"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  send({ type: "renamePreset", id: p.id, name: renaming.name });
+                  if (renaming.name.trim() && renaming.name.trim() !== p.name) send({ type: "renamePreset", id: p.id, name: renaming.name.trim() });
                   setRenaming(null);
                 }}
+                // Leaving the field keeps the old name, as Escape does; Save is the only way to change it.
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setRenaming(null); }}
               >
-                <input autoFocus value={renaming.name} aria-label={say("layoutName")} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })} />
-                <button type="submit" className="btn btn-primary btn-xs">{say("save")}</button>
+                <input autoFocus value={renaming.name} aria-label={say("layoutName")} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setRenaming(null); } }} />
+                <button type="submit" className="btn btn-primary btn-xs" disabled={!renaming.name.trim()}>{say("save")}</button>
               </form>
             ) : (
               <>
@@ -332,7 +335,7 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { prese
                   {p.id === defaultPreset ? "★" : "☆"}
                 </button>
                 <button type="button" className="icon-btn" title={say("rename")} aria-label={say("rename")} onClick={() => setRenaming({ id: p.id, name: p.name })}>✎</button>
-                <button type="button" className="icon-btn" title={say("deleteLayout")} aria-label={say("deleteLayout")} onClick={() => send({ type: "deletePreset", id: p.id })}>×</button>
+                <button type="button" className="icon-btn" title={say("deleteLayout")} aria-label={say("deleteLayout")} onClick={() => onDelete(p)}>×</button>
               </>
             )}
           </li>
@@ -455,13 +458,14 @@ type SidebarProps = {
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
   onSavePreset: (name: string) => void;
+  onDeletePreset: (preset: LayoutPreset) => void;
 };
 
 /**
  * The session bar on the window's right edge, the assistant panel's: cards that say where each session stands and
  * what it waits with, the sessions this window cannot show, saved layouts and History; or, folded, a column of dots.
  */
-export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onAnswerThread, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
+export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onAnswerThread, onNewTerminal, onApplyPreset, onSavePreset, onDeletePreset }: SidebarProps) {
   const say = useSay();
   const [outsideOpen, setOutsideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -518,7 +522,7 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
         <>
           {(rows.here.length > 0 || !rows.away.length) && <HereList rows={rows.here} history={state.history} locale={locale} marks={marks} picks={picks} />}
           <OutsideGroup sessions={rows.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={awayList} />
-          <Layouts presets={state.presets} defaultPreset={state.defaultPreset} autoPlace={state.autoPlace} onApply={onApplyPreset} onSave={onSavePreset} />
+          <Layouts presets={state.presets} defaultPreset={state.defaultPreset} autoPlace={state.autoPlace} onApply={onApplyPreset} onSave={onSavePreset} onDelete={onDeletePreset} />
           <div className="cs-history-foot">
             <span>{say("historyNote")}</span>
             <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-history" onClick={() => openHistory(true)}>

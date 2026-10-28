@@ -36,13 +36,15 @@ export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }:
   const settle = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "accept" | "tidy" | "reopen" }) => {
       const item = byId.get(id);
-      if (!item) throw new Error("Ticket not found");
+      if (!item) throw new Error(t("syncIssues.ticketNotFound"));
       return action === "reopen" ? invoke("items.update", projectId, id, { status: "doing" }, item.version) : invoke("items.settleEvidence", projectId, id, action, item.version);
     },
     onSuccess: settled,
     onError: (e) => toast(errorSpec(e))
   });
-  const sync = useMutation({ mutationFn: () => invoke("storage.sync", projectId), onSettled: settled });
+  const sync = useMutation({ mutationFn: () => invoke("storage.sync", projectId), onSettled: settled, onError: (e) => toast(errorSpec(e)) });
+  // The tickets load when the dialog opens; until then a row's actions have nothing to act on.
+  const ready = !!items.data;
   const act = (id: string, action: "accept" | "tidy" | "reopen") => settle.mutate({ id, action });
 
   return (
@@ -62,11 +64,11 @@ export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }:
               <div className="inbox-actions">
                 {r.code === "done-unaccepted" ? (
                   <>
-                    <button type="button" className="btn btn-primary" disabled={settle.isPending} onClick={() => act(r.itemId, "accept")}>{t("syncIssues.accept")}</button>
-                    <button type="button" className="btn btn-secondary" disabled={settle.isPending} onClick={() => act(r.itemId, "reopen")}>{t("syncIssues.reopen")}</button>
+                    <button type="button" className="btn btn-primary" disabled={!ready || settle.isPending} onClick={() => act(r.itemId, "accept")}>{t("syncIssues.accept")}</button>
+                    <button type="button" className="btn btn-secondary" disabled={!ready || settle.isPending} onClick={() => act(r.itemId, "reopen")}>{t("syncIssues.reopen")}</button>
                   </>
                 ) : r.code === "delivery-state" ? null : (
-                  <button type="button" className="btn btn-primary" disabled={settle.isPending} onClick={() => act(r.itemId, "tidy")}>{t("syncIssues.tidy")}</button>
+                  <button type="button" className="btn btn-primary" disabled={!ready || settle.isPending} onClick={() => act(r.itemId, "tidy")}>{t("syncIssues.tidy")}</button>
                 )}
               </div>
             </div>

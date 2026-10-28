@@ -2,6 +2,7 @@ export const syncIssues = {
   en: {
     chip: "{{n}} to settle after sync",
     chipTitle: "A sync brought in delivery records that disagree. Nothing is blocked — settle them when you can.",
+    ticketNotFound: "That ticket is no longer here — refresh and try again.",
     title: "Settle after sync",
     lede: "The last sync merged cleanly, but these tickets now disagree with themselves about their delivery. Syncing carries on either way; pick what each one should say.",
     "code_done-unaccepted": "Marked done, but the latest delivery was never accepted.",
@@ -21,6 +22,7 @@ export const syncIssues = {
   zh: {
     chip: "同步后有 {{n}} 项待处理",
     chipTitle: "一次同步带进了前后不一致的交付记录。不会阻塞任何事，有空时处理即可。",
+    ticketNotFound: "找不到这张工单了——刷新后再试一次。",
     title: "同步后待处理",
     lede: "上一次同步已经合并成功，但下面这些工单的交付记录前后不一致。无论是否处理，同步都会继续；请为每一项选择它该有的样子。",
     "code_done-unaccepted": "已标为完成，但最新一次交付从未被验收。",

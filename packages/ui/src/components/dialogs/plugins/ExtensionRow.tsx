@@ -13,6 +13,7 @@ import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { ConfirmBuildDialog } from "./ConfirmBuildDialog";
 import { Reach, TrustTags, useCurrentProject } from "./parts";
+import { useConfirm } from "~/lib/confirm";
 
 const STATE_KEY: Record<PluginView["state"], MessageKey> = {
   active: "pluginsPanel.stateRunning",
@@ -24,6 +25,7 @@ const STATE_KEY: Record<PluginView["state"], MessageKey> = {
 /** One extension: what it is, who vouches for it, what it can reach, and what can be done with it. */
 export function ExtensionRow({ plugin }: { plugin: PluginView }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const toast = useToast();
   const projectId = useCurrentProject();
   const ext = plugin.extension!;
@@ -83,8 +85,8 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
             <MenuActionItem
               icon={<Icon name="i-undo" size={13} />}
               name={t("plugins.undoWrites")}
-              onSelect={() =>
-                window.confirm(t("plugins.undoWritesConfirm", { title: ext.title })) &&
+              onSelect={async () =>
+                (await confirm({ body: t("plugins.undoWritesConfirm", { title: ext.title }), yes: t("plugins.undoWrites") })) &&
                 undo.mutate(ext.namespace, {
                   onSuccess: (r) => {
                     toast({ body: r.reverted ? `${t("plugins.undoneWrites", { reverted: r.reverted, title: ext.title })}${r.kept.length ? ` · ${t("plugins.keptWrites", { kept: r.kept.length })}` : ""}` : t("plugins.undoneNothing", { title: ext.title }) });

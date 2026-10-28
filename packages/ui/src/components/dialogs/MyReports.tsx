@@ -8,6 +8,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useErrorToast } from "~/lib/toast";
 import { keys } from "~/lib/queries";
 import { REPORT_KIND_KEY } from "./FeedbackDialog";
+import { useConfirm } from "~/lib/confirm";
 
 // The developer's side sets the status, so one this build has no words for shows as itself.
 const STATUS_KEY: Record<ReportView["status"], MessageKey> = {
@@ -27,6 +28,7 @@ const STATUS_KEY: Record<ReportView["status"], MessageKey> = {
  */
 export function MyReports() {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const reportError = useErrorToast();
   const reports = useQuery({ queryKey: keys.doctor.reports, queryFn: () => invoke("doctor.reports"), retry: false });
@@ -71,7 +73,7 @@ export function MyReports() {
                 <span className="meta-txt">{date(r.createdAt)}</span>
                 <Spacer />
                 <button type="button" className="btn btn-icon" title={t("about.reportDelete")} aria-label={t("about.reportDelete")}
-                  onClick={() => { if (window.confirm(t("about.reportDeleteConfirm", { code: r.code }))) remove.mutate(r.code); }}>
+                  onClick={async () => { if (await confirm({ body: t("about.reportDeleteConfirm", { code: r.code }) })) remove.mutate(r.code); }}>
                   <Icon name="i-trash" size={12} />
                 </button>
               </div>
