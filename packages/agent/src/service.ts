@@ -177,6 +177,10 @@ declare module "@tomradex/ipc" {
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     "agent.archiveThread": (projectId: string, threadId: string) => boolean;
     "agent.unarchiveThread": (projectId: string, threadId: string) => boolean;
+    /** Waves away a conversation's interruption (the app closed mid-run) without continuing it; false when it was not interrupted. */
+    "agent.dismissInterrupted": (projectId: string, threadId: string) => boolean;
+    /** Continues a conversation the app's closing interrupted: one message in it saying to go on from where it stopped. */
+    "agent.continueInterrupted": (projectId: string, threadId: string) => { runId: string };
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
@@ -399,7 +403,10 @@ export class Agent extends Service implements AgentReader {
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
-    const reconcile = (projectId: string) => this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }));
+    const reconcile = (projectId: string) => {
+      const interrupted = this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }));
+      for (const threadId of interrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
+    };
     for (const projectId of this.ctx.db.openIds()) reconcile(projectId);
     this.ctx.on("db/opened", reconcile);
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
@@ -459,7 +466,12 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.threads", (projectId) => {
         const running = new Set(ctx.agent.activeRuns().map((a) => a.thread.id));
         const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
-        return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
+        const interrupted = new Set(ctx.agent.store.interruptedThreads(projectId, PANEL_SURFACES).map((th) => th.id));
+        return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) =>
+          running.has(th.id) || parked.has(th.id) || interrupted.has(th.id)
+            ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}), ...(interrupted.has(th.id) && !running.has(th.id) ? { interrupted: true } : {}) }
+            : th
+        );
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId, afterSeq) => ctx.agent.thread(projectId, threadId, afterSeq));
       ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
@@ -478,6 +490,8 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
+      ctx.ipc.handle("agent.dismissInterrupted", (projectId, threadId) => ctx.agent.dismissInterrupted(projectId, threadId));
+      ctx.ipc.handle("agent.continueInterrupted", (projectId, threadId) => ctx.agent.continueInterrupted(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
@@ -1086,15 +1100,41 @@ export class Agent extends Service implements AgentReader {
   archiveThread(projectId: string, threadId: string): boolean {
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
     if (!this.store.thread(projectId, threadId)) return false;
-    this.store.setArchived(projectId, threadId, true);
+    this.whileInterrupted(projectId, threadId, () => this.store.setArchived(projectId, threadId, true));
     return true;
   }
 
   /** `restored`: a person brought it back by hand, so automatic archiving leaves it alone from now on. */
   unarchiveThread(projectId: string, threadId: string, opts: { restored?: boolean } = {}): boolean {
     if (!this.store.thread(projectId, threadId)) return false;
-    this.store.setArchived(projectId, threadId, false, opts);
+    this.whileInterrupted(projectId, threadId, () => this.store.setArchived(projectId, threadId, false, opts));
     return true;
+  }
+
+  /**
+   * The person waved away the conversation's interruption (the app closed while it ran) without continuing it.
+   * False when it was not interrupted.
+   */
+  dismissInterrupted(projectId: string, threadId: string): boolean {
+    const run = this.store.dismissInterrupted(projectId, threadId);
+    if (!run) return false;
+    this.broadcast(threadId, { type: "run", run });
+    this.ctx.emit("agent/interrupted-changed", projectId, threadId);
+    return true;
+  }
+
+  /** Continues a conversation the app's closing interrupted, in its own session: one message saying to go on from where it stopped. */
+  continueInterrupted(projectId: string, threadId: string): { runId: string } {
+    if (!this.store.interruptedRun(projectId, threadId)) throw new Error("this conversation was not interrupted");
+    return this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterInterrupt") });
+  }
+
+  /** Does `change`, and says so when it changed whether the thread is left interrupted. */
+  private whileInterrupted<T>(projectId: string, threadId: string, change: () => T): T {
+    const before = !!this.store.interruptedRun(projectId, threadId);
+    const out = change();
+    if (before !== !!this.store.interruptedRun(projectId, threadId)) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
+    return out;
   }
 
   /**
@@ -1445,6 +1485,7 @@ export class Agent extends Service implements AgentReader {
     const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
     for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
     if (input.kind === "text") input = { ...input, attachments };
+    const wasInterrupted = !!this.store.interruptedRun(projectId, threadId);
     const { msg, run } = this.store.transaction(projectId, () => {
       const msg = this.store.appendMessage(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
       if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
@@ -1464,6 +1505,8 @@ export class Agent extends Service implements AgentReader {
     this.activeById.set(run.id, rc);
     this.broadcast(threadId, { type: "run", run });
     this.ctx.emit("agent/run-started", run, thread);
+    // a new run is the interruption's answer: the conversation goes on
+    if (wasInterrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
     void this.drive(rc, input);
     return { runId: run.id };
   }
