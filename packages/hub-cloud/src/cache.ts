@@ -93,8 +93,9 @@ export class CloudCache {
     this.data.observed[id] = fingerprint;
     this.save();
   }
-  ingest(records: CloudRecord[]): void {
-    this.data.records = records;
+  /** The cloud's records: all of them, or with `partial` only those changed since the last read, laid over the ones kept. */
+  ingest(records: CloudRecord[], partial = false): void {
+    this.data.records = partial ? [...this.data.records.filter(r => !records.some(n => recordKey(n) === recordKey(r))), ...records] : records;
     this.save();
   }
   accept(op: Mutation, record: CloudRecord): void {

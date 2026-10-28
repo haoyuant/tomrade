@@ -154,6 +154,11 @@ export function trayText(text: string): { shown: string; whole: boolean } {
   return { shown: `${text.slice(0, TRAY_TEXT - 1)}…`, whole: false };
 }
 
+/** What a menu shows, without its handlers: two menus with the same shape look and read the same. */
+export function trayShapeOf(items: MenuItemConstructorOptions[]): unknown[] {
+  return items.map((i) => [i.type ?? "", i.label ?? "", i.enabled ?? true, i.accelerator ?? "", Array.isArray(i.submenu) ? trayShapeOf(i.submenu) : null]);
+}
+
 /** The terminal sessions running now, for the tray: what each is about, and its cell while its Terminal window is open. */
 export function trayRunning(ctx: Context): { who: string; cell: number | null; target: AttentionTarget }[] {
   const codeLink = ctx.get("codeLink");
@@ -280,7 +285,7 @@ export const background = {
       const sessions = [...waitingItems(w), ...runningItems(w)];
       const projects = hasTerminalWindow(ctx) ? terminalProjects(ctx) : [];
       const chord = terminalChord(ctx);
-      return Menu.buildFromTemplate([
+      return [
         ...sessions,
         ...(sessions.length ? [{ type: "separator" as const }] : []),
         ...(hasTerminalWindow(ctx)
@@ -293,11 +298,19 @@ export const background = {
         { label: w(runs === 1 ? "trayRunsOne" : "trayRunsMany", { n: runs }), enabled: false },
         { type: "separator" },
         { label: w("trayQuit"), click: () => app.quit() }
-      ]);
+      ] satisfies MenuItemConstructorOptions[];
     };
+    // Built again only when what it shows changes: the sweep asks every few seconds, and a menu rebuilt under the
+    // pointer flickers on some systems.
+    let trayShape = "";
     const refreshTray = () => {
       if (!tray) return;
-      tray.setContextMenu(menu());
+      const template = menu();
+      const shape = JSON.stringify([trayShapeOf(template), waiting.map((e) => e.key)]);
+      if (shape !== trayShape) {
+        trayShape = shape;
+        tray.setContextMenu(Menu.buildFromTemplate(template));
+      }
       // The count beside the icon, as the Dock's badge; a tray without a title (Windows, Linux) says it on hover.
       const n = waiting.length;
       if (process.platform === "darwin") tray.setTitle(n ? `◆ ${n}` : "");
@@ -349,6 +362,7 @@ export const background = {
     const syncTray = () => {
       if (wantsTray() && !tray) {
         tray = new Tray(trayImage());
+        trayShape = "";
         // macOS and Linux open the menu on a click; Windows keeps it for the right button.
         if (process.platform === "win32") tray.on("click", () => void showMainWindow());
         refreshTray();

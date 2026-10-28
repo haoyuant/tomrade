@@ -47,7 +47,11 @@ export interface LocalAccounts {
   /** The account was deleted: no folder is its any more. The folders themselves stay. */
   forget(userId: string): void;
 }
-declare module "cordis" { interface Context { cloudHub: CloudHub } }
+declare module "cordis" {
+  interface Context { cloudHub: CloudHub }
+  /** From the desktop shell: whether any of the app's windows can be seen. */
+  interface Events { "desktop/seen"(seen: boolean): void }
+}
 declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
@@ -69,6 +73,8 @@ export const CloudConfig = z.object({
   url: z.url(), publishableKey: z.string().min(1), cacheFile: z.string().min(1),
   sessionStorage: z.custom<SupportedStorage>(v => !!v && typeof (v as SupportedStorage).getItem === "function"),
   syncMs: z.number().int().min(1000).default(30_000),
+  /** How often the Hub is read while no window of the app shows. */
+  hiddenSyncMs: z.number().int().min(1000).default(300_000),
   accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional(),
   /** Where email links land: `/auth/confirmed/` and `/auth/reset/` on this site, under `/zh/` in Chinese. */
   site: z.url().default("https://tomrade.com")
@@ -103,6 +109,11 @@ export class CloudHub extends Service implements CloudHubReader {
   private user: User | null = null;
   private error: string | null = null;
   private active: Promise<void> | null = null;
+  /** The Hub read in full during this run, and the newest change time seen in it: later reads ask only what changed since. */
+  private readHub: string | null = null;
+  private cursor: string | null = null;
+  /** Whether a window of the app can be seen, as the desktop shell last said. */
+  private seen = true;
   private closed = false;
   private home: Context;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -205,7 +216,12 @@ export class CloudHub extends Service implements CloudHubReader {
       await this.ctx.storage.writeHub();
       this.schedule();
     }).catch(e => { this.error = errorMessage(e); });
-    const interval = setInterval(() => this.schedule(), this.config.syncMs);
+    const interval = setInterval(() => {
+      // While no window shows, the Hub is read every few minutes rather than every half minute.
+      if (!this.seen && Date.now() - (this.cache.data.lastSyncAt ?? 0) < this.config.hiddenSyncMs) return;
+      this.schedule();
+    }, this.config.syncMs);
+    this.home.on("desktop/seen", (seen) => { this.seen = seen; });
     interval.unref?.();
     this.home.on("projects/created", () => this.schedule());
     this.home.on("projects/removed", () => this.schedule());
@@ -275,14 +291,21 @@ export class CloudHub extends Service implements CloudHubReader {
   sync(): Promise<void> {
     if (this.active) return this.active;
     if (this.closed || this.signingOut || !this.user) return Promise.resolve();
+    const before = this.standing();
     this.active = this.performSync().then(() => {
       // The catalog may name projects this machine has never had; bring them here.
       if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${errorMessage(e)}`));
     }).catch(e => { this.error = errorMessage(e); }).finally(() => {
       this.active = null;
-      if (!this.closed) { this.ctx.settings.refreshUserStore(); this.notify(); }
+      // A pass that changed nothing tells no window: each would read the account and the Hub again.
+      if (!this.closed && this.standing() !== before) { this.ctx.settings.refreshUserStore(); this.notify(); }
     });
     return this.active;
+  }
+  /** What the account and the Hub show, but when they last synced. */
+  private standing(): string {
+    const { lastSyncAt: _at, ...rest } = this.cache.data;
+    return JSON.stringify([rest, this.error, this.user?.id ?? null]);
   }
   private async performSync(): Promise<void> {
     const userId = this.user!.id;
@@ -315,17 +338,28 @@ export class CloudHub extends Service implements CloudHubReader {
       if (result.ok || equal(op.value, result.record.value)) this.cache.accept(op, result.record);
       else this.cache.conflict(result.record);
     }
-    // Explicit pagination: the API's row limit must not silently truncate a larger Hub.
+    // Explicit pagination: the API's row limit must not silently truncate a larger Hub. After the first read of this
+    // run, only rows the cloud changed since the newest one seen; a removal is a row whose value is null, so it comes too.
+    const since = this.readHub === hubId ? this.cursor : null;
     const rows: CloudRecord[] = [];
+    let newest = since;
     for (let offset = 0; ; offset += 500) {
-      const { data, error: failure } = await this.client.from("tomrade_hub_records")
-        .select("kind,key,value,version").eq("hub_id", hubId).order("kind").order("key").range(offset, offset + 499);
+      let query = this.client.from("tomrade_hub_records").select("kind,key,value,version,updated_at").eq("hub_id", hubId);
+      // A minute of overlap: a row's time is when its transaction began, which may be before the last read ended.
+      if (since) query = query.gt("updated_at", new Date(Date.parse(since) - 60_000).toISOString());
+      const { data, error: failure } = await query.order("kind").order("key").range(offset, offset + 499);
       if (failure) throw new Error(failure.message);
-      rows.push(...z.array(RecordSchema).parse(data));
+      for (const row of z.array(RecordSchema.extend({ updated_at: z.string() })).parse(data)) {
+        const { updated_at, ...record } = row;
+        rows.push(record);
+        if (!newest || Date.parse(updated_at) > Date.parse(newest)) newest = updated_at;
+      }
       if (data.length < 500) break;
     }
     if (this.closed || this.user?.id !== userId) return;
-    this.cache.ingest(rows);
+    this.cache.ingest(rows, since !== null);
+    this.readHub = hubId;
+    this.cursor = newest;
     this.cache.data.lastSyncAt = Date.now(); this.cache.save(); this.error = null;
   }
   /**

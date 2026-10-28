@@ -37,7 +37,7 @@ vi.mock("../src/quit.js", () => ({ leaving: () => quit.leaving, quitApproved: ()
 
 const { app } = await import("electron");
 const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
-const { background, cameBack, launchMode, otherOrdinaryWindow, readPrefs, relaunchArgs, whenLastWindowCloses, writePrefs } = await import("../src/background.js");
+const { background, cameBack, launchMode, otherOrdinaryWindow, readPrefs, relaunchArgs, trayShapeOf, whenLastWindowCloses, writePrefs } = await import("../src/background.js");
 const { startWindows } = await import("../src/sessions-section.js");
 const { appIconPath, currentAppIcon, wearAppIcon } = await import("../src/app-icon.js");
 const { jumpList, launchAsk, openStartWindows } = await import("../src/terminal-entries.js");
@@ -533,4 +533,15 @@ describe("starting on the Terminal window", () => {
     whenLastWindowCloses(null);
     for (const dispose of disposers) dispose();
   });
+});
+
+it("reads two tray menus with the same rows as the same, whatever their handlers, and a changed row as a change", () => {
+  const menu = (waiting: string, runs: string) => [
+    { label: waiting, click: () => undefined },
+    { type: "separator" as const },
+    { label: "Start in a terminal", submenu: [{ label: "Tomrade", click: () => undefined }] },
+    { label: runs, enabled: false }
+  ];
+  expect(JSON.stringify(trayShapeOf(menu("◆ TOM-1 waits", "1 run")))).toBe(JSON.stringify(trayShapeOf(menu("◆ TOM-1 waits", "1 run"))));
+  expect(JSON.stringify(trayShapeOf(menu("◆ TOM-1 waits", "2 runs")))).not.toBe(JSON.stringify(trayShapeOf(menu("◆ TOM-1 waits", "1 run"))));
 });

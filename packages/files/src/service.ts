@@ -66,6 +66,8 @@ declare module "cordis" {
     files: Files;
   }
   interface Events {
+    /** From the desktop shell: whether any of the app's windows can be seen. */
+    "desktop/seen"(seen: boolean): void;
     "files/registered"(backendId: string): void;
     "files/unregistered"(backendId: string): void;
     /** A project's files or their sync state moved. */
@@ -82,6 +84,8 @@ export const FilesConfig = z.preprocess(
     gitBinary: z.string().default("git"),
     /** Every open project's files are saved and synced this often; 0 leaves it to the watcher and explicit syncs. */
     autoSyncMs: z.number().int().min(0).default(60_000),
+    /** The sweep's pace for a watched folder with no remote, and for a remote while no window shows. */
+    rareSyncMs: z.number().int().min(0).default(600_000),
     /** Outside edits are saved this long after the last one. */
     settleMs: z.number().int().min(0).default(1_500),
     /** A save is pushed this long after it. */
@@ -238,6 +242,10 @@ export class Files extends Service implements FilesReader {
   private readonly lastState = new Map<string, FilesSyncState>();
   /** How often each project's files were said to change, so a sync knows whether its store said anything. */
   private readonly told = new Map<string, number>();
+  /** When the sweep last synced each project. */
+  private readonly swept = new Map<string, number>();
+  /** Whether a window of the app can be seen, as the desktop shell last said. */
+  private seen = true;
   /** Titles cost a read each; a file that has not changed has not retitled itself. */
   private readonly titles = new Map<string, { stamp: string; title: string | null }>();
   private remotes!: RemoteStore;
@@ -365,6 +373,9 @@ export class Files extends Service implements FilesReader {
 
     const timer = this.config.autoSyncMs > 0 ? setInterval(() => void this.syncAll(), this.config.autoSyncMs) : null;
     timer?.unref?.();
+    this.home.on("desktop/seen", (seen) => {
+      this.seen = seen;
+    });
     return () => {
       if (timer) clearInterval(timer);
       for (const projectId of [...this.open.keys()]) this.close(projectId);
@@ -1022,12 +1033,12 @@ export class Files extends Service implements FilesReader {
     return this.agentIndex(projectId, { budget, focus, native });
   }
 
-  async sync(projectId: string): Promise<FilesStatus> {
+  async sync(projectId: string, opts: { quiet?: boolean } = {}): Promise<FilesStatus> {
     // Git installed since the folder was opened without it: the same folder becomes a git store.
     if (this.open.get(projectId)?.store instanceof FolderFileStore && (await gitInstalled(this.config.gitBinary))) await this.reopen(projectId, true);
     const before = this.lastState.get(projectId);
     const toldBefore = this.told.get(projectId) ?? 0;
-    const status = await (await this.store(projectId)).sync();
+    const status = await (await this.store(projectId)).sync(opts);
     this.lastState.set(projectId, status.state);
     this.home.emit("files/synced", projectId, status);
     // Said once more once the sync settles, unless it was the minute's sweep over a quiet project.
@@ -1037,12 +1048,18 @@ export class Files extends Service implements FilesReader {
 
   /** The sweep: every project open on this machine with files, or a remote, is saved and synced. */
   async syncAll(): Promise<void> {
+    const now = Date.now();
     for (const projectId of this.ctx.db.openIds()) {
       const dir = this.dirFor(projectId);
       if (!dir) continue;
       if (!this.open.has(projectId) && !this.remoteOf(projectId) && !fs.existsSync(dir)) continue;
+      // A folder watched for edits, with no remote to hear from, is saved as it changes; the sweep is only a safety net.
+      // With a remote, its news is fetched every sweep while a window shows, and rarely while none does.
+      const rare = this.remoteOf(projectId) ? !this.seen : !!this.open.get(projectId)?.store.watching?.();
+      if (rare && now - (this.swept.get(projectId) ?? 0) < this.config.rareSyncMs) continue;
+      this.swept.set(projectId, now);
       try {
-        await this.sync(projectId);
+        await this.sync(projectId, { quiet: true });
       } catch (error) {
         this.warn(projectId, error);
       }
