@@ -1755,7 +1755,6 @@ export class Im extends Service {
     return item?.kind === "ticket" ? item : null;
   }
 
-  /** Engines that can run headless here, as the Start dialog offers them. */
   /** Why the conversation's engine cannot take a turn now, with what to do, or null when it can (or nobody can tell). */
   private async unready(b: Binding): Promise<string | null> {
     const id = this.home.agent.store.thread(b.project_id, b.thread_id)?.engine;
@@ -1770,6 +1769,7 @@ export class Im extends Service {
       other ? this.w("engineSwitchTo", { id: other.id }) : this.w("engineFixLater")].join("\n");
   }
 
+  /** Engines that can run headless here, as the Start dialog offers them. */
   private async headless() { return (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly); }
 
   /** The methods a General ticket can be delivered with, as the Start dialog lists them. */
