@@ -1395,6 +1395,28 @@ function apply(ctx: Context, config: Config) {
     await refresh(projectId);
   };
 
+  // A card's answer to a terminal session's prompt, pressed in its pane.
+  const answerSession = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "answer" }>) => {
+    const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
+    // answered or not, what the screen asks is read again for the next state
+    prompts.delete(m.sessionId);
+    if (result === "answered") {
+      // answered from its card: the cells stay as they were, and the window says so
+      post(win, { type: "toast", text: words()(m.which === "allow" ? "allowedStay" : "deniedStay", { name: nameOf(projectId, m.sessionId) }) });
+      return void refresh(projectId);
+    }
+    // Nothing pressed: whatever it asks is answered in its pane, which comes into a cell for that.
+    if (result === "notPrompt") await show(projectId, m.sessionId);
+    return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
+  };
+  // A card's choice for an assistant conversation's question.
+  const answerThread = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "answerThread" }>) => {
+    const agent = ctx.get("agent");
+    if (!agent) return;
+    await agent.send(projectId, m.threadId, { kind: "answer", questionId: m.questionId, value: m.value });
+    const thread = threads(projectId).find((t) => t.id === m.threadId);
+    return post(win, { type: "toast", text: words()("answeredStay", { name: thread?.key ?? (thread?.title || m.threadId) }) });
+  };
   const onMessage = async (projectId: string, win: Open, m: WindowMessage) => {
     switch (m.type) {
       case "attach":
@@ -1560,24 +1582,18 @@ function apply(ctx: Context, config: Config) {
         return post(win, { type: "toast", text: words()(done ? "noTicketTaken" : "guessGone") });
       }
       case "answer": {
-        const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
-        // answered or not, what the screen asks is read again for the next state
-        prompts.delete(m.sessionId);
-        if (result === "answered") {
-          // answered from its card: the cells stay as they were, and the window says so
-          post(win, { type: "toast", text: words()(m.which === "allow" ? "allowedStay" : "deniedStay", { name: nameOf(projectId, m.sessionId) }) });
-          return void refresh(projectId);
+        try {
+          return await answerSession(win, projectId, m);
+        } finally {
+          if (m.token !== undefined) post(win, { type: "answered", token: m.token });
         }
-        // Nothing pressed: whatever it asks is answered in its pane, which comes into a cell for that.
-        if (result === "notPrompt") await show(projectId, m.sessionId);
-        return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
       }
       case "answerThread": {
-        const agent = ctx.get("agent");
-        if (!agent) return;
-        await agent.send(projectId, m.threadId, { kind: "answer", questionId: m.questionId, value: m.value });
-        const thread = threads(projectId).find((t) => t.id === m.threadId);
-        return post(win, { type: "toast", text: words()("answeredStay", { name: thread?.key ?? (thread?.title || m.threadId) }) });
+        try {
+          return await answerThread(win, projectId, m);
+        } finally {
+          if (m.token !== undefined) post(win, { type: "answered", token: m.token });
+        }
       }
       case "tails": {
         if (win.hidden) return;

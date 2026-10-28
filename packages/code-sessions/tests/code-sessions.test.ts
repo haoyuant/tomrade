@@ -1560,6 +1560,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
   takes = "failed";
   await say({ type: "answer", sessionId: "s1", which: "deny" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "The terminal did not take the answer; answer in its pane" });
+  // A card's answer that carries a token hears it went, or failed to, after what the window is told: its buttons work again.
+  await say({ type: "answer", sessionId: "s1", which: "deny", token: 7 });
+  expect(win.posts.slice(-2)).toEqual([{ type: "toast", text: "The terminal did not take the answer; answer in its pane" }, { type: "answered", token: 7 }]);
   // Its screen asks no permission (a folder's trust, say): nothing was pressed, and the session comes into a cell to be answered there.
   takes = "notPrompt";
   await say({ type: "answer", sessionId: "s1", which: "allow" });
@@ -1574,6 +1577,8 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await say({ type: "answerThread", threadId: "t-asks", questionId: "q", value: "确认" });
   expect(sent).toEqual([[projectId, "t-asks", { kind: "answer", questionId: "q", value: "确认" }]]);
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Answered “整理 Q4 backlog” · you stayed where you were" });
+  await say({ type: "answerThread", threadId: "t-asks", questionId: "q", value: "确认", token: 8 });
+  expect(win.posts.at(-1)).toEqual({ type: "answered", token: 8 });
   // An assistant conversation opens in the app window, as a notification's click does.
   await say({ type: "showThread", threadId: "t-asks" });
   expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);
