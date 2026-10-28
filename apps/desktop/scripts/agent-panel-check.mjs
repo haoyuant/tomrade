@@ -906,6 +906,30 @@ const run = async () => {
   const sourceNote = await $(`(() => { const items = [...document.querySelectorAll('.ai-session-convo .cs-convo-note, .ai-session-convo .cs-convo-line')].map((n) => n.textContent); const at = items.indexOf('typed in cell three'); return at > 0 ? items[at - 1] : null; })()`);
   check("a line said in the cell while both are open is marked «You said this in cell 3»", sourceNote === "You said this in cell 3", sourceNote);
 
+  // The tokens its record counts (TOM-730): the session's in the head, the turn from the person's last line with its time going.
+  const usageView = () => $(`({ head: document.querySelector('[data-testid="ai-session-usage"]')?.textContent ?? null, turn: document.querySelector('[data-testid="ai-session-turn"]')?.textContent ?? null })`);
+  let usageSeen = await usageView();
+  check("with no tokens in its record yet, the head counts none and the turn shows only its time: «Running · 1s»", usageSeen.head === null && /^Running · \d+s$/.test(usageSeen.turn ?? ""), usageSeen);
+  const replied = (id, usage) => JSON.stringify({ type: "assistant", timestamp: new Date().toISOString(), message: { id, content: [{ type: "text", text: `Counting ${id}.` }], usage } }) + "\n";
+  // one reply as Claude Code writes it: two entries, the same id and usage, counted once
+  const firstUsage = { input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 20000, cache_creation_input_tokens: 800 };
+  fs.appendFileSync(record, replied("u1", firstUsage) + replied("u1", firstUsage));
+  moved({});
+  await sleep(1500);
+  usageSeen = await usageView();
+  check("the head shows the session's tokens as the built-in assistant splits them, a reply written twice counted once", usageSeen.head === "This session · ↑22k (new 1.2k · cache read 20k · cache write 800) ↓300", usageSeen);
+  check("the running turn shows its time and tokens: «Running · Ns · ↑22k ↓300 tok»", /^Running · \d+s · ↑22k ↓300 tok$/.test(usageSeen.turn ?? ""), usageSeen);
+  const turnBefore = usageSeen.turn;
+  fs.appendFileSync(record, replied("u2", { input_tokens: 1000, output_tokens: 1700, cache_read_input_tokens: 29000, cache_creation_input_tokens: 0 }));
+  moved({});
+  await sleep(1500);
+  usageSeen = await usageView();
+  const secs = (text) => Number(/· (\d+)s/.exec(text ?? "")?.[1] ?? NaN);
+  check("as the record grows, the head's totals and the turn's tokens grow with it, and its time has gone on", usageSeen.head === "This session · ↑52k (new 2.2k · cache read 49k · cache write 800) ↓2.0k" && /^Running · \d+s · ↑52k ↓2.0k tok$/.test(usageSeen.turn ?? "") && secs(usageSeen.turn) > secs(turnBefore), { before: turnBefore, now: usageSeen });
+  await sleep(1100);
+  const ticked = (await usageView()).turn;
+  check("the running turn's time goes on by the second with nothing new in the record", secs(ticked) > secs(usageSeen.turn), { was: usageSeen.turn, now: ticked });
+
   // The agent asks permission: the panel offers Allow and Deny while the pane shows a prompt they answer, pressing the
   // keys the agent declared; the answer closes the ask on both sides.
   // the panel stays on this session after an answer here; going on to the next one waiting is checked further down

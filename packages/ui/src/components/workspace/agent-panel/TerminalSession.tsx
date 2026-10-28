@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { EngineView } from "@tomradex/agent";
+import type { EngineView, RecordUsage } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
 import { cutFrom, joinCuts } from "@tomradex/code-link/segments";
 import type { Item } from "@tomradex/domain";
@@ -19,10 +19,27 @@ import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
 import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
+import { duration, liveTokens, tokensLabel } from "./format";
 import { StatusMark } from "./SessionBar";
 
 /** How long Allow or Deny stays answered on its own before the session's next event says what came of it. */
 const ANSWERED_MS = 8000;
+
+/** The turn from the person's last line: its time going by the second while the agent works on it, then what it took, and its tokens. */
+function TurnLine({ turn, runs }: { turn: NonNullable<RecordUsage["turn"]>; runs: boolean }) {
+  const { t } = useI18n();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!runs) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [runs]);
+  if (turn.startedAt === null) return null;
+  const took = (runs ? Date.now() : (turn.lastAt ?? turn.startedAt)) - turn.startedAt;
+  const used = turn.tokens.inputTokens + turn.tokens.outputTokens > 0 ? liveTokens(turn.tokens) : null;
+  const text = [t(runs ? "sessionBar.turnRunning" : "sessionBar.turnDone", { time: duration(t, took) }), used].filter(Boolean).join(" · ");
+  return <p className="ai-session-turn meta-txt dense num" data-testid="ai-session-turn" data-running={runs || undefined}>{text}</p>;
+}
 
 /**
  * A coding session running in a terminal, seen from the assistant panel: the same session as the Terminal window's
@@ -73,6 +90,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   // ── the conversation, from the agent's record ──────────────────────────
   const [convo, setConvo] = useState<ConvoState | null>(null);
+  /** The tokens its record counts, as of the last read of its end; null when there is no record to count. */
+  const [usage, setUsage] = useState<RecordUsage | null>(null);
   /** Where the shown conversation's next read goes on from. */
   const goesOnAt = useRef<number | null>(null);
   goesOnAt.current = convo?.next ?? null;
@@ -104,11 +123,13 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     const read = await invoke("codeLink.conversation", projectId, session.id, undefined, after ?? undefined).catch(() => null);
     if (mine !== generation.current) return;
     kept.current = first || following.current ? -1 : null;
+    if (read || first) setUsage(read?.usage ?? null);
     setConvo((now) => (first || !now ? convoFromTail(read) : after !== null ? convoContinued(now, after, read) : convoRefreshed(now, read)));
   }, [projectId, session.id]);
 
   useEffect(() => {
     setConvo(null);
+    setUsage(null);
     setReadingEarlier(false);
     closeAll();
     following.current = true;
@@ -314,6 +335,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     });
   }, [cuts, worked.data, items, t]);
   const asked = session.ask ? askText(session.ask, t) : null;
+  const sessionTokens = usage && usage.total.inputTokens + usage.total.outputTokens > 0 ? t("sessionBar.usageSession", { tokens: tokensLabel(t, usage.total) }) : null;
   const wait = status === "wait" ? asked ?? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
 
   return (
@@ -358,6 +380,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           {wait && <span className="ai-session-wait"> · {wait}</span>}
           {cell && live && <span data-testid="ai-session-both"> · {t("sessionBar.bothOpen", { n: cell })}</span>}
         </p>
+        {sessionTokens && <p className="ai-session-usage meta-txt dense num" data-testid="ai-session-usage">{sessionTokens}</p>}
         {session.herdrPane && live && (
           <button type="button" className="ai-strip" data-testid="ai-strip" aria-expanded={drawer} aria-label={t(drawer ? "sessionBar.paneOutputLess" : "sessionBar.paneOutputMore")} title={t(drawer ? "sessionBar.paneOutputLess" : "sessionBar.paneOutputMore")} onClick={() => setDrawer((d) => !d)}>
             <span className="ai-strip-lines">
@@ -436,6 +459,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
             )}
           </div>
         )}
+        {usage?.turn && <TurnLine turn={usage.turn} runs={live && (session.state === "running" || isApprovalAsk(session))} />}
         {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
         {asking && (
           <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={asked ?? t("agentPanel.attention_permission")}>

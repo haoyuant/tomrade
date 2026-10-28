@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { EngineRecord } from "@tomradex/agent";
-import { blocksText, clipDetail, clipLine, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine, type JsonlReader, type RecordCallLine } from "@tomradex/engine-kit";
+import { blocksText, clipDetail, clipLine, countJsonlUsage, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine, type JsonlReader, type RecordCallLine, type UsageEntry } from "@tomradex/engine-kit";
 import { codexHome } from "./account.js";
 
 /** How much of a rollout's head is read for its first prompt. */
@@ -61,7 +61,25 @@ function codexRolloutResults(o: Record<string, unknown>): { call: string; output
   return [];
 }
 
-const CODEX_ROLLOUT: JsonlReader = { lines: codexRolloutLines, results: codexRolloutResults };
+/** The session's tokens so far, as Codex writes them after each reply: cached and cache-written input are part of its input. */
+function codexRolloutUsage(o: Record<string, unknown>): UsageEntry | null {
+  if (o.type !== "event_msg") return null;
+  const p = (o.payload ?? {}) as { type?: string; info?: { total_token_usage?: Record<string, unknown> } | null };
+  const u = p.type === "token_count" ? p.info?.total_token_usage : null;
+  if (!u || typeof u !== "object") return null;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const input = n(u.input_tokens);
+  const read = Math.min(input, n(u.cached_input_tokens));
+  const write = Math.min(input - read, n(u.cache_write_input_tokens));
+  return { running: true, tokens: { inputTokens: input, uncachedInputTokens: input - read - write, cacheReadTokens: read, cacheWriteTokens: write, outputTokens: n(u.output_tokens) } };
+}
+
+const CODEX_ROLLOUT: JsonlReader = {
+  lines: codexRolloutLines,
+  results: codexRolloutResults,
+  usage: codexRolloutUsage,
+  skim: (row) => row.includes('"token_count"') || row.includes('"role":"user"')
+};
 
 /** The first thing the person said in a Codex rollout, as a title. */
 export function codexRolloutTitle(file: string): string | null {
@@ -120,5 +138,6 @@ export function findCodexRollout(sessionId: string, home = codexHome()): string 
 export const codexRecord: EngineRecord = {
   find: (sessionId) => findCodexRollout(sessionId),
   read: (file, opts) => readJsonlRecord(file, CODEX_ROLLOUT, opts),
-  title: codexRolloutTitle
+  title: codexRolloutTitle,
+  usage: (file, from) => countJsonlUsage(file, CODEX_ROLLOUT, from)
 };

@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { Engine, RecordRead, ThreadSummary } from "@tomradex/agent";
+import type { Engine, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -250,8 +250,8 @@ declare module "@tomradex/ipc" {
     "codeLink.startLoose": (projectId: string, input: { engine?: string; prompt: string }) => StartResult;
     "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
-    /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
-    "codeLink.conversation": (projectId: string, sessionId: string, before?: number, after?: number) => RecordRead | null;
+    /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start; read at its end, with the tokens the record counts. */
+    "codeLink.conversation": (projectId: string, sessionId: string, before?: number, after?: number) => (RecordRead & { usage?: RecordUsage | null }) | null;
     /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
     "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
@@ -324,6 +324,9 @@ export const CodeLinkConfig = z.preprocess(
   })
 );
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
+
+/** How many records' token counts are kept to go on from. */
+const USAGE_COUNTS = 32;
 
 
 const SETTINGS_SECTION = {
@@ -410,6 +413,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly autoConnecting = new Set<string>();
   /** Records found by looking through an agent's folder, by agent and its session id. */
   private readonly recordFiles = new Map<string, string>();
+  /** Each record's token count so far, by its file, so a read counts only what was written since; the least recent go first. */
+  private readonly usageCounts = new Map<string, RecordUsageCount>();
   /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
   private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
@@ -788,7 +793,10 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
-      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => ctx.codeLink.conversation(projectId, sessionId, before, after));
+      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => {
+        const read = ctx.codeLink.conversation(projectId, sessionId, before, after);
+        return read && before === undefined ? { ...read, usage: ctx.codeLink.usage(projectId, sessionId) } : read;
+      });
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
@@ -986,6 +994,27 @@ export class CodeLink extends Service implements CodeLinkReader {
     // The agent's own record is gone (its CLI cleans old ones up) or unreadable here: what was saved when it ended.
     const saved = snapshotFile(this.recordsDir(), s.agent, s.externalId);
     return saved ? readSnapshot(saved, before) : null;
+  }
+
+  /** The tokens a session's record counts: the whole session's, and its turn from the person's last line; null when its agent's record cannot be read. */
+  usage(projectId: string, sessionId: string): RecordUsage | null {
+    const s = this.store.session(projectId, sessionId);
+    if (!s?.externalId) return null;
+    const record = recordOf(this.ctx, s.agent);
+    const file = record?.usage ? (s.transcript ?? this.recordFile(s.agent, s.externalId, record, s.cwd ?? null)) : null;
+    if (!record?.usage || !file) return null;
+    const from = this.usageCounts.get(file) ?? null;
+    let count: RecordUsageCount | null = null;
+    try {
+      count = record.usage(file, from);
+    } catch (err) {
+      this.ctx.logger.warn(`counting session ${sessionId}'s tokens failed: ${errorMessage(err)}`);
+    }
+    this.usageCounts.delete(file);
+    if (!count) return null;
+    this.usageCounts.set(file, count);
+    if (this.usageCounts.size > USAGE_COUNTS) this.usageCounts.delete(this.usageCounts.keys().next().value!);
+    return { total: count.total, turn: count.turn };
   }
 
   /** Where an agent keeps a conversation's record, looked for once: the agent's folder is not read through on every read. */

@@ -86,7 +86,10 @@ export const sessionBar = {
     inputEnded: "This session has ended; nothing more can be typed into it.",
     inputOutside: "This session runs in {{app}}: type there.",
     inputNoBackend: "No terminal backend answers on this computer, so nothing can be typed into this session from here.",
-    inputUnsupported: "This terminal backend can't take typing from the panel; use the Terminal window."
+    inputUnsupported: "This terminal backend can't take typing from the panel; use the Terminal window.",
+    usageSession: "This session · {{tokens}}",
+    turnRunning: "Running · {{time}}",
+    turnDone: "Last turn · {{time}}"
   },
   zh: {
     label: "会话",
@@ -175,6 +178,9 @@ export const sessionBar = {
     inputEnded: "这个会话已结束，不能再往里输入。",
     inputOutside: "这个会话在 {{app}} 里运行，去那里输入。",
     inputNoBackend: "这台电脑上没有终端后端在应答，不能从这里往会话里输入。",
-    inputUnsupported: "这个终端后端收不了面板里的输入，请用终端窗口。"
+    inputUnsupported: "这个终端后端收不了面板里的输入，请用终端窗口。",
+    usageSession: "整个会话 · {{tokens}}",
+    turnRunning: "进行中 · {{time}}",
+    turnDone: "上一轮 · {{time}}"
   }
 };

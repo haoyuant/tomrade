@@ -92,7 +92,9 @@ export {
   type McpLinkView,
   type McpProjectApproval,
   type RecordLine,
-  type RecordRead
+  type RecordRead,
+  type RecordUsage,
+  type RecordUsageCount
 } from "./engine.js";
 export {
   type AgentPolicy,

@@ -1325,6 +1325,27 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.conversation(project.id, talk.id)).toBeNull();
   });
 
+  it("counts a terminal session's tokens from its agent's record, going on from where the last count stopped", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    const claude = claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" });
+    const counted: unknown[] = [];
+    ctx.agent.engine({ ...installed("claude-code"), available: async () => ({ ok: false }), local: { record: { ...claude, usage: (file, from) => (counted.push(from ?? null), claude.usage!(file, from)) } } });
+    const transcript = path.join(root, `usage-${n++}.jsonl`);
+    const reply = (id: string, output: number) => `${JSON.stringify({ type: "assistant", message: { id, content: [], usage: { input_tokens: 3, output_tokens: output, cache_read_input_tokens: 100 } } })}\n`;
+    fs.writeFileSync(transcript, `${JSON.stringify({ type: "user", message: { content: "开始" } })}\n` + reply("m1", 5) + reply("m1", 5));
+    const s = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "usage-1" });
+    codeLink.store.patchSession(project.id, s.id, { transcript, cwd: checkout });
+    expect(codeLink.usage(project.id, s.id)).toMatchObject({ total: { inputTokens: 103, outputTokens: 5 }, turn: { tokens: { outputTokens: 5 } } });
+    fs.appendFileSync(transcript, reply("m2", 7));
+    expect(codeLink.usage(project.id, s.id)).toMatchObject({ total: { inputTokens: 206, cacheReadTokens: 200, outputTokens: 12 } });
+    // the second count went on from the first, never from nothing
+    expect(counted[0]).toBeNull();
+    expect(counted[1]).not.toBeNull();
+    // no record: nothing to count
+    fs.rmSync(transcript);
+    expect(codeLink.usage(project.id, s.id)).toBeNull();
+  });
+
   it("gives a tokenless claim to the session whose hooks announced it, not the newest idle one", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
