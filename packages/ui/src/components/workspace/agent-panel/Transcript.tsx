@@ -33,12 +33,16 @@ export interface TranscriptActionsValue {
   commandAsk?: boolean;
   /** Answering moves on to the next conversation or session waiting on the person. */
   goesOnNext?: boolean;
+  /** The interruption notes that offer to continue, by message id, each with the conversation it continues (`interruptedNotes`). */
+  interruptAt: Map<string, string>;
   onOpenIssue: (id: string) => void;
   onOpenThread: (id: string) => void;
   onAnswer: (id: string, value: string | string[]) => void;
   onRevert: (runId: string) => void;
   onOpenSettings: (engineId?: string) => void;
   onCardAction: (action: CardAction, threadId: string, engineId?: string) => void;
+  /** A conversation the app's closing interrupted: go on from where it stopped, or wave that away. */
+  onInterrupted: (threadId: string, action: "continue" | "dismiss") => void;
 }
 
 /** While the run writes code: the way to move that coding into a conversation of its own under this one, and keep talking here. */
@@ -51,7 +55,7 @@ export function BackgroundOffer({ busy, onPick }: { busy: boolean; onPick: () =>
   );
 }
 
-type StableActions = Pick<TranscriptActionsValue, "projectId" | "engines" | "retryEngines" | "onOpenIssue" | "onOpenThread" | "onAnswer" | "onRevert" | "onOpenSettings" | "onCardAction">;
+type StableActions = Pick<TranscriptActionsValue, "projectId" | "engines" | "retryEngines" | "onOpenIssue" | "onOpenThread" | "onAnswer" | "onRevert" | "onOpenSettings" | "onCardAction" | "onInterrupted">;
 
 // What rows read is split: the handlers and engines, which rarely change, by context; the rest (runs, tickets, what is
 // pending) from a store each row selects its own part of, so a ticket refetch or a run starting re-renders only the rows it touches.
@@ -84,10 +88,10 @@ export function Transcript({ actions, folded, briefId, codeFrom, claim, lastErro
   const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
   const [live] = useState(() => liveStore(actions));
   useLayoutEffect(() => live.set(actions), [live, actions]);
-  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction } = actions;
+  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, onInterrupted } = actions;
   const stable = useMemo(
-    () => ({ projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction }),
-    [projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction]
+    () => ({ projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, onInterrupted }),
+    [projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, onInterrupted]
   );
   const provided = useMemo(() => ({ stable, live }), [stable, live]);
   return (
@@ -156,13 +160,16 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
   const { t } = useI18n();
   const { stable, live } = useTranscriptActions();
-  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction } = stable;
+  const { projectId, engines, retryEngines, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, onInterrupted } = stable;
   const b = m.block;
   // each row hears only what it shows: its run, its card, the tickets its text names, the question waiting
   const run = useLive(live, (a) => (m.runId ? a.runs.get(m.runId) : undefined));
   const changesRun = useLive(live, (a) => (b.type === "changes" ? a.runs.get(b.runId) : undefined));
   const card = useLive(live, (a) => (b.type === "card" ? a.cards.get(b.id) : undefined));
   const status = useLive(live, (a) => (b.type === "note" && b.threadFor ? a.threadStatus.get(b.threadFor) : undefined));
+  // the newest interruption of this conversation, or of one coding under it, while nobody has gone on: it offers to go on, or to wave it away
+  const interruptFor = useLive(live, (a) => (b.type === "note" && b.interrupted ? a.interruptAt.get(m.id) : undefined));
+  const interruptBusy = useLive(live, (a) => interruptFor === m.threadId && a.busy);
   const asking = b.type === "question";
   const pending = useLive(live, (a) => (asking ? a.pending : null));
   const commandAsk = useLive(live, (a) => asking && !!a.commandAsk);
@@ -191,6 +198,27 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
     return (
       <div className="work-rule" role="separator" data-testid="work-rule" data-claimed={b.claimed} title={b.text}>
         <span>{t("agentPanel.writingCodeFor", { key: b.claimed })}</span>
+      </div>
+    );
+  }
+  if (b.type === "note" && interruptFor) {
+    return (
+      <div className="ai-interrupted" role="status" data-testid="interrupted-note">
+        <p><Icon name="i-warn" size={13} /> {b.text}</p>
+        <p className="ai-interrupted-hint">{t(b.threadFor ? "agentPanel.interruptedChildHint" : "agentPanel.interruptedHint")}</p>
+        <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="interrupted-continue" disabled={interruptBusy} onClick={() => onInterrupted(interruptFor, "continue")}>
+            {t("agentPanel.interruptedContinue")}
+          </button>
+          <button type="button" className="btn btn-ghost btn-xs" data-testid="interrupted-dismiss" disabled={interruptBusy} title={t("agentPanel.interruptedDismissTitle")} onClick={() => onInterrupted(interruptFor, "dismiss")}>
+            {t("agentPanel.interruptedDismiss")}
+          </button>
+          {b.threadFor && (
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="note-thread" onClick={() => onOpenThread(b.threadFor!)}>
+              {t("agentPanel.seeThread")}
+            </button>
+          )}
+        </div>
       </div>
     );
   }

@@ -11,7 +11,7 @@ import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/m
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
-import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useInterrupted, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
@@ -32,6 +32,7 @@ import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/Session
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { barModeFor, barPrefsOf, barShown, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { interruptedNotes } from "~/lib/interrupted";
 import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
@@ -657,9 +658,25 @@ export function AgentPanel({
   // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
   const runActivity = useLive(progress, (p) => p?.activity ?? null);
   const commandAsk = !!askId && runActivity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
+  // The newest interruption of this conversation, and of each one coding under it, offers to go on while it still waits.
+  // Keyed by a string, so the map is new only when which conversations are interrupted changes.
+  const interruptedKey = (threads.data ?? []).filter((th) => th.interrupted).map((th) => th.id).join("|");
+  const interruptAt = useMemo(() => {
+    const ids = new Set(interruptedKey ? interruptedKey.split("|") : []);
+    return threadId ? interruptedNotes(detail.data?.messages ?? [], threadId, (id) => ids.has(id)) : new Map<string, string>();
+  }, [detail.data?.messages, threadId, interruptedKey]);
+  const interrupted = useInterrupted(projectId);
+  const latestInterrupted = useRef({ interrupted, threadId, busy });
+  latestInterrupted.current = { interrupted, threadId, busy };
+  // Going on, or waving it away, settles this conversation's wait like an answer does: the next one waiting comes up.
+  const interruptedRow = useCallback((target: string, action: "continue" | "dismiss") => {
+    const { interrupted: mutation, threadId: here, busy: working } = latestInterrupted.current;
+    if (mutation.isPending || (target === here && working)) return;
+    mutation.mutate({ threadId: target, action }, { onSuccess: () => { if (target === here) waitQueue.current.answered(`thread:${target}`); } });
+  }, []);
   const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, interruptAt, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow, onInterrupted: interruptedRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, interruptAt, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow, interruptedRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
