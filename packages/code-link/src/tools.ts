@@ -329,13 +329,20 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         agent.setCard(inv.run.id, { id: `start-batch-${inv.run.id}`, schema: "start-batch", title: items.map((i) => i.key).join(", "), data: card });
         const started = results.filter((r) => r.ok);
         const stopped = results.filter((r) => !r.ok);
+        // The card fixes a missing checkout (a folder here, or a clone) and starts the ticket; the agent has no tool for either.
+        const unplaced = stopped.filter((r) => r.gate === "checkout").map((r) => r.key);
+        const placing = unplaced.length
+          ? ` ${unplaced.join(", ")} ${unplaced.length === 1 ? "has" : "have"} no checkout on this machine: the card offers to use a folder already here or to clone the repository, and starts ${unplaced.length === 1 ? "it" : "them"} once done. You cannot clone or set a checkout yourself, so do not offer to or ask how: say the card does it, and end your turn.`
+          : "";
         return {
           started: started.map((r) => ({ key: r.key, branch: r.branch, engine: r.engine, continued: r.continued ?? false, ...(r.message ? { waitingOn: r.message } : {}) })),
           ...(stopped.length ? { notStarted: stopped.map((r) => ({ key: r.key, gate: r.gate, message: r.message, ...(r.blockers ? { waitsOn: r.blockers } : {}) })) } : {}),
           ...(problems.length ? { problems } : {}),
           note: started.length
-            ? `${started.map((r) => r.key).join(", ")} ${started.length === 1 ? "runs" : "run"} in ${started.length === 1 ? "a session" : "sessions"} of ${started.length === 1 ? "its" : "their"} own now; the user is told on a card. Say briefly what was started${stopped.length ? " and what was not, and why" : ""}, then end your turn.`
-            : "Nothing started. Say why, in the user's words, and where a gate names a fix, offer it."
+            ? `${started.map((r) => r.key).join(", ")} ${started.length === 1 ? "runs" : "run"} in ${started.length === 1 ? "a session" : "sessions"} of ${started.length === 1 ? "its" : "their"} own now; the user is told on a card. Say briefly what was started${stopped.length ? " and what was not, and why" : ""}, then end your turn.${placing}`
+            : unplaced.length === stopped.length
+              ? `Nothing started.${placing}`
+              : `Nothing started. Say why, in the user's words, and where another gate names a fix, offer it.${placing}`
         };
       }
     })

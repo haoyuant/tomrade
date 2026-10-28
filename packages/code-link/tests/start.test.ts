@@ -2627,6 +2627,19 @@ describe("starting tickets from a conversation", () => {
     expect(codeLink.sessionsOf(project.id, other.id)).toEqual([expect.objectContaining({ agent: "fake-code", requestedBy: second.id })]);
   });
 
+  it("tells the agent that the card fixes a missing checkout, so it offers nothing it cannot do itself", { timeout: 30_000 }, async () => {
+    const { agent, project, ticket } = await machine(codeRepo());
+    const item = ticket("Run it locally");
+    const outcomes: unknown[] = [];
+    agent.engine(chatty("chatty", (_text, io) => io.tools.execute("start_ticket", { keys: [item.key] }), outcomes));
+    const thread = agent.newThread(project.id, "chatty");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "start it" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(outcomes[0]).toMatchObject({ started: [], notStarted: [{ key: item.key, gate: "checkout" }], note: expect.stringMatching(/^Nothing started\. .*the card offers to use a folder already here or to clone the repository.*You cannot clone or set a checkout yourself/) });
+    // What the card offers its fix with: the repository and where it comes from.
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")?.data).toMatchObject({ results: [{ key: item.key, ok: false, gate: "checkout", remote: expect.any(String), repo: { id: expect.any(String) } }] });
+  });
+
   it("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
     const { codeLink, ctx, project, repo, checkout, ticket, turns, agent } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);

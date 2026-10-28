@@ -1,4 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Context, Service } from "cordis";
 import type {} from "@tomradex/agent";
 import { MAX_MEDIA_BYTES, type AgentEvent, type Block, type PendingView, type UserInput } from "@tomradex/agent";
@@ -100,7 +103,7 @@ interface Connection {
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
 interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; task?: string }
 type StartOutcome =
-  | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean } }
+  | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; remote?: string; repo?: { id: string; name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean } }
   | { ok: true; continued: boolean; threadId: string; runId?: string; engine: string; waitingOn?: string; warnings?: string[] };
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
 interface CodeHost extends CodeLookup {
@@ -108,6 +111,17 @@ interface CodeHost extends CodeLookup {
   start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; message?: string; source?: Record<string, string> }): Promise<StartOutcome>;
   startDefaults(): { engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string } | null;
 }
+/** The part of `ctx.repos` a checkout offer runs; repos is optional and never imported. */
+interface RepoHost {
+  get(projectId: string, id: string): { name: string; defaultBranch: string } | null;
+  checkouts(): { checkout: string | null }[];
+  selectCheckout(remote: string, dir: string): Promise<{ state: "ready"; view: { checkout: string | null } } | { state: "clone"; parent: string; dir: string }>;
+  cloneInto(remote: string, branch: string, parent: string): Promise<{ checkout: string | null }>;
+}
+/** A ticket stopped for want of a checkout, as a gate or a batch start reports it. */
+interface CheckoutGated { itemId: string; key: string; remote?: string; repo?: { id: string; name: string } }
+/** What a checkout offer's button carries: the start to make once the repository has its folder. */
+interface CheckoutFix { draft: Omit<StartDraft, "card">; remote: string; repoId: string; offer: string; use?: string }
 /** A ticket as a start needs it. */
 interface Startable { id: string; key: string; title: string; status: string; kind: string; workType: string; playbookId: string | null }
 /** What a gate means, in the person's language; where the word is empty, the gate's own message. */
@@ -1677,6 +1691,7 @@ export class Im extends Service {
       return;
     }
     if (kind === "follow") { this.follow(b, row, actorId, value, reply); return; }
+    if (kind === "checkout") { await this.fixCheckout(b, row, actorId, value, reply); return; }
     if (kind === "start" || kind === "start-adjust" || kind === "start!" || kind.startsWith("start-set:")) {
       const given = JSON.parse(value) as Partial<StartDraft> & { itemId: string };
       const item = this.code() ? this.startable(b.project_id, given.itemId) : null;
@@ -1942,6 +1957,92 @@ export class Im extends Service {
     if (this.editableCard(b, card)) this.replace(b, card, { text });
   }
 
+  private repos() { return this.home.get("repos") as RepoHost | undefined; }
+
+  /** Where a clone from IM goes: the Hub's `repos/`, which the Hub keeps for cloned code. */
+  private cloneParent(): string | null {
+    const dir = (this.home.get("hub") as { dir: string | null } | undefined)?.dir;
+    return dir ? path.join(dir, "repos") : null;
+  }
+
+  /** Folders on this machine that look like the repository's checkout: its own folder when its source is local, or one named like it beside the other checkouts. */
+  private checkoutFolders(repos: RepoHost, remote: string): string[] {
+    const name = remote.replace(/[/\\]+$/, "").split(/[/\\:]/).pop()?.replace(/\.git$/, "") ?? "";
+    const parents = new Set(repos.checkouts().flatMap(c => c.checkout ? [path.dirname(c.checkout)] : []));
+    const found = [...(path.isAbsolute(remote) ? [remote] : []), ...(name ? [...parents].map(p => path.join(p, name)) : [])];
+    return [...new Set(found)].filter(dir => fs.existsSync(path.join(dir, ".git"))).slice(0, 3);
+  }
+
+  /**
+   * A ticket stopped for want of a checkout gets buttons that fix it here and then start it: use a folder
+   * already on this machine, or clone into Tomrade's own. Null when there is nothing this machine can do.
+   */
+  private checkoutOffer(b: Binding, actorId: string, gated: CheckoutGated, draft: Omit<StartDraft, "card"> & { card?: string }, offer: string): ImContent | null {
+    const repos = this.repos();
+    const { remote, repo } = gated;
+    if (!repos || !this.code() || !remote || !repo) return null;
+    const { card: _card, ...start } = draft;
+    const fix = (use?: string) => this.offerValue(b, "checkout", actorId, JSON.stringify({ draft: start, remote, repoId: repo.id, offer, ...(use ? { use } : {}) } satisfies CheckoutFix));
+    const folders = this.checkoutFolders(repos, remote);
+    const parent = this.cloneParent();
+    // A source that is a working folder here is used as it is; a bare one, or one elsewhere, is cloned.
+    const local = path.isAbsolute(remote);
+    const clone = parent && (!local || (fs.existsSync(remote) && !fs.existsSync(path.join(remote, ".git")))) ? parent : null;
+    const actions = [...folders.map((dir, i) => ({ label: this.w("checkoutUse", { dir: tilde(dir) }), token: fix(dir), ...(i === 0 ? { style: "primary" as const } : {}) })),
+      ...(clone ? [{ label: this.w("checkoutClone", { dir: tilde(clone) }), token: fix(), ...(folders.length ? {} : { style: "primary" as const }) }] : [])];
+    if (!actions.length) return null;
+    return { text: [this.w("checkoutMissing", { key: gated.key, repo: repo.name }), this.w("checkoutPick")].join("\n"), actions };
+  }
+
+  /** The tickets of a start-batch card that stopped for want of a checkout, each offered its fix in its own message. */
+  private offerCheckouts(b: Binding, block: Block, id: string) {
+    if (block.type !== "card" || block.schema !== "start-batch") return;
+    const data = (block.data ?? {}) as { results?: (CheckoutGated & { ok: boolean; gate?: string })[]; config?: { engine: string; options?: Record<string, unknown>; permissionMode?: string }; task?: string };
+    for (const r of data.results ?? []) {
+      if (r.ok || r.gate !== "checkout") continue;
+      const draft: Omit<StartDraft, "card"> = { itemId: r.itemId, ...(data.config?.engine ? { engine: data.config.engine } : {}),
+        ...(data.config?.options ? { options: data.config.options as Record<string, string> } : {}),
+        ...(data.config?.permissionMode ? { permissionMode: data.config.permissionMode } : {}), ...(data.task ? { task: data.task } : {}) };
+      const offer = `checkout:${id}:${r.itemId}`;
+      const content = this.checkoutOffer(b, b.actor_id, r, draft, offer);
+      if (content) this.enqueue(b, offer, content);
+    }
+  }
+
+  /** A checkout offer's button: the repository gets its folder (chosen or cloned), then the ticket starts as `startNow` does. */
+  private async fixCheckout(b: Binding, row: Inbox, actorId: string, value: string, reply: { anchor: string | null }) {
+    const fix = JSON.parse(value) as CheckoutFix;
+    const repos = this.repos();
+    const item = this.code() ? this.startable(b.project_id, fix.draft.itemId) : null;
+    const repo = repos?.get(b.project_id, fix.repoId);
+    if (!repos || !item || !repo) this.refuse(this.w("choiceGone"));
+    if (this.isGroup(b) && actorId !== b.actor_id) this.refuse(this.w("onlyOwnerStarts"));
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse(this.w("stopFirst"));
+    const said = (text: string) => {
+      // Once fixed, the offer's other button would only fix it again; until then it stays, in case this one failed.
+      this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id = 'cmd:checkout' AND value_json LIKE ?", b.id, `%${fix.offer}%`);
+      if (this.editableCard(b, fix.offer)) this.replace(b, fix.offer, { text });
+      else this.enqueue(b, `checkout-done:${row.id}`, { text }, reply);
+    };
+    if (fix.use) {
+      const chosen = await repos.selectCheckout(fix.remote, fix.use);
+      if (chosen.state !== "ready") this.refuse(this.w("checkoutOther", { dir: tilde(fix.use) }));
+      said(this.w("checkoutUsing", { repo: repo.name, dir: tilde(chosen.view.checkout ?? fix.use) }));
+    } else {
+      const parent = this.cloneParent();
+      if (!parent) this.refuse(this.w("choiceGone"));
+      fs.mkdirSync(parent, { recursive: true });
+      // As the desktop does: the folder is looked at first, and only an empty place is cloned into.
+      const place = await repos.selectCheckout(fix.remote, parent);
+      if (place.state === "clone") {
+        this.enqueue(b, `checkout-cloning:${row.id}`, { text: this.w("checkoutCloning", { repo: repo.name, dir: tilde(place.dir) }) }, reply);
+        const view = await repos.cloneInto(fix.remote, repo.defaultBranch, place.parent);
+        said(this.w("checkoutCloned", { repo: repo.name, dir: tilde(view.checkout ?? place.dir) }));
+      } else said(this.w("checkoutUsing", { repo: repo.name, dir: tilde(place.view.checkout ?? parent) }));
+    }
+    await this.startNow(b, row, actorId, { ...fix.draft, card: `start:${b.id}:${item.id}:${row.id}` }, reply);
+  }
+
   /**
    * Starts the ticket headless on this computer. A gate it stops at is said
    * here — a ticket waiting on others can be started anyway; the rest are
@@ -1971,10 +2072,13 @@ export class Im extends Service {
     } catch (e) { settle(b, w("notStarted", { key: item.key })); throw e; }
     if (!result.ok) {
       settle(b, w("notStarted", { key: item.key }));
+      let offer: ImContent | null = null;
       if (result.gate === "blocked") {
         const on = (result.blockers ?? []).join(", ");
         this.enqueue(b, `start-blocked:${row.id}`, { text: w("startBlocked", { key: item.key, on }),
           actions: [{ label: w("startAnyway"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, allowBlocked: true })), style: "primary" }] }, reply);
+      } else if (result.gate === "checkout" && (offer = this.checkoutOffer(b, actorId, { itemId: item.id, key: item.key, remote: result.remote, repo: result.repo }, draft, `start-gate:${row.id}`))) {
+        this.enqueue(b, `start-gate:${row.id}`, offer, reply);
       } else {
         const gate = GATE[result.gate];
         const reason = result.gate === "workdir" ? this.workdirReason(result) : (gate && w(gate)) || result.message;
@@ -2062,6 +2166,7 @@ export class Im extends Service {
         if (content) this.watch(b, message.block);
         if (streamed && content) this.replace(b, id, content, { final: true });
         else if (content) this.enqueue(b, id, content);
+        if (message.role === "agent" && message.block.type === "card" && this.visible(b, message.runId)) this.offerCheckouts(b, message.block, id);
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
       this.pending(b, this.visible(b, detail.runs.at(-1)?.id ?? null) ? detail.pending : null);
@@ -2828,6 +2933,12 @@ const ended = (status: string) => status === "done" || status === "cancelled";
 /** Group replies attach to the message that asked; a direct chat needs no anchor. */
 function anchorOf(event: ImInbound): string | null {
   return event.kind === "message" && event.activation !== "dm" ? event.messageId : null;
+}
+
+/** A path as a phone shows it best: under the home folder, from `~`. */
+function tilde(dir: string): string {
+  const home = os.homedir();
+  return dir.startsWith(home + path.sep) ? `~${dir.slice(home.length)}` : dir;
 }
 
 async function deadline<T>(work: Promise<T>, ms: number): Promise<T> {
