@@ -38,7 +38,7 @@ const run = async () => {
     capabilities: { edit: false, buttons: true, inboundFiles: false, outboundFiles: false, maxTextLength: 4000, maxFileBytes: 0 },
     async open(_id, io) { receive = io.receive; return { deliver: async (d) => { sent.push(d); return { messageId: `m-${sent.length}` }; }, close: () => {} }; } });
   ctx.settings.set({ ...settings, language: "en", onboarding: { seen: ["*"] }, agent: { ...settings.agent, defaultEngine: "echo" },
-    im: { connections: [{ id: "team", adapterId: "standin" }], routes: [{ id: "room", connectionId: "team", tenantId: "T1", conversationId: "C-room", projectId: project.id, engine: "echo", allowedActors: ["U1"], allowGroups: true }] } });
+    im: { connections: [{ id: "team", adapterId: "standin" }], routes: [{ id: "room", connectionId: "team", tenantId: "T1", conversationId: "C-room", label: "#launch", projectId: project.id, engine: "echo", allowedActors: ["U1"], allowGroups: true }] } });
   for (let i = 0; i < 50 && !receive; i++) await sleep(100);
   await receive({ kind: "message", eventId: "g1", messageId: "g1", text: "plan the launch", activation: "mention", actor: { id: "U1", isBot: false }, address: { tenantId: "T1", conversationId: "C-room" } });
   for (let i = 0; i < 50 && !sent.some((d) => d.content.text === "echo: plan the launch"); i++) await sleep(100);
@@ -51,14 +51,14 @@ const run = async () => {
     $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
   const waitFor = async (js, ms = 8000) => { for (let w = 0; w < ms; w += 100) { if (await $(js)) return true; await sleep(100); } return false; };
   await sleep(2000);
-  check("the panel says desktop turns stay out of the group", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes("C-room doesn't see them")`));
+  check("the panel says desktop turns stay out of the group", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes("#launch doesn't see them")`));
   fs.writeFileSync(path.join(process.env.TOMRADE_SHOTS ?? work, "im-group-share.png"), (await win.webContents.capturePage()).toPNG());
   await press(`[...document.querySelectorAll('[data-testid=im-group-share] button')].find((b) => b.textContent.trim() === 'Share next turn')`);
-  check("sharing the next turn is recorded", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes('Your next turn here also goes to C-room')`) && ctx.im.threadBindings(project.id, binding.thread_id)[0].shareNext);
+  check("sharing the next turn is recorded", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes('Your next turn here also goes to #launch')`) && ctx.im.threadBindings(project.id, binding.thread_id)[0].shareNext);
   ctx.agent.send(project.id, binding.thread_id, { kind: "text", text: "shared from the desk" });
   for (let i = 0; i < 50 && !sent.some((d) => d.content.text === "echo: shared from the desk"); i++) await sleep(100);
   check("the shared turn reaches the group", sent.some((d) => d.content.text === "echo: shared from the desk"));
-  check("and the panel goes back to private", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes("C-room doesn't see them")`));
+  check("and the panel goes back to private", await waitFor(`document.querySelector('[data-testid=im-group-share]')?.textContent.includes("#launch doesn't see them")`));
   win.destroy();
 };
 

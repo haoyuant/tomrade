@@ -67,6 +67,8 @@ export interface ImDeliveryView {
 }
 export interface ImThreadBinding {
   id: string; connectionId: string; conversationId: string; group: boolean;
+  /** The conversation's name as the platform shows it (`#test-work`), once the adapter said it. */
+  name?: string;
   /** The next desktop turn will reach this group too. */
   shareNext: boolean;
 }
@@ -635,6 +637,8 @@ export class Im extends Service {
       if (!sweep && !dirty.has(b.thread_id) && !queued.has(b.id)) continue;
       if (!this.processing.has(b.thread_id)) {
         try { b = this.leaveArchived(b); } catch { continue; }
+        // Its conversation was deleted: the next message here opens one.
+        if (!b.thread_id) continue;
       }
       if (sweep || dirty.has(b.thread_id)) {
         try { this.project(b); } catch { continue; }
@@ -1290,10 +1294,11 @@ export class Im extends Service {
   }
 
   threadBindings(projectId: string, threadId: string): ImThreadBinding[] {
-    return this.store.bindings().filter(b => b.project_id === projectId && b.thread_id === threadId && this.authorizedBinding(b) && this.topicOf(b)?.own !== 0).map(b => ({
-      id: b.id, connectionId: b.connection_id, conversationId: (JSON.parse(b.address_json) as ImAddress).conversationId,
-      group: this.isGroup(b), shareNext: !!b.share_next
-    }));
+    return this.store.bindings().filter(b => b.project_id === projectId && b.thread_id === threadId && this.authorizedBinding(b) && this.topicOf(b)?.own !== 0).map(b => {
+      const name = this.settings.routes.find(r => r.id === b.route_id)?.label;
+      return { id: b.id, connectionId: b.connection_id, conversationId: (JSON.parse(b.address_json) as ImAddress).conversationId,
+        group: this.isGroup(b), ...(name ? { name } : {}), shareNext: !!b.share_next };
+    });
   }
 
   shareNext(bindingId: string, on: boolean): boolean {
@@ -1460,7 +1465,14 @@ export class Im extends Service {
     const topic = this.topicOf(b);
     if (topic) return topic.own ? this.release(b, topic) : b;
     const back = b.home_thread ? this.home.agent.store.thread(b.project_id, b.home_thread) : undefined;
-    const target = back && !back.archived && back.surface === "assistant" ? back : this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
+    const home = back && !back.archived && back.surface === "assistant" ? back : undefined;
+    // Deleted on the desktop, with nowhere to go back to: the conversation holds none until someone writes here, as at first.
+    if (!left && !home) {
+      this.store.run("UPDATE plugin_im_bindings SET thread_id = '', cursor = 0, anchor = NULL, home_thread = NULL WHERE id = ?", b.id);
+      this.listed.delete(b.id);
+      return this.store.binding(b.id)!;
+    }
+    const target = home ?? this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
     const cursor = target === back ? this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0 : 0;
     const item = left?.itemId ? this.items()?.get(b.project_id, left.itemId) : null;
     const { w } = this;

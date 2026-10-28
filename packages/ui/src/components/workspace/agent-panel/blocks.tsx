@@ -832,7 +832,7 @@ export function ImGroupShare({ projectId, threadId }: { projectId: string; threa
         <div key={g.id} className="ai-queued" data-testid="im-group-share">
           <span className="q-state">{t("agentPanel.imGroup")}</span>
           <p className="q-text" title={g.conversationId}>
-            {g.shareNext ? t("agentPanel.imGroupSharing", { group: g.conversationId }) : t("agentPanel.imGroupPrivate", { group: g.conversationId })}
+            {t(g.shareNext ? "agentPanel.imGroupSharing" : "agentPanel.imGroupPrivate", { group: g.name ?? t("agentPanel.imTheGroup") })}
           </p>
           <button type="button" className="btn btn-ghost" disabled={share.isPending} onClick={() => share.mutate([g.id, !g.shareNext])}>
             {g.shareNext ? t("common.cancel") : t("agentPanel.imGroupShare")}
