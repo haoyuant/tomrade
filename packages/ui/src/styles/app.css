@@ -1758,6 +1758,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .sbar-ask { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; padding-top: 6px; border-top: 1px dashed var(--border); cursor: default; }
 .sbar-ask-text { color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .sbar-ask-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A question's choice is read whole before it is picked: it wraps inside its card, never past it. */
+.btn.ask-choice { white-space: normal; text-align: start; justify-content: flex-start; max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 /* a live terminal session's last lines, as its pane shows them */
 .sbar-tail { display: flex; flex-direction: column; margin-top: 2px; padding: 4px 7px; border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; min-width: 0; }
 .sbar-tail-line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }

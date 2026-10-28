@@ -96,8 +96,10 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* Allow and Deny, under the card that asks: in the bar, inside its lower edge. */
 .cs-row-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 2px 0; }
 .cs-card { position: relative; min-width: 0; }
-.cs-card:has(> .cs-row-actions) > .cs-row { padding-bottom: 38px; }
-.cs-card > .cs-row-actions { position: absolute; left: 10px; bottom: 9px; padding: 0; }
+.cs-card:has(> .cs-row-actions:not([data-choices])) > .cs-row { padding-bottom: 38px; }
+.cs-card > .cs-row-actions:not([data-choices]) { position: absolute; left: 10px; bottom: 9px; padding: 0; }
+/* a question's choices wrap to as many lines as they need: under the card's text, not over it */
+.cs-card > .cs-row-actions[data-choices] { padding: 0 10px 9px; }
 .cs-chip[data-state="needs"] { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
 .cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); }
 .cs-chip[data-state="ended"], .cs-chip[data-state="idle"] { background: var(--surface-warm); color: var(--muted); }

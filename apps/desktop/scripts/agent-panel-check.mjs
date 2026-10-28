@@ -1071,6 +1071,9 @@ const run = async () => {
   await until(async () => !!(await askOf(askerName)), 40);
   let cardAsk = await askOf(askerName);
   check("a waiting conversation's card carries its question, its choices and Look first", cardAsk?.text === "Which one?" && JSON.stringify(cardAsk.buttons) === JSON.stringify([["sbar-choice", "A"], ["sbar-choice", "B"], ["sbar-look", "Look first"]]), cardAsk);
+  // a long choice wraps inside its card, never past it: one more like it is measured beside the real ones, then taken away
+  const longChoice = await $(`(() => { const c = [...document.querySelectorAll('.ai .sbar-card')].find((n) => n.textContent.includes(${JSON.stringify(askerName)})); const b = c?.querySelector('[data-testid="sbar-choice"]'); if (!b) return null; const long = b.cloneNode(); long.textContent = ${JSON.stringify("你接着做：检查 63184000 的完整 diff，跑测试，确认没有别的会话改过同一处，再决定要不要合并")}; b.after(long); const card = c.getBoundingClientRect(), r = long.getBoundingClientRect(), one = b.getBoundingClientRect().height; long.remove(); return { inside: r.right <= card.right + 0.5 && r.left >= card.left - 0.5, taller: Math.round((r.height / one) * 10) / 10 }; })()`);
+  check("a long choice on a card wraps inside it instead of running past its edge", longChoice?.inside && longChoice.taller >= 1.8, longChoice);
   await pressIn(askerName, "sbar-choice", "A");
   check("a choice on the card answers the question, and the panel stays on the conversation it showed", await until(async () => !ctx.agent.thread(alpha.id, cardAsker).pending, 40) && (await shownThread()) === stayOn && (await until(async () => ((await $(`document.body.innerText`)) ?? "").includes(`Answered “${askerName}” · you stayed where you were`), 30)), { shown: await shownThread(), stayOn });
   // a terminal session waiting on its agent's permission prompt: Allow on the card presses the agent's key in its pane

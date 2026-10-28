@@ -125,7 +125,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" onClick={() => onAnswer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
           {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" onClick={() => onAnswer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
           {pending && choices.map((choice, i) => (
-            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs" : "btn btn-secondary btn-xs"} data-testid="sbar-choice" onClick={() => onAnswer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
+            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="sbar-choice" onClick={() => onAnswer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
           ))}
           <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-look" onClick={() => onPick(r)}>{t("sessionBar.lookFirst")}</button>
         </span>
