@@ -11,7 +11,13 @@ const sample = (uses = 3): DashboardData => ({
     features: [{ feature_id: "backlog.board", duration_ms: 60000, uses, aai: 2 }],
     retention: [{ day: "2026-10-20", cohort: 2, d1: 1 }], latest: "2026-10-22T12:00:00Z"
   },
-  days: [{ day: "2026-10-22", feature_id: "backlog.board", region: "na", duration_ms: 60000, uses }]
+  days: [{ day: "2026-10-22", feature_id: "backlog.board", region: "na", duration_ms: 60000, uses }],
+  activation: {
+    funnel: { installs: 10, setup_done: 8, start: 4, open_pr: 2, merge: 1 },
+    first_start: { median_ms: 2 * 3600000, n: 4 },
+    merged_7d: { cohort: 5, merged: 1 },
+    week_return: { cohort: 4, returned: 2 }
+  }
 });
 const f = filters(new URLSearchParams("lang=en"), new Date("2026-10-23T10:00:00Z"));
 const servers: Server[] = [];
@@ -34,15 +40,28 @@ describe("internal analytics dashboard", () => {
     expect(result.days).toHaveLength(1);
     expect(result.days[0]).toMatchObject({ uses: 7, duration_ms: 120000 });
     expect(result.report.retention[0]).toMatchObject({ cohort: 4, d1: 2 });
+    expect(result.activation.funnel).toEqual({ installs: 20, setup_done: 16, start: 8, open_pr: 4, merge: 2 });
+    expect(result.activation.merged_7d).toEqual({ cohort: 10, merged: 2 });
+    expect(result.activation.week_return).toEqual({ cohort: 8, returned: 4 });
+  });
+  it("weighs each deployment's median by how many it covers, and leaves none when no one started", () => {
+    const cn = sample(); cn.activation.first_start = { median_ms: 6 * 3600000, n: 12 };
+    expect(mergeReports([sample(), cn]).activation.first_start).toEqual({ median_ms: 5 * 3600000, n: 16 });
+    const idle = sample(); idle.activation.first_start = { median_ms: null, n: 0 };
+    expect(mergeReports([idle]).activation.first_start).toEqual({ median_ms: null, n: 0 });
+    expect(mergeReports([idle, sample()]).activation.first_start).toEqual({ median_ms: 2 * 3600000, n: 4 });
   });
   it("reads only aggregate RPCs, passes the region, and fails the whole view when a source fails", async () => {
     const calls: { url: string; body: unknown }[] = [];
     const request: typeof fetch = async (input, init) => {
       calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
-      return Response.json(String(input).endsWith("feature_days") ? { days: sample().days } : sample().report);
+      const url = String(input);
+      return Response.json(url.endsWith("feature_days") ? { days: sample().days } : url.endsWith("activation") ? sample().activation : sample().report);
     };
-    await loadDashboard([{ url: "https://global.example", key: "secret" }, { url: "https://cn.example", key: "secret-cn" }], { ...f, region: "cn" }, request);
-    expect(calls).toHaveLength(4);
+    const loaded = await loadDashboard([{ url: "https://global.example", key: "secret" }, { url: "https://cn.example", key: "secret-cn" }], { ...f, region: "cn" }, request);
+    expect(calls).toHaveLength(6);
+    expect(calls.filter((c) => c.url.endsWith("/rpc/tomrade_analytics_activation"))).toHaveLength(2);
+    expect(loaded.activation.funnel.installs).toBe(20);
     expect(calls.every((c) => c.url.includes("/rest/v1/rpc/tomrade_analytics_") && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
     await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow("analytics query failed");
     expect(() => endpoints({ SUPABASE_URL: "https://example.org" })).toThrow();
@@ -60,6 +79,11 @@ describe("internal analytics dashboard", () => {
     const escaped = renderDashboard(f, malicious);
     expect(escaped).not.toContain('<script>');
     expect(escaped).not.toContain("</script>alert");
+    for (const text of ["Activation funnel", "First run done (setup_done)", "Merged (merge)", "80%", "2 h", "Median, 4 IDs", "20%", "Merged within 7 days", "First-week return"]) expect(html).toContain(text);
+    const zh = renderDashboard({ ...f, lang: "zh" }, sample());
+    for (const text of ["激活漏斗", "首次开始工单耗时", "2 小时", "首周已过的 4 个 ID 中有 2 个回来"]) expect(zh).toContain(text);
+    const quiet = sample(); quiet.activation = { funnel: { installs: 0, setup_done: 0, start: 0, open_pr: 0, merge: 0 }, first_start: { median_ms: null, n: 0 }, merged_7d: { cohort: 0, merged: 0 }, week_return: { cohort: 0, returned: 0 } };
+    expect(renderDashboard(f, quiet)).toContain("Median, 0 IDs");
     const pending = sample(); pending.report.retention[0]!.day = "2026-10-22";
     expect(renderDashboard(f, pending)).toContain("Pending");
   });

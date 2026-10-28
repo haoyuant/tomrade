@@ -18,7 +18,7 @@ import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
 import type { CodeSummaryView, StartBatchCard, StartBatchEntry, StartBatchRequest, StartConfig } from "./service.js";
 import type { MergeLocalResult } from "./landing.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage } from "@tomradex/contracts";
 
 /** What the tools need from the service without importing it. */
 export interface ToolHost {
@@ -607,6 +607,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (session) host.attach(projectId, session.id, item.id, branch, delivery.sequence, { replace: switched });
         if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);
         host.notify(projectId);
+        // An agent the person runs themselves took the ticket: not a session Tomrade started, nor a repeated claim.
+        if (!tokened && !started && !again) contract(ctx, "analytics")?.activate("code.link", "claim_external");
         return {
           key: item.key,
           title: item.title,

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { FEATURE_REGISTRY_VERSION, featureById, registrySnapshot } from "../src/features.js";
 
 // The real migration in PostgreSQL (WASM), with only the two Supabase roles stubbed.
 const db = new PGlite();
@@ -28,9 +29,10 @@ async function ingest(payload: unknown, headers: Record<string, string> = {}) {
 const count = async (table: string) => (await db.query<{ n: number }>(`select count(*)::int as n from public.${table}`)).rows[0]!.n;
 
 beforeAll(async () => {
-  await db.exec("create role anon; create role authenticated;");
+  await db.exec("create role anon; create role authenticated; create role service_role;");
   await db.exec(migration("202610230001_analytics.sql"));
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
+  await db.exec(migration("202610290001_analytics_activation.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -56,6 +58,48 @@ describe("analytics ingest", () => {
       { event: "feature.activate", counted: true, dim: "quick", region: "other", active_ms: null },
       { event: "feature.session", counted: false, dim: null, region: "other", active_ms: 300_000 }
     ]);
+  });
+
+  it("holds the same registry as packages/analytics, row for row", async () => {
+    const { rows } = await db.query<{ feature_id: string; action: string; counted: boolean; dims: string[] | null }>(
+      "select feature_id, action, counted, dims from public.tomrade_analytics_registry where registry = $1 order by feature_id, action",
+      [FEATURE_REGISTRY_VERSION]
+    );
+    const snapshot = registrySnapshot();
+    // A feature with a dim action carries its closed set on that action only; the rest on every action.
+    const dimAction = (id: string) => featureById(id)?.dimAction;
+    const expected = snapshot.features
+      .flatMap((feature) => feature.actions.map((action) => ({
+        feature_id: feature.id,
+        action: action.name,
+        counted: !!action.counted,
+        dims: feature.dims && (!dimAction(feature.id) || dimAction(feature.id) === action.name) ? feature.dims : null
+      })))
+      .sort((a, b) => a.feature_id.localeCompare(b.feature_id) || a.action.localeCompare(b.action));
+    const stored = [...rows].sort((a, b) => a.feature_id.localeCompare(b.feature_id) || a.action.localeCompare(b.action));
+    expect(stored).toEqual(expected);
+    // Registry 1 stays exactly as an older client knows it.
+    const old = await db.query<{ n: number }>("select count(*)::int as n from public.tomrade_analytics_registry where registry = 1");
+    expect(old.rows[0]!.n).toBe(rows.length - 5);
+  });
+
+  it("takes registry 2's activation steps, never as a use, and flags none of them unknown", async () => {
+    const steps = [["onboarding", "setup_done"], ["code.link", "project_repo_linked"], ["code.link", "claim_external"], ["agent.chat", "plan_applied"], ["agent.chat", "run_reverted"]];
+    const events = steps.map(([feature_id, action], i) => ({ ...base(), registry: 2, install_seq: 100 + i, event_id: randomUUID(), event: "feature.activate", feature_id, action, dim: null }));
+    const old = { ...base(), registry: 2, install_seq: 110, event_id: randomUUID(), event: "feature.activate", feature_id: "code.link", action: "start", dim: null };
+    const { rows } = await ingest(batch([...events, old]));
+    expect(rows[0]!.result).toEqual({ accepted: 6, duplicates: 0, rejected: 0, received: 6 });
+    const stored = await db.query<{ feature_id: string; action: string; counted: boolean; unknown_feature: boolean; registry: number }>(
+      "select feature_id, action, counted, unknown_feature, registry from public.tomrade_analytics_event where registry = 2 order by install_seq"
+    );
+    expect(stored.rows).toEqual([
+      ...steps.map(([feature_id, action]) => ({ feature_id, action, counted: false, unknown_feature: false, registry: 2 })),
+      { feature_id: "code.link", action: "start", counted: true, unknown_feature: false, registry: 2 }
+    ]);
+    // An older client cannot name them.
+    const early = { ...base(), registry: 1, install_seq: 120, event_id: randomUUID(), event: "feature.activate", feature_id: "agent.chat", action: "plan_applied", dim: null };
+    expect((await ingest(batch([early]))).rows[0]!.result).toMatchObject({ accepted: 0, rejected: 1 });
+    await db.exec("delete from public.tomrade_analytics_event where registry = 2");
   });
 
   it("is idempotent for a retried batch", async () => {
@@ -165,5 +209,102 @@ describe("analytics ingest", () => {
     expect(result.rows[0]!.result.features).toBe(1);
     const left = await db.query<{ n: number }>("select count(*)::int as n from public.tomrade_analytics_event where ts < now() - interval '180 days'");
     expect(left.rows[0]!.n).toBe(0);
+  });
+});
+
+describe("activation funnel", () => {
+  const DAY = 86_400_000;
+  const HOUR = 3_600_000;
+  // Noon UTC 25 days ago: the cohort's install day, well inside detail retention.
+  const d0 = Math.floor((Date.now() - 25 * DAY) / DAY) * DAY + 12 * HOUR;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const day = (ms: number) => iso(ms).slice(0, 10);
+  const id = (letter: string) => `${"a".repeat(25)}${letter}`;
+  let seq = 0;
+
+  async function put(anon: string, at: number, action: string | null, region = "na") {
+    await db.query("select public.tomrade_analytics_ensure_month($1::timestamptz)", [iso(at)]);
+    const feature = action === null ? null : action === "setup_done" ? "onboarding" : "code.link";
+    await db.query(
+      `insert into public.tomrade_analytics_event (event_id, schema, registry, event, anon_id, install_seq, ts, client, platform, region, feature_id, action)
+       values (gen_random_uuid(), 1, 2, $1, $2, $3, $4::timestamptz, '0.3.0', 'macos', $5, $6, $7)`,
+      [action === null ? "app.start" : "feature.activate", anon, ++seq, iso(at), region, feature, action]
+    );
+  }
+  const activation = async (from: number, to: number, region: string | null = null) =>
+    (await db.query<{ result: Record<string, unknown> }>("select public.tomrade_analytics_activation($1::date, $2::date, $3) as result", [day(from), day(to), region])).rows[0]!.result;
+
+  beforeAll(async () => {
+    await db.exec("reset role");
+    // A: the whole way, merged within a week, back on day 3.
+    await put(id("a"), d0, null);
+    await put(id("a"), d0 + HOUR, "setup_done");
+    await put(id("a"), d0 + 3 * HOUR, "start");
+    await put(id("a"), d0 + DAY, "open_pr");
+    await put(id("a"), d0 + 2 * DAY, "merge");
+    await put(id("a"), d0 + 3 * DAY, null);
+    // B: set up and started, then gone until day 10.
+    await put(id("b"), d0, null);
+    await put(id("b"), d0 + HOUR, "setup_done");
+    await put(id("b"), d0 + 5 * HOUR, "start");
+    await put(id("b"), d0 + 10 * DAY, null);
+    // C: started without the first-run milestone, back the next day.
+    await put(id("c"), d0, null);
+    await put(id("c"), d0 + HOUR, "start");
+    await put(id("c"), d0 + DAY, null);
+    // D: everything, but only from day 8 on.
+    await put(id("d"), d0, null);
+    await put(id("d"), d0 + 8 * DAY, "setup_done");
+    await put(id("d"), d0 + 8 * DAY + HOUR, "start");
+    await put(id("d"), d0 + 8 * DAY + 2 * HOUR, "open_pr");
+    await put(id("d"), d0 + 9 * DAY, "merge");
+    // E: installed before the range.
+    await put(id("e"), d0 - 20 * DAY, null);
+    await put(id("e"), d0 + HOUR, "setup_done");
+    // F: installed in mainland China, nothing else.
+    await put(id("f"), d0, null, "cn");
+  });
+
+  afterAll(async () => {
+    await db.query("delete from public.tomrade_analytics_event where anon_id like $1", [`${"a".repeat(25)}%`]);
+  });
+
+  it("follows the range's installs up to now, each step needing every one before it", async () => {
+    const result = await activation(d0 - DAY, d0 + DAY);
+    expect(result.funnel).toEqual({ installs: 5, setup_done: 3, start: 3, open_pr: 2, merge: 2 });
+    // C's start counts towards the time to start though it skipped setup: 1h, 3h, 5h, 8d.
+    expect(result.first_start).toEqual({ median_ms: 4 * HOUR, n: 4 });
+    expect(result.merged_7d).toEqual({ cohort: 5, merged: 1 });
+    expect(result.week_return).toEqual({ cohort: 5, returned: 2 });
+  });
+
+  it("narrows to a region and leaves no median when nobody started", async () => {
+    const result = await activation(d0 - DAY, d0 + DAY, "cn");
+    expect(result.funnel).toEqual({ installs: 1, setup_done: 0, start: 0, open_pr: 0, merge: 0 });
+    expect(result.first_start).toEqual({ median_ms: null, n: 0 });
+    expect((await activation(d0 - DAY, d0 + DAY, "all")).funnel).toMatchObject({ installs: 5 });
+  });
+
+  it("holds a cohort too young for its windows out of them", async () => {
+    // Installs from yesterday on (the other tests' among them): none has had seven days yet.
+    const now = Date.now();
+    const before = (await activation(now - DAY, now)).funnel as { installs: number; setup_done: number };
+    await put(id("g"), now - HOUR, null);
+    await put(id("g"), now - HOUR / 2, "setup_done");
+    const result = await activation(now - DAY, now);
+    expect(result.funnel).toMatchObject({ installs: before.installs + 1, setup_done: before.setup_done + 1 });
+    expect(result.merged_7d).toEqual({ cohort: 0, merged: 0 });
+    expect(result.week_return).toEqual({ cohort: 0, returned: 0 });
+  });
+
+  it("refuses a backwards range and an unknown region, and is not open to the public roles", async () => {
+    await expect(activation(d0, d0 - DAY)).rejects.toThrow(/not a range/);
+    await expect(activation(d0, d0, "mars")).rejects.toThrow(/unknown region/);
+    await db.exec("set role anon");
+    try {
+      await expect(db.query("select public.tomrade_analytics_activation(current_date, current_date, null)")).rejects.toThrow();
+    } finally {
+      await db.exec("reset role");
+    }
   });
 });

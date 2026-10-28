@@ -13,7 +13,15 @@ export const en = {
   retentionHint: "Of the IDs first seen on a day, the share that came back the next day.",
   cohort: "IDs first seen in selected period", returned: "Returned next day", rate: "Return rate",
   note: "Counts describe anonymous installations, not people. Cross-deployment counts are added without joining IDs. Missing days are gaps, not measured zeroes. Today is incomplete.",
-  pending: "Pending", average: "Daily average over selected period", minutes: "min"
+  pending: "Pending", average: "Daily average over selected period", minutes: "min",
+  activation: "Activation funnel",
+  activationHint: "IDs first seen in the period, followed up to now. Each step counts those that also reached every step before it.",
+  step: "Step", reached: "IDs", ofInstalls: "Of installs", ofPrevious: "Of previous step",
+  installs: "Installed", setupDone: "First run done (setup_done)", firstStart: "First ticket started (start)", openPr: "Pull request opened (open_pr)", merged: "Merged (merge)",
+  timeToStart: "Time to first ticket start", timeToStartSub: "Median, {{n}} IDs",
+  merged7d: "Merged within 7 days", merged7dSub: "{{merged}} of {{cohort}} IDs at least 7 days old",
+  weekReturn: "First-week return", weekReturnSub: "{{returned}} of {{cohort}} IDs whose first week is over",
+  minutesShort: "{{n}} min", hoursShort: "{{n}} h", daysShort: "{{n}} d"
 };
 export const zh: typeof en = {
   title: "使用分析", subtitle: "内部使用 · 匿名统计 · UTC 日期",
@@ -30,7 +38,15 @@ export const zh: typeof en = {
   retentionHint: "当天首次出现的 ID 中，第二天再次使用的比例。",
   cohort: "所选期间首次出现的 ID", returned: "次日再次使用", rate: "返回比例",
   note: "计数代表匿名安装，不代表人数。跨部署只相加计数，不关联 ID。缺失日期保留空缺，不表示实测为零。今日数据尚不完整。",
-  pending: "待观察", average: "所选期间的日均值", minutes: "分钟"
+  pending: "待观察", average: "所选期间的日均值", minutes: "分钟",
+  activation: "激活漏斗",
+  activationHint: "所选期间首次出现的 ID，跟踪到现在。每一步只计也走完了前面每一步的 ID。",
+  step: "步骤", reached: "ID 数", ofInstalls: "占安装", ofPrevious: "占上一步",
+  installs: "安装", setupDone: "首次运行完成（setup_done）", firstStart: "首次开始工单（start）", openPr: "打开 PR（open_pr）", merged: "合并（merge）",
+  timeToStart: "首次开始工单耗时", timeToStartSub: "中位数，{{n}} 个 ID",
+  merged7d: "7 天内合并", merged7dSub: "满 7 天的 {{cohort}} 个 ID 中有 {{merged}} 个",
+  weekReturn: "首周回访率", weekReturnSub: "首周已过的 {{cohort}} 个 ID 中有 {{returned}} 个回来",
+  minutesShort: "{{n}} 分钟", hoursShort: "{{n}} 小时", daysShort: "{{n}} 天"
 };
 export type MessageKey = keyof typeof en;
 export const translator = (lang: "en" | "zh") => (key: MessageKey): string => (lang === "zh" ? zh : en)[key];

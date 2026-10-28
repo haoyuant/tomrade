@@ -6,7 +6,7 @@ import { extensionScope, writeContext } from "@tomradex/write";
 import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
 import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoSummary, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
-import { errorMessage, localeOf } from "@tomradex/contracts";
+import { contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -262,6 +262,7 @@ export class Oplog extends Service {
         this.home.logger.warn(`oplog: ${provider.id}.undoRun failed: ${errorMessage(error)}`);
       }
     }
+    if (result.reverted) contract(this.home, "analytics")?.activate("agent.chat", "run_reverted");
     return result;
   }
 

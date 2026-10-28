@@ -3,6 +3,7 @@ import { z } from "zod";
 import { languageName, type Author, type Item, type LanguageTag } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { LlmError } from "@tomradex/llm";
+import { contract } from "@tomradex/contracts";
 import { overlap } from "./similar.js";
 
 const PRIORITY_WORDS: Record<string, number> = { none: 0, low: 1, medium: 2, normal: 2, high: 3, urgent: 4, critical: 4, 无: 0, 低: 1, 中: 2, 高: 3, 紧急: 4 };
@@ -123,6 +124,7 @@ export function applyPlan(
     }
     return root.key;
   });
+  contract(ctx, "analytics")?.activate("agent.chat", "plan_applied");
   return { rootKey, created, skipped };
 }
 

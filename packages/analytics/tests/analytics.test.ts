@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { AnonIdentity, base32, deriveAnonId, newSecret } from "../src/anon.js";
 import { AnalyticsEvent, Batch, checkSemantics, parseEvent } from "../src/events.js";
-import { FEATURES, FEATURE_REGISTRY_VERSION, dimAllowed, featureById, isCounted, featureIds, registrySnapshot } from "../src/features.js";
+import { FEATURES, FEATURE_REGISTRY_VERSION, dimAllowed, featureById, isAction, isCounted, isOnce, featureIds, registrySnapshot } from "../src/features.js";
 import { EventQueue } from "../src/queue.js";
 import { Uploader, endpointFor, retryDelay } from "../src/upload.js";
 import { Tracker, type HostSignals, type SessionDraft } from "../src/tracker.js";
@@ -77,6 +77,23 @@ describe("feature registry", () => {
     expect(dimAllowed(featureById("backlog.board")!, "anything")).toBe(false);
     expect(registrySnapshot().version).toBe(FEATURE_REGISTRY_VERSION);
   });
+
+  it("adds registry 2's activation steps where they belong, never as a use", () => {
+    expect(FEATURE_REGISTRY_VERSION).toBe(2);
+    const added = FEATURES.flatMap((feature) => feature.actions.filter((action) => action.sinceRegistry === 2).map((action) => `${feature.id}/${action.name}`));
+    expect(added.sort()).toEqual(
+      ["agent.chat/plan_applied", "agent.chat/run_reverted", "code.link/claim_external", "code.link/project_repo_linked", "onboarding/setup_done"].sort()
+    );
+    for (const entry of added) {
+      const [featureId, action] = entry.split("/") as [string, string];
+      expect(isAction(featureById(featureId)!, action)).toBe(true);
+      expect(isCounted(featureId, action)).toBe(false);
+    }
+    // Only the first run's milestone is held to once.
+    expect(added.filter((entry) => isOnce(...(entry.split("/") as [string, string])))).toEqual(["onboarding/setup_done"]);
+    // No feature was added: the 26 ids stay.
+    expect(featureIds()).toHaveLength(26);
+  });
 });
 
 describe("anonymous identity", () => {
@@ -138,6 +155,15 @@ describe("events", () => {
     action: "create",
     dim: "quick"
   };
+
+  it("accepts the activation steps under registry 2, with no dimension", () => {
+    for (const [feature_id, action] of [["onboarding", "setup_done"], ["code.link", "project_repo_linked"], ["code.link", "claim_external"], ["agent.chat", "plan_applied"], ["agent.chat", "run_reverted"]]) {
+      const parsed = parseEvent({ ...envelope, registry: 2, feature_id, action, dim: null });
+      expect(parsed).toMatchObject({ feature_id, action });
+    }
+    expect(() => parseEvent({ ...envelope, registry: 2, feature_id: "onboarding", action: "setup_finished", dim: null })).toThrow();
+    expect(() => parseEvent({ ...envelope, registry: 2, feature_id: "agent.chat", action: "plan_applied", dim: null, title: "a plan" })).toThrow();
+  });
 
   it("accepts the spec's examples and rejects anything extra", () => {
     expect(() => parseEvent(envelope)).not.toThrow();
@@ -521,6 +547,53 @@ describe("the service's switch", () => {
     activate("settings", "open");
     await h.analytics.flushNow(true);
     expect(h.calls.length).toBe(before);
+    fs.rmSync(h.root, { recursive: true, force: true });
+  });
+
+  it("records the backend's activation steps, setup_done once per id, and nothing while off", async () => {
+    const h = await harness(async () => new Response(JSON.stringify({ accepted: 1, duplicates: 0, rejected: 0 }), { status: 202 }));
+    const queued = () =>
+      fs.readFileSync(path.join(h.root, "queue.jsonl"), "utf8").split("\n").filter(Boolean)
+        .map((line) => JSON.parse(line) as { event: string; registry: number; feature_id: string | null; action?: string | null })
+        .filter((event) => event.event === "feature.activate")
+        .map((event) => `${event.registry} ${event.feature_id}/${event.action}`);
+
+    h.analytics.activate("agent.chat", "plan_applied");
+    h.analytics.activate("agent.chat", "run_reverted");
+    h.analytics.activate("code.link", "project_repo_linked");
+    h.analytics.activate("code.link", "claim_external");
+    const fromRenderer = h.handlers.get("analytics.activate")!;
+    fromRenderer("onboarding", "setup_done");
+    fromRenderer("onboarding", "setup_done");
+    h.analytics.activate("onboarding", "setup_done");
+    expect(queued()).toEqual([
+      "2 agent.chat/plan_applied",
+      "2 agent.chat/run_reverted",
+      "2 code.link/project_repo_linked",
+      "2 code.link/claim_external",
+      "2 onboarding/setup_done"
+    ]);
+    // Every step but the milestone repeats.
+    h.analytics.activate("agent.chat", "plan_applied");
+    expect(queued().filter((e) => e.endsWith("plan_applied"))).toHaveLength(2);
+
+    // Off: nothing is queued, nothing is sent, and the milestone's memory goes with the id.
+    const setEnabled = h.handlers.get("analytics.setEnabled") as (value: boolean) => { queued: number };
+    expect(setEnabled(false).queued).toBe(0);
+    expect(fs.existsSync(path.join(h.root, "once.json"))).toBe(false);
+    const before = h.calls.length;
+    h.analytics.activate("agent.chat", "plan_applied");
+    h.analytics.activate("onboarding", "setup_done");
+    fromRenderer("code.link", "claim_external");
+    expect(h.analytics.state().queued).toBe(0);
+    await h.analytics.flushNow(true);
+    expect(h.calls.length).toBe(before);
+
+    // Back on under a new id, the milestone is that id's first.
+    setEnabled(true);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    h.analytics.activate("onboarding", "setup_done");
+    expect(queued()).toEqual(["2 onboarding/setup_done"]);
     fs.rmSync(h.root, { recursive: true, force: true });
   });
 });
