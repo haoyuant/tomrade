@@ -43,7 +43,7 @@ import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js"
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionFilter, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
 import { askLine, doingLine, permissionAsk, questionAsk } from "./ask.js";
 import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
@@ -1095,7 +1095,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** `live` leaves out the ended ones, most of the table, in the query itself. */
-  sessionsOf(projectId: string, itemId?: string, filter: { live?: boolean } = {}): SessionView[] {
+  sessionsOf(projectId: string, itemId?: string, filter: Omit<SessionFilter, "itemId"> = {}): SessionView[] {
     return this.store.sessions(projectId, { ...(itemId ? { itemId } : {}), ...filter });
   }
 

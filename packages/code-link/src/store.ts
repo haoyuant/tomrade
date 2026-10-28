@@ -623,6 +623,12 @@ export interface SessionFilter {
   live?: boolean;
   threadId?: string | null;
   externalId?: string;
+  /** These sessions only; an empty list matches none. */
+  ids?: string[];
+  /** Sessions that ran in one of these panes. */
+  panes?: string[];
+  /** Ended (or lost) sessions whose end — else their last word, else their start — is at or after this time. */
+  endedSince?: number;
 }
 
 export interface LinkPatch {
@@ -1034,6 +1040,9 @@ export class CodeLinkStore {
     if (filter.threadId === null) and("thread_id IS NULL");
     else if (filter.threadId !== undefined) and("thread_id = ?", filter.threadId);
     if (filter.externalId) and("external_id = ?", filter.externalId);
+    if (filter.ids) and(filter.ids.length ? `id IN (${filter.ids.map(() => "?").join(", ")})` : "0", ...filter.ids);
+    if (filter.panes) and(filter.panes.length ? `herdr_pane IN (${filter.panes.map(() => "?").join(", ")})` : "0", ...filter.panes);
+    if (filter.endedSince !== undefined) and("state IN ('ended', 'lost') AND COALESCE(ended_at, last_event_at, started_at) >= ?", filter.endedSince);
     return (this.db(projectId).prepare(`SELECT * FROM plugin_code_link_sessions WHERE ${where.join(" AND ")} ORDER BY started_at DESC`).all(...args) as SessionRow[]).map(toSession);
   }
 

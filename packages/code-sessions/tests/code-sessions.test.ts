@@ -2086,3 +2086,118 @@ it("asks herdr nothing for a window nobody can see and sends it nothing, numbers
     vi.useRealTimers();
   }
 });
+
+it("reads only the sessions a state shows, and sends what it sent when it read them all", async () => {
+  const now = Date.now();
+  const day = 24 * 3600_000;
+  const sessions: Session[] = [];
+  // Months of ended work, across three panes: one a saved terminal still has open, one a live session runs in, one long gone.
+  for (let i = 0; i < 400; i++) {
+    const startedAt = now - 60 * day + i * 3 * 3600_000;
+    sessions.push(session({ id: `old${i}`, itemIds: i % 3 ? [`item${i % 17}`] : [], title: i % 5 ? null : `talk ${i}`, prompted: i % 7 === 0, state: i % 41 ? "ended" : "lost", herdrPane: ["w3:p1", "w1:p1", "w9:p9", null][i % 4]!, startedAt, endedAt: Math.min(startedAt + 3600_000, now - 3 * day), lastEventAt: startedAt + 600_000 }));
+  }
+  // Ended within the day: the bar's ended group, and nothing a start nobody spoke to.
+  for (let i = 0; i < 12; i++) sessions.push(session({ id: `recent${i}`, itemIds: i % 2 ? ["item1"] : [], prompted: i % 3 === 0, state: "ended", herdrPane: "w1:p1", startedAt: now - 20 * 3600_000 + i * 60_000, endedAt: now - 10 * 3600_000 + i * 60_000 }));
+  sessions.push(session({ id: "oldCell", itemIds: ["item2"], state: "ended", herdrPane: "w7:p7", startedAt: now - 40 * day, endedAt: now - 40 * day + 3600_000 }));
+  sessions.push(session({ id: "oldReveal", itemIds: ["item3"], state: "ended", herdrPane: "w8:p8", startedAt: now - 30 * day, endedAt: now - 30 * day + 3600_000 }));
+  sessions.push(session({ id: "liveA", itemIds: ["item4"], herdrPane: "w1:p1", startedAt: now - 3600_000 }));
+  sessions.push(session({ id: "liveB", state: "waiting", herdrPane: "w2:p1", startedAt: now - 1800_000, ask: { kind: "question", tool: null, action: null, detail: "which one?" } }));
+  sessions.push(session({ id: "outside", terminal: "iTerm.app", startedAt: now - 600_000 }));
+
+  type Filter = { live?: boolean; ids?: string[]; panes?: string[]; endedSince?: number };
+  let filtered = false;
+  let reads = 0;
+  // Code link's filters as its store applies them; unfiltered, every session, as before.
+  const matching = (itemId?: string, f: Filter = {}) =>
+    sessions.filter((s) => (!itemId || s.itemIds.includes(itemId)) && (!f.live || s.state !== "ended") && (!f.ids || f.ids.includes(s.id)) && (!f.panes || (!!s.herdrPane && f.panes.includes(s.herdrPane)))
+      && (f.endedSince === undefined || ((s.state === "ended" || s.state === "lost") && (s.endedAt ?? s.lastEventAt ?? s.startedAt) >= f.endedSince)));
+  const opened: { spec: { initialState: unknown; onMessage: (m: WindowMessage) => void }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class ReadyHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [{ paneId: "w3:p1", agent: null, title: null }, { paneId: "w1:p1", agent: "claude", title: null }, { paneId: "w2:p1", agent: "claude", title: null }];
+    readTail = async () => null;
+    processes = async () => [];
+  }
+  let cells = 0;
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => void cells++;
+    sessionsOf = (_projectId: string, itemId?: string, f?: Filter) => {
+      const out = filtered ? matching(itemId, f) : matching(itemId);
+      reads += out.length;
+      return out;
+    };
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
+    review = { list: () => ({ rows: ["oldCell", "old3", "old200", "recent1"].map((id) => reviewRow(id, now - day)), next: null }), saidIn: async () => ({ rows: [], said: {} }) };
+  }
+  const stateFile = path.join(dir, "only-shown-state.json");
+  const layout: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "liveA" }, b: { type: "split", id: "r2", direction: "column", ratio: 0.5, a: { type: "leaf", id: "c2", sessionId: "oldCell" }, b: { type: "leaf", id: "c3", sessionId: "t1" } } };
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "only-shown-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: layout }, terminals: { [w.project.id]: [{ id: "t1", title: "shell", cwd: "/work", pane: "w3:p1", startedAt: now - 5000 }] } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  w.ctx.emit("codeLink/show-session", w.project.id, "oldReveal");
+  await settle();
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  // Everything a window hears, read one way.
+  const look = async () => {
+    win.posts.length = 0;
+    await say({ type: "refresh" });
+    const state = win.states.at(-1)!;
+    await say({ type: "historyList", token: 1 });
+    await say({ type: "timeline", cell: "c3", pane: "w3:p1" });
+    await say({ type: "replay", cell: "c2", id: "old5" });
+    await say({ type: "visible", visible: false });
+    await say({ type: "refresh" });
+    const hidden = w.ctx.bail("codeLink/session-cells", w.project.id);
+    await say({ type: "visible", visible: true });
+    return { state, posts: win.posts.filter((p) => p.type !== "frame").map((p) => JSON.parse(JSON.stringify(p))), hidden };
+  };
+
+  const before = await look();
+  expect(before.state.sessions.map((s) => s.id)).toEqual(expect.arrayContaining(["liveA", "liveB", "outside", "oldCell", "oldReveal"]));
+  expect(Object.keys(before.state.history)).toEqual(expect.arrayContaining(["w3:p1", "w1:p1"]));
+  expect(before.posts.map((p) => p.type)).toEqual(expect.arrayContaining(["historyPage", "timeline", "replay"]));
+  const all = reads;
+
+  filtered = true;
+  reads = 0;
+  const after = await look();
+  expect(after.state).toEqual(before.state);
+  expect(after.posts).toEqual(before.posts);
+  expect(after.hidden).toEqual(before.hidden);
+  // What it read was what it shows and the panes now open, not the months behind them.
+  expect(reads).toBeLessThan(all / 2);
+});

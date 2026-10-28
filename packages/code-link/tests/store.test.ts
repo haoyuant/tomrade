@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BOOKKEEPING_REFRESH_MS, CodeLinkStore, MIGRATIONS, TABLES } from "@tomradex/code-link";
+import { BOOKKEEPING_REFRESH_MS, CodeLinkStore, MIGRATIONS, TABLES, type SessionFilter } from "@tomradex/code-link";
 import { ProjectDb, migrateCore } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
 import { exportState, importState } from "@tomradex/storage";
@@ -80,7 +80,9 @@ describe("code-link delivery migration", () => {
     const store = new CodeLinkStore(ctx.db);
     const make = (i: number, state: string, itemIds: string[], extra: { threadId?: string | null; externalId?: string | null; delivery?: number; worked?: string[] } = {}) => {
       const s = store.createSession(project.id, { repoId: "repo", branch: `b${i}`, itemIds, mode: "terminal", agent: "claude-code", threadId: extra.threadId ?? null, externalId: extra.externalId ?? null, delivery: extra.delivery ?? 1, device: "here" });
-      db.prepare("UPDATE plugin_code_link_sessions SET state = ?, started_at = ?, worked_json = ? WHERE id = ?").run(state, i, JSON.stringify((extra.worked ?? []).map((itemId) => ({ itemId, delivery: 1 }))), s.id);
+      const ended = state === "ended" || state === "lost";
+      db.prepare("UPDATE plugin_code_link_sessions SET state = ?, started_at = ?, worked_json = ?, herdr_pane = ?, ended_at = ?, last_event_at = ? WHERE id = ?")
+        .run(state, i, JSON.stringify((extra.worked ?? []).map((itemId) => ({ itemId, delivery: 1 }))), ["w1:p1", "w2:p1", null][i % 3], ended && i % 4 ? i + 2 : null, i % 6 ? i + 1 : null, s.id);
       return s.id;
     };
     for (let i = 0; i < 996; i++) make(i, "ended", [`item-${i % 50}`], { externalId: `ext-${i % 7}`, threadId: i % 3 ? null : `thread-${i % 5}`, delivery: 1 + (i % 2), worked: i % 11 ? [] : ["item-7"] });
@@ -101,11 +103,19 @@ describe("code-link delivery migration", () => {
       { threadId: "thread-1" },
       { threadId: null, live: true },
       { externalId: "ext-1" },
-      { externalId: "ext-1", live: true }
-    ];
+      { externalId: "ext-1", live: true },
+      { ids: ["nope"] },
+      { ids: [] },
+      { panes: ["w1:p1"] },
+      { panes: [] },
+      { endedSince: 700 },
+      { endedSince: 700, panes: ["w1:p1", "w2:p1"] }
+    ] as SessionFilter[];
     for (const filter of cases) {
       const old = all.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true)
-        && (filter.threadId !== undefined ? s.threadId === filter.threadId : true) && (filter.externalId ? s.externalId === filter.externalId : true));
+        && (filter.threadId !== undefined ? s.threadId === filter.threadId : true) && (filter.externalId ? s.externalId === filter.externalId : true)
+        && (filter.ids ? filter.ids.includes(s.id) : true) && (filter.panes ? !!s.herdrPane && filter.panes.includes(s.herdrPane) : true)
+        && (filter.endedSince !== undefined ? (s.state === "ended" || s.state === "lost") && (s.endedAt ?? s.lastEventAt ?? s.startedAt) >= filter.endedSince : true));
       expect(ids(store.sessions(project.id, filter)), JSON.stringify(filter)).toEqual(ids(old));
     }
     expect(ids(store.movedOn(project.id, "item-7"))).toEqual(ids(all.filter((s) => !s.itemIds.includes("item-7") && s.worked.some((w) => w.itemId === "item-7"))));
