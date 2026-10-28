@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement } from "react";
 import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
+import { FoldChevron } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
@@ -89,6 +90,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [endedOpen, setEndedOpen] = useState(false);
   // the cards whose answer is on its way: no second press, which could answer whatever it asks next
   const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
   const peekId = useId();
@@ -250,6 +252,24 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   }
 
   const shown = rows.filter((r) => filter === "all" || r.status === filter);
+  // Under "all", the last few to end wait folded below the rest; the open one stays in its place.
+  const ended = shown.filter((r) => r.status === "done" && r.key !== openKey);
+  const going = shown.filter((r) => !ended.includes(r));
+  const card = (r: BarRow) => withMenu(r, (
+    // a div, so the card's own buttons sit inside it; Enter and Space open it as a button would
+    <div role="button" tabIndex={0} className="sbar-card" data-key={r.key} data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r); } }}>
+      <span className="sbar-card-title">
+        <StatusMark status={r.status} />
+        <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
+        {chips(r)}
+        {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
+        {(actionable(r) || endable(r)) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
+      </span>
+      <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
+      {tail(r)}
+      {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
+    </div>
+  ));
   return (
     <nav className="sbar is-cards" aria-label={t("sessionBar.label")}>
       <div className="sbar-head">
@@ -279,21 +299,16 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
             <span className="meta-txt dense">{t("codeLink.startingLine", { agent: s.agent })}</span>
           </div>
         ))}
-        {shown.map((r) => withMenu(r, (
-          // a div, so the card's own buttons sit inside it; Enter and Space open it as a button would
-          <div role="button" tabIndex={0} className="sbar-card" data-key={r.key} data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r); } }}>
-            <span className="sbar-card-title">
-              <StatusMark status={r.status} />
-              <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
-              {chips(r)}
-              {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
-              {(actionable(r) || endable(r)) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
+        {(filter === "all" ? going : shown).map(card)}
+        {filter === "all" && ended.length > 0 && (
+          <div className="sbar-ended" data-testid="sbar-ended">
+            <span className="fold-row" title={t("sessionBar.justEndedHint")}>
+              <FoldChevron open={endedOpen} label={t("sessionBar.justEnded", { n: ended.length })} testId="sbar-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
+              <span className="meta-txt dense">{t("sessionBar.justEnded", { n: ended.length })}</span>
             </span>
-            <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
-            {tail(r)}
-            {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
+            {endedOpen && ended.map(card)}
           </div>
-        )))}
+        )}
         {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
       </div>
       <div className="sbar-foot">

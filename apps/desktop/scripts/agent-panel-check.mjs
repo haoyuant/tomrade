@@ -728,6 +728,12 @@ const run = async () => {
   const card = barSeen?.cards.find(([, text]) => /Record pane output/.test(text));
   check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /waits for your approval/.test(card[1]), card);
   check("a session started this minute says it is new", /new/.test(card?.[1] ?? ""), card);
+  // The last few to end wait folded under a rule, so they never read as still going; opened, they read as before.
+  const endedHead = await $(`document.querySelector('.ai [data-testid=sbar-ended]')?.textContent ?? null`);
+  check("the last few to end wait folded under their own head", /Just ended \(\d+\)/.test(endedHead ?? "") && !barSeen?.cards.some(([status]) => status === "done"), { endedHead, cards: barSeen?.cards });
+  await press(`document.querySelector('.ai [data-testid=sbar-ended-fold]')`);
+  await sleep(200);
+  barSeen = await bar();
   check("an ended one never does", !barSeen?.cards.some(([status, text]) => status === "done" && /new/.test(text)), barSeen?.cards);
   check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
   check("an ended card says what its code came to as the look back does, and when it ran", barSeen?.cards.some(([status, text]) => status === "done" && /Ship the snapshot/.test(text) && /PR #407 merged · 4 commits · asked you 2 times/.test(text) && /ended · \d\d:\d\d–\d\d:\d\d/.test(text)), barSeen?.cards);

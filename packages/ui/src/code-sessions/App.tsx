@@ -282,10 +282,13 @@ export function App() {
   // Each cell's number, as its bar says it, for the rows it shows.
   const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
   // What is still going, as the assistant panel's bar reads it: the bar shows only this, the overview unless asked for all.
-  const going = activeRows(rows, active, Date.now());
+  const listedAt = Date.now();
+  const going = activeRows(rows, active, listedAt);
+  // The overview's active view is what is still going: the bar's last few to end are not.
+  const goingNow = activeRows(rows, active, listedAt, { ended: false });
   const overviewAll = overviewAllHere ?? state.overviewAll;
-  const scope = { all: overviewAll, active: going.here.length + going.away.length, total: rows.here.length + rows.away.length, onAll: (all: boolean) => { setOverviewAllHere(all); send({ type: "overviewAll", all }); } };
-  const shownInOverview = overviewAll ? rows : going;
+  const scope = { all: overviewAll, active: goingNow.here.length + goingNow.away.length, total: rows.here.length + rows.away.length, onAll: (all: boolean) => { setOverviewAllHere(all); send({ type: "overviewAll", all }); } };
+  const shownInOverview = overviewAll ? rows : goingNow;
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
