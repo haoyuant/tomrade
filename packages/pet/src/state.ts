@@ -70,6 +70,8 @@ export function reducePetModel(model: PetModel, threadId: string, event: AgentEv
       break;
   }
 
+  // A streamed word after the first one changes nothing the pet shows: the same model means no redraw is sent.
+  if (mood === before.mood && runId === before.runId && busy === before.busy) return model;
   const sequence = model.sequence + 1;
   return { sequence, threads: { ...model.threads, [threadId]: { mood, runId, busy, sequence } } };
 }

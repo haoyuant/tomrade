@@ -21,6 +21,18 @@ const run = (id: string, status: RunView["status"]): RunView => ({
 const apply = (events: AgentEvent[]) => events.reduce((model, event) => reducePetModel(model, "thread", event), emptyPetModel());
 
 describe("pet state", () => {
+  it("keeps the same model for events that change nothing it shows, so a stream of words sends no redraws", () => {
+    let model = apply([{ type: "run", run: run("r1", "running") }]);
+    model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text: "first" });
+    expect(moodForThread(model, "thread")).toBe("working");
+    const working = model;
+    for (const text of ["second", "third", "fourth"]) model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text });
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1" });
+    expect(model).toBe(working);
+    // A change it shows is still a new model.
+    expect(reducePetModel(model, "thread", { type: "done", run: run("r1", "done") })).not.toBe(working);
+  });
+
   it("maps the agent lifecycle without reading renderer IPC", () => {
     let model = apply([{ type: "run", run: run("r1", "running") }]);
     expect(moodForThread(model, "thread")).toBe("thinking");
