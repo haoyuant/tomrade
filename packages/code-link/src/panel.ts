@@ -1,7 +1,7 @@
 import type { Context } from "cordis";
 import type { EngineApproval } from "@tomradex/agent";
 import type { TerminalInput } from "@tomradex/contracts";
-import { PROMPT_LINES, promptOnScreen, tailLines } from "./prompt.js";
+import { arrowsTo, PROMPT_LINES, promptOnScreen, tailLines, trustOnScreen } from "./prompt.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
 /** The most of a pane's screen one read of its tail takes. */
@@ -14,6 +14,9 @@ const TAIL_MIN_MS = 2000;
 const TAIL_STALE_MS = 10_000;
 /** How many of a pane's rows a card's two lines are found in. */
 const TAIL_ROWS = 12;
+/** How often, and how many times, the screen is read for the cursor to land where the arrows sent it. */
+const CURSOR_LOOK_MS = 100;
+const CURSOR_LOOKS = 15;
 /** How many lines a card shows, and how long each may be. */
 const TAIL_SHOWN = 2;
 const TAIL_LINE_MAX = 200;
@@ -22,8 +25,11 @@ const TAIL_LINE_MAX = 200;
 export interface SessionGlance {
   /** Its agent declared the keys that answer its permission prompt. */
   approval: boolean;
-  /** What its screen asks that those keys answer now: a prompt with yes under the cursor, one with no, or nothing. */
-  prompt: "allow" | "deny" | null;
+  /**
+   * What its screen asks that a card can answer now: a permission prompt its keys answer, with yes under the cursor or
+   * with no, a folder's trust (arrows to the option, then Enter, whatever the agent), or nothing.
+   */
+  prompt: "allow" | "deny" | "trust" | null;
   /** The last lines its pane shows that say something; null without a pane here. */
   tail: string[] | null;
 }
@@ -130,6 +136,31 @@ export class SessionPanel {
   }
 
   /**
+   * A folder's trust on the session's pane answered: the cursor moved to the option that trusts it (the narrowest the
+   * agent offers) or the one that leaves, and Enter pressed only once the screen shows the cursor there — Enter alone
+   * may well be "No, exit".
+   */
+  async trust(projectId: string, sessionId: string, which: "trust" | "exit"): Promise<AnswerResult> {
+    const s = this.live(projectId, sessionId);
+    const terminals = this.terminals();
+    if (!s?.herdrPane || !terminals?.sendInput) return "failed";
+    const pane = s.herdrPane;
+    const read = async () => trustOnScreen((await terminals.readTail(pane, PROMPT_LINES).catch(() => null)) ?? "");
+    const prompt = await read();
+    if (!prompt) return "notPrompt";
+    const target = prompt[which];
+    const arrows = arrowsTo(prompt, target);
+    if (arrows.length && !(await terminals.sendInput(pane, { keys: arrows }))) return "failed";
+    for (let look = 0; ; look++) {
+      const now = arrows.length ? await read() : prompt;
+      if (now && now.selected === target && now.options[target] === prompt.options[target]) break;
+      if (look >= CURSOR_LOOKS) return "failed";
+      await new Promise((resolve) => setTimeout(resolve, CURSOR_LOOK_MS));
+    }
+    return (await terminals.sendInput(pane, { keys: ["enter"] })) ? "answered" : "failed";
+  }
+
+  /**
    * What the session lists show of these live sessions' panes, asked only while a list shows them: the last lines, and
    * for one waiting on a permission its agent declared the keys for, the prompt on its screen. One read of the pane
    * serves both; nothing attaches to it, and a session with no pane here is never read.
@@ -145,14 +176,15 @@ export class SessionPanel {
           out.set(s.id, { approval, prompt: null, tail: null });
           return;
         }
-        const asks = approval && s.state === "waiting" && s.ask?.kind === "permission";
+        // a permission its agent declared keys for, or one only the screen told of, which a folder's trust is
+        const asks = s.state === "waiting" && s.ask?.kind === "permission" && (approval || !s.ask.tool);
         const known = this.seen.get(s.id);
         const sameEvent = known?.event === s.lastEventAt;
         const reuse = !!known && (asks ? known.asks && sameEvent && (!!known.prompt || now - known.at < GLANCE_RECHECK_MS) : now - known.at < (sameEvent ? TAIL_STALE_MS : TAIL_MIN_MS));
         if (known && reuse) return void out.set(s.id, { approval, prompt: asks ? known.prompt : null, tail: known.tail });
         const screen = (await terminals.readTail(s.herdrPane, asks ? PROMPT_LINES : TAIL_ROWS).catch(() => null)) ?? "";
-        const seen = asks ? promptOnScreen(screen) : null;
-        const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
+        const seen = asks && approval ? promptOnScreen(screen) : null;
+        const prompt = asks && trustOnScreen(screen) ? "trust" : seen ? (seen.allows ? "allow" : "deny") : null;
         const tail = tailLines(screen, TAIL_SHOWN).map((line) => line.slice(0, TAIL_LINE_MAX));
         this.seen.set(s.id, { event: s.lastEventAt, at: now, asks, prompt, tail });
         out.set(s.id, { approval, prompt, tail });

@@ -117,6 +117,13 @@ it("lets a waiting terminal session's card answer only the prompt its screen sho
   expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
 });
 
+it("lets a waiting terminal session's card answer a folder's trust on its screen, whatever keys its agent declared", () => {
+  const blocked = { kind: "permission" as const, tool: null, action: null, detail: null };
+  const trusts = (id: string, over: Partial<SessionView> & { approval?: boolean }) => ({ ...session(id, { state: "waiting", ask: blocked }), approval: false, prompt: "trust" as const, ...over });
+  const out = rows({ sessions: [trusts("claude", { approval: true }), trusts("codebuddy", {}), trusts("runs", { state: "running", ask: null })] });
+  expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ claude: "trust", codebuddy: "trust", runs: null });
+});
+
 it("carries a live terminal session's last pane lines for its card and peek, and none once it ended", () => {
   const out = rows({ sessions: [{ ...session("live"), tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }, { ...session("old", { state: "ended", endedAt: 8 }), tail: ["gone"] }] });
   expect(out.find((r) => r.key === "session:live")?.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
