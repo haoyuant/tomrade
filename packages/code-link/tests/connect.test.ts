@@ -1232,6 +1232,50 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
   });
 
+  it("keeps a conversation whose hooks still name a pane herdr closed going without it, instead of ending and reviving it on every hook", async () => {
+    const { codeLink, ctx, project, checkout } = await machine();
+    const fake = new FakeHerdr();
+    onTestFinished(() => fake.close());
+    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+    await settle();
+    const gone = fake.createPane(checkout);
+    // A long-lived process started in that pane (Codex's app server) keeps HERDR_PANE_ID after the pane is gone.
+    const post = (payload: Record<string, unknown>) =>
+      fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": gone.pane_id }, body: JSON.stringify({ session_id: "daemon-1", cwd: checkout, ...payload }) });
+    await post({ hook_event_name: "SessionStart" });
+    const [hooked] = codeLink.sessionsOf(project.id);
+    await until(() => codeLink.store.session(project.id, hooked!.id)?.herdrPane === gone.pane_id);
+    const ends: string[] = [];
+    ctx.on("codeLink/changed", () => {
+      const s = codeLink.store.session(project.id, hooked!.id);
+      if (s?.state === "ended" && ends.at(-1) !== "ended") ends.push("ended");
+      if (s && s.state !== "ended" && ends.at(-1) === "ended") ends.push("live");
+    });
+    fake.exit(gone.pane_id);
+    await until(() => codeLink.store.session(project.id, hooked!.id)?.state === "ended");
+
+    // The conversation goes on elsewhere, its hooks still naming the closed pane.
+    for (let i = 0; i < 4; i++) {
+      await post({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: {} });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    expect(codeLink.store.session(project.id, hooked!.id)).toMatchObject({ state: "running", endedAt: null, herdrPane: null });
+    // It came back once, and stayed: no end after that.
+    expect(ends).toEqual(["ended", "live"]);
+    expect(codeLink.sessionsOf(project.id).map((s) => s.id)).toEqual([hooked!.id]);
+
+    // Its end, said again, changes nothing: no write and no notice.
+    await post({ hook_event_name: "SessionEnd", reason: "other" });
+    const ended = codeLink.store.session(project.id, hooked!.id)!;
+    expect(ended.state).toBe("ended");
+    let told = 0;
+    ctx.on("codeLink/changed", () => { told += 1; });
+    await post({ hook_event_name: "SessionEnd", reason: "other" });
+    codeLink.sessions.event(project.id, hooked!.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true, herdr_pane: gone.pane_id });
+    expect(told).toBe(0);
+    expect(codeLink.store.session(project.id, hooked!.id)).toEqual(ended);
+  });
+
   it("brings back a session, ticket and all, when its conversation goes on after another process of it ended, for hooks that name no pane", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const post = (payload: Record<string, unknown>) =>

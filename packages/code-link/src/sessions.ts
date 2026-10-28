@@ -24,6 +24,8 @@ import { contract, errorMessage } from "@tomradex/contracts";
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
 export const IDLE_AFTER_MS = 10 * 60 * 1000;
 export const END_AFTER_MS = 60 * 60 * 1000;
+/** How often a pane herdr closed, still named by some process's hooks, is asked about again. */
+const PANE_RECHECK_MS = 60_000;
 /** How long after a hook spoke herdr's reading of the screen is left unsaid. */
 export const HERDR_YIELD_MS = 30 * 1000;
 /** How long a PreToolUse for claim_ticket (or work_without_ticket, or create_item) vouches for the call that follows it. */
@@ -300,6 +302,18 @@ const credentialStopText = (detail: string): string =>
  * calls and hook events to one ticket, and a state read from those signals —
  * plus the process itself, when Tomrade launched it, because a hook can only
  * report what the agent lived to report. Nothing here owns the process.
+ *
+ * When a terminal session is live, ended or back:
+ * - Live (running / waiting / idle / error) from its first hook or Start. Running goes idle after IDLE_AFTER_MS
+ *   without a word; waiting stays waiting however long the person is away.
+ * - Ended when its agent says so (a SessionEnd hook), when herdr says its pane closed, when the process Tomrade
+ *   launched exited (or, idle past END_AFTER_MS, is gone), when its tickets are done, when its conversation was
+ *   deleted or went to a terminal, when another session took over from it, or (one known only by its MCP
+ *   connection) when that connection closed. A headless session left over from before a restart is lost.
+ *   A session Tomrade did not launch and herdr does not hold ends only by its agent's word: it may stay idle.
+ * - Back (Connections.continueEnded) when a hook of the same conversation arrives within a day of its end and no
+ *   session of it is live, unless its tickets are finished. A pane herdr said closed is not taken back with it.
+ * Saying an ended session ended again changes nothing.
  */
 export class Sessions {
   private readonly live = new Map<string, { token: string; unbind: () => void }>();
@@ -313,6 +327,14 @@ export class Sessions {
   private readonly filing = new Map<string, { projectId: string; title: string; at: number }>();
   /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
   private readonly panes = new Map<string, Set<string>>();
+  /**
+   * Panes herdr said closed. A long-lived process started in one (Codex's app server, say) keeps HERDR_PANE_ID after
+   * the pane is gone: its hooks must not bind a session to that pane again, or herdr ends the session as soon as it
+   * is watched there and the next hook brings it back, every few seconds. Forgotten once herdr shows the pane again.
+   */
+  private readonly closedPanes = new Set<string>();
+  /** When each closed pane was last asked about, so a stream of hooks asks herdr once a PANE_RECHECK_MS. */
+  private readonly paneRechecked = new Map<string, number>();
   /** What Tomrade has to tell each session's agent, said with the next answer its hooks can carry. */
   private readonly told = new Map<string, string>();
 
@@ -582,14 +604,30 @@ export class Sessions {
     }
   }
 
+  /** Whether herdr said this pane closed: a hook naming it speaks from a process that outlived its pane. */
+  paneClosed(pane: string | null): boolean {
+    return !!pane && this.closedPanes.has(pane);
+  }
+
   private observe(projectId: string, sessionId: string, p: HookPayload): CliHookAnswer {
     const session = this.store.session(projectId, sessionId);
     if (!session) return {};
+    // Ended already: another word of its end changes nothing — no write, no notice, no line in the log.
+    if (p.hook_event_name === "SessionEnd" && session.state === "ended") {
+      if (!p.herdr) this.remember(projectId, session, p);
+      return {};
+    }
     // herdr reads the screen; a hook that spoke a moment ago knows better. The pane closing is the end whatever was said.
     if (p.herdr) {
       if (p.hook_event_name !== "SessionEnd" && Date.now() - (this.heardAt.get(sessionId) ?? 0) < HERDR_YIELD_MS) return {};
     } else this.heardAt.set(sessionId, Date.now());
-    const pane = typeof p.herdr_pane === "string" ? p.herdr_pane.trim() : "";
+    const named = typeof p.herdr_pane === "string" ? p.herdr_pane.trim() : "";
+    if (p.herdr && p.hook_event_name === "SessionEnd" && named) this.closedPanes.add(named);
+    // A hook naming a pane herdr closed runs somewhere else now: the session goes on without a pane.
+    const stale = !p.herdr && this.closedPanes.has(named);
+    if (stale) this.recheckPane(projectId, sessionId, named);
+    const pane = stale ? "" : named;
+    if (stale && session.herdrPane === named) this.store.patchSession(projectId, sessionId, { herdrPane: null });
     if (p.hook_event_name === "SessionEnd" && this.goesOn(projectId, session, pane)) return {};
     if (pane && !p.herdr) {
       const heard = this.panes.get(sessionId) ?? new Set<string>();
@@ -598,7 +636,8 @@ export class Sessions {
     }
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
-    if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();
+    if (pane && !p.herdr) patch.herdrPane = pane;
+    else if (p.herdr && named) patch.herdrPane = named;
     if (typeof p.terminal === "string" && p.terminal.trim() && p.terminal.trim() !== session.terminal) patch.terminal = p.terminal.trim().slice(0, 64);
     if (!p.herdr) this.remember(projectId, session, p);
     const command = bashCommand(p);
@@ -733,6 +772,26 @@ export class Sessions {
       })
       .catch(() => undefined);
     return true;
+  }
+
+  /**
+   * A closed pane a hook still names may be open again: herdr numbers panes afresh after its server restarts. Asked
+   * now and then; once herdr has it, it is forgotten as closed and the session takes it back.
+   */
+  private recheckPane(projectId: string, sessionId: string, pane: string): void {
+    const now = Date.now();
+    if (now - (this.paneRechecked.get(pane) ?? 0) < PANE_RECHECK_MS) return;
+    this.paneRechecked.set(pane, now);
+    void this.options.panes
+      ?.alive(pane)
+      .then((alive) => {
+        if (alive !== true) return;
+        this.closedPanes.delete(pane);
+        this.paneRechecked.delete(pane);
+        const current = this.store.session(projectId, sessionId);
+        if (current && current.state !== "ended" && current.state !== "lost" && !current.herdrPane) this.touch(projectId, sessionId, { herdrPane: pane });
+      })
+      .catch(() => undefined);
   }
 
   /** Why a session's life changed, in the log: the trail when a session ends that should not have. */
