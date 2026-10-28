@@ -258,6 +258,7 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
+    "codeLink.sessionEscape": (projectId: string, sessionId: string) => boolean;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
     /** Where a conversation runs — here on its engine's SDK, or in a terminal as a session — and whether it can move now. */
@@ -783,6 +784,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
       ctx.ipc.handle("codeLink.toTerminal", (projectId, threadId) => ctx.codeLink.toTerminal(projectId, threadId));
@@ -1014,6 +1016,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** Text into a terminal session's pane, with Enter, as typed at its keyboard; false when it could not go. */
   sessionSay(projectId: string, sessionId: string, text: string): Promise<boolean> {
     return this.panel.say(projectId, sessionId, text);
+  }
+
+  /** Esc in a terminal session's pane, as pressed at its keyboard; false when it could not go. */
+  sessionEscape(projectId: string, sessionId: string): Promise<boolean> {
+    return this.panel.escape(projectId, sessionId);
   }
 
   /** The agent's declared keys for its permission prompt, pressed in the session's pane while it shows one; see `SessionPanel.answer`. */
