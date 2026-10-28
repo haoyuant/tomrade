@@ -370,8 +370,10 @@ export class Connections {
     const changed = new Set<string>();
     for (const { projectId, session } of ended) {
       if (session.endedAt! < last - ENDED_TOGETHER_MS) continue;
-      this.store.patchSession(projectId, session.id, { state: "running", endedAt: null });
-      this.ctx.logger.info(`session ${session.id} (${agent} ${externalId}) lives again: its conversation goes on`);
+      // Back without the pane herdr closed under it, or herdr would end it again the moment that pane is watched.
+      const paneGone = this.sessions.paneClosed(session.herdrPane);
+      this.store.patchSession(projectId, session.id, { state: "running", endedAt: null, ...(paneGone ? { herdrPane: null } : {}) });
+      this.ctx.logger.info(`session ${session.id} (${agent} ${externalId}) lives again: its conversation goes on${paneGone ? `, no longer in pane ${session.herdrPane}` : ""}`);
       changed.add(projectId);
     }
     for (const projectId of changed) this.notify(projectId);
