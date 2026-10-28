@@ -1900,6 +1900,7 @@ export class Im extends Service {
 
   /** Start and Adjust settings on a start card, for the person this conversation is with. */
   private startActions(b: Binding, content: ImContent, block: Block, card: string): ImContent {
+    if (block.type === "card" && block.schema === "start-batch") return this.batchActions(b, content, block.data, card);
     const data = block.type === "card" && block.schema === "start" ? (block.data ?? {}) as Record<string, unknown> : null;
     if (!data || typeof data.itemId !== "string" || !this.code()) return content;
     const value = JSON.stringify({ itemId: data.itemId, card, ...(typeof data.task === "string" && data.task ? { task: data.task } : {}) });
@@ -1907,6 +1908,29 @@ export class Im extends Service {
       { label: this.continuing(b, data.itemId) ? this.w("continue") : this.w("start"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
       { label: this.w("adjust"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
     ] };
+  }
+
+  /**
+   * Start buttons on a start-batch card that still asks (no results yet): Start with what the assistant settled, one
+   * per ticket when there are several; with nothing settled, Adjust opens the start card to pick the agent.
+   */
+  private batchActions(b: Binding, content: ImContent, raw: unknown, card: string): ImContent {
+    const data = (raw ?? {}) as { tickets?: { itemId: string; key: string }[]; task?: string; results?: unknown; config?: { engine?: string; options?: Record<string, unknown>; permissionMode?: string } };
+    const tickets = (data.tickets ?? []).slice(0, 5);
+    if (data.results || !tickets.length || !this.code()) return content;
+    const many = tickets.length > 1;
+    const options = Object.fromEntries(Object.entries(data.config?.options ?? {}).filter((e): e is [string, string] => typeof e[1] === "string" && !!e[1]));
+    const actions = tickets.map(t => {
+      // Each ticket of several has its own card id, so starting one leaves the others' buttons.
+      const id = many ? `${card}:${t.itemId}` : card;
+      const draft: StartDraft = { itemId: t.itemId, card: id, ...(data.task ? { task: data.task } : {}),
+        ...(data.config?.engine ? { engine: data.config.engine, ...(Object.keys(options).length ? { options } : {}), ...(data.config.permissionMode ? { permissionMode: data.config.permissionMode } : {}) } : {}) };
+      const settled = !!data.config?.engine;
+      const label = this.continuing(b, t.itemId) ? this.w("continue") : this.w("start");
+      return { label: many ? this.w("labelKey", { label: settled ? label : this.w("adjust"), key: t.key }) : settled ? label : this.w("adjust"),
+        token: this.offerValue(b, settled ? "start!" : "start-adjust", b.actor_id, JSON.stringify(draft)), style: "primary" as const };
+    });
+    return { ...content, actions };
   }
 
   /** The start card a Start press belongs to, when pressing it starts the work rather than showing the settings first. `fresh` asks for a press not yet handled. */

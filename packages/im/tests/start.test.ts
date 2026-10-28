@@ -67,6 +67,14 @@ async function boot() {
       const task = text === "offer the merge" ? { task: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" } : {};
       world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title, ...task } });
     }
+    if (text === "confirm" || text === "confirm two" || text === "pick") {
+      const run = world.ctx.agent.activeRuns().find(r => r.thread.id === input.threadId)!;
+      const item = world.ctx.items.getByKey(world.project.id, ticket)!;
+      const other = text === "confirm two" ? world.ctx.items.create({ projectId: world.project.id, boardId: world.board.id, title: "Second", workType: "coding", status: "todo", by: "human" }) : null;
+      const tickets = [item, ...(other ? [other] : [])].map(i => ({ itemId: i.id, key: i.key, title: i.title }));
+      const data = text === "pick" ? { tickets, reason: "no agent" } : { tickets, task: "Do it", config: { engine: "test", options: { model: "fast" }, permissionMode: "auto" } };
+      world.ctx.agent.setCard(run.run.id, { id: `start-batch-${run.run.id}`, schema: "start-batch", title: tickets.map(t => t.key).join(", "), data });
+    }
     if (text === "wait" && probe.hold) await probe.hold;
     if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
     if (text.startsWith("Brief")) {
@@ -138,6 +146,37 @@ describe("starting a ticket from IM", () => {
     await expect.poll(() => w.ctx.agent.thread(w.project.id, thread).pending).toBeNull();
     expect(w.code.starts).toHaveLength(1);
     expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("asks on a start-batch card still waiting for the person, and starts with what the assistant settled", async () => {
+    const w = await boot();
+    await w.receive(say("a", "confirm"));
+    const card = await w.said(new RegExp(`^Start ${w.item.key}\\?\\nFirst: Do it$`));
+    // Buttons keep it a message of its own rather than part of the turn's reply.
+    expect(card.content.actions!.map(a => a.label)).toEqual(["Start"]);
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    await w.receive(act("go", card.content.actions![0].token));
+    await w.said(/^Started .* with Test\./);
+    expect(w.code.starts).toEqual([{ mode: "run", engine: "test", options: { model: "fast" }, permissionMode: "auto", message: "Do it",
+      source: { connection: "bot", tenant: "team", conversation: "chat", actor: "owner" } }]);
+  });
+
+  it("gives each ticket of a start-batch card its own Start, and Adjust when no agent was settled", async () => {
+    const w = await boot();
+    await w.receive(say("a", "confirm two"));
+    const card = await w.said(/^Start .*, .*\?/);
+    expect(card.content.actions!.map(a => a.label)).toEqual([`Start ${w.item.key}`, expect.stringMatching(/^Start /)]);
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    await w.receive(act("go", card.content.actions![1].token));
+    await w.said(/^Started .* with Test\./);
+    expect(w.code.starts).toHaveLength(1);
+    await w.receive(act("go2", card.content.actions![0].token));
+    await expect.poll(() => w.code.starts.length).toBe(2);
+
+    const picking = await boot();
+    await picking.receive(say("b", "pick"));
+    const ask = await picking.said(new RegExp(`^Start ${picking.item.key}\\?`));
+    expect(ask.content.actions!.map(a => a.label)).toEqual(["Adjust settings"]);
   });
 
   it("shows a card offered again in the same conversation, and starts from the newest", async () => {

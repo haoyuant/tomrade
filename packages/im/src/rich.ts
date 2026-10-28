@@ -163,6 +163,14 @@ function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImCo
     case "start":
       if (typeof data.key === "string") return { text: typeof data.task === "string" && data.task ? w("startTask", { task: data.task }) : "", elements: ticket(scope, data.key, String(data.title ?? "")) };
       break;
+    case "start-batch": {
+      // Not yet started: the person is asked, so the card says which tickets and a button follows.
+      const tickets = Array.isArray(data.tickets) ? data.tickets as { key?: string; title?: string }[] : [];
+      if (data.results || !tickets.length) break;
+      const task = typeof data.task === "string" && data.task ? `\n${w("startTask", { task: data.task })}` : "";
+      return { text: `${w("startBatchAsk", { keys: tickets.map(t => t.key).join(", ") })}${task}`,
+        elements: tickets.slice(0, CARD_LIMIT).flatMap(t => ticket(scope, String(t.key ?? ""), String(t.title ?? ""))) };
+    }
     case "backlog.proposal": {
       const epics = Array.isArray(data.epics) ? data.epics as { title?: string; features?: { title?: string }[] }[] : [];
       const text = epics.map(e => [`**${e.title ?? ""}**`, ...(e.features ?? []).map(f => `- ${f.title ?? ""}`)].join("\n")).join("\n");
