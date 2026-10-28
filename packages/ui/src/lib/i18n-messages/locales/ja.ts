@@ -1208,8 +1208,8 @@ export const ja: PartialMessages = {
   },
   sessionBar: {
     label: "セッション",
-    showCards: "カードで表示（⌘\\）",
-    showRail: "点で表示（⌘\\）",
+    showCards: "カードで表示（{{key}}）",
+    showRail: "点で表示（{{key}}）",
     waitingCount: "{{n}} 件が待機中",
     filter: "表示",
     filterAll: "すべて {{n}}",
@@ -1866,7 +1866,7 @@ export const ja: PartialMessages = {
   },
   card: {
     blockedBadge: "ブロック中",
-    keyboardHint: "Enter で開く · 矢印キーでカード間を移動 · ⌥← ⌥→ で隣の列へ移動",
+    keyboardHint: "Enter で開く · 矢印キーでカード間を移動 · {{left}} {{right}} で隣の列へ移動",
     inWorkstream: "{{board}} ワークストリーム内",
     checked: "✓"
   },
@@ -2229,7 +2229,7 @@ export const ja: PartialMessages = {
     guideNew: "新しい会話を始める。以前の会話は一覧に残ります",
     guideHelp: "このガイドを会話に表示(何も送信されません)",
     guideAttach: "ファイルを添付 — ドラッグや貼り付けも可",
-    queueOrSteerPlaceholder: "Enter でキュー · ⌘↵ で今すぐ割り込み…",
+    queueOrSteerPlaceholder: "Enter でキュー · {{key}} で今すぐ割り込み…",
     steerNow: "今すぐ割り込み",
     imGroup: "IM グループ",
     imGroupPrivate: "ここで始めたターンはデスクトップにのみ残り、{{group}} には表示されません。",

@@ -145,7 +145,8 @@ const run = async () => {
   ctx.contributions.run = async (id, scope) => (id === "code-sessions.open" ? (terminalOpened.push(scope), {}) : runCommand(id, scope));
   await $(`document.querySelector('[data-testid="setup-work-style"] [data-style="cli"]').click()`);
   check("several CLIs in a terminal makes Tomrade open on the Terminal window", await wait(async () => ctx.settings.get().sessions?.openAtStart === "terminal", "terminal at start"), ctx.settings.get().sessions);
-  check("and opens the Terminal window right away", await wait(async () => terminalOpened.length === 1, "terminal opened"), terminalOpened);
+  await sleep(500);
+  check("but does not open the Terminal window over the setup screen; that waits for setup to finish", terminalOpened.length === 0, terminalOpened);
   check("then asks for a key to bring it up from any app, none until one is picked", await wait(async () => (await $(`document.querySelector('[data-testid="setup-hotkey"] [aria-checked="true"]')?.dataset.hotkey ?? null`)) === "none", "hotkey prompt"));
   await $(`document.querySelector('[data-testid="setup-hotkey"] [data-hotkey="altSpace"]').click()`);
   check("⌥Space is one click, kept as the Keyboard shortcuts' key for the whole computer", await wait(async () => JSON.stringify(ctx.settings.get().keybindings?.overrides?.terminalWindowGlobal) === JSON.stringify(["Alt+Space"]), "alt space"), ctx.settings.get().keybindings);

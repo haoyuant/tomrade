@@ -1216,8 +1216,8 @@ export const ru: PartialMessages = {
   },
   sessionBar: {
     label: "Сессии",
-    showCards: "Показать сессии карточками (⌘\\)",
-    showRail: "Показать сессии точками (⌘\\)",
+    showCards: "Показать сессии карточками ({{key}})",
+    showRail: "Показать сессии точками ({{key}})",
     waitingCount: "ждут: {{n}}",
     filter: "Показать",
     filterAll: "Все {{n}}",
@@ -1903,7 +1903,7 @@ export const ru: PartialMessages = {
   },
   card: {
     blockedBadge: "заблокирован",
-    keyboardHint: "Enter — открыть · стрелки — переход между карточками · ⌥← ⌥→ — перенести в соседний столбец",
+    keyboardHint: "Enter — открыть · стрелки — переход между карточками · {{left}} {{right}} — перенести в соседний столбец",
     inWorkstream: "В потоке работ «{{board}}»",
     checked: "✓"
   },
@@ -2262,7 +2262,7 @@ export const ru: PartialMessages = {
     guideNew: "Начать новую беседу; старая останется в списке",
     guideHelp: "Показать эту справку в беседе (ничего не отправляется)",
     guideAttach: "Прикрепить файлы — или перетащите их сюда, или вставьте",
-    queueOrSteerPlaceholder: "Enter — в очередь · ⌘↵ — скорректировать сейчас…",
+    queueOrSteerPlaceholder: "Enter — в очередь · {{key}} — скорректировать сейчас…",
     steerNow: "Скорректировать сейчас",
     imGroup: "IM-группа",
     imGroupPrivate: "Ходы, начатые здесь, остаются на компьютере; {{group}} их не видит.",

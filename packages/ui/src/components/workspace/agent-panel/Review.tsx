@@ -17,6 +17,7 @@ import { landingSegment, openAtFirst, outcomeLine, segmentKind, segmentSummary, 
 import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { ReviewList, type ReviewSource } from "./ReviewList";
+import { keyLabel } from "~/lib/keybindings";
 
 /** What the look back opens on: one ended conversation, with the ticket whose stretches alone unfold; null for the list. */
 export interface ReviewFocus {
@@ -76,7 +77,7 @@ export function Review({ projectId, focus, engines, omit, onClose, onOpenThread 
           <Icon name="i-close" size={11} />
         </button>
       </div>
-      {!picked && <p className="ai-review-hint meta-txt dense" data-testid="ai-review-hint">{t("review.hint")}</p>}
+      {!picked && <p className="ai-review-hint meta-txt dense" data-testid="ai-review-hint">{t("review.hint", { key: keyLabel("palette") })}</p>}
       {picked ? (
         <Opened projectId={projectId} focus={picked} agentName={agentName} span={span} where={where} say={say} onOpenThread={onOpenThread} />
       ) : (

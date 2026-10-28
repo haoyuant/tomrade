@@ -1208,8 +1208,8 @@ export const fr: PartialMessages = {
   },
   sessionBar: {
     label: "Sessions",
-    showCards: "Afficher les sessions en cartes (⌘\\)",
-    showRail: "Afficher les sessions en points (⌘\\)",
+    showCards: "Afficher les sessions en cartes ({{key}})",
+    showRail: "Afficher les sessions en points ({{key}})",
     waitingCount: "{{n}} en attente",
     filter: "Afficher",
     filterAll: "Toutes {{n}}",
@@ -1866,7 +1866,7 @@ export const fr: PartialMessages = {
   },
   card: {
     blockedBadge: "bloqué",
-    keyboardHint: "Entrée pour ouvrir · flèches pour passer d’une carte à l’autre · ⌥← ⌥→ pour la déplacer d’une colonne",
+    keyboardHint: "Entrée pour ouvrir · flèches pour passer d’une carte à l’autre · {{left}} {{right}} pour la déplacer d’une colonne",
     inWorkstream: "Dans l’axe de travail {{board}}",
     checked: "✓"
   },
@@ -2223,7 +2223,7 @@ export const fr: PartialMessages = {
     guideNew: "Démarrer une nouvelle conversation ; l’ancienne reste dans la liste",
     guideHelp: "Afficher ce guide dans la conversation (rien n’est envoyé)",
     guideAttach: "Joindre des fichiers — ou les glisser, ou les coller",
-    queueOrSteerPlaceholder: "Entrée met en file · ⌘↵ oriente maintenant…",
+    queueOrSteerPlaceholder: "Entrée met en file · {{key}} oriente maintenant…",
     steerNow: "Orienter maintenant",
     imGroup: "Groupe de messagerie",
     imGroupPrivate: "Les tours que vous démarrez ici restent sur le bureau ; {{group}} ne les voit pas.",

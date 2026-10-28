@@ -1230,8 +1230,8 @@ export const zhHant: PartialMessages = {
   },
   sessionBar: {
     label: "會話",
-    showCards: "展開成卡片（⌘\\）",
-    showRail: "收成一列點（⌘\\）",
+    showCards: "展開成卡片（{{key}}）",
+    showRail: "收成一列點（{{key}}）",
     waitingCount: "等你 {{n}}",
     filter: "顯示",
     filterAll: "全部 {{n}}",
@@ -1909,7 +1909,7 @@ export const zhHant: PartialMessages = {
   },
   card: {
     blockedBadge: "被阻擋",
-    keyboardHint: "Enter 開啟 · 方向鍵在卡片間移動 · ⌥← ⌥→ 移到相鄰欄",
+    keyboardHint: "Enter 開啟 · 方向鍵在卡片間移動 · {{left}} {{right}} 移到相鄰欄",
     inWorkstream: "屬於「{{board}}」工作流程",
     checked: "✓"
   },
@@ -2272,7 +2272,7 @@ export const zhHant: PartialMessages = {
     guideNew: "開新對話，舊對話保留在清單裡",
     guideHelp: "在對話裡顯示這份指南（不會傳給助理）",
     guideAttach: "附加檔案——也可以拖進來或貼上",
-    queueOrSteerPlaceholder: "Enter 排隊 · ⌘↵ 立即插話…",
+    queueOrSteerPlaceholder: "Enter 排隊 · {{key}} 立即插話…",
     steerNow: "立即插話",
     imGroup: "IM 群組",
     imGroupPrivate: "在這裡發起的輪次只留在桌面，{{group}} 看不到。",
@@ -3215,7 +3215,7 @@ export const zhHant: PartialMessages = {
   review: {
     title: "回看",
     crumb: "助手 › 回看",
-    hint: "會話列點「歷史」或 ⌘K 搜，都到這裡",
+    hint: "會話列點「歷史」或 {{key}} 搜，都到這裡",
     history: "歷史",
     historyNote: "更早的在歷史裡",
     back: "回到清單",

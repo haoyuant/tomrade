@@ -1208,8 +1208,8 @@ export const de: PartialMessages = {
   },
   sessionBar: {
     label: "Sitzungen",
-    showCards: "Sitzungen als Karten zeigen (⌘\\)",
-    showRail: "Sitzungen als Punkte zeigen (⌘\\)",
+    showCards: "Sitzungen als Karten zeigen ({{key}})",
+    showRail: "Sitzungen als Punkte zeigen ({{key}})",
     waitingCount: "{{n}} warten",
     filter: "Zeigen",
     filterAll: "Alle {{n}}",
@@ -1866,7 +1866,7 @@ export const de: PartialMessages = {
   },
   card: {
     blockedBadge: "blockiert",
-    keyboardHint: "Enter zum Öffnen · Pfeiltasten zum Wechseln zwischen Karten · ⌥← ⌥→ zum Verschieben um eine Spalte",
+    keyboardHint: "Enter zum Öffnen · Pfeiltasten zum Wechseln zwischen Karten · {{left}} {{right}} zum Verschieben um eine Spalte",
     inWorkstream: "Im Workstream {{board}}",
     checked: "✓"
   },
@@ -2223,7 +2223,7 @@ export const de: PartialMessages = {
     guideNew: "Neue Unterhaltung beginnen; die alte bleibt in der Liste",
     guideHelp: "Diese Anleitung in der Unterhaltung anzeigen (es wird nichts gesendet)",
     guideAttach: "Dateien anhängen – oder hineinziehen oder einfügen",
-    queueOrSteerPlaceholder: "Enter reiht ein · ⌘↵ lenkt sofort…",
+    queueOrSteerPlaceholder: "Enter reiht ein · {{key}} lenkt sofort…",
     steerNow: "Jetzt lenken",
     imGroup: "IM-Gruppe",
     imGroupPrivate: "Durchgänge, die du hier startest, bleiben auf dem Desktop; {{group}} sieht sie nicht.",
