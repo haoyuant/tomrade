@@ -2065,6 +2065,11 @@ export const fr: PartialMessages = {
     missingOption: "(option supprimée)"
   },
   agentPanel: {
+    interruptedHint: "Tomrade s’est fermé pendant qu’il travaillait. « Continuer » reprend là où il s’est arrêté, dans la même session.",
+    interruptedChildHint: "Tomrade s’est fermé pendant que cette conversation travaillait. « Continuer » la reprend là où elle s’est arrêtée.",
+    interruptedContinue: "Continuer",
+    interruptedDismiss: "Ignorer",
+    interruptedDismissTitle: "Laisser tel quel : il ne vous attend plus",
     commandSuccess: "Terminé",
     commandNoMatch: "Aucune correspondance",
     commandConditionFalse: "Condition fausse",
