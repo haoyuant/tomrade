@@ -529,6 +529,9 @@ const run = async () => {
   let seenCards = await cards();
   check("a conversation with a run going says so on its card, which offers neither to put it away nor to delete it", seenCards.some((c) => c.status === "run" && /running/.test(c.text) && !c.archive && !c.remove), seenCards);
   check("an idle one offers both", seenCards.some((c) => c.status === "idle" && /Filler conversation/.test(c.text) && c.archive && c.remove), seenCards);
+  // Completed session outcomes can contain paths or other unbroken strings wider than the sidebar.
+  const longOutcome = await $(`(() => { const list = document.querySelector('.ai .sbar-cards'); const card = list?.querySelector('.sbar-card'); if (!card) return null; const text = document.createElement('span'); text.className = 'sbar-card-outcome'; text.textContent = 'worktree ~/Projects/tomrade/.claude/worktrees/' + 'long-path-'.repeat(20); card.append(text); const result = { listFits: list.scrollWidth <= list.clientWidth, textFits: text.scrollWidth <= text.clientWidth, wrapped: text.getBoundingClientRect().height > parseFloat(getComputedStyle(text).fontSize) * 2 }; text.remove(); return result; })()`);
+  check("a long session outcome wraps inside its card without widening the sidebar", longOutcome?.listFits && longOutcome.textFits && longOutcome.wrapped, longOutcome);
   check("the bar keeps the newest idle ones and says the earlier are in History", seenCards.filter((c) => c.status === "idle").length === 8 && /Earlier ones are in History/.test(await $(`document.querySelector('.ai .sbar-foot')?.textContent ?? ''`)), seenCards.map((c) => c.status));
   await openPalette();
   await typePalette("Filler conversation 3");
