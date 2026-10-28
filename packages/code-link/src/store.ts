@@ -556,6 +556,21 @@ const toProposal = (r: ProposalRow): ProposalView => ({
   resolvedAt: r.resolved_at
 });
 
+/**
+ * A timestamp that only says a scan looked again (a link's last sighting, a repository's last scan or reach) is
+ * refreshed this rarely when nothing else changed: the rows travel in the project's folder, and every write is a commit.
+ */
+export const BOOKKEEPING_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+const bookkeepingStale = (was: number | null, now: number | null): boolean =>
+  was !== now && (was === null || now === null || now < was || now - was >= BOOKKEEPING_REFRESH_MS);
+
+/** Whether a repository's next state says nothing its stored one does not, its look-again timestamps aside. */
+function sameRepoState(was: RepoStateView, next: RepoStateView): boolean {
+  const rest = ({ remoteAt, scannedAt, updatedAt, ...kept }: RepoStateView) => JSON.stringify(kept);
+  return rest(was) === rest(next) && !bookkeepingStale(was.remoteAt, next.remoteAt) && !bookkeepingStale(was.scannedAt, next.scannedAt);
+}
+
 const MERGE_POLICIES: ReadonlySet<string> = new Set<MergePolicy>(["human", "ask", "agent"]);
 /** A row from before the policy column answers through its switch: on is the agent's, off is asking, the default. */
 const mergePolicyOf = (r: Pick<RepoRow, "merge_policy" | "agent_merge">): MergePolicy =>
@@ -823,15 +838,29 @@ export class CodeLinkStore {
       source: "source",
       lastSeenAt: "last_seen_at"
     };
+    const current = db.prepare("SELECT * FROM plugin_code_link_links WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!current) return;
     const sets: string[] = [];
     const values: unknown[] = [];
     for (const [field, column] of Object.entries(columns) as [keyof LinkPatch, string][]) {
-      if (patch[field] === undefined) continue;
+      if (patch[field] === undefined || field === "lastSeenAt") continue;
+      if ((current[column] ?? null) === patch[field]) continue;
       sets.push(`${column} = ?`);
       values.push(patch[field]);
     }
-    sets.push("updated_at = ?");
-    values.push(now, id);
+    const changed = sets.length > 0;
+    const seen = patch.lastSeenAt;
+    // Seen again with nothing else new: the row stays as it was, so the project's files do not change with it.
+    if (seen !== undefined && (changed || bookkeepingStale((current.last_seen_at as number | null) ?? null, seen))) {
+      sets.push("last_seen_at = ?");
+      values.push(seen);
+    }
+    if (changed) {
+      sets.push("updated_at = ?");
+      values.push(now);
+    }
+    if (!sets.length) return;
+    values.push(id);
     db.prepare(`UPDATE plugin_code_link_links SET ${sets.join(", ")} WHERE id = ?`).run(...values);
   }
 
@@ -878,6 +907,7 @@ export class CodeLinkStore {
       scannedAt: patch.scannedAt === undefined ? (existing?.scannedAt ?? null) : patch.scannedAt,
       updatedAt: now
     };
+    if (existing && sameRepoState(existing, next)) return existing;
     this.db(projectId)
       .prepare(
         `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, merge_policy, connect_agents_json, scanned_at, updated_at)

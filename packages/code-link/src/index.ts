@@ -5,6 +5,7 @@ export { CLAUDE_LOCAL_SETTINGS, CONNECT_AGENTS, CONNECT_FILES, codexSyncSkill, h
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";
 export {
+  BOOKKEEPING_REFRESH_MS,
   CodeLinkStore,
   MIGRATIONS,
   TABLES,
