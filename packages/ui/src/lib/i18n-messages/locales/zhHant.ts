@@ -366,6 +366,17 @@ export const zhHant: PartialMessages = {
     purposeBranch: "分支命名",
     purposeOther: "其他"
   },
+  webSearch: {
+    label: "網路搜尋",
+    lede: "助手如何搜尋網頁、閱讀網頁。內建網路搜尋的模型直接用自己的搜尋；其他模型由下方第一個設定好的服務回答，各服務自己的設定排在清單下方。",
+    answering: "使用中",
+    standby: "備用",
+    notSetUp: "未設定",
+    setUpBelow: "在下方設定",
+    openSettings: "開啟它的設定",
+    none: "還沒有開啟任何網路搜尋服務。到外掛中開啟或安裝一個。",
+    findPlugin: "尋找搜尋外掛"
+  },
   background: {
     label: "背景執行",
     title: "在背景執行",
