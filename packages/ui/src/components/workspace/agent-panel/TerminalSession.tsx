@@ -6,7 +6,7 @@ import { cutFrom, joinCuts } from "@tomradex/code-link/segments";
 import type { Item } from "@tomradex/domain";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { Icon } from "~/components/icons";
-import { ConvoLines, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
+import { ConvoLines, ConvoTop, useOpenLines, type AgentText, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
@@ -15,15 +15,19 @@ import { segmentKind, segmentWork, type OutcomeWords } from "~/lib/review";
 import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
+import { looksLikeMarkdown } from "~/lib/markdownDetect";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
 import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
+import { AgentMarkdown } from "./blocks";
 import { duration, liveTokens, tokensLabel } from "./format";
 import { StatusMark } from "./SessionBar";
 
 /** How long Allow or Deny stays answered on its own before the session's next event says what came of it. */
 const ANSWERED_MS = 8000;
+
+const NO_ITEMS = new Map<string, Item>();
 
 /** The turn from the person's last line: its time going by the second while the agent works on it, then what it took, and its tokens. */
 function TurnLine({ turn, runs }: { turn: NonNullable<RecordUsage["turn"]>; runs: boolean }) {
@@ -47,13 +51,14 @@ function TurnLine({ turn, runs }: { turn: NonNullable<RecordUsage["turn"]>; runs
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, goesOnNext, focusSay }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, onOpenIssue, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, goesOnNext, focusSay }: {
   projectId: string;
   session: SessionView;
   title: string;
   ticket: string | null;
   /** The project's tickets by key: the claims the record shows cut the conversation by ticket. */
   items?: Map<string, Item>;
+  onOpenIssue: (id: string) => void;
   status: BarStatus;
   engines: EngineView[] | undefined;
   /** The Terminal window cell that shows it, by the window's number; null when none does. */
@@ -314,6 +319,11 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   // Cut by ticket as it moves: the earlier pages once, the newest page again from where they ended.
   const marksKey = session.marks.map((m) => `${m.itemId}@${m.at}`).join(",");
   const marks = useMemo(() => (marksKey ? marksKey.split(",").map((m) => { const at = m.lastIndexOf("@"); return { itemId: m.slice(0, at), at: Number(m.slice(at + 1)) }; }) : []), [marksKey]);
+  // a reply written in Markdown reads as it does in the panel's own conversations
+  const agentText = useCallback<AgentText>(
+    (text) => (looksLikeMarkdown(text) ? <AgentMarkdown text={text} byKey={items ?? NO_ITEMS} onOpenIssue={onOpenIssue} projectId={projectId} /> : null),
+    [items, onOpenIssue, projectId]
+  );
   const itemOfKey = useCallback((key: string) => items?.get(key)?.id ?? null, [items]);
   const earlierCut = useMemo(() => cutFrom(convo?.earlier ?? [], marks, itemOfKey), [convo?.earlier, marks, itemOfKey]);
   const cuts = useMemo(() => joinCuts(earlierCut.cuts, cutFrom(convo?.tail ?? [], marks, itemOfKey, earlierCut.state).cuts), [earlierCut, convo?.tail, marks, itemOfKey]);
@@ -412,12 +422,12 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
                     <div className="work-rule" role="separator">
                       <span>{seg.key ? `${seg.key} · ${t(seg.kind === "code" ? "review.kindCode" : "review.kindChat")}` : t("review.beforeTicket")}</span>
                     </div>
-                    <ConvoLines lines={seg.lines} open={open} toggle={toggle} say={say} coding={!!seg.key && seg.kind === "code"} waiting={asking && i === segments.length - 1} notes={notes} />
+                    <ConvoLines lines={seg.lines} open={open} toggle={toggle} say={say} coding={!!seg.key && seg.kind === "code"} waiting={asking && i === segments.length - 1} notes={notes} agentText={agentText} />
                     {seg.ticket && <span className="ai-review-work" data-testid="ai-session-seg-facts">{segmentFacts(seg.ticket, outcomeSay, (st) => STATUS[st].label)}</span>}
                   </div>
                 ))
               ) : (
-                <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} />
+                <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} agentText={agentText} />
               )}
             </>
           ) : null}

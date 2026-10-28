@@ -885,6 +885,7 @@ export function AgentPanel({
           engines={engines.data}
           cell={sessionRow?.cell ?? null}
           items={byKey}
+          onOpenIssue={onOpenIssue}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}

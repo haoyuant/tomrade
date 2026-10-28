@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
 import { logQuietly } from "~/lib/api";
 import { codingFromLines, foldTools, workConclusion, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
@@ -9,8 +9,9 @@ export type { ConvoLine, ConvoSay } from "~/lib/convoFold";
  * A conversation's lines, long runs of tool calls folded under what they came to; once it writes code, each stretch
  * of it folds whole under its conclusion. `coding`: all of it is writing code. `waiting`: the session waits on the person.
  * `notes`: a word said above a line, by its key — where it came from, when another side said it.
+ * `agentText`: how the agent's words read, when they need more than plain text (a reply written in Markdown); null keeps them plain.
  */
-export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay; coding?: boolean; waiting?: boolean; notes?: ReadonlyMap<number, string> }) {
+export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes, agentText }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay; coding?: boolean; waiting?: boolean; notes?: ReadonlyMap<number, string>; agentText?: AgentText }) {
   const entries = useMemo(() => foldTools(lines, coding ? 0 : codingFromLines(lines), waiting), [lines, coding, waiting]);
   return (
     <>
@@ -21,7 +22,7 @@ export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }:
             {entry.fold.map((l) => (
               <Fragment key={l.key}>
                 {notes?.has(l.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(l.key)}</p>}
-                <ConvoLineRow line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />
+                <ConvoLineRow line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} agentText={agentText} />
               </Fragment>
             ))}
           </details>
@@ -30,7 +31,7 @@ export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }:
         ) : (
           <Fragment key={entry.key}>
             {notes?.has(entry.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(entry.key)}</p>}
-            <ConvoLineRow line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+            <ConvoLineRow line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} agentText={agentText} />
           </Fragment>
         )
       )}
@@ -38,8 +39,10 @@ export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }:
   );
 }
 
+export type AgentText = (text: string) => ReactNode | null;
+
 /** One line of a conversation read back; a tool call folds open to its whole input and output. */
-export function ConvoLineRow({ line, open, onToggle, say }: { line: ConvoLine; open: boolean; onToggle: () => void; say: ConvoSay }) {
+export function ConvoLineRow({ line, open, onToggle, say, agentText }: { line: ConvoLine; open: boolean; onToggle: () => void; say: ConvoSay; agentText?: AgentText }) {
   const [copied, setCopied] = useState(false);
   const detail = line.detail;
   const copy = () => {
@@ -60,7 +63,7 @@ export function ConvoLineRow({ line, open, onToggle, say }: { line: ConvoLine; o
         </div>
       ) : (
         <div className="cs-convo-line" data-who={line.who}>
-          {line.text}
+          {(line.who === "agent" && agentText?.(line.text)) || line.text}
         </div>
       )}
       <button type="button" className="link-btn cs-convo-copy" onClick={copy}>
