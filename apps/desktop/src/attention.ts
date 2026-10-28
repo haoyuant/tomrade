@@ -353,7 +353,7 @@ export const attention = {
       const codeLink = ctx.get("codeLink");
       if (codeLink) {
         for (const projectId of ctx.get("db")?.openIds() ?? []) {
-          for (const s of codeLink.sessionsOf(projectId)) {
+          for (const s of codeLink.sessionsOf(projectId, undefined, { live: true })) {
             if (s.state !== "waiting" && s.state !== "error") continue;
             const key = s.threadId ? `thread:${s.threadId}` : `session:${s.id}`;
             const itemId = s.itemIds[0] ?? null;

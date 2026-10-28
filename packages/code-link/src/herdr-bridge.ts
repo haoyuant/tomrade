@@ -239,7 +239,10 @@ export class HerdrBridge {
     const w = this.words();
     const herdr = this.herdr();
     for (const projectId of this.ctx.db.openIds()) {
-      for (const s of this.store.sessions(projectId)) {
+      // The live ones, and the ended ones whose pane still carries what it was told.
+      const live = this.store.sessions(projectId, { live: true });
+      const ended = [...this.herdrTold.keys()].filter((id) => !live.some((s) => s.id === id)).flatMap((id) => { const s = this.store.session(projectId, id); return s?.projectId === projectId ? [s] : []; });
+      for (const s of [...live, ...ended]) {
         if (!s.herdrPane) continue;
         const live = s.state !== "ended" && s.state !== "lost";
         const told = this.herdrTold.get(s.id) ?? {};

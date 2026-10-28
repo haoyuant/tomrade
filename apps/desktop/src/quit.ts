@@ -67,7 +67,7 @@ function sessionsInHerdr(ctx: Context): number {
   const codeLink = ctx.get("codeLink");
   if (!codeLink) return 0;
   let n = 0;
-  for (const projectId of ctx.get("db")?.openIds() ?? []) n += codeLink.sessionsOf(projectId).filter((s) => s.herdrPane && s.state !== "ended" && s.state !== "lost").length;
+  for (const projectId of ctx.get("db")?.openIds() ?? []) n += codeLink.sessionsOf(projectId, undefined, { live: true }).filter((s) => s.herdrPane && s.state !== "ended" && s.state !== "lost").length;
   return n;
 }
 

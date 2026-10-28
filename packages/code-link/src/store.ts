@@ -601,6 +601,15 @@ const toSession = (r: SessionRow): SessionView => ({
   endedAt: r.ended_at
 });
 
+/** What `sessions` narrows to; `threadId: null` asks for sessions on no thread. */
+export interface SessionFilter {
+  itemId?: string;
+  delivery?: number;
+  live?: boolean;
+  threadId?: string | null;
+  externalId?: string;
+}
+
 export interface LinkPatch {
   headSha?: string | null;
   headAt?: number | null;
@@ -984,9 +993,18 @@ export class CodeLinkStore {
 
   // ── sessions ───────────────────────────────────────────────────────────────
 
-  sessions(projectId: string, filter: { itemId?: string; delivery?: number; live?: boolean } = {}): SessionView[] {
-    const rows = (this.db(projectId).prepare("SELECT * FROM plugin_code_link_sessions WHERE project_id = ? ORDER BY started_at DESC").all(projectId) as SessionRow[]).map(toSession);
-    return rows.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true));
+  /** Newest first. Every filter is applied by SQLite: ended rows are most of the table, and only matching rows are parsed. */
+  sessions(projectId: string, filter: SessionFilter = {}): SessionView[] {
+    const where = ["project_id = ?"];
+    const args: unknown[] = [projectId];
+    const and = (clause: string, ...values: unknown[]) => { where.push(clause); args.push(...values); };
+    if (filter.live) and("state <> 'ended'");
+    if (filter.delivery !== undefined) and("delivery = ?", filter.delivery);
+    if (filter.itemId) and("EXISTS (SELECT 1 FROM json_each(item_ids_json) WHERE value = ?)", filter.itemId);
+    if (filter.threadId === null) and("thread_id IS NULL");
+    else if (filter.threadId !== undefined) and("thread_id = ?", filter.threadId);
+    if (filter.externalId) and("external_id = ?", filter.externalId);
+    return (this.db(projectId).prepare(`SELECT * FROM plugin_code_link_sessions WHERE ${where.join(" AND ")} ORDER BY started_at DESC`).all(...args) as SessionRow[]).map(toSession);
   }
 
   /** What a session list shows at a glance: every session still going, then the newest few that ended since `since`. Reads only those rows. */
@@ -1001,7 +1019,10 @@ export class CodeLinkStore {
 
   /** Sessions that worked this ticket and moved on to another, newest first. */
   movedOn(projectId: string, itemId: string, delivery?: number): SessionView[] {
-    return this.sessions(projectId).filter((s) => !s.itemIds.includes(itemId) && s.worked.some((w) => w.itemId === itemId && (delivery === undefined || w.delivery === delivery)));
+    const rows = this.db(projectId)
+      .prepare("SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND EXISTS (SELECT 1 FROM json_each(worked_json) WHERE json_extract(value, '$.itemId') = ?) ORDER BY started_at DESC")
+      .all(projectId, itemId) as SessionRow[];
+    return rows.map(toSession).filter((s) => !s.itemIds.includes(itemId) && s.worked.some((w) => w.itemId === itemId && (delivery === undefined || w.delivery === delivery)));
   }
 
   session(projectId: string, id: string): SessionView | null {

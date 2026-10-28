@@ -66,7 +66,7 @@ export class Handoff {
 
   /** The thread's newest terminal session, a live one first; null when it never went to a terminal. */
   private terminalSessionOf(projectId: string, threadId: string): SessionView | null {
-    const own = this.host.store.sessions(projectId).filter((s) => s.threadId === threadId && s.mode === "terminal");
+    const own = this.host.store.sessions(projectId, { threadId }).filter((s) => s.mode === "terminal");
     return own.find(live) ?? own[0] ?? null;
   }
 

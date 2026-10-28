@@ -113,6 +113,16 @@ describe("code links in IM", () => {
     expect(w.delivered.length).toBe(count);
   });
 
+  it("hears a ticket's code on a change that is not only a session's activity", async () => {
+    const w = await watching(OPEN);
+    w.code.code = MERGED;
+    w.ctx.emit("codeLink/changed", w.project.id, "doing");
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.delivered.find(d => d.content.text === "Merged")).toBeUndefined();
+    w.ctx.emit("codeLink/changed", w.project.id, "moved");
+    await expect.poll(() => w.delivered.find(d => d.content.text === "Merged"), { timeout: 5000 }).toBeDefined();
+  });
+
   it("keeps code news and git's proposals out of a conversation that turned them off", async () => {
     const w = await watching();
     const im = w.ctx.settings.get().im as ImSettings;

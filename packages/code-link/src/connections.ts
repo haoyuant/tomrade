@@ -352,9 +352,9 @@ export class Connections {
     const ended: { projectId: string; session: SessionView }[] = [];
     const ownOf = (s: SessionView) => s.threadId === null && s.mode === "terminal" && s.agent === agent && s.externalId === externalId;
     // Asked on every hook: the live ones first, and the ended ones only when none is.
-    if (this.ctx.db.openIds().some((projectId) => this.store.sessions(projectId, { live: true }).some((s) => ownOf(s) && s.state !== "lost"))) return;
+    if (this.ctx.db.openIds().some((projectId) => this.store.sessions(projectId, { live: true, externalId }).some((s) => ownOf(s) && s.state !== "lost"))) return;
     for (const projectId of this.ctx.db.openIds()) {
-      const own = this.store.sessions(projectId).filter(ownOf);
+      const own = this.store.sessions(projectId, { externalId }).filter(ownOf);
       if (own.some((s) => s.state !== "ended" && s.state !== "lost")) return;
       for (const session of own) {
         if (session.state !== "ended" || !session.endedAt || now - session.endedAt > RESUME_WITHIN_MS) continue;

@@ -144,8 +144,8 @@ declare module "cordis" {
   interface Events {
     "im/registered"(id: string): void;
     "im/unregistered"(id: string): void;
-    /** Emitted by code link, when it is loaded. */
-    "codeLink/changed"(projectId: string): void;
+    /** Emitted by code link, when it is loaded; `session` "doing" when only a session's activity changed. */
+    "codeLink/changed"(projectId: string, session?: "doing" | "moved"): void;
     /** Emitted by schedules, when it is loaded. */
     "schedules/ran"(projectId: string, run: RoutineRun, name: string): void;
   }
@@ -237,7 +237,8 @@ export class Im extends Service {
     if (stored && typeof stored === "object" && "announcePresence" in stored) this.save(ImSettings.parse(stored));
     this.home.on("settings/changed", () => this.reload());
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
-    this.home.on("codeLink/changed", projectId => this.onCode(projectId));
+    // A session's activity alone (every tool call) changes nothing a watch tells.
+    this.home.on("codeLink/changed", (projectId, session) => { if (session !== "doing") this.onCode(projectId); });
     this.home.on("schedules/ran", (projectId, run, name) => this.onRoutine(projectId, run, name));
     // After the write that appended it has committed.
     this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId, statusMove(entry))); });

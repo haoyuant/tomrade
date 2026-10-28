@@ -155,7 +155,7 @@ export function trayRunning(ctx: Context): { who: string; cell: number | null; t
     const cells = ctx.bail("codeLink/session-cells", projectId) ?? {};
     let sessions: ReturnType<typeof codeLink.sessionsOf> = [];
     try {
-      sessions = codeLink.sessionsOf(projectId);
+      sessions = codeLink.sessionsOf(projectId, undefined, { live: true });
     } catch {
       // a project that cannot be read lists nothing running
     }
