@@ -45,6 +45,8 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
   const list = useMemo(() => entries.data ?? [], [entries.data]);
   const entry = list.find((e) => e.id === selected) ?? null;
   const anySource = (sources.data ?? []).some((s) => s.enabled);
+  // A repository on GitHub with gh or an account ready: its issues can come in with one click.
+  const github = (sources.data ?? []).find((s) => s.id === "github" && !s.enabled && !s.unavailable);
   useEffect(() => {
     if (open) reportAction("inbox.triage", "open");
   }, [open]);
@@ -93,6 +95,11 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
                 {tab === "new" && !anySource ? (
                   <>
                     <p className="meta-txt">{t("inbox.emptyNoSources")}</p>
+                    {github && (
+                      <button type="button" className="btn btn-primary" data-testid="inbox-enable-github" disabled={actions.setSource.isPending} onClick={() => actions.setSource.mutate({ id: github.id, enabled: true }, { onError: reportError })}>
+                        {t("inbox.switchOnSource", { name: github.title })}
+                      </button>
+                    )}
                     <button type="button" className="btn btn-secondary" onClick={() => setShowSources(true)}>
                       {t("inbox.chooseSources")}
                     </button>

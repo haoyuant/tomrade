@@ -7,6 +7,7 @@ import type {} from "@tomradex/settings";
 import type { Git, GitCredential } from "@tomradex/git";
 import type { ConnectionState, ProviderConnection } from "@tomradex/storage";
 import { GitHub, GitHubError, type Repo } from "./api.js";
+import { ghToken } from "./gh.js";
 import { DeviceFlow, OAuthError, type DeviceCode } from "./device.js";
 import { githubEnvironment, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential, writeGithubHelper, writeHelperToken } from "./helper.js";
 import { SessionStore, type Cipher, type Session } from "./session.js";
@@ -54,6 +55,8 @@ export interface GitHubConfig {
   pollUnitMs?: number;
   /** The binary git's credential helper runs as Node; defaults to the running one. */
   nodeBinary?: string;
+  /** Where the GitHub CLI's token comes from, for tests; defaults to `gh auth token`. */
+  ghToken?: () => Promise<string>;
 }
 
 /** A session renews this long before it runs out, so git never meets an expired token while the app runs. */
@@ -75,6 +78,8 @@ export class GitHubAccount extends Service {
   static inject = ["settings"];
 
   readonly api: GitHub;
+  /** Reads and comments on issues: the same account, else the GitHub CLI's, which no other call uses. */
+  readonly issues: GitHub;
   private readonly home: Context;
   private readonly flow: DeviceFlow | null;
   private readonly store: SessionStore;
@@ -98,6 +103,7 @@ export class GitHubAccount extends Service {
     super(ctx, "github");
     this.home = ctx;
     this.api = new GitHub(() => this.token(), config.apiUrl);
+    this.issues = new GitHub(() => this.readToken(), config.apiUrl);
     this.flow = config.clientId ? new DeviceFlow(config.clientId, config.webUrl, config.pollUnitMs) : null;
     this.store = new SessionStore(config.sessionFile, config.cipher);
     this.connection = {
@@ -212,6 +218,21 @@ export class GitHubAccount extends Service {
     return (await this.liveSession())?.accessToken ?? this.personalToken();
   }
 
+  /** token(), else the signed-in GitHub CLI's: for reading and commenting on issues only, so a machine with gh needs no second sign-in. */
+  async readToken(): Promise<string> {
+    return (await this.token()) || this.gh();
+  }
+
+  private ghCache: { at: number; token: string } | null = null;
+
+  private async gh(): Promise<string> {
+    // gh is a process spawn; a pull every few minutes is the busiest caller.
+    if (this.ghCache && Date.now() - this.ghCache.at < 60_000) return this.ghCache.token;
+    const token = await (this.config.ghToken ?? ghToken)();
+    this.ghCache = { at: Date.now(), token };
+    return token;
+  }
+
   async status(): Promise<ConnectionState> {
     if (this.signingIn) {
       const { code } = this.signingIn;
@@ -228,6 +249,7 @@ export class GitHubAccount extends Service {
         else return { connected: false, detail: error instanceof GitHubError ? error.message : "Could not reach GitHub" };
       }
     }
+    // The account's own state: storage and publishing use token(), which never falls back to gh.
     if (!this.personalToken()) return { connected: false, ...(this.problem ? { detail: this.problem } : {}) };
     try {
       return { connected: true, label: `@${await this.api.whoami()}` };

@@ -3,7 +3,7 @@ import { defineWords } from "@tomradex/domain";
 export const GITHUB_WORDS = defineWords("inbox-github", {
   en: {
     source: "GitHub issues",
-    connect: "Connect a GitHub account first — from a project's destination or Files settings",
+    connect: "Connect a GitHub account first — sign in to the GitHub CLI (gh auth login), or connect one from a project's destination or Files settings",
     noRepo: "None of this project's repositories is on GitHub",
     noAccess: "GitHub refused {{repo}}'s issues ({{why}}). The Tomrade GitHub App needs the Issues permission on it; a personal access token with the repo scope works too.",
     repoFailed: "{{repo}} was skipped this time: {{why}}. Its issues are caught up once it can be read again.",
@@ -15,7 +15,7 @@ export const GITHUB_WORDS = defineWords("inbox-github", {
   },
   zh: {
     source: "GitHub Issues",
-    connect: "先连接 GitHub 账号——在项目的存储位置或文件设置里",
+    connect: "先连接 GitHub 账号——用 GitHub CLI 登录（gh auth login），或在项目的存储位置或文件设置里连接",
     noRepo: "这个项目的仓库都不在 GitHub 上",
     noAccess: "GitHub 拒绝访问 {{repo}} 的 issues（{{why}}）。Tomrade GitHub App 需要这个仓库的 Issues 权限；也可以改用带 repo 范围的个人访问令牌。",
     repoFailed: "这次跳过了 {{repo}}：{{why}}。能读取后会补上这段时间的 issue。",
