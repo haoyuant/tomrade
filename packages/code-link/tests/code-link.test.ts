@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { CodeLink, askLineIn, deliveryMerged, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
@@ -767,6 +767,26 @@ describe("code link", () => {
     // The pane going is the end, whatever was said.
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true });
     expect(state()).toBe("ended");
+  });
+
+  it("tells of a session's hooks as its own change: only what it does, or where it stands, never the project's tickets", async () => {
+    const { codeLink, project, repo, ticket } = await machine(codeRepo());
+    const item = ticket("Hooks", "doing");
+    const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "test" });
+    const hook = (p: Record<string, unknown>) => codeLink.sessions.event(project.id, session.id, p as never);
+    hook({ hook_event_name: "UserPromptSubmit" });
+    const notify = vi.spyOn(codeLink as unknown as { notify: (projectId: string, change?: string) => void }, "notify");
+    const told = () => notify.mock.calls.splice(0).map(([, change]) => change);
+    hook({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/repo/a.ts" } });
+    hook({ hook_event_name: "PostToolUse", tool_name: "Read", tool_input: {}, tool_output: "ok" });
+    expect(told()).toEqual(["doing", "doing"]);
+    hook({ hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "git push" } });
+    // the notification after it repeats the same ask
+    hook({ hook_event_name: "Notification", notification_type: "permission_prompt" });
+    hook({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git push" } });
+    hook({ hook_event_name: "Stop" });
+    expect(told()).toEqual(["moved", "doing", "moved", "moved"]);
+    notify.mockRestore();
   });
 
   it("keeps what a session asks as a structure — the command, the file, a question — counted once and cleared once it moves on", async () => {

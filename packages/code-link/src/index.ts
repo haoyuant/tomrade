@@ -39,7 +39,7 @@ export { Starter, apartBranch, type StartGate, type StartMode, type StartOptions
 export type { ClaimResult } from "./claim.js";
 export { Handoff, HANDOFF_PROMPT, handedPrompt, type HandoffRefusal, type HandoffResult, type HandoffView } from "./handoff.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
-export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER, WINDOWS_TERMINAL, HOOK_EVENTS, describeTool, dshHooksSettings, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
+export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER, WINDOWS_TERMINAL, HOOK_EVENTS, describeTool, dshHooksSettings, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionChange, type SessionMoment, type SessionsOptions } from "./sessions.js";
 export { fitsCommandLine, promptAsArgument } from "./command-line.js";
 export { GH_INSTALL_URL, ghRow, probeGh, type GhStatus } from "./gh.js";
 export { AUTO_TERMINAL, BUILTIN_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, panesOf, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, type PaneTerminal, type LaunchResult, type TerminalPath } from "./terminal.js";
