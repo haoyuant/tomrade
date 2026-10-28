@@ -56,8 +56,8 @@ async function boot() {
   const turns: { text: string; options: Record<string, unknown>; mode?: string }[] = [];
   let world!: Awaited<ReturnType<typeof fresh>>;
   let ticket = "";
-  /** While set, asking which engines can run waits for it, as probing real CLIs does. */
-  const probe: { hold: Promise<void> | null } = { hold: null };
+  /** While set, asking which engines can run waits for it, as probing real CLIs does; `turn` holds a "wait" turn. */
+  const probe: { hold: Promise<void> | null; turn?: Promise<void> | null } = { hold: null };
   const turn: Engine["turn"] = async (input, io) => {
     const text = input.input.kind === "text" ? input.input.text : "";
     turns.push({ text, options: { ...(input.options as Record<string, unknown>) }, ...(input.permissionMode ? { mode: input.permissionMode } : {}) });
@@ -67,7 +67,7 @@ async function boot() {
       const task = text === "offer the merge" ? { task: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" } : {};
       world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title, ...task } });
     }
-    if (text === "wait" && probe.hold) await probe.hold;
+    if (text === "wait" && probe.turn) await probe.turn;
     if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
     if (text.startsWith("Brief")) {
       await io.tools.execute("ask_user", { question: "Which page first?", freeText: true });
@@ -270,14 +270,14 @@ describe("starting a ticket from IM", () => {
     await w.receive(say("s", `/start ${w.item.key}`));
     const card = await w.said(new RegExp(`^Start ${w.item.key} Fix the login page`));
     let release!: () => void;
-    w.probe.hold = new Promise(resolve => { release = resolve; });
+    w.probe.turn = new Promise(resolve => { release = resolve; });
     await w.receive(say("w", "wait"));
     await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(1);
     await w.receive(act("go", card.content.actions![0].token));
     await w.said(/Cannot process message: Stop the current turn/);
     expect((await w.said(new RegExp(`^${w.item.key} wasn't started$`))).replaceMessageId).toBeDefined();
     expect(w.code.starts).toHaveLength(0);
-    w.probe.hold = null;
+    w.probe.turn = null;
     release();
   });
 
