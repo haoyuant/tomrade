@@ -217,6 +217,35 @@ it("continues a ticket a terminal agent claimed itself as a prompt in that agent
   expect(fake.of("agent.prompt")).toHaveLength(2);
 });
 
+it("ends a session whose agent exited to its pane's shell as soon as herdr reads the pane again, and starts the ticket afresh", { timeout: 60_000 }, async () => {
+  const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
+  await ctx.repos.setCheckout(repo!.remote, checkout!);
+  const { Mcp } = await import("@tomradex/mcp");
+  await ctx.plugin(Mcp, { port: 0 });
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: path.join(root, "absent") });
+  await settle();
+  vi.spyOn(ctx.herdr, "installed").mockResolvedValue("0.9.5");
+  const item = ticket("Left at the trust prompt");
+  const first = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  if (!first.ok) throw new Error(first.message);
+  expect(first).toMatchObject({ launched: true, pane: "w1:p1" });
+  await until(() => fake.of("events.subscribe").length >= 2);
+  fake.setStatus("w1:p1", "claude", "blocked");
+  await until(() => codeLink.store.session(project.id, first.sessionId)!.state === "waiting");
+  // "No, exit": the agent is gone, its script with it, and the pane is back at the shell; herdr names no agent there now
+  fs.writeFileSync(path.join(codeLink.sessionDir(first.sessionId), "exited"), "");
+  fake.setStatus("w1:p1", null, "unknown");
+  await until(() => codeLink.store.session(project.id, first.sessionId)!.state === "ended");
+  expect(codeLink.store.session(project.id, first.sessionId)).toMatchObject({ herdrPane: "w1:p1", ask: null });
+  expect((await ctx.contributions.badgesFor(project.id))[item.id] ?? []).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
+  // the pane stays, and the ticket starts again in a new one, its session fresh
+  const again = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(again).toMatchObject({ ok: true, launched: true, pane: "w1:p2" });
+  expect(again.ok && again.sessionId).not.toBe(first.sessionId);
+  fake.close();
+});
+
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
 it("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
@@ -2682,6 +2711,14 @@ describe("starting tickets from a conversation", () => {
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "pane", pane: "w1:p1" });
     expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "code" });
     expect(await codeLink.backToPanel(project.id, threadId)).toMatchObject({ ok: false });
+    // its agent left the pane for the shell with no hook to say so (at a folder's trust, say): its script said it ended,
+    // and the next look at the conversation ends the session rather than keep the ticket waiting on that pane
+    const thread = agent.store.thread(project.id, threadId)!;
+    expect(ctx.bail("agent/before-send", thread)).toContain("pane w1:p1");
+    fs.writeFileSync(path.join(codeLink.sessionDir(terminal.id), "exited"), "");
+    expect(ctx.bail("agent/before-send", thread)).toBeUndefined();
+    expect(codeLink.store.session(project.id, terminal.id)).toMatchObject({ state: "ended", ask: null });
+    fs.rmSync(path.join(codeLink.sessionDir(terminal.id), "exited"));
 
     // the CLI exited: the conversation comes back, and the ticket's tracking goes on in a headless session again
     codeLink.sessions.event(project.id, terminal.id, { hook_event_name: "SessionStart", session_id: "fake-session-1", cwd: started.ok ? started.cwd : "" });

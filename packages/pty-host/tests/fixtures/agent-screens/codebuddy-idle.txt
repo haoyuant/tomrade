@@ -1,0 +1,6 @@
+● Done: the parser takes the new grammar and its tests pass.
+
+╭──────────────────────────────────────────────────────────────────────╮
+│ >                                                                    │
+╰──────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ bypass permissions on (shift+Tab to cycle)

@@ -372,9 +372,14 @@ export class Starter {
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
+    // Only the ticket started first on a repository without CLAUDE.md writes it; the others would conflict with its pull request.
+    const claudeMdBy =
+      !continued && state && !state.hasBrief
+        ? store.sessions(projectId, { live: true }).filter((s) => s.repoId === repo.id).sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))[0]?.itemIds.map((id) => ctx.items.get(projectId, id)).find((i) => i && i.id !== item.id)?.key ?? null
+        : null;
     const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en", state?.agentMerge ?? false)
-      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: repoSubfolder(board.repoPath, placement.checkout) ?? normalizeRepoPath(board.repoPath), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
+      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: repoSubfolder(board.repoPath, placement.checkout) ?? normalizeRepoPath(board.repoPath), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en", claudeMdBy });
     const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
     const prompt = opts.message?.trim() ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
@@ -528,9 +533,10 @@ export class Starter {
     return { ok: true, continued: false, threadId: null, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
   }
 
-  /** The thread's terminal session whose agent still runs, if any. */
+  /** The thread's terminal session whose agent still runs, if any: one whose agent exited, its pane back at the shell, ends here. */
   liveTerminalSession(projectId: string, threadId: string): SessionView | null {
-    return this.host.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId && s.mode === "terminal" && s.state !== "lost") ?? null;
+    const sessions = this.host.store.sessions(projectId, { live: true }).filter((s) => s.threadId === threadId && s.mode === "terminal" && s.state !== "lost");
+    return sessions.find((s) => !this.host.sessions.endIfExited(projectId, s.id)) ?? null;
   }
 
   /** A headless run refused because the conversation's agent is in a terminal: one process on its session at a time. */

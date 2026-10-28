@@ -24,6 +24,8 @@ export interface FirstPromptInput {
   merge?: boolean;
   /** Tomrade's own language, so the agent's output matches what the person reads in the app. */
   locale?: LanguageTag;
+  /** The ticket of the same repository that was started first and so adds the CLAUDE.md; set when it is not this one. */
+  claudeMdBy?: string | null;
 }
 
 /**
@@ -87,7 +89,9 @@ export function firstPrompt(input: FirstPromptInput): string {
     state?.hasBrief
       ? "Read CLAUDE.md or AGENTS.md before writing anything."
       : state?.readiness === "scaffolded"
-        ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the code"}, and add a short CLAUDE.md as part of this work.`
+        ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the code"}, and ${
+            input.claudeMdBy ? `leave CLAUDE.md alone — ${input.claudeMdBy} is adding it, and a second one would conflict.` : "add a short CLAUDE.md as part of this work."
+          }`
         : "The repository has no project in it yet.",
     waitsOnLine(blockers.map((b) => ({ key: b.key, title: b.title, status: b.status }))),
     accepted.length

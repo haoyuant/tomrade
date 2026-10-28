@@ -58,6 +58,58 @@ function titled(lines: string[]): { selected: null; allows: false } | null {
   return row ? { selected: null, allows: false } : null;
 }
 
+/** The question a folder's trust is asked with: "Do you trust the files in this folder?", "Is this a project you created or one you trust?". */
+const TRUST_ASKS = /\btrust\b[^?？]*[?？]|信任[^?？]*[?？]/i;
+/** A trust prompt's option: the cursor's mark, a number or a key in brackets, before its words. */
+const TRUST_OPTION = /^(?:([❯›▶➤→>●])\s*)?(?:(\d+)[.)]\s+|\[(\w)\]\s+)?(\S.*)$/;
+const TRUSTS = /^(?:yes\b|trust\b|i trust\b|always trust|是|信任)/i;
+const LEAVES = /^(?:no\b|don'?t\b|do not\b|quit\b|exit\b|cancel\b|reject\b|否|不|退出|拒绝)/i;
+/** A footer under a menu, which is no option: "Enter to confirm · Esc to cancel". */
+const FOOTER = /^(?:enter|esc|press|use arrow|↑|tab)\b|\bto (?:confirm|select|navigate|cancel|continue)\b/i;
+
+/** A folder's trust asked on a pane's screen: its options top to bottom, the one under the cursor, the first that trusts and the one that leaves. */
+export interface TrustPrompt {
+  options: string[];
+  selected: number;
+  trust: number;
+  exit: number;
+}
+
+/**
+ * The folder's trust an agent asks before it starts (Claude Code, Codex, Cursor, CodeBuddy…), read from its pane's last
+ * lines. Null unless the cursor's option and both a trusting and a leaving option can be told apart: the keys that
+ * answer it move the cursor from where it is, so a screen this cannot read whole gets none.
+ */
+export function trustOnScreen(screen: string): TrustPrompt | null {
+  const lines = screen.split("\n").map((l) => l.replace(EDGE, ""));
+  let at = -1;
+  for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (TRUST_ASKS.test(lines[i]!)) at = i;
+  if (at < 0) return null;
+  const below = lines.slice(at + 1);
+  const marked = below.findIndex((l) => /^[❯›▶➤→>●]\s*\S/.test(l));
+  if (marked < 0) return null;
+  // The options are the run of lines around the cursor's, up to a blank line or the footer.
+  let start = marked;
+  while (start > 0 && below[start - 1]!.trim() && !FOOTER.test(below[start - 1]!)) start--;
+  let end = marked;
+  while (end + 1 < below.length && below[end + 1]!.trim() && !FOOTER.test(below[end + 1]!)) end++;
+  const rows = below.slice(start, end + 1).map((l) => TRUST_OPTION.exec(l));
+  // Numbered or keyed options: a line without its number is the one before it, wrapped.
+  const counted = rows.some((m) => m?.[2] || m?.[3]) ? rows.filter((m) => m?.[1] || m?.[2] || m?.[3]) : rows;
+  const options = counted.map((m) => m?.[4]?.trim() ?? "");
+  const selected = counted.findIndex((m) => !!m?.[1]);
+  const exit = options.findIndex((o) => LEAVES.test(o));
+  const trust = options.findIndex((o) => TRUSTS.test(o) && !LEAVES.test(o));
+  if (selected < 0 || exit < 0 || trust < 0 || options.length < 2) return null;
+  return { options, selected, trust, exit };
+}
+
+/** The keys that put the cursor on an option of a trust prompt: arrows from where it is. Enter is pressed apart, once the screen shows it there. */
+export function arrowsTo(prompt: TrustPrompt, target: number): string[] {
+  const steps = target - prompt.selected;
+  return Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? "down" : "up"));
+}
+
 /** A line of a pane's screen that is furniture, not output: a rule, an empty input box, a shortcut hint. */
 const FURNITURE = /^[>❯$%#│|?]+$|^\? for shortcuts|^esc to interrupt|^\d+ tokens?\b|^ctrl\+/i;
 

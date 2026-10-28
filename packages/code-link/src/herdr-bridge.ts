@@ -310,6 +310,8 @@ export class HerdrBridge {
         this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true, herdr_pane: event.paneId });
         return;
       }
+      // The agent left the pane for its shell, the pane open: its launch script said so as it ended.
+      if (this.sessions.endIfExited(projectId, session.id)) return;
       // looked up beside the event, never before it: an event that waited on it could land after the next one
       if (!session.externalId) void this.learnId(projectId, session, event.paneId).catch((err) => this.ctx.logger.warn(`reading ${event.paneId}'s agent session: ${errorMessage(err)}`));
       const name = event.status === "working" ? "PreToolUse" : event.status === "blocked" ? "PermissionRequest" : event.status === "done" ? "Stop" : null;

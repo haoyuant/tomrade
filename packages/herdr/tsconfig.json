@@ -10,6 +10,7 @@
     { "path": "../contracts" },
     { "path": "../domain" },
     { "path": "../engine-kit" },
-    { "path": "../ipc" }
+    { "path": "../ipc" },
+    { "path": "../pty-host" }
   ]
 }
