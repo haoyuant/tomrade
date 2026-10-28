@@ -289,6 +289,9 @@ interface RunCtx {
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
 const LIMIT_TRIES = 3;
+/** Misses in a row (no answer in time, or an error) after which playbook recommendations stop asking the worker model a while. */
+const PLAYBOOK_MISSES_TO_PAUSE = 3;
+const PLAYBOOK_PAUSE_MS = 15 * 60_000;
 /** How long a try waits for an answer. */
 const TRY_MS = 90_000;
 /**
@@ -368,6 +371,8 @@ export class Agent extends Service implements AgentReader {
   private readonly origins = new Set<ThreadOrigins>();
   /** Playbooks read from each project's shared copy; refreshed when a run starts. */
   private projectPlaybooks = new Map<string, Map<string, Playbook>>();
+  private playbookMisses = 0;
+  private playbookPausedUntil = 0;
   private permissions = new Map<string, { pending: PendingView; answer(value: string | null): void }>();
   private permissionQueues = new Map<string, Promise<unknown>>();
   private activeByThread = new Map<string, RunCtx>();
@@ -711,32 +716,23 @@ export class Agent extends Service implements AgentReader {
   }
 
   /**
-   * `withinMs` is for callers that must not wait on the worker model (an agent creating a ticket):
-   * past it, or on any failure, the keyword fallback answers instead.
+   * `withinMs` is for callers that must not wait on the worker model: past it, or on any failure, the keyword
+   * fallback answers instead. `keywordsOnly` answers from the keywords at once, with the playbooks already loaded.
+   * After PLAYBOOK_MISSES_TO_PAUSE misses in a row the worker model is not asked for PLAYBOOK_PAUSE_MS.
    */
-  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts: { withinMs?: number; signal?: AbortSignal } = {}): Promise<PlaybookRecommendation> {
+  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts: { withinMs?: number; signal?: AbortSignal; keywordsOnly?: boolean } = {}): Promise<PlaybookRecommendation> {
     const started = Date.now();
+    if (opts.keywordsOnly) return this.keywordPlaybook(projectId, input);
     const budget = opts.withinMs !== undefined ? AbortSignal.timeout(opts.withinMs) : undefined;
     const signal = budget && opts.signal ? AbortSignal.any([budget, opts.signal]) : budget ?? opts.signal;
     // The refresh can wait on storage; a budgeted caller goes with the playbooks already loaded.
     await bestEffort(settleBy(this.refreshProjectPlaybooks(projectId), signal), this.ctx.logger, `refreshing the playbooks of ${projectId}`);
-    // A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
-    const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !input.workType || entry.workTypes.includes(input.workType) : entry.source !== "plugin"));
+    const candidates = this.playbookCandidates(projectId, input.workType);
     const words = this.words();
     const candidateIds = new Set(candidates.map((entry) => entry.id));
-    const fallback = (): PlaybookRecommendation => {
-      const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
-      const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
-      const preferred = workType === "coding"
-        ? "code.implement"
-        : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
-      // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
-      const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
-      const selected = candidates.find((entry) => entry.id === playbookId);
-      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words("recommendedByType"), source: "fallback", requires: selected?.requires ?? [] };
-    };
+    const fallback = () => this.keywordPlaybook(projectId, input);
     const llm = this.ctx.get("llm") as LlmService | undefined;
-    if (!llm || !candidates.length) return fallback();
+    if (!llm || !candidates.length || Date.now() < this.playbookPausedUntil) return fallback();
     try {
       if (!(await settleBy(llm.worker(), signal)).ok) return fallback();
       const result = await settleBy(llm.completeJson(recommendationSchema, {
@@ -747,14 +743,40 @@ export class Agent extends Service implements AgentReader {
         system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${languageName(words.locale)}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);
+      this.playbookMisses = 0;
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
       const selected = candidates.find((entry) => entry.id === result.playbookId);
       return { ...result, source: "llm", requires: selected?.requires ?? [] };
     } catch (error) {
-      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : opts.signal?.aborted ? "cancelled" : errorMessage(error);
+      const cancelled = !budget?.aborted && !!opts.signal?.aborted;
+      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : cancelled ? "cancelled" : errorMessage(error);
       this.ctx.logger.warn(`playbook recommendation fell back to keywords after ${Date.now() - started}ms: ${why}`);
+      if (!cancelled && ++this.playbookMisses >= PLAYBOOK_MISSES_TO_PAUSE) {
+        this.playbookMisses = 0;
+        this.playbookPausedUntil = Date.now() + PLAYBOOK_PAUSE_MS;
+        this.ctx.logger.warn(`playbook recommendations use keywords for ${PLAYBOOK_PAUSE_MS / 60_000} minutes: the worker model missed ${PLAYBOOK_MISSES_TO_PAUSE} times running`);
+      }
       return fallback();
     }
+  }
+
+  /** A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket. */
+  private playbookCandidates(projectId: string, workType?: "coding" | "general"): PlaybookIndexEntry[] {
+    return this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !workType || entry.workTypes.includes(workType) : entry.source !== "plugin"));
+  }
+
+  private keywordPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }): PlaybookRecommendation {
+    const candidates = this.playbookCandidates(projectId, input.workType);
+    const candidateIds = new Set(candidates.map((entry) => entry.id));
+    const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
+    const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
+    const preferred = workType === "coding"
+      ? "code.implement"
+      : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
+    // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
+    const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
+    const selected = candidates.find((entry) => entry.id === playbookId);
+    return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: this.words()("recommendedByType"), source: "fallback", requires: selected?.requires ?? [] };
   }
 
   openPlaybook(id: string, projectId?: string): string | null {

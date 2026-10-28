@@ -233,12 +233,27 @@ describe("create_item tool", () => {
     expect(items.list({ projectId: project.id }).filter((i) => i.title === "Once")).toHaveLength(2);
   });
 
-  it("gives the playbook recommendation a time budget and the caller's signal", async () => {
+  it("answers with the keywords' playbook at once, and takes the worker model's later only while the ticket is untouched", async () => {
     const f = await withTools();
+    type Pick = { playbookId: string | null; workType: "coding" | "general"; source: "llm" | "fallback" };
     const seen: unknown[] = [];
-    await f.ctx.plugin({ name: "fake-agent", apply: (ctx: typeof f.ctx) => ctx.provide("agent", { recommendPlaybook: async (_p: string, _i: unknown, opts: unknown) => (seen.push(opts), { playbookId: null, workType: "general" }) }) });
-    const signal = new AbortController().signal;
-    await f.ctx.tools.execute("create_item", { title: "Recommend me" }, { by: "ai:test", projectId: f.project.id, signal });
-    expect(seen).toEqual([{ withinMs: RECOMMEND_WITHIN_MS, signal }]);
+    const waiting: ((pick: Pick) => void)[] = [];
+    await f.ctx.plugin({ name: "fake-agent", apply: (ctx: typeof f.ctx) => ctx.provide("agent", { recommendPlaybook: async (_p: string, _i: unknown, opts: { keywordsOnly?: boolean }) => {
+      seen.push(opts);
+      return opts.keywordsOnly ? { playbookId: "task.assist", workType: "general", source: "fallback" } : new Promise<Pick>((resolve) => waiting.push(resolve));
+    } }) });
+    const llm: Pick = { playbookId: "document.write", workType: "general", source: "llm" };
+    const created = (await f.ctx.tools.execute("create_item", { title: "Recommend me" }, { by: "ai:test", projectId: f.project.id })) as { id: string; playbookId: string | null };
+    expect(created.playbookId).toBe("task.assist");
+    expect(seen).toEqual([{ keywordsOnly: true }, { withinMs: RECOMMEND_WITHIN_MS }]);
+    waiting.shift()!(llm);
+    await expect.poll(() => f.items.get(f.project.id, created.id)!.playbookId).toBe("document.write");
+
+    // Touched before the worker model answered: its pick does not overwrite the person's.
+    const second = (await f.ctx.tools.execute("create_item", { title: "Recommend me too" }, { by: "ai:test", projectId: f.project.id })) as { id: string };
+    f.items.update(f.project.id, second.id, { title: "Renamed by a person" }, "human");
+    waiting.shift()!(llm);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(f.items.get(f.project.id, second.id)!.playbookId).toBe("task.assist");
   });
 });

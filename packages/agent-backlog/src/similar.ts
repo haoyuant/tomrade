@@ -82,12 +82,15 @@ const lexicalVerdict = (scored: Scored[], limit: number): SimilarResult =>
     ? { verdict: scored[0].score > 0.72 ? "duplicate" : scored[0].score > 0.35 ? "related" : "none", matches: scored.slice(0, limit).map((s) => toMatch(s, "similar title")) }
     : { verdict: "none", matches: [] };
 
+/** How long the worker model may take to judge the candidates; past it, the scores alone answer. An agent waits on this. */
+export const SIMILAR_WITHIN_MS = 10_000;
+
 /**
  * Lexical candidates per proposal, then ONE worker-model judgement covering all
  * of them — the concurrency lives inside the tool, so checking ten titles costs
- * one model call, not ten. Falls back to scores alone when no model answers.
+ * one model call, not ten. Falls back to scores alone when no model answers in time.
  */
-export async function findSimilarBatch(llm: LlmService | null, proposals: { title: string; body?: string | null }[], existing: Item[], limit = 5): Promise<SimilarResult[]> {
+export async function findSimilarBatch(llm: LlmService | null, proposals: { title: string; body?: string | null }[], existing: Item[], limit = 5, opts: { withinMs?: number; signal?: AbortSignal } = {}): Promise<SimilarResult[]> {
   const scored = proposals.map((p) => candidatesFor(p.title, existing, limit));
   if (llm && scored.some((s) => s.length)) {
     try {
@@ -102,7 +105,9 @@ export async function findSimilarBatch(llm: LlmService | null, proposals: { titl
           .filter(Boolean)
           .join("\n")
       );
-      const out = await llm.completeJson(judgeSchema, { system: JUDGE_SYSTEM, user: sections.join("\n\n"), purpose: "similar" });
+      const budget = AbortSignal.timeout(opts.withinMs ?? SIMILAR_WITHIN_MS);
+      const signal = opts.signal ? AbortSignal.any([budget, opts.signal]) : budget;
+      const out = await llm.completeJson(judgeSchema, { system: JUDGE_SYSTEM, user: sections.join("\n\n"), purpose: "similar", signal, repair: false });
       return proposals.map((_p, i) => {
         const judged = out.results.find((r) => r.index === i);
         if (!judged) return lexicalVerdict(scored[i], limit);
@@ -118,6 +123,6 @@ export async function findSimilarBatch(llm: LlmService | null, proposals: { titl
   return scored.map((s) => lexicalVerdict(s, limit));
 }
 
-export async function findSimilar(llm: LlmService | null, proposed: { title: string; body?: string | null }, existing: Item[], limit = 5): Promise<SimilarResult> {
-  return (await findSimilarBatch(llm, [proposed], existing, limit))[0];
+export async function findSimilar(llm: LlmService | null, proposed: { title: string; body?: string | null }, existing: Item[], limit = 5, opts: { withinMs?: number; signal?: AbortSignal } = {}): Promise<SimilarResult> {
+  return (await findSimilarBatch(llm, [proposed], existing, limit, opts))[0];
 }
