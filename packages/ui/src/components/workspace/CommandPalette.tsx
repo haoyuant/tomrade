@@ -160,7 +160,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     { label: t("commandPalette.settings"), kb: keyLabel("settings"), run: actions.openSettings },
     { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
     { label: t("commandPalette.about"), kb: undefined, run: actions.openAbout },
-    { label: t("capabilities.label"), kb: undefined, run: () => requestAnimationFrame(() => openCapabilities()) },
+    { label: t("capabilities.label"), kb: undefined, run: () => openCapabilities() },
     { label: t("shortcuts.title"), kb: "?", run: actions.openShortcuts },
     { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
     ...THEME_OPTIONS.map((opt) => ({
