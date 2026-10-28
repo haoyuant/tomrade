@@ -85,7 +85,7 @@ describe("IM while a turn runs", () => {
     await w.receive(message("q", "/queue"));
     await expect.poll(() => w.said("1. second\n2. third")).toBe(true);
     await w.receive(message("s", "/status"));
-    await expect.poll(() => w.said("Working: reading the backlog\n2 waiting")).toBe(true);
+    await expect.poll(() => w.said(`Project: ${w.project.name}\nWorking: reading the backlog\n2 waiting`)).toBe(true);
 
     w.release();
     await expect.poll(() => w.userTexts()).toEqual(["long job", "second", "third"]);

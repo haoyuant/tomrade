@@ -195,6 +195,8 @@ export class Im extends Service {
   private readonly typingAt = new Map<string, number>();
   /** The conversations `/sessions` last listed per binding, so `/switch N` means what the person saw. */
   private readonly listed = new Map<string, string[]>();
+  /** Direct chats told how to go to a project they named, per chat and project. */
+  private readonly hinted = new Set<string>();
   /** What each running thread last said it was doing, for `/status`. */
   private readonly activity = new Map<string, string>();
   /** Per running thread: the tools called and the model retry in progress, for its progress message. */
@@ -510,6 +512,7 @@ export class Im extends Service {
       { name: "answer", description: w("cmdAnswer"), args: w("argsAnswer") },
       { name: "steer", description: w("cmdSteer"), args: w("argsSteer") },
       { name: "queue", description: w("cmdQueue") },
+      { name: "project", description: w("cmdProject"), args: w("argsProject") },
       { name: "sessions", description: w("cmdSessions") },
       { name: "switch", description: w("cmdSwitch"), args: "N" },
       { name: "archive", description: w("cmdArchive") },
@@ -1140,7 +1143,8 @@ export class Im extends Service {
         const queue = this.waiting(rows).filter(r => r !== row);
         if (text === "/status") {
           const doing = this.activity.get(b.thread_id);
-          const lines = [detail.pending ? this.w("waitingAnswer", { question: detail.pending.question.text })
+          const lines = [this.w("currentProject", { project: this.home.projects.get(b.project_id)?.name ?? b.project_id }),
+            detail.pending ? this.w("waitingAnswer", { question: detail.pending.question.text })
             : busy ? (doing ? this.w("workingOn", { doing }) : this.w("working")) : this.w("noTask")];
           if (queue.length) lines.push(this.w("waitingCount", { n: queue.length }));
           this.enqueue(b, `status:${row.id}`, { text: lines.join("\n") }, reply);
@@ -1236,6 +1240,7 @@ export class Im extends Service {
       } });
       if (input.kind === "text") this.store.run("UPDATE plugin_im_bindings SET actor_id = ?, anchor = ? WHERE id = ?", event.actor.id, reply.anchor, b.id);
       if (event.kind === "message") this.react(b, event.messageId, "received");
+      if (event.kind === "message" && input.kind === "text") this.projectHint(b, row, event.text);
       if (input.kind === "text" && this.capsOf(b)?.edit && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `queued:${row.id}`)) {
         this.replace(b, `queued:${row.id}`, { text: this.w("runningNow") });
       }
@@ -1518,11 +1523,30 @@ export class Im extends Service {
     this.enqueue(b, id, { text, ...(select.length ? { elements: select } : {}) }, { ...reply, visibleTo: reply.anchor ? actorId : null });
   }
 
-  /** `/sessions`, `/switch`, `/archive`, `/engine`, `/model`, `/effort`, `/mode`, `/start`. True when the message was one. */
+  /** `/project`, `/sessions`, `/switch`, `/archive`, `/engine`, `/model`, `/effort`, `/mode`, `/start`. True when the message was one. */
   private async option(b: Binding, row: Inbox, event: ImInbound & { kind: "message" }, text: string, reply: { anchor: string | null }): Promise<boolean> {
-    const [, name, arg = ""] = /^\/(sessions|switch|archive|engine|model|effort|mode|start)(?:\s+([\s\S]+))?$/.exec(text) ?? [];
+    const [, name, arg = ""] = /^\/(project|sessions|switch|archive|engine|model|effort|mode|start)(?:\s+([\s\S]+))?$/.exec(text) ?? [];
     if (!name) return false;
     const actor = event.actor.id;
+    if (name === "project") {
+      if (this.isGroup(b)) this.refuse(this.w("projectOnlyDm"));
+      if (arg.trim()) {
+        const target = this.projectNamed(arg);
+        if (!target) this.refuse(this.w("noProject", { value: arg.trim() }));
+        this.switchProject(b, row, actor, target.id, reply);
+        return true;
+      }
+      const { w } = this;
+      const others = this.openProjects().filter(p => p.id !== b.project_id);
+      const lines = [w("currentProject", { project: this.home.projects.get(b.project_id)?.name ?? b.project_id }), ...others.map(p => `- ${p.name}`),
+        others.length ? w("projectHint") : w("noOtherProjects")];
+      // Buttons for a short list; a select once it would crowd the screen.
+      const pick: Partial<ImContent> = others.length > 8 && this.capsOf(b)?.select
+        ? { elements: [{ type: "select", token: this.offer(b, "project", actor), placeholder: w("groupProject"), options: others.slice(0, 24).map(p => ({ label: p.name, value: p.id })) }] }
+        : others.length ? { actions: others.slice(0, 8).map(p => ({ label: p.name, token: this.offerValue(b, "project", actor, p.id) })) } : {};
+      this.enqueue(b, `project:${row.id}`, { text: lines.join("\n"), ...pick }, reply);
+      this.accept(row); return true;
+    }
     if (name === "start") {
       const [key, ...args] = arg.trim().split(/\s+/).filter(Boolean);
       if (!key) this.refuse(this.w("nameTicket"));
@@ -1659,6 +1683,7 @@ export class Im extends Service {
       return;
     }
     if (kind === "follow") { this.follow(b, row, actorId, value, reply); return; }
+    if (kind === "project") { this.switchProject(b, row, actorId, value, reply); return; }
     if (kind === "start" || kind === "start-adjust" || kind === "start!" || kind.startsWith("start-set:")) {
       const given = JSON.parse(value) as Partial<StartDraft> & { itemId: string };
       const item = this.code() ? this.startable(b.project_id, given.itemId) : null;
@@ -1992,6 +2017,67 @@ export class Im extends Service {
         this.w("sessionsBack")
       ].join("\n") }, reply);
     }, home ? { home } : {});
+  }
+
+  private openProjects() { return this.home.projects.list().filter(p => !p.archived); }
+
+  /** An open project by its id, name or key prefix, or the one name that starts so. */
+  private projectNamed(value: string) {
+    const v = value.trim().toLowerCase();
+    const open = this.openProjects();
+    const starts = open.filter(p => p.name.toLowerCase().startsWith(v));
+    return open.find(p => p.id === value.trim()) ?? open.find(p => p.name.toLowerCase() === v) ?? open.find(p => p.keyPrefix.toLowerCase() === v)
+      ?? (starts.length === 1 ? starts[0] : undefined);
+  }
+
+  /**
+   * A direct chat goes to another project: its route says so, as Settings would, and it continues the conversation it
+   * last had there, or a new one. Its conversation in the project it leaves stays, to come back to.
+   */
+  private switchProject(b: Binding, row: Inbox, actorId: string, projectId: string, reply: { anchor: string | null }) {
+    const { w } = this;
+    if (this.isGroup(b)) this.refuse(w("projectOnlyDm"));
+    const project = this.home.projects.get(projectId);
+    if (!project || project.archived || !this.home.db.has(projectId)) this.refuse(w("noProject", { value: projectId }));
+    if (projectId === b.project_id) { this.enqueue(b, `project:${row.id}`, { text: w("alreadyInProject", { project: project.name }) }, reply); this.accept(row); return; }
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse(w("stopFirst"));
+    const im = this.snapshot();
+    const i = im.routes.findIndex(r => r.id === b.route_id);
+    if (i < 0) this.refuse(w("choiceGone"));
+    im.routes[i] = { ...im.routes[i], projectId, boardId: null };
+    this.save(im);
+    const route = this.settings.routes.find(r => r.id === b.route_id)!;
+    const id = hash([b.connection_id, JSON.parse(b.address_json) as ImAddress, this.routeHash(route)]);
+    if (!this.store.binding(id)) this.store.run("INSERT OR IGNORE INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at, grp) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0)",
+      id, route.id, this.routeHash(route), b.connection_id, b.address_json, projectId, actorId, Date.now());
+    const to = this.store.binding(id)!;
+    const live = (threadId: string) => {
+      const t = threadId ? this.home.agent.store.thread(projectId, threadId) : undefined;
+      return t && !t.archived && t.surface === "assistant" ? t : undefined;
+    };
+    // The conversation this chat had in that project last, under whichever of its routes it was.
+    const back = live(to.thread_id) ?? this.store.bindings().filter(x => x.connection_id === b.connection_id && x.address_json === b.address_json && x.project_id === projectId)
+      .map(x => live(x.thread_id)).filter((t): t is NonNullable<typeof t> => !!t).sort((x, y) => y.updatedAt - x.updatedAt)[0];
+    const target = back ?? this.openThread(route);
+    this.rebind(to, target.id, back ? this.lastSeq(projectId, back.id) : 0, actorId, rebound => {
+      this.accept(row);
+      this.enqueue(rebound, `project:${row.id}`, { text: back ? w("projectContinues", { project: project.name, title: back.title || w("untitled") })
+        : w("projectNew", { project: project.name }) }, reply);
+    });
+  }
+
+  /** A direct chat that names another project is told once where it is and how to go there; the message still goes here. */
+  private projectHint(b: Binding, row: Inbox, text: string) {
+    if (this.isGroup(b)) return;
+    const said = text.toLowerCase();
+    const named = this.openProjects().find(p => {
+      if (p.id === b.project_id || this.hinted.has(`${b.id}:${p.id}`)) return false;
+      const name = p.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|[^\\p{L}\\p{N}])${name}\\s*(?:项目|project)|(?:项目|project)\\s*[“"'「]?${name}(?:$|[^\\p{L}\\p{N}])`, "u").test(said);
+    });
+    if (!named) return;
+    this.hinted.add(`${b.id}:${named.id}`);
+    this.enqueue(b, `project-hint:${row.id}`, { text: this.w("projectMentioned", { project: this.home.projects.get(b.project_id)?.name ?? b.project_id, other: named.name }) }, { anchor: null });
   }
 
   private ago(at: number): string {
@@ -2726,7 +2812,7 @@ export class Im extends Service {
 /** Commands that act at once, ahead of ordinary messages waiting for the turn. A demoted /steer carries its text in `input_json`. */
 function isControl(row: Inbox, event: ImInbound & { kind: "message" }): boolean {
   const text = event.text.trim();
-  return !row.input_json && (/^\/(stop|status|queue|help|sessions|archive|engine|model|effort|mode)$/.test(text) || /^\/(answer|steer|unqueue|switch|engine|model|effort|mode|start)\s/.test(text));
+  return !row.input_json && (/^\/(stop|status|queue|help|project|sessions|archive|engine|model|effort|mode)$/.test(text) || /^\/(answer|steer|unqueue|project|switch|engine|model|effort|mode|start)\s/.test(text));
 }
 
 const preview = (row: Inbox) => {

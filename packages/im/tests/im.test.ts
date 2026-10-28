@@ -336,7 +336,7 @@ describe("IM common layer through the SDK", () => {
     await w.receive(message("go"));
     await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(1);
     await w.receive(message("status", "/status"));
-    await expect.poll(() => w.delivered.some(d => d.content.text === "正在执行")).toBe(true);
+    await expect.poll(() => w.delivered.some(d => d.content.text === `项目：${w.project.name}\n正在执行`)).toBe(true);
     await w.receive(message("foreign-stop", "/stop", "mate"));
     await expect.poll(() => w.delivered.some(d => d.content.text === "无法处理消息：只有发起人可以停止当前执行")).toBe(true);
     expect(w.ctx.agent.activeRuns()).toHaveLength(1);
