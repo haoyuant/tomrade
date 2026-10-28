@@ -1110,6 +1110,9 @@ app.whenReady().then(async () => {
     const chooserCard = `[...document.querySelectorAll('.cs-row.cs-thread')].find((r) => r.textContent.includes('清理重复工单'))`;
     const choices = await wait(async () => tjs(`(() => { const li = ${chooserCard}?.closest('li'); return !!li && JSON.stringify([...li.querySelectorAll('[data-testid=cs-row-actions] button')].map((b) => b.textContent)) === JSON.stringify(['确认', '再看看', '先看看']); })()`), 8000);
     check("助手对话的提问在卡片下给出它的选项和「先看看」", choices, await tjs(`${chooserCard}?.closest('li')?.textContent ?? null`));
+    // 很长的选项在卡片里换行，不超出卡片，也不压住卡片上的字：量一个同样的按钮，量完拿掉
+    const longChoice = await tjs(`(() => { const li = ${chooserCard}?.closest('li'); const b = li?.querySelector('[data-testid=cs-choice]'); if (!b) return null; const long = b.cloneNode(); long.textContent = ${JSON.stringify("你接着做：检查 63184000 的完整 diff，跑测试，确认没有别的会话改过同一处，再决定要不要合并")}; b.after(long); const card = li.querySelector('.cs-card') ?? li, box = card.getBoundingClientRect(), r = long.getBoundingClientRect(), row = li.querySelector('.cs-row').getBoundingClientRect(), one = b.getBoundingClientRect().height; long.remove(); return { inside: r.right <= box.right + 0.5 && r.left >= box.left - 0.5, below: r.top >= row.bottom - 0.5, taller: Math.round((r.height / one) * 10) / 10 }; })()`);
+    check("很长的选项在卡片里换行，不超出卡片，排在卡片文字下面", longChoice?.inside && longChoice.below && longChoice.taller >= 1.8, JSON.stringify(longChoice));
     await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-look]')?.click(); true`);
     const looked = await wait(async () => opens.some((t) => t.threadId === chooser.id), 3000);
     await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-choice]')?.click(); true`);
