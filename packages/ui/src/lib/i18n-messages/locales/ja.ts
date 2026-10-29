@@ -43,6 +43,8 @@ export const ja: PartialMessages = {
   },
   theme: {
     ariaLabel: "テーマ設定",
+    sunrise: "朝焼け",
+    daybreak: "夜明け",
     dawn: "Dawn",
     paper: "Paper",
     ink: "Ink",
@@ -59,7 +61,7 @@ export const ja: PartialMessages = {
     groupPlugins: "プラグイン",
     manageLabel: "プラグインを管理",
     appearanceLabel: "外観",
-    appearanceLede: "4 つの組み込みテーマから選ぶか、独自のテーマを作成できます。Dawn は温かみのある紙色に朱色のアクセントを合わせたテーマで、新規ユーザーの既定です。",
+    appearanceLede: "6 つの組み込みテーマから選ぶか、独自のテーマを作成できます。新規ユーザーの既定「朝焼け」は薄紫の空に朱色から金色へのアクセント、「夜明け」はその暗色版です。",
     appIconTitle: "アプリアイコン",
     appIconLede: "この Mac の Dock で Tomrade が使うアイコンです。既定は透明なロゴです。",
     appIconLogo: "透明ロゴ",

@@ -121,7 +121,7 @@ const run = async () => {
   /* The ThemeProvider owns the class, so a theme must be set through a real
      control: the settings sheet's own switch on the projects home, the palette
      inside a project. */
-  const SEGMENT = { system: 0, light: 1, dark: 2, matcha: 3 };
+  const SEGMENT = { sunrise: 0, daybreak: 1, dawn: 2, light: 3, dark: 4, matcha: 5 };
   const settingsNav = (label) => `[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === '${label}')`;
   const themeViaSettings = async (theme) => {
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);

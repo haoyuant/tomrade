@@ -43,6 +43,8 @@ export const fr: PartialMessages = {
   },
   theme: {
     ariaLabel: "Préférence de thème",
+    sunrise: "Lever du jour",
+    daybreak: "Point du jour",
     dawn: "Aube",
     paper: "Papier",
     ink: "Encre",
@@ -59,7 +61,7 @@ export const fr: PartialMessages = {
     groupPlugins: "Plugins",
     manageLabel: "Gérer les plugins",
     appearanceLabel: "Apparence",
-    appearanceLede: "Choisissez l’un des quatre thèmes intégrés, ou créez le vôtre. Aube associe un papier chaud à des accents vermillon ; c’est le thème par défaut des nouveaux utilisateurs.",
+    appearanceLede: "Choisissez l’un des six thèmes intégrés, ou créez le vôtre. Lever du jour, le thème par défaut des nouveaux utilisateurs, fond le vermillon dans l’or sur un ciel lilas ; Point du jour est sa version sombre.",
     appIconTitle: "Icône de l’app",
     appIconLede: "L’icône que Tomrade porte dans le Dock de ce Mac. Le logo transparent est celle par défaut.",
     appIconLogo: "Logo transparent",

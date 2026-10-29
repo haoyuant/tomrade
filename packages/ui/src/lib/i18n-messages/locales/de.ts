@@ -43,6 +43,8 @@ export const de: PartialMessages = {
   },
   theme: {
     ariaLabel: "Design-Einstellung",
+    sunrise: "Morgenglanz",
+    daybreak: "Tagesanbruch",
     dawn: "Morgenrot",
     paper: "Papier",
     ink: "Tinte",
@@ -59,7 +61,7 @@ export const de: PartialMessages = {
     groupPlugins: "Plugins",
     manageLabel: "Plugins verwalten",
     appearanceLabel: "Erscheinungsbild",
-    appearanceLede: "Wähle aus vier integrierten Designs oder erstelle dein eigenes. Morgenrot kombiniert warmes Papier mit zinnoberroten Akzenten und ist der Standard für neue Nutzer.",
+    appearanceLede: "Wähle aus sechs integrierten Designs oder erstelle dein eigenes. Morgenglanz, der Standard für neue Nutzer, lässt Zinnoberrot über einem fliederfarbenen Himmel in Gold übergehen; Tagesanbruch ist sein dunkles Gegenstück.",
     appIconTitle: "App-Symbol",
     appIconLede: "Das Symbol, das Tomrade im Dock auf diesem Mac trägt. Standard ist das transparente Logo.",
     appIconLogo: "Transparentes Logo",

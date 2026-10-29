@@ -43,6 +43,8 @@ export const zhHant: PartialMessages = {
   },
   theme: {
     ariaLabel: "主題偏好",
+    sunrise: "晨曦",
+    daybreak: "破曉",
     dawn: "曙光",
     paper: "紙白",
     ink: "墨黑",
@@ -59,7 +61,7 @@ export const zhHant: PartialMessages = {
     groupPlugins: "外掛",
     manageLabel: "管理外掛",
     appearanceLabel: "外觀",
-    appearanceLede: "從四款內建主題中選擇，或建立自己的配色。預設主題「曙光」以暖紙色搭配朱紅色點綴。",
+    appearanceLede: "從六款內建主題中選擇，或建立自己的配色。預設主題「晨曦」在淡紫天色上以朱紅漸入金色點綴；「破曉」是它的深色版。",
     appIconTitle: "應用程式圖示",
     appIconLede: "Tomrade 在這台 Mac 的 Dock 上使用的圖示。預設是透明背景的標誌。",
     appIconLogo: "透明背景標誌",

@@ -359,10 +359,10 @@ describe("the loop engine on the platform", () => {
     expect(run.changes).toBe(2);
     expect(ctx.settings.get()).toMatchObject({ theme: "dark", language: "zh" });
     const foot = agent.store.messages(project.id, thread.id).map((m) => m.block).find((b) => b.type === "changes");
-    expect(foot).toMatchObject({ count: 2, items: [{ key: "Appearance", label: "dawn → dark", op: "updated" }, { key: "Language", label: "system → zh", op: "updated" }] });
+    expect(foot).toMatchObject({ count: 2, items: [{ key: "Appearance", label: "sunrise → dark", op: "updated" }, { key: "Language", label: "system → zh", op: "updated" }] });
 
     expect(agent.revert(project.id, runId).reverted).toBe(2);
-    expect(ctx.settings.get()).toMatchObject({ theme: "dawn", language: "system" });
+    expect(ctx.settings.get()).toMatchObject({ theme: "sunrise", language: "system" });
   });
 });
 
