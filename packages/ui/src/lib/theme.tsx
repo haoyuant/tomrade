@@ -7,12 +7,13 @@ import { sendSurfaceLook } from "./surface-look";
 
 export type ResolvedTheme = BuiltInTheme;
 export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" }[] = [
+  { value: "sunrise", labelKey: "theme.sunrise", icon: "i-sun" }, { value: "daybreak", labelKey: "theme.daybreak", icon: "i-moon" },
   { value: "dawn", labelKey: "theme.dawn", icon: "i-sun" },
   { value: "light", labelKey: "theme.paper", icon: "i-sun" }, { value: "dark", labelKey: "theme.ink", icon: "i-moon" }, { value: "matcha", labelKey: "theme.matcha", icon: "i-leaf" }
 ];
 /** Built-ins offered by the command palette; automatic switching lives in Appearance settings. */
 export const THEME_OPTIONS = BUILT_IN_THEME_OPTIONS;
-const AUTOMATION_DEFAULT: ThemeAutomation = { mode: "none", defaultTheme: "dawn", schedule: [], shuffleMinutes: 60 };
+const AUTOMATION_DEFAULT: ThemeAutomation = { mode: "none", defaultTheme: "sunrise", schedule: [], shuffleMinutes: 60 };
 
 interface ThemeContext {
   preference: ThemePreference;
@@ -25,7 +26,7 @@ interface ThemeContext {
   /** Deletes the theme and returns the way back: the theme at its place, with the preference and automation that named it. */
   deleteCustomTheme: (id: string) => () => void;
 }
-const Ctx = createContext<ThemeContext>({ preference: "dawn", theme: "dawn", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => () => {} });
+const Ctx = createContext<ThemeContext>({ preference: "sunrise", theme: "sunrise", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => () => {} });
 const mq = () => window.matchMedia("(prefers-color-scheme: dark)");
 
 export function cssColorToHex(value: string): string {
@@ -35,9 +36,9 @@ export function cssColorToHex(value: string): string {
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, "0")).join("")}`;
 }
-const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
+const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["sunrise", "daybreak", "dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
 function activePreference(manual: ThemePreference, automation: ThemeAutomation, themes: CustomTheme[], now = new Date()): Exclude<ThemePreference, "system"> {
-  const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "dawn";
+  const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "sunrise";
   if (automation.mode === "none") return manual === "system" ? fallback : manual;
   if (automation.mode === "system") return mq().matches ? "dark" : "light";
   if (automation.mode === "schedule") {
@@ -53,13 +54,13 @@ function activePreference(manual: ThemePreference, automation: ThemeAutomation, 
   return pool[Math.abs((bucket * 1103515245 + 12345) | 0) % pool.length] ?? fallback;
 }
 function resolve(preference: Exclude<ThemePreference, "system">, customThemes: CustomTheme[]): { base: BuiltInTheme; custom?: CustomTheme } {
-  if (preference.startsWith("custom:")) { const custom = customThemes.find(theme => theme.id === preference); return custom ? { base: custom.base, custom } : { base: "dawn" }; }
+  if (preference.startsWith("custom:")) { const custom = customThemes.find(theme => theme.id === preference); return custom ? { base: custom.base, custom } : { base: "sunrise" }; }
   return { base: preference as BuiltInTheme };
 }
 function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean): void {
   const root = document.documentElement, id = custom?.id ?? base;
   if (animate && root.dataset.themeId !== id) root.classList.add("theme-transition");
-  root.classList.remove("dark", "matcha", "dawn"); if (base !== "light") root.classList.add(base);
+  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak"); if (base !== "light") root.classList.add(base);
   for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES]) root.style.removeProperty(`--${name}`);
   if (custom) for (const [name, value] of Object.entries({ ...custom.tokens, ...custom.fonts })) root.style.setProperty(`--${name}`, value);
   root.dataset.themeId = id; if (animate) window.setTimeout(() => root.classList.remove("theme-transition"), 650);
@@ -67,7 +68,7 @@ function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boo
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const settings = useSettings(), save = useSaveSettings(), qc = useQueryClient();
-  const preference = settings.data?.theme ?? "dawn";
+  const preference = settings.data?.theme ?? "sunrise";
   const customThemes = useMemo(() => (settings.data?.customThemes ?? []) as CustomTheme[], [settings.data?.customThemes]);
   const automation = useMemo(() => ({ ...AUTOMATION_DEFAULT, ...((settings.data?.themeAutomation ?? {}) as Partial<ThemeAutomation>) }), [settings.data?.themeAutomation]);
   const [clock, setClock] = useState(0);
@@ -106,7 +107,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (current) save.mutate({ ...current, theme: id, themeAutomation: { ...automation, mode: "none" }, customThemes: [...customThemes, created] }, { onSuccess: () => onCreated?.(created) });
   }, [customThemes, qc, save, resolved.base, automation, t]);
   const deleteCustomTheme = useCallback((id: string) => {
-    const fallback = automation.defaultTheme === id ? "dawn" : automation.defaultTheme;
+    const fallback = automation.defaultTheme === id ? "sunrise" : automation.defaultTheme;
     const schedule = automation.schedule.filter(rule => rule.theme !== id);
     mutate({ customThemes: customThemes.filter(theme => theme.id !== id), theme: preference === id ? fallback : preference, themeAutomation: { ...automation, defaultTheme: fallback, schedule } });
     const index = customThemes.findIndex(theme => theme.id === id), deleted = customThemes[index];

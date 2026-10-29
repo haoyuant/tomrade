@@ -16,13 +16,13 @@ describe("settings", () => {
   it("returns defaults for registered sections and persists what is set", async () => {
     const p = file();
     const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
-    expect(ctx.settings.get().theme).toBe("dawn");
+    expect(ctx.settings.get().theme).toBe("sunrise");
     expect(ctx.settings.get().language).toBe("system");
-    expect(ctx.settings.get().themeAutomation.defaultTheme).toBe("dawn");
+    expect(ctx.settings.get().themeAutomation.defaultTheme).toBe("sunrise");
     const changes: string[] = [];
     ctx.on("settings/changed", (next, previous) => changes.push(`${previous.theme}->${next.theme}`));
     ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
-    expect(changes).toEqual(["dawn->dark"]);
+    expect(changes).toEqual(["sunrise->dark"]);
     expect(JSON.parse(fs.readFileSync(p, "utf8")).theme).toBe("dark");
 
     const reopened = await fresh({ plugins: [[Settings, { path: p }]] });

@@ -18,6 +18,7 @@ import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
 import "./styles/app.css";
 import "./styles/layouts.css";
+import "./styles/sunrise.css";
 
 // Local SQLite over IPC: refetching on focus buys nothing, invalidation is explicit.
 const queryClient = createQueryClient({ queries: { refetchOnWindowFocus: false, staleTime: 30_000 } });

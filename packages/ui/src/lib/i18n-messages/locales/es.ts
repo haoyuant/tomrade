@@ -43,6 +43,8 @@ export const es: PartialMessages = {
   },
   theme: {
     ariaLabel: "Preferencia de tema",
+    sunrise: "Amanecer",
+    daybreak: "Alborada",
     dawn: "Alba",
     paper: "Papel",
     ink: "Tinta",
@@ -59,7 +61,7 @@ export const es: PartialMessages = {
     groupPlugins: "Plugins",
     manageLabel: "Gestionar plugins",
     appearanceLabel: "Apariencia",
-    appearanceLede: "Elige entre cuatro temas integrados o crea el tuyo. Alba combina papel cálido con acentos bermellón y es el predeterminado para usuarios nuevos.",
+    appearanceLede: "Elige entre seis temas integrados o crea el tuyo. Amanecer, el predeterminado para usuarios nuevos, funde bermellón en oro sobre un cielo lila; Alborada es su versión oscura.",
     appIconTitle: "Icono de la app",
     appIconLede: "El icono que Tomrade usa en el Dock de este Mac. El logotipo transparente es el predeterminado.",
     appIconLogo: "Logotipo transparente",
