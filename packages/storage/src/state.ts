@@ -30,6 +30,8 @@ interface TableSpec {
   columns: readonly string[];
   /** WHERE clause over `@projectId`. */
   scope: string;
+  /** The rows an import replaces, where wider than `scope`. */
+  owns?: string;
   /** Deterministic ordering — the artifact must be byte-identical for identical data. */
   order: string;
 }
@@ -75,6 +77,7 @@ export const TABLES: readonly TableSpec[] = [
     // Both ends inside the project: an edge across projects has no home in one project's artifact.
     // The unary + keeps SQLite from probing the key once per pair of items (~25 ms on 650 items).
     scope: `from_item_id IN (${ITEMS_OF}) AND +to_item_id IN (${ITEMS_OF})`,
+    owns: `from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`,
     order: "from_item_id, to_item_id, kind"
   },
   { name: "view_item_rank", columns: ["view_id", "item_id", "rank"], scope: `view_id IN (${VIEWS_OF})`, order: "view_id, item_id" }
@@ -589,20 +592,6 @@ export function readClone(dir: string): { state: ProjectState; fill: Map<string,
 export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[]; additive?: string[] } = {}): void {
   const projectId = projectIdOf(state);
   db.transaction(() => {
-    // Each sweep scopes through a table a later one empties, so dependents go first.
-    db.prepare(`DELETE FROM view_item_rank WHERE view_id IN (${VIEWS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM item_labels WHERE item_id IN (${ITEMS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM item_values WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM field_options WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
-    db.prepare("DELETE FROM fields WHERE project_id = @projectId").run({ projectId });
-    db.prepare(`DELETE FROM item_relations WHERE from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`).run({ projectId });
-    db.prepare("DELETE FROM views WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM items WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM deliveries WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM labels WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM boards WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM repos WHERE project_id = @projectId").run({ projectId });
-
     const project = pick(state.manifest.project, PROJECT_COLUMNS);
     const existing = db.prepare("SELECT next_key_num, archived FROM projects WHERE id = @projectId").get({ projectId }) as { next_key_num: number; archived: number } | undefined;
     db.prepare(
@@ -611,7 +600,8 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, key_prefix = excluded.key_prefix, created_at = excluded.created_at, updated_at = excluded.updated_at`
     ).run({ ...project, archived: existing?.archived ?? 0, updated_at: Date.now() });
 
-    for (const spec of TABLES) {
+    // Each table owns its rows through one listed before it, so dependents go first, while that one still holds the old rows.
+    for (const spec of [...TABLES].reverse()) {
       let rows = state.tables[spec.name] ?? [];
       if (spec.name === "deliveries" && !rows.length) {
         rows = state.plugins?.code_link?.plugin_code_link_deliveries ?? [];
@@ -619,9 +609,13 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
       }
       // An artifact from before views belonged to the project has rows nothing can place; the project gets the defaults instead.
       if (spec.name === "views") rows = rows.filter((r) => typeof r.layout === "string" && r.project_id === projectId);
-      if (!rows.length) continue;
+      const owned = { where: spec.owns ?? spec.scope, params: { projectId } };
+      const picked = rows.map((row) => pick(row, spec.columns));
+      if (picked.length && replaceChanged(db, spec.name, spec.columns, picked, { owned, insert: "INSERT" })) continue;
+      db.prepare(`DELETE FROM ${spec.name} WHERE ${owned.where}`).run(owned.params);
+      if (!picked.length) continue;
       const stmt = db.prepare(`INSERT INTO ${spec.name} (${spec.columns.join(", ")}) VALUES (${spec.columns.map((c) => `@${c}`).join(", ")})`);
-      for (const row of rows) stmt.run(pick(row, spec.columns));
+      for (const row of picked) stmt.run(row);
     }
     if (!db.prepare("SELECT 1 FROM views WHERE project_id = @projectId LIMIT 1").get({ projectId })) seedDefaultViews(db, projectId, Date.now());
 
@@ -630,6 +624,44 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
 
     writePlugins(db, state.plugins ?? {}, opts.registrations ?? [], opts.additive ?? []);
   });
+}
+
+/**
+ * Bring the rows `owned` selects in `table` to `rows`, touching only those that differ: an unchanged row fires no
+ * trigger, so a ticket nobody edited is not indexed for search again. Every changed row goes out before any comes
+ * back in, so a unique index (one active delivery, one key per ticket) never holds two at once. `keep` leaves rows
+ * missing from `rows` in place. False when the table cannot be matched row by row; the caller replaces it whole.
+ */
+function replaceChanged(
+  db: StateDb,
+  table: string,
+  columns: readonly string[],
+  rows: Record<string, unknown>[],
+  opts: { insert: "INSERT" | "INSERT OR REPLACE"; owned?: { where: string; params: Record<string, unknown> }; keep?: boolean }
+): boolean {
+  const key = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; pk: number }[])
+    .filter((c) => c.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((c) => c.name);
+  if (!key.length || !key.every((c) => columns.includes(c))) return false;
+  const keyOf = (row: Record<string, unknown>) => JSON.stringify(key.map((c) => row[c]));
+  const incoming = new Map(rows.map((row) => [keyOf(row), row]));
+  // Two rows with one key fail a plain INSERT, as a whole replace always has.
+  if (opts.insert === "INSERT" && incoming.size < rows.length) return false;
+  const select = `SELECT ${columns.join(", ")} FROM ${table}${opts.owned ? ` WHERE ${opts.owned.where}` : ""}`;
+  const present = (opts.owned ? db.prepare(select).all(opts.owned.params) : db.prepare(select).all()) as Record<string, unknown>[];
+  const out: Record<string, unknown>[] = [];
+  for (const row of present) {
+    const id = keyOf(row);
+    const next = incoming.get(id);
+    if (next && columns.every((c) => row[c] === next[c])) incoming.delete(id);
+    else if (next || !opts.keep) out.push(row);
+  }
+  const remove = db.prepare(`DELETE FROM ${table} WHERE ${key.map((c) => `${c} = @${c}`).join(" AND ")}`);
+  for (const row of out) remove.run(pick(row, key));
+  const insert = db.prepare(`${opts.insert} INTO ${table} (${columns.join(", ")}) VALUES (${columns.map((c) => `@${c}`).join(", ")})`);
+  for (const row of incoming.values()) insert.run(row);
+  return true;
 }
 
 /** Replace the tables of the plugins registered here with the given rows; the rest are not this machine's to read. */
@@ -653,11 +685,15 @@ function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registratio
       } catch {
         continue;
       }
-      if (!additive.includes(ns)) db.prepare(`DELETE FROM ${table}`).run();
-      if (!rows.length) continue;
+      const keep = additive.includes(ns);
       const cols = columns.filter((c) => rows.some((r) => c in r));
+      const picked = rows.map((row) => pick(row, cols));
+      // A column no row names takes its default on a replace; matched in place, the row would keep the old value.
+      if (picked.length && cols.length === columns.length && replaceChanged(db, table, cols, picked, { insert: "INSERT OR REPLACE", keep })) continue;
+      if (!keep) db.prepare(`DELETE FROM ${table}`).run();
+      if (!picked.length) continue;
       const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => `@${c}`).join(", ")})`);
-      for (const row of rows) stmt.run(pick(row, cols));
+      for (const row of picked) stmt.run(row);
     }
   }
 }
