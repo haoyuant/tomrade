@@ -32,7 +32,7 @@ export interface ScrollState {
 
 /** The rows a pane keeps above its screen. */
 export const SCROLLBACK = 5_000;
-/** How long the frames of a burst of output wait to go as one. */
+/** Paints are at least this far apart: the frames of a burst of output go as one. */
 export const FRAME_MS = 16;
 
 /** How much of a title or progress report detection keeps, as herdr keeps it. */
@@ -62,7 +62,9 @@ export class Pane {
   private controller: Attachment | null = null;
   private shown: Screen | null = null;
   private seq = 0;
-  private timer: NodeJS.Timeout | null = null;
+  /** Cancels the paint on its way, if one is. */
+  private painting: (() => void) | null = null;
+  private paintedAt = 0;
   private lastScroll: ScrollState | null = null;
   private readonly cell: IBufferCell;
   /** Modes the public API does not report, read off the program's own sequences. */
@@ -249,7 +251,9 @@ export class Pane {
       this.offset = 0;
       this.schedule();
     }
-    this.pty.write(data);
+    // As user input, so xterm parses the echo that follows at once rather than a timer later (a whole 15.6 ms tick on
+    // Windows); its onData hands it on to the program.
+    this.term.input(data, true);
   }
 
   resize(cols: number, rows: number): void {
@@ -322,20 +326,30 @@ export class Pane {
     return `\x1b[M${chr(release ? 3 + (modifiers & 28) : b)}${chr(x)}${chr(y)}`;
   }
 
-  /** Paints what changed, for every window at once, a moment after output: a burst goes as one. */
+  /**
+   * Paints what changed, for every window at once: right after this turn of output when the last paint is a frame
+   * behind (a keystroke's echo), else once it is, so a burst goes as one.
+   */
   private schedule(): void {
-    if (this.timer || this.exited) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
+    if (this.painting || this.exited) return;
+    const paint = () => {
+      this.painting = null;
       this.flush();
-    }, FRAME_MS);
+    };
+    const wait = this.paintedAt + FRAME_MS - Date.now();
+    if (wait <= 0) {
+      const soon = setImmediate(paint);
+      this.painting = () => clearImmediate(soon);
+    } else {
+      const timer = setTimeout(paint, wait);
+      this.painting = () => clearTimeout(timer);
+    }
   }
 
   private flush(): void {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    this.painting?.();
+    this.painting = null;
+    this.paintedAt = Date.now();
     const next = this.screen();
     if (this.shown && this.attachments.size) {
       const bytes = diffFrame(this.shown, next);
@@ -371,7 +385,8 @@ export class Pane {
 
   dispose(): void {
     this.end();
-    if (this.timer) clearTimeout(this.timer);
+    this.painting?.();
+    this.painting = null;
     this.term.dispose();
   }
 }

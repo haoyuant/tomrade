@@ -75,6 +75,12 @@ describe("a row as the window paints it", () => {
     const row = renderRow(term.buffer.active.getLine(0), term.cols, term.buffer.active.getNullCell());
     expect(row.text).toBe("\x1b[0;38;5;208ma\x1b[0;38;5;208;48;2;1;2;3mb\x1b[0m");
   });
+
+  it("styles a cell anew when only its colour's kind or one attribute differs from the cell before", async () => {
+    const term = await written("\x1b[31ma\x1b[38;2;0;0;1mb\x1b[3mc\x1b[23md");
+    const row = renderRow(term.buffer.active.getLine(0), term.cols, term.buffer.active.getNullCell());
+    expect(row.text).toBe("\x1b[0;31ma\x1b[0;38;2;0;0;1mb\x1b[0;3;38;2;0;0;1mc\x1b[0;38;2;0;0;1md\x1b[0m");
+  });
 });
 
 const screen = (rows: string[], patch: Partial<Screen> = {}): Screen => ({ width: 10, height: rows.length, rows, widths: rows.map((r) => r.length), cursor: { x: 0, y: 0 }, modes: "M", ...patch });
