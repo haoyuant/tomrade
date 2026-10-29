@@ -196,7 +196,10 @@ const SCENES = {
       else if (Date.now() - idleSince > 4000) break;
       if (state === "ask") {
         mark("ask");
-        await sleep(1500);
+        // The agent may still be writing under its question; the choices only wake once it stops.
+        await h.waitFor(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].every((b) => !b.disabled)`, "the choices to wake", 120);
+        mark("choices");
+        await sleep(1200);
         // Pick any: every proposal; pick one: the first that says yes.
         const multiple = await h.$(`/any/i.test([...document.querySelectorAll('.q-ask:not(.done) .q-eyebrow')].at(-1)?.textContent ?? '')`);
         const chips = await h.$(`document.querySelectorAll('.q-ask:not(.done) .chip-opt').length`);
