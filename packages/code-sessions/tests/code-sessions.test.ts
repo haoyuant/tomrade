@@ -1672,7 +1672,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   await settle();
   // The setting is there, on by default, and machine-local.
-  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, background: true, maxPaneMB: 50, keepDays: 7 } });
+  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: false, background: true, maxPaneMB: 50, keepDays: 7 } });
   // What the cells record, alone: panes with no cell on them are the next test's.
   w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
@@ -1820,6 +1820,7 @@ it("records a pane no cell shows by watching it, never taking it over; a cell ta
   const stateFile = path.join(dir, "background-state.json");
   const recordingsDir = path.join(dir, "background-recordings");
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "background-settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile, recordingsDir }]] });
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { ...w.ctx.settings.get().terminalRecording, enabled: true } });
   fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: null } } }));
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   const watching = () => streams.filter((s) => s.mode === "observe" && !s.closed);

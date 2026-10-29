@@ -11,7 +11,7 @@ let dirs = 0;
 const fresh = (over: Partial<RecordingSettings> = {}, dir: string | null = path.join(root, `r${++dirs}`)) => {
   const clock = { now: 1_000_000 };
   const warnings: string[] = [];
-  const recorder = new Recorder({ dir, settings: () => ({ ...RecordingSettings.parse({}), ...over }), warn: (m) => warnings.push(m), now: () => clock.now });
+  const recorder = new Recorder({ dir, settings: () => ({ ...RecordingSettings.parse({}), enabled: true, ...over }), warn: (m) => warnings.push(m), now: () => clock.now });
   return { recorder, clock, warnings, dir };
 };
 const bytes = (text: string) => new Uint8Array(Buffer.from(text));
@@ -43,7 +43,7 @@ it("records a cell's frames as one stretch, named for when it began and ended, a
   expect(slice.records.map((r) => [r.t, r.full, r.key, text(r)])).toEqual([[1_000_000, true, false, "first"], [1_000_500, false, false, "second"]]);
   expect(slice).toMatchObject({ at: 1, cut: false, clean: true });
   // The folder is read afresh by another recorder: what one run wrote, the next one plays back.
-  const again = new Recorder({ dir, settings: () => RecordingSettings.parse({}), warn: () => undefined });
+  const again = new Recorder({ dir, settings: () => ({ ...RecordingSettings.parse({}), enabled: true }), warn: () => undefined });
   expect(again.has("w1:p1", 1_000_000, 1_000_001)).toBe(true);
   expect((await again.slice("w1:p1", 1_000_000, 1_002_000)).records).toHaveLength(3);
 });
@@ -143,7 +143,7 @@ it("reads what it can of a file cut off mid-record, and takes a stretch never cl
 });
 
 it("keeps each pane 7 days or 50 MB by default, whichever comes first: past the days go, then the pane's oldest while it is over its cap; what is open stays", async () => {
-  expect(RecordingSettings.parse({})).toEqual({ enabled: true, background: true, maxPaneMB: 50, keepDays: 7 });
+  expect(RecordingSettings.parse({})).toEqual({ enabled: false, background: true, maxPaneMB: 50, keepDays: 7 });
   const { recorder, clock, dir } = fresh({ keepDays: 1, maxPaneMB: 64 });
   const folder = (pane: string) => path.join(dir!, paneDir(pane));
   const day = 24 * 3600_000;
