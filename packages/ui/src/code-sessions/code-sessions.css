@@ -259,3 +259,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* "New" beside a row's name for its first minute, the assistant panel's badge; on a dot, at its corner. */
 .cs-row-name .sbar-new-badge { margin-left: 2px; }
 .cs-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
+
+/* Frosted by the system (Glass on macOS): the window is the glass. The page tints it instead of covering it,
+   down to the terminals, whose grid is drawn see-through; what floats over a terminal keeps its fill. */
+html[data-frosted] body { background: transparent; }
+html[data-frosted] .cs-side { background: color-mix(in srgb, var(--bg) 30%, transparent); }
+html[data-frosted] .cs-cell { background: color-mix(in srgb, var(--surface) 12%, transparent); }
+html[data-frosted] .cs-term { background: transparent; }
+html[data-frosted] :is(.cs-row, .cs-big) { background: color-mix(in srgb, var(--surface) 55%, transparent); }

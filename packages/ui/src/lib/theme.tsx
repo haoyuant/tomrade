@@ -82,7 +82,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     apply();
   }, [preference, customThemes, automation, active]);
   // Plugin windows match the app: told after each paint, and when the language changes.
-  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale), [active, customThemes, locale, theme]);
+  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass"), [active, customThemes, locale, theme]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);

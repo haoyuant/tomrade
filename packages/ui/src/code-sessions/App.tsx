@@ -208,6 +208,7 @@ export function App() {
     const root = document.documentElement;
     for (const [name, value] of Object.entries(look.tokens)) root.style.setProperty(name, value);
     root.classList.toggle("dark", look.dark);
+    root.toggleAttribute("data-frosted", !!look.frosted);
   }, [look]);
   const locale = look?.locale ?? state?.locale ?? "en";
   useEffect(() => {
