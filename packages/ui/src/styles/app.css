@@ -1751,10 +1751,11 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .sbar.is-cards { width: 280px; }
 .sbar-head { display: flex; align-items: center; gap: var(--space-1); height: var(--titlebar-h); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sbar-head-title { flex: 1; font-size: var(--text-sm); }
-.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2); flex-shrink: 0; }
+.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2) var(--space-2) 6px; flex-shrink: 0; }
 .sbar-filter { border: 1px solid var(--border-input); border-radius: 999px; background: transparent; color: var(--muted); font-size: 11px; line-height: 20px; padding: 0 8px; cursor: pointer; }
 .sbar-filter[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
-.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 0 var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
+/* 2px on top, taken from the filters' padding: the scroll box clips at its edge, and the open card's ring is drawn outside its border */
+.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 2px var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
 .sbar-card { text-align: left; width: 100%; min-width: 0; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); color: var(--fg); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font-size: var(--text-sm); }
 .sbar-card:hover { border-color: var(--border-input); }
 .sbar-card[data-status="wait"] { border-color: var(--warn); }
