@@ -100,6 +100,7 @@ jobs:
           # Cross-built the same way. Nothing is compiled, so the build machine's
           # glibc doesn't matter.
           - { name: Linux x64, slug: linux-x64, os: [self-hosted, macOS, ARM64], args: --linux --x64, install: --os=darwin --os=linux --cpu=arm64 --cpu=x64 }
+          - { name: Linux arm64, slug: linux-arm64, os: [self-hosted, macOS, ARM64], args: --linux --arm64, install: --os=darwin --os=linux --cpu=arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -215,6 +216,7 @@ jobs:
           - { name: macOS x64, slug: mac-x64 }
           - { name: Windows x64, slug: win-x64 }
           - { name: Linux x64, slug: linux-x64 }
+          - { name: Linux arm64, slug: linux-arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

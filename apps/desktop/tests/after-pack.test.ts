@@ -169,7 +169,7 @@ describe("node-pty in a packaged app", () => {
     expect(() => pruneConpty(root, "win32", "x64")).toThrow(/no prebuilt win32-x64/);
   });
 
-  it.each([["darwin", "universal"], ["darwin", "arm64"], ["linux", "x64"]])("leaves a %s %s app none of the built-in terminal's runtime", (platform, arch) => {
+  it.each([["darwin", "universal"], ["darwin", "arm64"], ["linux", "x64"], ["linux", "arm64"]])("leaves a %s %s app none of the built-in terminal's runtime", (platform, arch) => {
     const root = withPty();
     pruneConpty(root, platform, arch);
     for (const gone of ["node-pty", "@xterm/headless"]) expect(fs.existsSync(path.join(root, gone))).toBe(false);
