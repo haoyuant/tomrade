@@ -123,11 +123,12 @@ describe("the shell a plain terminal runs", () => {
   it("is PowerShell 7 when it is on PATH", () => {
     const pwsh = "C:\\Program Files\\PowerShell\\7\\pwsh.EXE".toLowerCase();
     expect(defaultShell(env, (f) => f.toLowerCase() === pwsh).file.toLowerCase()).toBe(pwsh);
+    expect(defaultShell(env, (f) => f.toLowerCase() === pwsh).args).toEqual(["-NoLogo"]);
   });
 
   it("is Windows PowerShell otherwise", () => {
     const builtin = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-    expect(defaultShell(env, (f) => f === builtin)).toEqual({ file: builtin, args: ["-NoLogo"] });
+    expect(defaultShell(env, (f) => f === builtin)).toEqual({ file: builtin, args: ["-NoLogo", "-NoExit", "-Command", expect.stringContaining("Remove-Module PSReadLine")] });
     expect(defaultShell(env, () => false).file).toBe("powershell.exe");
   });
 
