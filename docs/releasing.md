@@ -2,7 +2,7 @@
 
 `pnpm --filter @tomrade/desktop package` builds the backend and the renderer, then the installers, into `apps/desktop/release/`. On macOS that's a DMG and a ZIP. Add `-- --dir` to build just the unpacked app.
 
-To try a checkout in the real app on an Apple-silicon Mac, `pnpm install:dev` builds an unsigned arm64 app stamped with the next release plus `-dev` (`0.23.0-dev` after v0.22.0), replaces `/Applications/Tomrade.app` and starts it. It shares the installed app's data folder.
+To try a checkout in the real app on an Apple-silicon Mac, `pnpm install:dev` builds an unsigned arm64 app stamped with the next release plus `-dev` (`0.23.0-dev` after v0.22.0), replaces `/Applications/Tomrade.app` and starts it. On Windows (x64 or arm64) it builds the unsigned NSIS installer instead, stops the running Tomrade, installs silently over the existing install (the installer's default folder the first time) and starts it. Either way it shares the installed app's data folder.
 
 ## Official plugins carried in the app
 
