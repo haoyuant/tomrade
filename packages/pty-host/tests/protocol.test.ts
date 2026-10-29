@@ -132,6 +132,11 @@ describe("the shell a plain terminal runs", () => {
     expect(defaultShell(env, () => false).file).toBe("powershell.exe");
   });
 
+  it("looks for Windows PowerShell under C:\\Windows when SystemRoot is unset", () => {
+    const builtin = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    expect(defaultShell({ PATH: "C:\\Tools" }, (f) => f === builtin).file).toBe(builtin);
+  });
+
   it("finds a command on PATH by Windows' own extensions", () => {
     expect(onPath("git", { Path: "C:\\a;\"C:\\b\"", PATHEXT: ".EXE;.CMD" }, (f) => f === "C:\\b\\git.cmd")).toBe("C:\\b\\git.cmd");
     expect(onPath("git", { PATH: "C:\\a" }, () => false)).toBeNull();

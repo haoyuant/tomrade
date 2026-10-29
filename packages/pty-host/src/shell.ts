@@ -25,7 +25,7 @@ const dropOldPSReadLine = "if ((Get-Module PSReadLine).Version -lt [version]'2.1
 export function defaultShell(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = fs.existsSync): { file: string; args: string[] } {
   const pwsh = onPath("pwsh", env, exists);
   if (pwsh) return { file: pwsh, args: ["-NoLogo"] };
-  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\Windows";
+  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
   const builtin = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   return { file: exists(builtin) ? builtin : "powershell.exe", args: ["-NoLogo", "-NoExit", "-Command", dropOldPSReadLine] };
 }
