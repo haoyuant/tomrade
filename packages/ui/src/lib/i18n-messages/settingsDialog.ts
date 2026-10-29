@@ -10,7 +10,7 @@ export const settingsDialog = {
 
     appearanceLabel: "Appearance",
     appearanceLede:
-      "Choose from seven built-in themes, or create your own. Sunrise, the default for new users, runs vermilion into gold over a lilac sky; Daybreak is its dark twin.",
+      "Choose from nine built-in themes, or create your own. Sunrise, the default for new users, runs vermilion into gold over a lilac sky; Daybreak is its dark twin.",
     appIconTitle: "App icon",
     appIconLede: "The icon Tomrade wears in the Dock on this Mac. The transparent logo is the default.",
     appIconLogo: "Transparent logo",
@@ -246,7 +246,7 @@ export const settingsDialog = {
     pushFailed: "最近一次手机推送（{{channel}}）没有成功：{{reason}}",
 
     appearanceLabel: "外观",
-    appearanceLede: "选择七款内置主题，或创建自己的配色。默认主题「晨曦」在淡紫天色上用朱红渐入金色点缀；「破晓」是它的深色版。",
+    appearanceLede: "选择九款内置主题，或创建自己的配色。默认主题「晨曦」在淡紫天色上用朱红渐入金色点缀；「破晓」是它的深色版。",
     appIconTitle: "应用图标",
     appIconLede: "Tomrade 在这台 Mac 的 Dock 上使用的图标。默认是透明背景的 Logo。",
     appIconLogo: "透明背景 Logo",

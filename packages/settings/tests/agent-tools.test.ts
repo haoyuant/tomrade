@@ -68,7 +68,7 @@ describe("settings as agent tools", () => {
     await expect(call("update_settings", { changes: { github: { token: "mine" } } })).rejects.toThrow(/GitHub is the user's to change/);
     await expect(call("update_settings", { changes: { pet: { size: "huge" } } })).rejects.toThrow(/pet\.size/);
     // One bad section and nothing lands.
-    await expect(call("update_settings", { changes: { language: "zh", theme: "neon" } })).rejects.toThrow(/theme/);
+    await expect(call("update_settings", { changes: { language: "zh", theme: "plaid" } })).rejects.toThrow(/theme/);
     expect(ctx.settings.get().language).toBe("system");
     expect(await call("update_settings", { changes: { theme: "dark" } })).toMatchObject({ changed: [] });
   });

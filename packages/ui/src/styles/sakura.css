@@ -1,0 +1,70 @@
+/* Sakura: blush paper, plum ink, petals on the air. The petals and the branch are
+   one fixed, static layer behind a page that never scrolls, behind panes of
+   thin paper, so they are drawn once and never move. Colours and the petal
+   drawings come from --sakura-* in app.css. */
+@layer components {
+.sakura body { background: var(--sakura-glow), var(--sakura-air); }
+.sakura body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    var(--sakura-branch) right -18px top 26px / 340px auto no-repeat,
+    var(--sakura-petal-a) 38% 14% / 14px no-repeat,
+    var(--sakura-petal-b) 62% 31% / 18px no-repeat,
+    var(--sakura-petal-c) 47% 58% / 12px no-repeat,
+    var(--sakura-petal-a) 72% 79% / 16px no-repeat,
+    var(--sakura-petal-b) 27% 86% / 12px no-repeat,
+    var(--sakura-petal-c) 86% 44% / 20px no-repeat,
+    var(--sakura-petal-a) 11% 49% / 11px no-repeat,
+    var(--sakura-petal-b) 56% 93% / 15px no-repeat,
+    var(--sakura-petal-c) 19% 24% / 13px no-repeat,
+    var(--sakura-petal-a) 94% 66% / 12px no-repeat,
+    var(--sakura-blossom) 91% 90% / 30px no-repeat,
+    var(--sakura-blossom) 33% 70% / 18px no-repeat;
+}
+
+.sakura :is(.titlebar, .statusbar, .sidebar, .side-rail, .ai, .ai-rail) { background: var(--sakura-shell); }
+.sakura :is(.main-col, .detail, .sbar) { background: var(--sakura-pane); }
+.sakura .query-bar { background: transparent; }
+.sakura .titlebar {
+  border-bottom-color: transparent;
+  background: linear-gradient(90deg, transparent, var(--sakura-pink) 30%, var(--sakura-ink) 62%, transparent) bottom / 100% 1px no-repeat border-box, var(--sakura-shell);
+}
+
+/* A blossom marks each column, and the card you have open. */
+.sakura :is(.col-num, .mini-num)::before {
+  content: ""; display: inline-block; width: 0.95em; height: 0.95em; margin-right: 4px; vertical-align: -0.1em;
+  background: var(--sakura-blossom) center / contain no-repeat;
+}
+.sakura .col-head { border-image: linear-gradient(90deg, var(--sakura-ink), var(--sakura-pink) 30%, var(--border) 70%) 1; }
+.sakura .card[data-selected="true"] { box-shadow: 0 0 0 1px var(--accent), 0 8px 22px -10px var(--sakura-glow-btn); }
+.sakura .card[data-selected="true"]::after {
+  content: ""; position: absolute; right: 9px; bottom: 8px; width: 16px; height: 16px; pointer-events: none;
+  background: var(--sakura-blossom) center / contain no-repeat;
+}
+
+.sakura .side-row { border-radius: var(--radius-md); }
+.sakura .side-row[aria-current="true"] { background: var(--tag-bg-soft); border-left-color: var(--sakura-ink); }
+
+.sakura :is(.btn-primary, .theme-seg[aria-pressed="true"]) {
+  background: linear-gradient(135deg, var(--sakura-btn-from), var(--sakura-btn-to));
+  box-shadow: 0 6px 16px -8px var(--sakura-glow-btn);
+}
+.sakura :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover {
+  background: linear-gradient(135deg, var(--accent-active), var(--sakura-btn-from));
+  box-shadow: 0 8px 20px -8px var(--sakura-glow-btn);
+}
+.sakura .btn-primary:disabled { box-shadow: none; }
+.sakura :is(.btn-primary, .theme-seg, .theme-switch) { border-radius: 999px; }
+
+.sakura :is(.menu, .palette, .slash-menu) { border-color: var(--tag-bg-strong); }
+.sakura ::selection { background: var(--tag-bg-base); }
+
+/* The preview: a sheet with a few petals on it. */
+.mode.sakura {
+  background:
+    var(--sakura-petal-a) 82% 22% / 12px no-repeat,
+    var(--sakura-petal-c) 12% 78% / 10px no-repeat,
+    var(--sakura-blossom) 90% 92% / 22px no-repeat,
+    var(--sakura-air);
+}
+}
