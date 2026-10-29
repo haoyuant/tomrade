@@ -18,8 +18,8 @@ import { fileURLToPath } from "node:url";
 const WIDTH = 1440;
 const HEIGHT = 900;
 const SCALE = 4 / 3;
-const FPS = 30;
-app.disableHardwareAcceleration();
+const FPS = Number(process.env.FILM_FPS ?? 60);
+if (process.env.FILM_GPU === "0") app.disableHardwareAcceleration();
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const scene = process.argv[2] ?? "tidy";
@@ -48,17 +48,28 @@ const SEED = [
 function film(win, file) {
   const size = { width: Math.round(WIDTH * SCALE), height: Math.round(HEIGHT * SCALE) };
   const ffmpeg = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", `${size.width}x${size.height}`, "-r", String(FPS), "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", file], { stdio: ["pipe", "inherit", "inherit"] });
+  // The newest paint stays an image until a frame is due: converting every paint stalls the painter.
+  let fresh = null;
   let last = null;
   let told = false;
+  let paints = 0;
+  const perSecond = [];
   win.webContents.on("paint", (_event, _dirty, image) => {
     const s = image.getSize();
+    paints++;
+    const sec = Math.floor((performance.now() - started) / 1000);
+    perSecond[sec] = (perSecond[sec] ?? 0) + 1;
     if (!told) { told = true; console.log(`[film] paints ${s.width}×${s.height}`); }
-    last = (s.width === size.width && s.height === size.height ? image : image.resize(size)).toBitmap();
+    fresh = s.width === size.width && s.height === size.height ? image : image.resize(size);
   });
   win.webContents.setFrameRate(FPS);
   const started = performance.now();
   let frames = 0;
   const tick = setInterval(() => {
+    if (fresh) {
+      last = fresh.toBitmap();
+      fresh = null;
+    }
     if (!last) return;
     // Catch up after a busy main thread, so the video's clock is the wall clock.
     const due = Math.floor(((performance.now() - started) / 1000) * FPS);
@@ -71,6 +82,8 @@ function film(win, file) {
     at: () => (performance.now() - started) / 1000,
     async stop() {
       clearInterval(tick);
+      const seconds = (performance.now() - started) / 1000;
+      console.log(`[film] ${paints} paints in ${seconds.toFixed(1)} s, busiest second ${Math.max(0, ...perSecond.filter(Boolean))}, per second: ${perSecond.map((n) => n ?? 0).join(" ")}`);
       ffmpeg.stdin.end();
       await new Promise((resolve) => ffmpeg.on("close", resolve));
     }
@@ -152,6 +165,15 @@ const running = `document.querySelector('.ai-send')?.getAttribute('aria-label') 
 const idle = `!!document.querySelector('.ai-send') && document.querySelector('.ai-send').getAttribute('aria-label') !== 'Stop'`;
 
 const SCENES = {
+  /** No agent: the cursor and the keyboard, to measure how smoothly a take paints. */
+  async probe({ h, mark }) {
+    for (const expr of [`document.querySelector('.ai-input')`, `document.querySelector('.card')`, `document.querySelector('.ai-input')`]) await h.hover(expr);
+    await h.click(`document.querySelector('.ai-input')`);
+    mark("type");
+    await h.type("Just checking how smooth this looks.");
+    await sleep(1000);
+  },
+
   /** Short B: the assistant tidies the backlog, the board changes, one click reverts the whole run. */
   async tidy({ h, mark }) {
     await h.click(`document.querySelector('.ai-input')`);
@@ -178,9 +200,19 @@ const SCENES = {
         // Pick any: every proposal; pick one: the first that says yes.
         const multiple = await h.$(`/any/i.test([...document.querySelectorAll('.q-ask:not(.done) .q-eyebrow')].at(-1)?.textContent ?? '')`);
         const chips = await h.$(`document.querySelectorAll('.q-ask:not(.done) .chip-opt').length`);
-        if (multiple) for (let i = 0; i < chips; i++) await h.click(`document.querySelectorAll('.q-ask:not(.done) .chip-opt')[${i}]`);
+        // A re-render can drop a pick, so every chip is checked until all of them are on.
+        if (multiple) for (let round = 0; round < 3; round++) {
+          for (let i = 0; i < chips; i++) {
+            if (await h.$(`document.querySelectorAll('.q-ask:not(.done) .chip-opt')[${i}]?.getAttribute('aria-pressed') !== 'true'`)) await h.click(`document.querySelectorAll('.q-ask:not(.done) .chip-opt')[${i}]`);
+          }
+          await sleep(300);
+          if (await h.$(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].every((b) => b.getAttribute('aria-pressed') === 'true')`)) break;
+        }
         else await h.click(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].find((b) => /^(apply|yes|go|write|merge|do it|allow)/i.test(b.textContent.trim())) ?? document.querySelector('.q-ask:not(.done) .chip-opt')`);
+        // Confirm only once the pick has taken; then wait for this question to close, so it is never answered twice.
+        await h.waitFor(`document.querySelector('.q-ask:not(.done) .q-confirm button')?.disabled === false`, "Confirm to wake", 10);
         await h.click(`document.querySelector('.q-ask:not(.done) .q-confirm button')`);
+        await h.waitFor(`!document.querySelector('.q-ask:not(.done)')`, "the question to close", 30);
         mark("answered");
       }
       await sleep(500);

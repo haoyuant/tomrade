@@ -6,13 +6,14 @@
     "kicker": "Tomrade · Backlog",
     "en": "Backlog spring cleaning.",
     "zh": "需求池大扫除，附赠后悔药。",
-    "tone": "paper",
-    "seconds": 2.6
+    "seconds": 2.8
    }
   },
   {
-   "from": 2.5,
+   "from": 2.4,
    "to": 6.9,
+   "kicker": "The ask",
+   "at": "tr",
    "en": "Nine tickets. Two of them are twins.",
    "zh": "九张工单，其中两张是双胞胎。",
    "cam": {
@@ -30,24 +31,14 @@
      0.05,
      0.75
     ]
-   },
-   "sfx": [
-    {
-     "at": 2.7,
-     "kind": "typing",
-     "until": 6.4
-    },
-    {
-     "at": 6.75,
-     "kind": "click",
-     "gain": 0.6
-    }
-   ]
+   }
   },
   {
    "from": 6.9,
-   "to": 20.3,
+   "to": 19.2,
    "speed": 8,
+   "kicker": "Reading",
+   "at": "br",
    "en": "It reads every ticket first. Unlike some of us.",
    "zh": "它先把每张单都读一遍。比某些人强。",
    "cam": {
@@ -63,13 +54,15 @@
     ],
     "move": [
      0,
-     0.7
+     0.6
     ]
    }
   },
   {
-   "from": 20.3,
-   "to": 24.6,
+   "from": 19.2,
+   "to": 23.2,
+   "kicker": "The plan",
+   "at": "bl",
    "en": "It proposes. You decide.",
    "zh": "它出方案，你拍板。老板体验，拉满。",
    "cam": {
@@ -80,41 +73,53 @@
     ],
     "to": [
      1110,
-     150,
-     770
+     120,
+     800
     ],
     "move": [
      0,
-     0.35
+     0.45
     ]
-   },
-   "sfx": [
-    {
-     "at": 22.72,
-     "kind": "click"
-    },
-    {
-     "at": 23.96,
-     "kind": "click"
-    }
-   ]
+   }
   },
   {
-   "from": 24.6,
-   "to": 58.6,
+   "from": 27.0,
+   "to": 29.6,
+   "kicker": "The plan",
+   "at": "bl",
+   "en": "Nothing runs until you say so.",
+   "zh": "你不点头，它一个字都不改。",
+   "cam": {
+    "from": [
+     1110,
+     120,
+     800
+    ],
+    "to": [
+     1110,
+     120,
+     800
+    ]
+   }
+  },
+  {
+   "from": 29.6,
+   "to": 62.0,
    "speed": 8,
+   "kicker": "Writing",
+   "at": "tr",
    "en": "Twins merged. The monster ticket, split four ways.",
    "zh": "双胞胎合体，巨无霸一拆四。",
    "cam": {
     "from": [
      1110,
-     150,
-     770
+     120,
+     800
     ],
     "to": [
-     340,
-     300,
-     1060
+     330,
+     330,
+     1000
     ],
     "move": [
      0,
@@ -123,43 +128,47 @@
    }
   },
   {
-   "from": 58.6,
-   "to": 63.0,
+   "from": 62.0,
+   "to": 67.5,
+   "kicker": "One run",
+   "at": "bl",
    "en": "Seven changes, one run.",
    "zh": "七处改动，一次写完。",
    "cam": {
     "from": [
-     340,
-     300,
-     1060
+     330,
+     330,
+     1000
     ],
     "to": [
      1060,
-     560,
+     600,
      860
     ],
     "move": [
-     0.25,
+     0.3,
      0.8
     ]
    },
    "sfx": [
     {
-     "at": 58.75,
+     "at": 62.1,
      "kind": "chime"
     }
    ]
   },
   {
-   "from": 63.0,
-   "to": 69.2,
+   "from": 67.5,
+   "to": 73.5,
+   "kicker": "Undo",
+   "at": "bl",
    "en": "Regret it? Revert the whole run.",
    "zh": "后悔了？整次运行，一键撤回。",
    "note": "Undo covers what Tomrade wrote. Your code stays put. · 撤回的是 Tomrade 写的内容，不动你的代码。",
    "cam": {
     "from": [
      1060,
-     560,
+     600,
      860
     ],
     "to": [
@@ -174,21 +183,16 @@
    },
    "sfx": [
     {
-     "at": 65.52,
-     "kind": "click"
-    },
-    {
-     "at": 66.05,
+     "at": 70.35,
      "kind": "undo"
     }
    ]
   },
   {
    "card": {
-    "en": "From idea to merged PR, with the agents you already use.",
-    "zh": "把想法交给 Agent，一路跟到合并。 · tomrade.com",
-    "tone": "rust",
-    "seconds": 3.2,
+    "en": "From idea to merged PR,\nwith the agents you already use.",
+    "zh": "把想法交给 Agent，一路跟到合并 · tomrade.com",
+    "seconds": 3.4,
     "logo": true
    }
   }

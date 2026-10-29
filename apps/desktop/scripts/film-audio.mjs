@@ -69,7 +69,15 @@ function bed(seconds) {
 
 const EFFECTS = {
   click: (rnd) => ({ len: 0.06, fn: (t) => (rnd() * Math.exp(-t * 400) * 0.35 + Math.sin(2 * Math.PI * 2100 * t) * Math.exp(-t * 120) * 0.18) }),
-  key: (rnd) => ({ len: 0.03, fn: (t) => rnd() * Math.exp(-t * 600) * 0.09 }),
+  // A soft felt tap, not a tick: low-passed noise over a little body, pitch varied per key.
+  key: (rnd) => {
+    let lp = 0;
+    const body = 180 + rnd() * 60;
+    return { len: 0.05, fn: (t) => {
+      lp += 0.18 * (rnd() - lp);
+      return (lp * 0.55 + Math.sin(2 * Math.PI * body * t) * 0.5) * Math.exp(-t * 140) * 0.06;
+    } };
+  },
   whoosh: (rnd) => {
     let lp = 0;
     return { len: 0.7, fn: (t) => {
