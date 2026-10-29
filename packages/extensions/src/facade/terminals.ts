@@ -4,7 +4,12 @@ import type { Facade } from "./shared.js";
 export const terminalsApi = ({ host }: Facade): TerminalsApi => {
   const herdr = () => host.svc("terminals");
   return {
-    state: () => host.call(() => herdr().bridge()),
+    state: () =>
+      host.call(async () => {
+        const bridge = await herdr().bridge();
+        // The SDK has no word for a host this app may not open: to a plugin it does not answer.
+        return bridge.state === "forbidden" ? { state: "notRunning", version: (await herdr().installed()) ?? "0" } : bridge;
+      }),
     open: (paneId, opts) =>
       host.call(async () => {
         const stream = await herdr().terminal(String(paneId), { mode: opts.mode === "observe" ? "observe" : "control", cols: Number(opts.cols), rows: Number(opts.rows) });

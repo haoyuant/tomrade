@@ -95,6 +95,7 @@ function Banner({ state }: { state: WindowState }) {
         )}
       </>
     );
+  else if (b.state === "forbidden") body = <span>{say("hostForbidden")}</span>;
   else if (state.revive === "starting") body = <span>{say(builtin ? "hostStarting" : "herdrStarting")}</span>;
   else if (state.revive === "failed" && (builtin || b.state === "notRunning"))
     body = (

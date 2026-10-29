@@ -138,13 +138,19 @@ export class PtyHost extends Service implements TerminalProvider {
     return hostCall<T>(this.pipe, method, params, timeoutMs);
   }
 
-  /** The host answering on the pipe, or null when none does. */
-  async server(): Promise<{ version: string; protocol: number; pid: number } | null> {
+  /** The host answering on the pipe; "forbidden" when one this app may not open holds it; null when none does. */
+  private async reach(): Promise<{ version: string; protocol: number; pid: number } | "forbidden" | null> {
     try {
       return await this.call<{ version: string; protocol: number; pid: number }>("ping", {}, 2000);
-    } catch {
-      return null;
+    } catch (err) {
+      return err instanceof PtyHostError && err.code === "forbidden" ? "forbidden" : null;
     }
+  }
+
+  /** The host answering on the pipe, or null when none does. */
+  async server(): Promise<{ version: string; protocol: number; pid: number } | null> {
+    const host = await this.reach();
+    return host === "forbidden" ? null : host;
   }
 
   async installed(): Promise<string | null> {
@@ -153,8 +159,9 @@ export class PtyHost extends Service implements TerminalProvider {
 
   async bridge(): Promise<TerminalBridge> {
     const version = await this.installed();
+    if (!version) return { state: "unsupported" };
     // Not running is ready all the same: a launch starts the host.
-    return version ? { state: "ready", version } : { state: "unsupported" };
+    return (await this.reach()) === "forbidden" ? { state: "forbidden" } : { state: "ready", version };
   }
 
   async serverGone(): Promise<boolean> {
@@ -172,7 +179,10 @@ export class PtyHost extends Service implements TerminalProvider {
 
   private async startHost(): Promise<{ started: boolean } | null> {
     if (this.disposed || !(await this.installed())) return null;
-    if (await this.server()) return { started: false };
+    const running = await this.reach();
+    // The pipe is taken: a host started now could not listen on it.
+    if (running === "forbidden") return null;
+    if (running) return { started: false };
     // In the Windows app's app.asar, from its unpacked copy: a host that outlives the app keeps no hold on app.asar,
     // which an update replaces, and node-pty starts its helpers from real folders.
     const entry = fileURLToPath(new URL("./main.js", import.meta.url)).replace(/([\\/])app\.asar(?=[\\/])/, "$1app.asar.unpacked");
@@ -221,7 +231,9 @@ export class PtyHost extends Service implements TerminalProvider {
   }
 
   private async reviveOnce(force: boolean): Promise<TerminalRevive> {
-    if (await this.server()) return "running";
+    const running = await this.reach();
+    if (running === "forbidden") return "failed";
+    if (running) return "running";
     if (!(await this.installed())) return "notInstalled";
     const now = Date.now();
     this.revived = this.revived.filter((at) => now - at < REVIVE_WINDOW_MS);
