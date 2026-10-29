@@ -6,6 +6,8 @@ export interface Look {
   dark: boolean;
   tokens: Record<string, string>;
   locale: string;
+  /** The shell put the system's frosted material under this window: the page leaves its own background off. */
+  frosted?: boolean;
 }
 
 interface SurfaceBridge {

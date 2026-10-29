@@ -67,6 +67,14 @@
 
 .glass .scrim { background: var(--glass-scrim); }
 
+/* Frosted by the system (macOS): the window is the glass. The page paints no room of its own and leaves
+   the desktop and the windows behind to show through, tinted by the panes; sheets frost what is under them. */
+.glass[data-frosted] body { background: transparent; }
+.glass[data-frosted] body::before { content: none; }
+.glass[data-frosted] :is(.lane-cols-head, .tbl-head .tbl-cell, .tbl-title-cell) { background: var(--glass-sticky); }
+.glass[data-frosted] .dlg-nav { background: transparent; }
+.glass[data-frosted] .detail.expanded { background: var(--glass-float); backdrop-filter: blur(22px) saturate(1.25); }
+
 /* The theme's own preview shows the room through its glass. */
 .mode.glass { background: var(--glass-room); border-color: var(--glass-edge); }
 

@@ -6,7 +6,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
-import { terminalTheme } from "~/lib/xtermTheme";
+import { seeThrough, terminalTheme } from "~/lib/xtermTheme";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
@@ -193,7 +193,8 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
         if (!terminal.hasSelection()) send({ type: "openLink", url });
       }
     };
-    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, theme: terminalTheme(), linkHandler });
+    const clear = seeThrough();
+    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
@@ -293,7 +294,11 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   // The window writes the look's variables in its own effect, after this one: read them a frame later.
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      if (term.current) term.current.options.theme = terminalTheme();
+      if (!term.current) return;
+      // Frosted, the grid lets the window's material through; a solid theme draws it opaque again, the cheaper way.
+      const clear = seeThrough();
+      term.current.options.allowTransparency = clear;
+      term.current.options.theme = terminalTheme(clear);
     });
     return () => cancelAnimationFrame(frame);
   }, [tokens]);

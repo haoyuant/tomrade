@@ -447,6 +447,14 @@ html[data-traffic-lights="on"] {
   --glass-btn-on: #ffffff;
   --glass-glow: rgba(226, 94, 43, 0.45);
 }
+/* Frosted by the system (Glass on macOS): the window's material is the room, so the panes only tint it,
+   dark enough to read on a light desktop too; what sits over scrolling content keeps a near-solid fill. */
+.glass[data-frosted] {
+  --glass-shell: rgba(28, 26, 24, 0.40);
+  --glass-pane: rgba(36, 33, 31, 0.18);
+  --glass-sticky: rgba(34, 31, 29, 0.9);
+  --glass-float: rgba(44, 40, 37, 0.62);
+}
 
 /* Neon — a synthwave night: a grid running to a striped sun, magenta and cyan
    tubes. Sakura — blush paper, plum ink, petals on the air. Their scenes and

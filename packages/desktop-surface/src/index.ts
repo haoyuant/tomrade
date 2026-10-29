@@ -22,6 +22,11 @@ export interface SurfaceLook {
   /** `--name` → value, the app's theme variables as the main window computes them. */
   tokens: Record<string, string>;
   locale: string;
+  /**
+   * The main window asks for the system's frosted material (Glass); the shell answers whether this
+   * window wears it, and a page under it leaves its own background off. Absent from an older shell.
+   */
+  frosted?: boolean;
 }
 
 export interface DesktopSurfaceSpec {

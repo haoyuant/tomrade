@@ -3,12 +3,15 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
 import { sendToWindow } from "./ipc.js";
+import { isFrosted, takesMaterial } from "./window-material.js";
 
 interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
   trafficLights: boolean;
   /** The window app-wide prompts land in, the one the shell brings forward; the others leave them be. */
   lead: boolean;
+  /** The window wears the system's frosted material: the page leaves its own background off. */
+  frosted: boolean;
 }
 
 declare module "@tomradex/ipc" {
@@ -41,7 +44,7 @@ export interface WindowOptions {
 /** Tells a window how its chrome stands now. */
 export function sayChrome(win: BrowserWindow, lead: boolean): void {
   if (win.isDestroyed()) return;
-  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead } satisfies WindowChrome);
+  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted() } satisfies WindowChrome);
 }
 
 export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
@@ -54,12 +57,15 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     icon: opts.icon,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 14 },
+    // Frosted, the material stays lit when another window has the focus, as the Terminal window over it often does.
+    ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false, ...(opts.detached ? { additionalArguments: [DETACHED_ARG] } : {}) }
   });
   if (!place || place.maximized) win.maximize();
 
   const sendChrome = () => sayChrome(win, opts.lead(win));
   win.webContents.on("did-finish-load", sendChrome);
+  takesMaterial(win, sendChrome);
   // The renderer's own failures belong in the log the troubleshooter reads.
   const log = ctx.logger("renderer");
   win.webContents.on("console-message", (event) => { if (event.level === "error" || String(event.level) === "3") log.warn(`${event.message} (${event.sourceId}:${event.lineNumber})`); });
