@@ -1,0 +1,75 @@
+/* Glass: smoked panes over a room seen out of focus. The room is one fixed,
+   static layer behind a page that never scrolls, drawn already soft, so the
+   panes need no backdrop-filter: they are plain translucency over it and cost
+   what a solid fill costs. Only what floats for a moment (menus, the palette,
+   sheets) blurs for real what is behind it. Colours come from --glass-* in app.css. */
+@layer components {
+.glass body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--glass-room);
+}
+
+/* The sheet: chrome and side panes in smoked glass, a hairline of light at each edge. */
+.glass :is(.titlebar, .statusbar, .sidebar, .side-rail, .ai, .ai-rail) { background: var(--glass-shell); }
+.glass .titlebar { border-bottom-color: var(--glass-edge); box-shadow: inset 0 1px 0 var(--glass-sheen); }
+.glass .statusbar { border-top-color: var(--glass-edge); }
+.glass :is(.sidebar, .side-rail) { border-right-color: var(--glass-edge); }
+.glass :is(.ai, .ai-rail, .sbar, .detail) { border-left-color: var(--glass-edge); }
+.glass :is(.main-col, .detail, .sbar) { background: var(--glass-pane); }
+.glass .query-bar { background: transparent; border-bottom-color: var(--glass-edge); }
+.glass .col-head { border-bottom-color: var(--glass-edge); }
+.glass .tab[aria-selected="true"] { background: var(--glass-tile); border-color: var(--glass-edge); }
+
+/* Tiles: lighter glass, lit along the top edge. */
+.glass :is(.card, .sbar-card, .panel, .banner, .mini-card) {
+  background: var(--glass-tile);
+  border-color: var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-sheen);
+}
+.glass .banner { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.glass .card:hover { background: var(--glass-tile-hover); border-color: var(--glass-edge-strong); box-shadow: inset 0 1px 0 var(--glass-sheen), var(--elev-raised); }
+.glass .card[data-selected="true"] { border-color: var(--accent); box-shadow: inset 0 1px 0 var(--glass-sheen), 0 0 0 1px var(--accent), 0 8px 24px -10px var(--glass-glow); }
+
+.glass .side-row:hover { background: var(--glass-tile); }
+.glass .side-row[aria-current="true"] { background: var(--glass-tile-on); border-left-color: transparent; box-shadow: inset 0 0 0 1px var(--glass-edge); }
+.glass .side-row { border-radius: var(--radius-md); }
+
+/* The one action in orange: a lit pill. */
+.glass :is(.btn-primary, .theme-seg[aria-pressed="true"]) {
+  background: linear-gradient(135deg, var(--glass-btn-from), var(--glass-btn-to));
+  color: var(--glass-btn-on);
+  box-shadow: inset 0 1px 0 var(--glass-edge-strong), 0 6px 18px -8px var(--glass-glow);
+}
+.glass :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover {
+  background: linear-gradient(135deg, var(--glass-btn-to), var(--glass-btn-to));
+  color: var(--glass-btn-on);
+  box-shadow: inset 0 1px 0 var(--glass-edge-strong), 0 8px 22px -8px var(--glass-glow);
+}
+.glass .btn-primary:disabled { box-shadow: none; }
+.glass :is(.btn-primary, .btn-secondary, .theme-seg, .theme-switch) { border-radius: 999px; }
+.glass .split-btn > .btn:not(:last-child) { border-radius: 999px 0 0 999px; }
+.glass .split-btn > .split-more { border-radius: 0 999px 999px 0; }
+.glass .btn-secondary { background: var(--glass-tile); box-shadow: inset 0 0 0 1px var(--glass-edge); }
+.glass .btn-secondary:hover { background: var(--glass-tile-hover); box-shadow: inset 0 0 0 1px var(--glass-edge-strong); }
+.glass :is(.btn-ghost, .btn-icon):hover { background: var(--glass-tile-hover); }
+.glass .theme-switch { background: var(--glass-tile); box-shadow: inset 0 0 0 1px var(--glass-edge); }
+.glass .theme-seg:hover { background: var(--glass-tile-hover); }
+
+.glass :is(.input, .textarea, .select) { background: var(--glass-tile); border-color: var(--glass-edge-strong); }
+
+/* What floats over the sheet frosts what is behind it: shown for a moment, so the blur is paid for a moment. */
+.glass :is(.menu, .palette, .slash-menu, .sbar-peek) {
+  background: var(--glass-float);
+  border-color: var(--glass-edge-strong);
+  box-shadow: inset 0 1px 0 var(--glass-sheen), var(--elev-raised);
+  backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.glass .scrim { background: var(--glass-scrim); }
+
+/* The theme's own preview shows the room through its glass. */
+.mode.glass { background: var(--glass-room); border-color: var(--glass-edge); }
+
+.glass .live-dot { box-shadow: 0 0 6px var(--success); }
+.glass ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+}

@@ -18,6 +18,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
   const modes: { id: string; cls: string; name: string; hex: string; style?: CSSProperties }[] = [
     { id: "sunrise", cls: "sunrise", name: t("theme.sunrise"), hex: "#f6f3f8" },
     { id: "daybreak", cls: "daybreak", name: t("theme.daybreak"), hex: "#120f24" },
+    { id: "glass", cls: "glass", name: t("theme.glass"), hex: "#2b2826" },
     { id: "dawn", cls: "dawn", name: t("theme.dawn"), hex: "#f4ead7" },
     { id: "light", cls: "paper-preview", name: t("theme.paper"), hex: "#f5f4ed" },
     { id: "dark", cls: "dark", name: t("theme.ink"), hex: "#141413" },
@@ -93,7 +94,7 @@ const CUSTOM_ICONS: CustomTheme["icon"][] = ["i-sun", "i-moon", "i-leaf", "i-tag
 function ThemeChoices({ themes, value, onChange }: { themes: CustomTheme[]; value: Exclude<ThemePreference, "system">; onChange: (value: Exclude<ThemePreference, "system">) => void }) {
   const { t } = useI18n();
   return <select className="field-input" value={value} onChange={event => onChange(event.target.value as Exclude<ThemePreference, "system">)}>
-    <option value="sunrise">{t("theme.sunrise")}</option><option value="daybreak">{t("theme.daybreak")}</option><option value="dawn">{t("theme.dawn")}</option><option value="light">{t("theme.paper")}</option><option value="dark">{t("theme.ink")}</option><option value="matcha">{t("theme.matcha")}</option>
+    <option value="sunrise">{t("theme.sunrise")}</option><option value="daybreak">{t("theme.daybreak")}</option><option value="glass">{t("theme.glass")}</option><option value="dawn">{t("theme.dawn")}</option><option value="light">{t("theme.paper")}</option><option value="dark">{t("theme.ink")}</option><option value="matcha">{t("theme.matcha")}</option>
     {themes.map(theme => <option key={theme.id} value={theme.id}>{theme.name}</option>)}
   </select>;
 }
