@@ -29,6 +29,7 @@ describe("contributions", () => {
     });
 
     expect(ctx.contributions.commands()).toEqual([{ id: "demo.ack", title: "Acknowledge" }]);
+    expect([ctx.contributions.hasCommand("demo.ack"), ctx.contributions.hasCommand("demo.nope")]).toEqual([true, false]);
     expect((await ctx.contributions.badgesFor(project.id))).toEqual({ [item.id]: [{ id: "bug", label: "bug!" }] });
     expect((await ctx.contributions.statusItems({ projectId: project.id }))).toEqual([]);
     expect(await ctx.contributions.run("demo.ack", { projectId: project.id, itemId: item.id })).toEqual({ toast: "Acknowledged" });
@@ -49,6 +50,7 @@ describe("contributions", () => {
 
     await fiber.dispose();
     expect(ctx.contributions.commands()).toEqual([]);
+    expect(ctx.contributions.hasCommand("demo.ack")).toBe(false);
     expect((await ctx.contributions.badgesFor(project.id))).toEqual({});
     expect(ctx.contributions.assistantAccessories()).toEqual([]);
     await expect(ctx.contributions.run("demo.ack", {})).rejects.toThrow(/Unknown command/);

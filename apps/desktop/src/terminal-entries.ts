@@ -16,7 +16,7 @@ const MAX_PROJECTS = 6;
 
 /** Whether this app has a Terminal window at all: the plugin that draws it registered its command. */
 export function hasTerminalWindow(ctx: Context): boolean {
-  return !!ctx.get("contributions")?.commands().some((c) => c.id === TERMINAL_COMMAND);
+  return !!ctx.get("contributions")?.hasCommand(TERMINAL_COMMAND);
 }
 
 /** The projects a menu offers a Terminal window for: those on this machine, most recently changed first. */
