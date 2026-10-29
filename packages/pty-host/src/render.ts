@@ -56,6 +56,29 @@ export function sgrOf(cell: IBufferCell): string {
   return `\x1b[${p.join(";")}m`;
 }
 
+const flagsOf = (cell: IBufferCell) =>
+  (cell.isBold() ? 1 : 0) | (cell.isDim() ? 2 : 0) | (cell.isItalic() ? 4 : 0) | (cell.isUnderline() ? 8 : 0) | (cell.isBlink() ? 16 : 0) | (cell.isInverse() ? 32 : 0) | (cell.isInvisible() ? 64 : 0) | (cell.isStrikethrough() ? 128 : 0) | (cell.isOverline() ? 256 : 0);
+
+/** Each cell's SGR along a row, built again only where the styling differs from the cell before: most runs share one. */
+function styler(): (cell: IBufferCell) => string {
+  let flags = -1;
+  let fgMode = -1;
+  let fg = -1;
+  let bgMode = -1;
+  let bg = -1;
+  let sgr = RESET;
+  return (cell) => {
+    const f = flagsOf(cell);
+    if (f === flags && cell.getFgColorMode() === fgMode && cell.getFgColor() === fg && cell.getBgColorMode() === bgMode && cell.getBgColor() === bg) return sgr;
+    flags = f;
+    fgMode = cell.getFgColorMode();
+    fg = cell.getFgColor();
+    bgMode = cell.getBgColorMode();
+    bg = cell.getBgColor();
+    return (sgr = sgrOf(cell));
+  };
+}
+
 /** One row as the ANSI that paints it from its first column, and how many columns that covers. */
 export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBufferCell): { text: string; width: number } {
   if (!line) return { text: "", width: 0 };
@@ -63,6 +86,7 @@ export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBu
   let width = 0;
   let style = RESET;
   let blanks = 0;
+  const styleOf = styler();
   for (let x = 0; x < cols; x++) {
     const c = line.getCell(x, cell);
     if (!c) break;
@@ -70,7 +94,7 @@ export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBu
     // The second half of a wide character: the first half painted it.
     if (w === 0) continue;
     const chars = c.getChars() || " ";
-    const sgr = sgrOf(c);
+    const sgr = styleOf(c);
     // Plain blanks wait: trailing ones are never sent, the row is cleared after it instead.
     if (chars === " " && sgr === RESET) {
       blanks++;
