@@ -1,5 +1,5 @@
 import net from "node:net";
-import { agentIn, descendants, shortCommand, type ProcessRow } from "./agents.js";
+import { agentIn, descendants, shortCommand, strippedTitle, type ProcessRow } from "./agents.js";
 import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type PaneInfo, type ProcessInfo, type Request, type TerminalCommand } from "./protocol.js";
 import { keyBytes } from "./keys.js";
 import { Pane, type Attachment, type Pty, type ScrollState } from "./pane.js";
@@ -69,6 +69,8 @@ export class Host {
   private readonly timing: ScanTiming;
   /** The agent in each pane, by the table they were found in. */
   private agents: { table: Table | null; of: Map<string, string | null> } = { table: null, of: new Map() };
+  /** Each pane's title without the activity glyph an agent animates in it, as it last had the table read again. */
+  private readonly named = new Map<string, string | null>();
   private readonly screens: AgentScreens;
 
   constructor(private readonly opts: HostOptions) {
@@ -272,8 +274,13 @@ export class Host {
     return pane;
   }
 
+  /** Another title may mean another program; a working agent's spinner turning in it does not. */
   private retitled(pane: Pane): void {
-    this.scanSoon();
+    const name = strippedTitle(pane.title);
+    if (this.named.get(pane.id) !== name) {
+      this.named.set(pane.id, name);
+      this.scanSoon();
+    }
     this.drew(pane);
   }
 
@@ -301,6 +308,7 @@ export class Host {
     if (this.panes.get(pane.id) !== pane) return;
     this.panes.delete(pane.id);
     this.screens.forget(pane.id);
+    this.named.delete(pane.id);
     pane.end();
     this.emit("pane.exited", { pane_id: pane.id });
     pane.dispose();
