@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useI18n, type MessageKey } from "./i18n";
 import { sendSurfaceLook } from "./surface-look";
+import { wallpaperRoom } from "./wallpaper-room";
 
 export type ResolvedTheme = BuiltInTheme;
 export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" | "i-monitor" }[] = [
@@ -83,6 +84,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [preference, customThemes, automation, active]);
   // Plugin windows match the app: told after each paint, and when the language changes.
   useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass"), [active, customThemes, locale, theme]);
+  useEffect(() => wallpaperRoom(theme === "glass"), [theme]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);

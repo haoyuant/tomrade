@@ -9,7 +9,8 @@ import type {} from "@tomradex/settings";
 import { cameBack } from "./background.js";
 import { leadWindow, showMainWindow, takeKeptInFront } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
-import { isFrosted, setFrosted, takesMaterial } from "./window-material.js";
+import { wallpaperRoom } from "./wallpaper.js";
+import { canFrost, isFrosted, seeThrough, setFrosted, takesMaterial } from "./window-material.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
@@ -22,6 +23,8 @@ declare module "@tomradex/ipc" {
   interface Channels {
     /** The main window says how the app looks now; every surface document hears it. */
     "surfaces.look": (look: SurfaceLook) => void;
+    /** Glass's room where the window can't frost on Linux: the desktop's wallpaper, already blurred; null elsewhere. */
+    "window.wallpaper": () => string | null;
   }
 }
 
@@ -103,6 +106,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
         setFrosted(!!look.frosted, look.tokens["--bg"]);
         for (const surface of this.openById.values()) if (surface.loaded && !surface.win.isDestroyed()) surface.win.webContents.send(LOOK_CHANNEL, this.worn(look));
       });
+      ctx.ipc.handle("window.wallpaper", () => (process.platform === "linux" && !canFrost ? wallpaperRoom() : null));
     });
     // A surface that asks for Settings is outside the window; the window comes forward to show it.
     // Running in the background there may be none yet, and one opens.
@@ -148,6 +152,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
           title: spec.title,
           backgroundColor: this.look?.tokens["--bg"] || undefined,
           ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
+          ...(seeThrough ? { transparent: true } : {}),
           webPreferences
         })
       : new BrowserWindow({

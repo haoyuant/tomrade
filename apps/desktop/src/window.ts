@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
 import { sendToWindow } from "./ipc.js";
-import { isFrosted, takesMaterial } from "./window-material.js";
+import { isFrosted, seeThrough, takesMaterial } from "./window-material.js";
 
 interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
@@ -59,6 +59,7 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     trafficLightPosition: { x: 14, y: 14 },
     // Frosted, the material stays lit when another window has the focus, as the Terminal window over it often does.
     ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
+    ...(seeThrough ? { transparent: true } : {}),
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false, ...(opts.detached ? { additionalArguments: [DETACHED_ARG] } : {}) }
   });
   if (!place || place.maximized) win.maximize();
