@@ -210,8 +210,9 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           </button>
         </div>
         {waiting > 0 && (
-          <span className="sbar-waiting num" role="status" aria-label={t("sessionBar.waitingCount", { n: waiting })} title={t("sessionBar.waitingCount", { n: waiting })}>
-            {t("sessionBar.waitingShort", { n: waiting })}
+          <span className="sbar-waiting" role="status" aria-label={t("sessionBar.waitingCount", { n: waiting })} title={t("sessionBar.waitingCount", { n: waiting })}>
+            <span className="sbar-waiting-n num" aria-hidden="true">{waiting}</span>
+            <span className="sbar-waiting-word" aria-hidden="true">{t("sessionBar.waitingWord")}</span>
           </span>
         )}
         <div className="sbar-dots" onScroll={() => { hold(); setPeek(null); }}>

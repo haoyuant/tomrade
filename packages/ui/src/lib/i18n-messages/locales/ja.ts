@@ -1211,6 +1211,7 @@ export const ja: PartialMessages = {
     showCards: "カードで表示（{{key}}）",
     showRail: "点で表示（{{key}}）",
     waitingCount: "{{n}} 件が待機中",
+    waitingWord: "待機中",
     filter: "表示",
     filterAll: "すべて {{n}}",
     filterWait: "待機中 {{n}}",

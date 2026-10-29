@@ -1219,6 +1219,7 @@ export const ru: PartialMessages = {
     showCards: "Показать сессии карточками ({{key}})",
     showRail: "Показать сессии точками ({{key}})",
     waitingCount: "ждут: {{n}}",
+    waitingWord: "ждут",
     filter: "Показать",
     filterAll: "Все {{n}}",
     filterWait: "Ждут {{n}}",

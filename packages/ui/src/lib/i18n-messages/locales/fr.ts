@@ -1211,6 +1211,7 @@ export const fr: PartialMessages = {
     showCards: "Afficher les sessions en cartes ({{key}})",
     showRail: "Afficher les sessions en points ({{key}})",
     waitingCount: "{{n}} en attente",
+    waitingWord: "attente",
     filter: "Afficher",
     filterAll: "Toutes {{n}}",
     filterWait: "En attente {{n}}",
