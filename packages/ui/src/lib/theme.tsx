@@ -6,8 +6,9 @@ import { useI18n, type MessageKey } from "./i18n";
 import { sendSurfaceLook } from "./surface-look";
 
 export type ResolvedTheme = BuiltInTheme;
-export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" }[] = [
+export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" | "i-monitor" }[] = [
   { value: "sunrise", labelKey: "theme.sunrise", icon: "i-sun" }, { value: "daybreak", labelKey: "theme.daybreak", icon: "i-moon" }, { value: "glass", labelKey: "theme.glass", icon: "i-stack" },
+  { value: "neon", labelKey: "theme.neon", icon: "i-monitor" }, { value: "sakura", labelKey: "theme.sakura", icon: "i-leaf" },
   { value: "dawn", labelKey: "theme.dawn", icon: "i-sun" },
   { value: "light", labelKey: "theme.paper", icon: "i-sun" }, { value: "dark", labelKey: "theme.ink", icon: "i-moon" }, { value: "matcha", labelKey: "theme.matcha", icon: "i-leaf" }
 ];
@@ -36,7 +37,7 @@ export function cssColorToHex(value: string): string {
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, "0")).join("")}`;
 }
-const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["sunrise", "daybreak", "glass", "dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
+const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["sunrise", "daybreak", "glass", "neon", "sakura", "dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
 function activePreference(manual: ThemePreference, automation: ThemeAutomation, themes: CustomTheme[], now = new Date()): Exclude<ThemePreference, "system"> {
   const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "sunrise";
   if (automation.mode === "none") return manual === "system" ? fallback : manual;
@@ -60,7 +61,7 @@ function resolve(preference: Exclude<ThemePreference, "system">, customThemes: C
 function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean): void {
   const root = document.documentElement, id = custom?.id ?? base;
   if (animate && root.dataset.themeId !== id) root.classList.add("theme-transition");
-  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak", "glass"); if (base !== "light") root.classList.add(base);
+  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "neon", "sakura"); if (base !== "light") root.classList.add(base);
   for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES]) root.style.removeProperty(`--${name}`);
   if (custom) for (const [name, value] of Object.entries({ ...custom.tokens, ...custom.fonts })) root.style.setProperty(`--${name}`, value);
   root.dataset.themeId = id; if (animate) window.setTimeout(() => root.classList.remove("theme-transition"), 650);
