@@ -1,8 +1,10 @@
 // `pnpm install:dev`: builds Tomrade from this checkout and installs it over the installed app, for trying a change in
 // the real app: an unsigned macOS arm64 app over /Applications/Tomrade.app, or on Windows an unsigned NSIS installer run
-// silently over the existing install. Its version is the next release plus -dev (0.23.0-dev while 0.22.0 is the latest tag).
+// silently over the existing install, or on Linux an AppImage for this machine's arch over the one Tomrade's desktop entry
+// starts. Its version is the next release plus -dev (0.23.0-dev while 0.22.0 is the latest tag).
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,8 +13,9 @@ const desktop = path.join(root, "apps/desktop");
 
 const mac = process.platform === "darwin" && process.arch === "arm64";
 const win = process.platform === "win32" && (process.arch === "x64" || process.arch === "arm64");
-if (!mac && !win) {
-  console.error("install:dev builds for macOS on Apple silicon or Windows (x64, arm64) only.");
+const linux = process.platform === "linux" && (process.arch === "x64" || process.arch === "arm64");
+if (!mac && !win && !linux) {
+  console.error("install:dev builds for macOS on Apple silicon, or Windows or Linux (x64, arm64) only.");
   process.exit(1);
 }
 
@@ -33,7 +36,8 @@ console.log(`Latest release ${latest.join(".")}, building ${version}`);
 const run = (cmd, args, options = {}) => execFileSync(cmd, args, { cwd: root, stdio: "inherit", ...options });
 
 if (mac) installMac();
-else installWindows();
+else if (win) installWindows();
+else installLinux();
 
 function installMac() {
   const target = "/Applications/Tomrade.app";
@@ -105,6 +109,91 @@ function installWindows() {
     console.log("Starting Tomrade without this terminal's administrator rights");
     spawn("explorer.exe", [exe], { detached: true, stdio: "ignore" }).unref();
   } else spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+}
+
+function installLinux() {
+  const arch = process.arch;
+  fs.rmSync(path.join(desktop, "release", arch === "x64" ? "linux-unpacked" : `linux-${arch}-unpacked`), { recursive: true, force: true });
+  run("node", [path.join(desktop, "scripts/package.mjs"), "--linux", `--${arch}`, `-c.extraMetadata.version=${version}`]);
+
+  const built = path.join(desktop, "release", `Tomrade-${version}-linux-${arch}.AppImage`);
+  if (!fs.existsSync(built)) {
+    console.error(`The build left no AppImage at ${built}.`);
+    process.exit(1);
+  }
+
+  // An AppImage installs nowhere: the installed one is the copy the desktop entry starts, else ~/Applications, where
+  // AppImage tools keep them.
+  const target = linuxInstall() ?? path.join(os.homedir(), "Applications", "Tomrade.AppImage");
+
+  // Any running AppImage, not only the target: its single-instance lock would leave the new one just bringing it forward.
+  // SIGTERM saves its state first (src/main.ts), then it is insisted on.
+  const running = runningAppImages();
+  if (running.length > 0) {
+    console.log("Quitting the running Tomrade (sessions using its MCP server reconnect when the new one starts)");
+    for (const pid of running) signal(pid, "SIGTERM");
+    for (let i = 0; i < 20 && running.some(alive); i++) spawnSync("sleep", ["0.5"]);
+    for (const pid of running.filter(alive)) signal(pid, "SIGKILL");
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const next = `${target}.new`;
+  fs.copyFileSync(built, next);
+  fs.chmodSync(next, 0o755);
+  fs.renameSync(next, target);
+  console.log(`Installed Tomrade ${version} at ${target}`);
+  spawn(target, [], { detached: true, stdio: "ignore" }).unref();
+}
+
+/** The AppImage Tomrade's desktop entry starts (apps/desktop/src/desktop-entry.ts), if it is one. */
+function linuxInstall() {
+  const data = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  let text;
+  try {
+    text = fs.readFileSync(path.join(data, "applications", "tomrade.desktop"), "utf8");
+  } catch {
+    return null;
+  }
+  // quoteExec's quoting: the path in double quotes, with " ` $ \ escaped.
+  const quoted = /^Exec="((?:\\.|[^"\\])*)"/m.exec(text)?.[1];
+  const file = quoted?.replace(/\\(.)/g, "$1");
+  return file?.endsWith(".AppImage") ? file : null;
+}
+
+/**
+ * The main process of every running Tomrade AppImage: tomrade run from an AppImage's mount (AppRun beside it), with no
+ * --type=. Chromium's process title writes over /proc/<pid>/environ, so APPIMAGE can't tell, and joins the command
+ * line with spaces.
+ */
+function runningAppImages() {
+  const pids = [];
+  for (const pid of fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+    try {
+      const exe = fs.readlinkSync(`/proc/${pid}/exe`);
+      if (path.basename(exe) !== "tomrade" || !fs.existsSync(path.join(path.dirname(exe), "AppRun"))) continue;
+      if (!/[\0 ]--type=/.test(fs.readFileSync(`/proc/${pid}/cmdline`, "utf8"))) pids.push(Number(pid));
+    } catch {
+      // Gone since the listing, or another user's.
+    }
+  }
+  return pids;
+}
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signal(pid, name) {
+  try {
+    process.kill(pid, name);
+  } catch {
+    // Already gone.
+  }
 }
 
 function elevated() {
