@@ -77,8 +77,8 @@ function film(win, file) {
   };
 }
 
-/** A drawn cursor, clicks and typing that reach the page as real input events. */
-function hands(win) {
+/** A drawn cursor, clicks and typing that reach the page as real input events; `log` hears each, for the sound. */
+function hands(win, log = () => {}) {
   const $ = (js) => win.webContents.executeJavaScript(js, true);
   const pos = { x: WIDTH * 0.62, y: HEIGHT * 0.55 };
   // Page coordinates are CSS pixels of the 1440×900 layout; input events take the window's own.
@@ -123,6 +123,7 @@ function hands(win) {
       await $(`(() => { const r = document.getElementById('film-ring'); r.style.transition = 'none'; r.style.opacity = '1'; r.style.transform = 'translate(${at.x}px, ${at.y}px) scale(.4)'; r.offsetWidth; r.style.transition = 'opacity 380ms, transform 380ms'; r.style.opacity = '0'; r.style.transform = 'translate(${at.x}px, ${at.y}px) scale(1.3)'; })()`);
       const x = px(at.x);
       const y = px(at.y);
+      log("click");
       win.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
       await sleep(70);
       win.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
@@ -130,6 +131,7 @@ function hands(win) {
     },
     async type(text, perKey = 38) {
       for (const ch of text) {
+        log("key");
         win.webContents.sendInputEvent({ type: "char", keyCode: ch });
         await sleep(perKey + (/[ ,.:]/.test(ch) ? 40 : 0));
       }
@@ -215,13 +217,16 @@ async function run() {
   win.webContents.on("dom-ready", () => win.webContents.setZoomFactor(SCALE));
   await win.loadURL(`${base}#/p/${project.id}`);
   win.webContents.setZoomFactor(SCALE);
-  const h = hands(win);
+  const events = [];
+  let clock = null;
+  const h = hands(win, (kind) => { if (clock) events.push({ t: +clock.at().toFixed(3), kind }); });
   await h.waitFor(`!!document.querySelector('.ai-input') && document.querySelectorAll('.card, [data-testid="card"]').length > 0`, "the board and the assistant", 60);
   await h.cursor();
   await sleep(1500);
 
   const file = path.join(outDir, `${scene}-${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`);
   const camera = film(win, file);
+  clock = camera;
   const markers = [];
   const mark = (label) => { markers.push({ t: +camera.at().toFixed(2), label }); console.log(`[${camera.at().toFixed(1)}s] ${label}`); };
   await sleep(1500);
@@ -231,7 +236,7 @@ async function run() {
   } finally {
     mark("end");
     await camera.stop();
-    fs.writeFileSync(file.replace(/\.mp4$/, ".markers.json"), JSON.stringify({ scene, markers }, null, 2));
+    fs.writeFileSync(file.replace(/\.mp4$/, ".markers.json"), JSON.stringify({ scene, markers, events }, null, 2));
     console.log(`filmed ${file}`);
   }
 }
