@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
       };
       return stream;
     };
-    ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" }, terminalRecording: { ...ctx.settings.get().terminalRecording, enabled: true } });
     const project = ctx.projects.create({ name: "代码会话检查", keyPrefix: "CSC" });
     const board = ctx.boards.list(project.id)[0];
     const cwd = fs.mkdtempSync(path.join(work, "repo-"));

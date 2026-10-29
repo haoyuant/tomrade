@@ -18,7 +18,7 @@ import { errorMessage } from "@tomradex/contracts";
  */
 
 export const RecordingSettings = z.object({
-  enabled: z.boolean().default(true).meta({ title: "Record terminal output" }).describe("Keep everything Tomrade's terminal panes show, so a session, a stretch of manual work between sessions or a closed terminal can be played back as raw output. The recordings never leave this computer."),
+  enabled: z.boolean().default(false).meta({ title: "Record terminal output" }).describe("Keep everything Tomrade's terminal panes show, so a session, a stretch of manual work between sessions or a closed terminal can be played back as raw output. The recordings never leave this computer."),
   background: z.boolean().default(true).meta({ title: "Also record panes the window does not show" }).describe("Panes no cell of the Terminal window shows are recorded too, by watching them without taking them over. Off: only what a cell shows is recorded."),
   maxPaneMB: z.number().int().min(5).max(4096).default(50).meta({ title: "Keep at most per pane (MB)", advanced: true }).describe("A pane's oldest recordings go once its recordings take more than this."),
   keepDays: z.number().int().min(1).max(3650).default(7).meta({ title: "Keep for (days)", advanced: true }).describe("A recording older than this goes; whichever limit comes first applies.")
