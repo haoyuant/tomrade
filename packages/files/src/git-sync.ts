@@ -181,6 +181,23 @@ function adoptCredentialedKey(local: string, target: { url: string; branch: stri
   }
 }
 
+const exchanges = new Map<string, Promise<unknown>>();
+
+/**
+ * One exchange at a time per transport folder, across stores: a store
+ * reopened while its predecessor still fetches would otherwise run git beside
+ * it in the same folder and fail on its locks.
+ */
+export function exclusiveTransport<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const turn = (exchanges.get(dir) ?? Promise.resolve()).catch(() => undefined).then(run);
+  const settled = turn.catch(() => undefined);
+  exchanges.set(dir, settled);
+  void settled.then(() => {
+    if (exchanges.get(dir) === settled) exchanges.delete(dir);
+  });
+  return turn;
+}
+
 export class GitProjection {
   readonly dir: string;
   readonly folder: GitFolder;
@@ -202,9 +219,22 @@ export class GitProjection {
     return this.git(args, { cwd: this.dir, ok });
   }
 
+  /**
+   * What a git killed mid-exchange leaves behind — the app quit during a
+   * fetch, say — would fail every later one. Called inside exclusiveTransport,
+   * and one Tomrade owns a data folder, so no live git holds these.
+   */
+  private clearInterrupted(): void {
+    const git = path.join(this.dir, ".git");
+    for (const lock of ["shallow.lock", "index.lock", "HEAD.lock"]) fs.rmSync(path.join(git, lock), { force: true });
+    const pack = path.join(git, "objects", "pack");
+    if (fs.existsSync(pack)) for (const name of fs.readdirSync(pack)) if (name.startsWith("tmp_")) fs.rmSync(path.join(pack, name), { force: true });
+  }
+
   /** Bring the index to the remote's tip. False when the remote cannot be reached. */
   async fetch(): Promise<boolean> {
     fs.mkdirSync(this.dir, { recursive: true });
+    this.clearInterrupted();
     if (!fs.existsSync(path.join(this.dir, ".git"))) await this.run(["init", "-q", "-b", this.target.branch]);
     await this.folder.ensureIdentity();
     await this.folder.setRemote(this.target.url);
