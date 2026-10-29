@@ -234,19 +234,18 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
 }
 
 /** The export, with each part's rows as lines: the bytes its digest was taken over. */
-export function exportParts(db: StateDb, projectId: string, opts: ExportOptions = {}): { state: ProjectState; parts: StatePart[]; lines: Map<string, { rowid: number | null; line: Buffer }[]> } {
-  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
-  if (!project) throw new Error(`Project ${projectId} not found`);
+export function exportParts(db: StateDb, projectId: string, opts: ExportOptions = {}): { state: ProjectState; parts: StatePart[]; lines: Map<string, { rowid: number | null; row: Record<string, unknown>; line: Buffer }[]> } {
+  const project = projectRow(db, projectId);
   const tables: Record<string, Record<string, unknown>[]> = {};
   const plugins: ProjectState["plugins"] = {};
   const parts = stateParts(db, projectId, opts);
-  const lines = new Map<string, { rowid: number | null; line: Buffer }[]>();
+  const lines = new Map<string, { rowid: number | null; row: Record<string, unknown>; line: Buffer }[]>();
   for (const part of parts) {
     const read = readPart(db, projectId, part);
     const rows = read.map((r) => r.row);
     if (part.namespace) (plugins[part.namespace] ??= {})[part.table] = rows;
     else tables[part.table] = rows;
-    lines.set(part.file, read.map((r) => ({ rowid: r.rowid, line: lineOf(r.row) })));
+    lines.set(part.file, read.map((r) => ({ rowid: r.rowid, row: r.row, line: lineOf(r.row) })));
   }
   const hashed = new Map<string, readonly Uint8Array[]>([...lines].map(([file, rows]) => [file, rows.map((r) => r.line)]));
   for (const [namespace, byTable] of Object.entries(opts.carry ?? {})) {
@@ -254,17 +253,28 @@ export function exportParts(db: StateDb, projectId: string, opts: ExportOptions 
     plugins[namespace] = byTable;
     for (const [table, rows] of Object.entries(byTable)) hashed.set(path.join(ARTIFACT_DIR, PLUGINS_DIR, namespace, `${table}.jsonl`), rows.map(lineOf));
   }
-  const manifest: ProjectManifest = {
+  const state: ProjectState = { manifest: manifestOf(project, opts, digestLines(hashed)), tables, plugins };
+  return { state, parts, lines };
+}
+
+/** The manifest an export writes, over the project's row and the state files' digest. */
+export function manifestOf(project: Record<string, unknown>, opts: ExportOptions, digest: string): ProjectManifest {
+  return {
     v: 2,
     schemaVersion: CORE_SCHEMA_VERSION,
     project: pick(project, PROJECT_COLUMNS),
     ...(opts.repo ? { repo: opts.repo } : {}),
     exports: [...(opts.exports ?? [])].sort(),
-    logWindowDays: opts.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS
+    logWindowDays: opts.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS,
+    snapshot: { digest, at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} }
   };
-  const state: ProjectState = { manifest, tables, plugins };
-  state.manifest.snapshot = { digest: digestLines(hashed), at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} };
-  return { state, parts, lines };
+}
+
+/** The project's own row, as the manifest names it. */
+export function projectRow(db: Queryable, projectId: string): Record<string, unknown> {
+  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
+  if (!project) throw new Error(`Project ${projectId} not found`);
+  return project;
 }
 
 const jsonl = (rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
@@ -288,7 +298,12 @@ export function stateFiles(state: ProjectState): Map<string, string> {
  * folder. Deterministic: identical data produces identical bytes.
  */
 export function serializeState(state: ProjectState, opts: { mcpUrl?: string | null } = {}): Map<string, string> {
-  const files = stateFiles(state);
+  return artifactFiles(state, opts) as Map<string, string>;
+}
+
+/** `serializeState`, taking the state files' bytes as given when the export already has them. */
+function artifactFiles(state: ProjectState, opts: { mcpUrl?: string | null; files?: ReadonlyMap<string, Body> }): Map<string, Body> {
+  const files = new Map<string, Body>(opts.files ?? stateFiles(state));
   files.set(path.join(ARTIFACT_DIR, MANIFEST), JSON.stringify(state.manifest, null, 2) + "\n");
   for (const [rel, body] of supportFiles(opts)) files.set(rel, body);
   return files;
@@ -370,14 +385,38 @@ export function digestLines(files: Map<string, readonly Uint8Array[]>): string {
   return hash.digest("hex");
 }
 
-function writeIfChanged(file: string, body: string): boolean {
+type Body = string | Uint8Array;
+
+/**
+ * Per path: the file as this process last wrote or read it — its stat, and the body when it wrote one. While the stat
+ * holds, the file is not read again: a body it already wrote is not compared, and one it found in LF is not checked.
+ */
+const known = new Map<string, { size: number; mtimeMs: number; ino: number; body?: Body }>();
+
+function knownAs(file: string, body?: Body): void {
+  const stat = fs.statSync(file, { throwIfNoEntry: false });
+  if (stat) known.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, ino: stat.ino, body });
+  else known.delete(file);
+}
+
+function unchanged(file: string): boolean {
+  const seen = known.get(file);
+  const stat = seen && fs.statSync(file, { throwIfNoEntry: false });
+  return !!stat && stat.size === seen.size && stat.mtimeMs === seen.mtimeMs && stat.ino === seen.ino;
+}
+
+function writeIfChanged(file: string, body: Body): boolean {
+  if (known.get(file)?.body === body && unchanged(file)) return false;
+  let same = false;
   try {
-    if (fs.readFileSync(file, "utf8") === body) return false;
+    const disk = fs.readFileSync(file);
+    same = typeof body === "string" ? disk.toString("utf8") === body : disk.equals(body);
   } catch {
     // absent
   }
-  writeFileAtomic(file, body);
-  return true;
+  if (!same) writeFileAtomic(file, body);
+  knownAs(file, body);
+  return !same;
 }
 
 const listFiles = (dir: string): string[] => {
@@ -390,8 +429,8 @@ const listFiles = (dir: string): string[] => {
  * manifest last, so a reader never sees a manifest describing files that are
  * not there yet. Returns true when anything on disk actually changed.
  */
-export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?: string | null } = {}): boolean {
-  const files = serializeState(state, opts);
+export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?: string | null; files?: ReadonlyMap<string, Body> } = {}): boolean {
+  const files = artifactFiles(state, opts);
   const manifestRel = path.join(ARTIFACT_DIR, MANIFEST);
   let changed = false;
   for (const [rel, body] of files) {
@@ -405,6 +444,7 @@ export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?:
       const rel = path.relative(dir, file);
       if (!files.has(rel) && !rel.endsWith(".tmp")) {
         fs.rmSync(file, { force: true });
+        known.delete(file);
         changed = true;
         // A namespace no longer exported leaves no empty folder behind.
         for (let parent = path.dirname(file); parent !== base && fs.existsSync(parent) && !fs.readdirSync(parent).length; parent = path.dirname(parent)) fs.rmdirSync(parent);
@@ -427,15 +467,18 @@ export function restoreLf(dir: string): boolean {
   const files = [path.join(base, MANIFEST), ...[STATE_DIR, PLUGINS_DIR, LOG_DIR].flatMap((sub) => listFiles(path.join(base, sub)).filter((f) => f.endsWith(".jsonl")))];
   let changed = false;
   for (const file of files) {
+    if (unchanged(file)) continue;
     let body: string;
     try {
       body = fs.readFileSync(file, "utf8");
     } catch {
       continue;
     }
-    if (!body.includes("\r\n")) continue;
-    writeFileAtomic(file, lf(body), { mkdir: false });
-    changed = true;
+    if (body.includes("\r\n")) {
+      writeFileAtomic(file, lf(body), { mkdir: false });
+      changed = true;
+    }
+    knownAs(file);
   }
   return changed;
 }

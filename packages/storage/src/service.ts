@@ -33,7 +33,6 @@ import {
   readArtifact,
   refreshSupportFiles,
   restoreLf,
-  serializeState,
   writeArtifact,
   type ExportOptions,
   type ProjectState
@@ -793,7 +792,12 @@ export class Storage extends Service implements StorageReader {
   }
 
   private exportFor(projectId: string, entry: CatalogProject, at = Date.now()): ProjectState {
-    return this.digests.export(projectId, this.db(projectId), { ...this.exportOptions(projectId, entry), checkpoint: this.checkpointOf(projectId), at });
+    return this.exportWithFiles(projectId, entry, at).state;
+  }
+
+  /** The export and, when the kept digest holds them, its state files' bytes, so a write does not serialize them again. */
+  private exportWithFiles(projectId: string, entry: CatalogProject, at = Date.now()): { state: ProjectState; files?: Map<string, Buffer> } {
+    return this.digests.exportFiles(projectId, this.db(projectId), { ...this.exportOptions(projectId, entry), checkpoint: this.checkpointOf(projectId), at });
   }
 
   /** The digest of what this machine would write now; the export already carries it, so it is not hashed twice. */
@@ -868,18 +872,14 @@ export class Storage extends Service implements StorageReader {
     return file === ":memory:" ? null : path.join(path.dirname(file), "published");
   }
 
-  private savePublished(projectId: string, state: ProjectState): void {
+  private savePublished(projectId: string, state: ProjectState, files?: Map<string, Buffer>): void {
     const dir = this.publishedDir(projectId);
     if (!dir) {
       this.publishedMem.set(projectId, state);
       return;
     }
-    fs.rmSync(dir, { recursive: true, force: true });
-    for (const [rel, body] of serializeState(state)) {
-      const file = path.join(dir, rel);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, body, "utf8");
-    }
+    // Only the files that changed are written; ones the state no longer has go.
+    writeArtifact(dir, state, { files });
   }
 
   loadPublished(projectId: string): ProjectState | null {
@@ -928,9 +928,10 @@ export class Storage extends Service implements StorageReader {
     // mid-sync, conflicted, from a newer build — is left as it is: written over,
     // another machine would take our snapshot for its own work undone.
     if (hasArtifact(dir) && reason !== "merge") {
-      const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
+      // Read again only when a file there changed since this machine last read or wrote it.
+      const { digest: onDisk, problem } = this.folderDigest(dir, this.verifies(projectId));
       if (problem) return this.gaveUp(projectId, "not written", problem);
-      if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) {
+      if (onDisk !== null && onDisk !== first.lastPublishedDigest) {
         await this.refreshInTurn(projectId);
         // A pull during the refresh may have brought in what this build cannot read.
         const after = hasArtifact(dir) ? this.readFolder(dir, this.verifies(projectId)).problem : undefined;
@@ -943,20 +944,23 @@ export class Storage extends Service implements StorageReader {
     const entry = this.mustEntry(projectId);
     const now = Date.now();
     const upTo = this.ownTop(projectId);
-    const state = this.exportFor(projectId, entry, now);
+    const { state, files } = this.exportWithFiles(projectId, entry, now);
     const digest = state.manifest.snapshot!.digest;
     this.publishing.add(projectId);
     this.quiet(projectId, 3_000);
     try {
-      if (digest !== entry.lastPublishedDigest || !hasArtifact(dir) || this.manifestChanged(dir, state)) {
-        writeArtifact(dir, state, { mcpUrl: this.mcpUrl(projectId) });
+      const writing = digest !== entry.lastPublishedDigest || !hasArtifact(dir) || this.manifestChanged(dir, state);
+      if (writing) {
+        writeArtifact(dir, state, { mcpUrl: this.mcpUrl(projectId), files });
         compactLog(dir, this.hub.deviceId, (state.manifest.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS) * DAY, now);
-        this.savePublished(projectId, state);
+        this.savePublished(projectId, state, files);
         this.hub.catalog.patchProject(projectId, { lastPublishedDigest: digest, lastSyncAt: now });
       } else {
         refreshSupportFiles(dir, { mcpUrl: this.mcpUrl(projectId) });
       }
       restoreLf(dir);
+      // What was just written needs no reading back to tell the folder's digest.
+      if (writing) this.folderSeen.set(dir, { stamp: artifactStamp(dir), verify: this.verifies(projectId), digest });
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
       // The folder is where the project is shared unless a remote is; then only a push counts.

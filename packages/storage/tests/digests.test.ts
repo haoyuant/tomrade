@@ -9,7 +9,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { ProjectDb } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
-import { exportState, type ExportOptions } from "@tomradex/storage";
+import { exportState, stateFiles, writeArtifact, type ExportOptions } from "@tomradex/storage";
+import { restoreLf } from "../src/state.js";
 import { LocalDigests } from "../src/digests.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-digests-"));
@@ -45,8 +46,15 @@ async function setup() {
 
 describe("the kept local digest", () => {
   it("is the whole export's digest after every kind of write", async () => {
-    const { ctx, db, items, board, project, kept, whole } = await setup();
-    const same = () => expect(kept()).toBe(whole());
+    const { ctx, db, items, board, project, digests, opts, kept, whole } = await setup();
+    // The kept export too: the same state and, file by file, the same bytes as a whole one.
+    const same = () => {
+      expect(kept()).toBe(whole());
+      const { state, files } = digests.exportFiles(project.id, db, { ...opts(), at: 1 });
+      const all = exportState(db, project.id, { ...opts(), at: 1 });
+      expect(state).toEqual(all);
+      expect(new Map([...files!].map(([file, body]) => [file, body.toString("utf8")]))).toEqual(stateFiles(all));
+    };
     same();
 
     const a = items.create({ title: "A", projectId: project.id, boardId: board.id, labels: ["ui"], by: "human" });
@@ -148,4 +156,27 @@ describe("the kept local digest", () => {
     expect(sql.mock.calls.filter(([q]) => q.includes("tomrade_rowid"))).toHaveLength(0);
     sql.mockRestore();
   });
+
+  it("writes a file again once something else changed it, even with the bytes it wrote last", async () => {
+    const { db, items, board, project, digests, opts } = await setup();
+    items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
+    const dir = fs.mkdtempSync(path.join(root, "folder-"));
+    const write = () => {
+      const { state, files } = digests.exportFiles(project.id, db, { ...opts(), at: 1 });
+      return writeArtifact(dir, state, { files });
+    };
+    expect(write()).toBe(true);
+    expect(write()).toBe(false);
+    const file = path.join(dir, ".tomrade", "state", "items.jsonl");
+    const ours = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, ours.replace('"A"', '"Elsewhere"'));
+    expect(write()).toBe(true);
+    expect(fs.readFileSync(file, "utf8")).toBe(ours);
+    // A checkout that turns it into CRLF is put back as well.
+    fs.writeFileSync(file, ours.replace(/\n/g, "\r\n"));
+    expect(restoreLf(dir)).toBe(true);
+    expect(fs.readFileSync(file, "utf8")).toBe(ours);
+    expect(restoreLf(dir)).toBe(false);
+  });
 });
+
