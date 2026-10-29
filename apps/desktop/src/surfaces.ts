@@ -103,9 +103,15 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     // A surface that asks for Settings is outside the window; the window comes forward to show it.
     // Running in the background there may be none yet, and one opens.
     this.ctx.on("settings/show", () => void showMainWindow());
+    // A GPU process that died blanks every WebGL pane at once; say so in the log.
+    const onChildGone = (_event: unknown, details: { type: string; reason: string; exitCode: number }) => {
+      if (details.type === "GPU" && details.reason !== "clean-exit") this.ctx.logger("surfaces").error(`GPU process gone: ${details.reason} (exit ${details.exitCode})`);
+    };
+    app.on("child-process-gone", onChildGone);
     app.on("before-quit", onQuit);
     autoUpdater.on("before-quit-for-update", onQuit);
     return () => {
+      app.off("child-process-gone", onChildGone);
       ipcMain.off(INTERACTIVE_CHANNEL, onInteractive);
       ipcMain.off(MESSAGE_CHANNEL, onMessage);
       app.off("before-quit", onQuit);
@@ -232,6 +238,20 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       const y = Math.max(area.y, Math.min(area.y + area.height - spec.height, at.y - spec.height));
       win.setPosition(Math.round(x), Math.round(y), false);
     });
+
+    // A gone renderer leaves a blank window that only a restart cleared; reload it, but not in a loop.
+    const log = this.ctx.logger("surfaces");
+    let gone: number[] = [];
+    win.webContents.on("render-process-gone", (_event, details) => {
+      log.error(`${spec.id}: renderer gone: ${details.reason} (exit ${details.exitCode})`);
+      if (win.isDestroyed() || details.reason === "clean-exit") return;
+      const now = Date.now();
+      gone = [...gone.filter((at) => now - at < 60_000), now];
+      if (gone.length > 3) return;
+      record.loaded = false;
+      win.webContents.reload();
+    });
+    win.on("unresponsive", () => log.warn(`${spec.id}: window unresponsive`));
 
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed()) return;
