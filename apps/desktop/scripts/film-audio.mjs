@@ -6,7 +6,7 @@ import fs from "node:fs";
 
 const RATE = 44100;
 const BPM = 84;
-const BEAT = 60 / BPM;
+export const BEAT = 60 / BPM;
 const midi = (n) => 440 * 2 ** ((n - 69) / 12);
 // Cmaj7 – Am7 – Fmaj7 – G6, a bar each.
 const CHORDS = [[48, 55, 59, 64, 67], [45, 52, 55, 60, 64], [41, 48, 52, 57, 60], [43, 50, 55, 59, 64]];

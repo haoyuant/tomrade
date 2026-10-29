@@ -1,200 +1,173 @@
 {
- "music": 0.75,
- "parts": [
-  {
-   "card": {
-    "kicker": "Tomrade · Backlog",
-    "en": "Backlog spring cleaning.",
-    "zh": "需求池大扫除，附赠后悔药。",
-    "seconds": 2.8
-   }
-  },
-  {
-   "from": 2.4,
-   "to": 6.9,
-   "kicker": "The ask",
-   "at": "tr",
-   "en": "Nine tickets. Two of them are twins.",
-   "zh": "九张工单，其中两张是双胞胎。",
-   "cam": {
-    "from": [
-     0,
-     0,
-     1920
-    ],
-    "to": [
-     360,
-     275,
-     1480
-    ],
-    "move": [
-     0.05,
-     0.75
-    ]
-   }
-  },
-  {
-   "from": 6.9,
-   "to": 19.2,
-   "speed": 8,
-   "kicker": "Reading",
-   "at": "br",
-   "en": "It reads every ticket first. Unlike some of us.",
-   "zh": "它先把每张单都读一遍。比某些人强。",
-   "cam": {
-    "from": [
-     360,
-     275,
-     1480
-    ],
-    "to": [
-     0,
-     0,
-     1920
-    ],
-    "move": [
-     0,
-     0.6
-    ]
-   }
-  },
-  {
-   "from": 19.2,
-   "to": 23.2,
-   "kicker": "The plan",
-   "at": "bl",
-   "en": "It proposes. You decide.",
-   "zh": "它出方案，你拍板。老板体验，拉满。",
-   "cam": {
-    "from": [
-     0,
-     0,
-     1920
-    ],
-    "to": [
-     1110,
-     120,
-     800
-    ],
-    "move": [
-     0,
-     0.45
-    ]
-   }
-  },
-  {
-   "from": 27.0,
-   "to": 29.6,
-   "kicker": "The plan",
-   "at": "bl",
-   "en": "Nothing runs until you say so.",
-   "zh": "你不点头，它一个字都不改。",
-   "cam": {
-    "from": [
-     1110,
-     120,
-     800
-    ],
-    "to": [
-     1110,
-     120,
-     800
-    ]
-   }
-  },
-  {
-   "from": 29.6,
-   "to": 62.0,
-   "speed": 8,
-   "kicker": "Writing",
-   "at": "tr",
-   "en": "Twins merged. The monster ticket, split four ways.",
-   "zh": "双胞胎合体，巨无霸一拆四。",
-   "cam": {
-    "from": [
-     1110,
-     120,
-     800
-    ],
-    "to": [
-     330,
-     330,
-     1000
-    ],
-    "move": [
-     0,
-     0.3
-    ]
-   }
-  },
-  {
-   "from": 62.0,
-   "to": 67.5,
-   "kicker": "One run",
-   "at": "bl",
-   "en": "Seven changes, one run.",
-   "zh": "七处改动，一次写完。",
-   "cam": {
-    "from": [
-     330,
-     330,
-     1000
-    ],
-    "to": [
-     1060,
-     600,
-     860
-    ],
-    "move": [
-     0.3,
-     0.8
-    ]
-   },
-   "sfx": [
-    {
-     "at": 62.1,
-     "kind": "chime"
-    }
+ "music": 0.72,
+ "intro": {
+  "seconds": 4.2,
+  "title": "Backlog spring cleaning.",
+  "sub": "需求池大扫除，附赠后悔药。"
+ },
+ "outro": {
+  "seconds": 4.0,
+  "title": "From idea to merged PR, with the agents you already use.",
+  "sub": "把想法交给 Agent，一路跟到合并 · tomrade.com"
+ },
+ "take": {
+  "from": 2.4,
+  "to": 72.4,
+  "speed": [
+   [
+    7.3,
+    8
+   ],
+   [
+    18.9,
+    1
+   ],
+   [
+    23.4,
+    4
+   ],
+   [
+    27.0,
+    1
+   ],
+   [
+    29.4,
+    8
+   ],
+   [
+    60.5,
+    1
+   ],
+   [
+    64.6,
+    3
+   ],
+   [
+    68.6,
+    1
+   ],
+   [
+    71.0,
+    2
    ]
-  },
-  {
-   "from": 67.5,
-   "to": 73.5,
-   "kicker": "Undo",
-   "at": "bl",
-   "en": "Regret it? Revert the whole run.",
-   "zh": "后悔了？整次运行，一键撤回。",
-   "note": "Undo covers what Tomrade wrote. Your code stays put. · 撤回的是 Tomrade 写的内容，不动你的代码。",
-   "cam": {
-    "from": [
-     1060,
-     600,
-     860
-    ],
-    "to": [
-     0,
-     0,
-     1920
-    ],
-    "move": [
-     0.5,
-     0.88
-    ]
-   },
-   "sfx": [
-    {
-     "at": 70.35,
-     "kind": "undo"
-    }
+  ],
+  "cam": [
+   [
+    4.4,
+    360,
+    275,
+    1480
+   ],
+   [
+    9.0,
+    0,
+    0,
+    1920
+   ],
+   [
+    20.3,
+    1110,
+    120,
+    800
+   ],
+   [
+    30.5,
+    1110,
+    120,
+    800
+   ],
+   [
+    33.0,
+    330,
+    330,
+    1000
+   ],
+   [
+    61.5,
+    330,
+    330,
+    1000
+   ],
+   [
+    63.5,
+    1060,
+    600,
+    860
+   ],
+   [
+    69.0,
+    1060,
+    600,
+    860
+   ],
+   [
+    71.6,
+    0,
+    0,
+    1920
    ]
-  },
-  {
-   "card": {
-    "en": "From idea to merged PR,\nwith the agents you already use.",
-    "zh": "把想法交给 Agent，一路跟到合并 · tomrade.com",
-    "seconds": 3.4,
-    "logo": true
+  ],
+  "captions": [
+   {
+    "at": 2.6,
+    "corner": "tr",
+    "kicker": "The ask",
+    "en": "Nine tickets. Two of them are twins.",
+    "zh": "九张工单，其中两张是双胞胎。"
+   },
+   {
+    "at": 7.4,
+    "corner": "tr",
+    "kicker": "Reading",
+    "en": "It reads every ticket first. Unlike some of us.",
+    "zh": "它先把每张单都读一遍。比某些人强。"
+   },
+   {
+    "at": 19.5,
+    "corner": "bl",
+    "kicker": "The plan",
+    "en": "It proposes. You decide.",
+    "zh": "它出方案，你拍板。老板体验，拉满。"
+   },
+   {
+    "at": 27.3,
+    "corner": "bl",
+    "kicker": "The plan",
+    "en": "Nothing runs until you say so.",
+    "zh": "你不点头，它一个字都不改。"
+   },
+   {
+    "at": 29.6,
+    "corner": "tr",
+    "kicker": "Writing",
+    "en": "Twins merged. The monster ticket, split four ways.",
+    "zh": "双胞胎合体，巨无霸一拆四。"
+   },
+   {
+    "at": 61.0,
+    "corner": "tl",
+    "kicker": "One run",
+    "en": "Seven changes, one run.",
+    "zh": "七处改动，一次写完。"
+   },
+   {
+    "at": 68.4,
+    "corner": "tl",
+    "kicker": "Undo",
+    "en": "Regret it? Revert the whole run.",
+    "zh": "后悔了？整次运行，一键撤回。",
+    "note": "Undo covers what Tomrade wrote. Your code stays put."
    }
-  }
- ]
+  ],
+  "sfx": [
+   {
+    "at": 61.2,
+    "kind": "chime"
+   },
+   {
+    "at": 70.35,
+    "kind": "undo"
+   }
+  ]
+ }
 }
