@@ -952,10 +952,10 @@ strong { font-weight: var(--font-weight-medium); }
 .state-mark.is-ok { border-color: var(--success); background: var(--success); }
 .state-mark.is-warn { border-color: var(--warn); background: var(--warn); }
 .sect-runner { position: absolute; left: 0; right: 0; bottom: -7px; height: 2px; overflow: hidden; border-radius: 1px; background: var(--border-soft); }
-.sect-runner::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.sect-runner::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
 @keyframes state-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @keyframes state-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-@keyframes sect-run { 0% { left: -40%; } 100% { left: 100%; } }
+@keyframes sect-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 @media (prefers-reduced-motion: reduce) {
   .state-mark.is-live, .state-mark.is-waiting { animation: none; }
   .sect-runner::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
@@ -1152,7 +1152,7 @@ strong { font-weight: var(--font-weight-medium); }
 .start-progress-step { flex: 1 1 12em; min-width: 0; color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
 .start-progress-head > .num { flex: none; white-space: nowrap; }
 .start-progress-bar { position: relative; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
-.start-progress-bar > span { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
+.start-progress-bar > span { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
 .start-progress-steps { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--meta); }
 .start-progress-steps li[data-state="done"] { color: var(--fg); }
 .start-progress-steps li[data-state="done"]::before { content: "\2713  "; }
@@ -2322,7 +2322,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .restore-body { overflow-wrap: anywhere; }
 .restore-hint { margin-top: var(--space-2); overflow-wrap: anywhere; }
 .restore-progress { position: relative; height: 2px; margin-top: var(--space-4); overflow: hidden; border-radius: 1px; background: var(--border-soft); }
-.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
 .restore-foot { align-items: center; }
 .restore-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .restore-actions { flex: none; }
