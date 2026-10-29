@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostCall, openTerminal } from "../src/client.js";
-import { killTree, scanProcesses, spawnConpty } from "../src/conpty.js";
+import { killTree, ProcessReader, scanProcesses, spawnConpty } from "../src/conpty.js";
 import { Host, serve } from "../src/host.js";
 import { conptyRuntime } from "../src/index.js";
 
@@ -87,6 +87,27 @@ describe.skipIf(!conpty)("panes on ConPTY", () => {
       pane.stream.close();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 40_000);
+
+  it("reads the process table from one PowerShell kept between reads, and lets it go", async () => {
+    const reader = new ProcessReader(60_000);
+    try {
+      const first = await reader.read(20_000);
+      const pid = reader.pid!;
+      const second = await reader.read(20_000);
+      expect(reader.pid).toBe(pid);
+      for (const rows of [first, second]) {
+        expect(rows.find((r) => r.pid === process.pid)).toMatchObject({ ppid: process.ppid, name: path.basename(process.execPath), created: expect.any(Number) });
+      }
+      const own = second.find((r) => r.pid === process.pid)!;
+      expect(own.created).toBeGreaterThan(0);
+      expect(own.cmdline.length).toBeGreaterThan(0);
+      reader.dispose();
+      expect(reader.pid).toBeNull();
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 10_000 });
+    } finally {
+      reader.dispose();
     }
   }, 40_000);
 });

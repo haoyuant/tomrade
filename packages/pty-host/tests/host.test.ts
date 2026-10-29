@@ -324,6 +324,24 @@ describe("what runs in the host's panes", () => {
     await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
   });
 
+  it("does not read the table again while only an agent's spinner turns in the title", async () => {
+    const scan = vi.fn(async () => table());
+    const { host, pipe } = await hostOn({ scan, scanTiming: timing });
+    await hostCall(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await host.settled();
+    const pty = FakePty.last!;
+    pty.print("\x1b]0;⠂ Fixing the parser\x07");
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+    await host.settled();
+    pty.print("\x1b]0;⠐ Fixing the parser\x07");
+    pty.print("\x1b]0;✳ Fixing the parser\x07");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await host.settled();
+    expect(scan).toHaveBeenCalledTimes(2);
+    pty.print("\x1b]0;⠂ Writing the tests\x07");
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(3));
+  });
+
   it("answers from the table it has while a slow scan runs, runs one scan at a time, and keeps the table when one fails", async () => {
     let release: (rows: ProcessRow[]) => void = () => undefined;
     let fail: (err: Error) => void = () => undefined;
