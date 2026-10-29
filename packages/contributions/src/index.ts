@@ -336,6 +336,11 @@ export class Contributions extends Service {
     return this.add(this.sidebarModuleMap, def, "sidebarModule");
   }
 
+  /** Whether a command is registered, without reading every title in the current language. */
+  hasCommand(id: string): boolean {
+    return this.commandMap.has(id);
+  }
+
   commands(): CommandView[] {
     return [...this.commandMap.values()].map((c) => ({ id: c.id, title: said(c.title)!, ...(c.group ? { group: said(c.group) } : {}), ...(c.shortcut ? { shortcut: c.shortcut } : {}) }));
   }

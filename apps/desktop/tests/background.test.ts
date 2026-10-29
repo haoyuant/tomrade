@@ -252,7 +252,7 @@ describe("the Dock and tray menus", () => {
     const serial: unknown[][] = [];
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const services: Record<string, unknown> = {
-      contributions: { commands: () => (opts.terminal === false ? [] : [{ id: "code-sessions.open" }]), run: async (...args: unknown[]) => (ran.push(args), {}) },
+      contributions: { hasCommand: (id: string) => opts.terminal !== false && id === "code-sessions.open", run: async (...args: unknown[]) => (ran.push(args), {}) },
       projects: {
         list: () => [
           { id: "old", name: "Old", archived: false, updatedAt: 1 },
