@@ -14,13 +14,23 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Like browsers, a GIF delay of 10ms or less means 100ms. VideoFrame durations are microseconds. */
 const frameMs = (duration: number | null) => (duration && duration > 10_000 ? duration / 1000 : 100);
 
+interface Frame {
+  bitmap: ImageBitmap;
+  x: number;
+  y: number;
+  ms: number;
+}
+
 /**
  * Plays one still or animated image on a canvas, each frame for its own
- * duration, one decoder at a time. Reduced motion holds the first frame.
+ * duration, one decoder at a time. Reduced motion holds the first frame; off
+ * screen the player holds its frame and goes on from there once shown again.
  */
 export class PetPlayer {
   private current: AccessoryAnimation | null = null;
   private stopCurrent: () => void = () => {};
+  private shown = true;
+  private waiting: (() => void)[] = [];
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -50,12 +60,25 @@ export class PetPlayer {
     this.stopCurrent();
     this.stopCurrent = () => {};
     this.current = null;
+    this.wake();
+  }
+
+  /** Whether the canvas can be seen at all; hidden, no frame is drawn. */
+  show(shown: boolean): void {
+    this.shown = shown;
+    if (shown) this.wake();
+  }
+
+  private wake(): void {
+    for (const resume of this.waiting.splice(0)) resume();
   }
 
   private async run(animation: AccessoryAnimation, stopped: () => boolean): Promise<void> {
     const data = await (await fetch(animation.source)).arrayBuffer();
     if (stopped()) return;
     const decoder = new ImageDecoder({ data, type: animation.type });
+    // Decoding is most of a frame's cost: each is decoded and scaled once, then drawn from memory every loop after.
+    const frames: Frame[] = [];
     try {
       await decoder.tracks.ready;
       const count = decoder.tracks.selectedTrack?.frameCount || 1;
@@ -64,24 +87,38 @@ export class PetPlayer {
       let index = 0;
       let due = performance.now();
       while (!stopped()) {
-        const { image } = await decoder.decode({ frameIndex: index });
-        if (stopped()) {
-          image.close();
-          return;
-        }
-        const box = animation.box ?? { x: 0, y: 0, width: image.displayWidth, height: image.displayHeight };
+        const frame = frames[index] ?? (frames[index] = await this.prepare(decoder, index, animation));
+        if (stopped()) return;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.imageSmoothingEnabled = !animation.pixelated;
-        ctx.drawImage(image, box.x, box.y, box.width, box.height, ...fit(box, this.canvas.width, this.canvas.height));
-        const ms = frameMs(image.duration);
-        image.close();
+        ctx.drawImage(frame.bitmap, frame.x, frame.y);
         if (count === 1 || this.still()) return;
-        due += ms;
+        due += frame.ms;
         await sleep(Math.max(0, due - performance.now()));
+        if (!this.shown) {
+          await new Promise<void>((resume) => this.waiting.push(resume));
+          due = performance.now();
+        }
         index = (index + 1) % count;
       }
     } finally {
       decoder.close();
+      for (const frame of frames) frame.bitmap.close();
+    }
+  }
+
+  private async prepare(decoder: ImageDecoder, frameIndex: number, animation: AccessoryAnimation): Promise<Frame> {
+    const { image } = await decoder.decode({ frameIndex });
+    try {
+      const box = animation.box ?? { x: 0, y: 0, width: image.displayWidth, height: image.displayHeight };
+      const [x, y, w, h] = fit(box, this.canvas.width, this.canvas.height);
+      const bitmap = await createImageBitmap(image, box.x, box.y, box.width, box.height, {
+        resizeWidth: Math.max(1, Math.round(w)),
+        resizeHeight: Math.max(1, Math.round(h)),
+        resizeQuality: animation.pixelated ? "pixelated" : "high"
+      });
+      return { bitmap, x: Math.round(x), y: Math.round(y), ms: frameMs(image.duration) };
+    } finally {
+      image.close();
     }
   }
 }
