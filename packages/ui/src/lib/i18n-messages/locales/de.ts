@@ -1211,6 +1211,7 @@ export const de: PartialMessages = {
     showCards: "Sitzungen als Karten zeigen ({{key}})",
     showRail: "Sitzungen als Punkte zeigen ({{key}})",
     waitingCount: "{{n}} warten",
+    waitingWord: "warten",
     filter: "Zeigen",
     filterAll: "Alle {{n}}",
     filterWait: "Warten {{n}}",

@@ -706,7 +706,7 @@ const run = async () => {
     $(`(() => { const b = document.querySelector('.ai .sbar'); if (!b) return null; return { mode: b.classList.contains('is-rail') ? 'rail' : 'cards',
       dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label'), d.dataset.depth ?? null]),
       cards: [...b.querySelectorAll('.sbar-card')].map((c) => [c.dataset.status, c.textContent]),
-      waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, waitingText: b.querySelector('.sbar-waiting')?.textContent ?? null,
+      waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, waitingText: b.querySelector('.sbar-waiting') ? [...b.querySelectorAll('.sbar-waiting > span')].map((s) => s.textContent).join(' ') : null,
       doneWhere: b.querySelector('.sbar-dot[data-status="done"] .sbar-dot-where')?.textContent ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
   let barSeen = await bar();
   check("the panel has a session bar, as dots while the panel is narrow", barSeen?.mode === "rail", barSeen);

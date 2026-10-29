@@ -1233,6 +1233,7 @@ export const zhHant: PartialMessages = {
     showCards: "展開成卡片（{{key}}）",
     showRail: "收成一列點（{{key}}）",
     waitingCount: "等你 {{n}}",
+    waitingWord: "等你",
     filter: "顯示",
     filterAll: "全部 {{n}}",
     filterWait: "等你 {{n}}",
