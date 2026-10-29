@@ -20,6 +20,21 @@ function bare(): string {
   return dir;
 }
 
+const commits = (remote: string): number => Number(execFileSync("git", ["-C", remote, "rev-list", "--count", "main"]).toString().trim());
+
+/** Another machine putting back a ledger line this one never publishes, as an older Tomrade might. */
+function putBack(remote: string): void {
+  const run = (args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } = {}) => execFileSync("git", ["-C", remote, ...args], opts).toString().trim();
+  const ids = run(["show", `main:${IDS_FILE}`]);
+  if (ids.includes('"ghost"')) return;
+  const blob = run(["hash-object", "-w", "--stdin"], { input: `${ids}\n{"id":"ghost","path":"ghost.md","at":1}\n` });
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(root, `put-back-${n++}`) };
+  run(["read-tree", "main"], { env });
+  run(["update-index", "--add", "--cacheinfo", `100644,${blob},${IDS_FILE}`], { env });
+  const tree = run(["write-tree"], { env });
+  run(["update-ref", "refs/heads/main", run(["-c", "user.name=other", "-c", "user.email=other@localhost", "commit-tree", tree, "-p", "main", "-m", "put back"])]);
+}
+
 async function store(remote: string | null = null, onChange: () => void = noop, dir = path.join(root, `store-${n++}`), runner: Git = git) {
   return new GitFileStore({
     git: runner,
@@ -277,6 +292,47 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     expect(most).toBe(1);
     first.close();
     second.close();
+  });
+
+  it("publishes the ids a machine syncing for the first time was given, so neither keeps rewriting the other's", async () => {
+    const remote = bare();
+    const a = await store(remote);
+    await a.write("a.md", text("a\n"));
+    await a.write("b.md", text("b\n"));
+    expect((await a.sync()).state).toBe("synced");
+    // B records the ids it receives a moment later, so its own stamps differ from A's.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const b = await store(remote);
+    expect((await b.sync()).state).toBe("synced");
+    await a.sync();
+    const settled = commits(remote);
+    for (let round = 0; round < 3; round++) {
+      expect((await b.sync()).state).toBe("synced");
+      expect((await a.sync()).state).toBe("synced");
+    }
+    expect(commits(remote)).toBe(settled);
+    expect((await b.read("a.md"))?.fileId).toBe((await a.read("a.md"))?.fileId);
+    a.close();
+    b.close();
+  });
+
+  it("stops sharing while another machine keeps putting back what this one replaces, and goes on once something changes", async () => {
+    const remote = bare();
+    const s = await store(remote);
+    await s.write("a.md", text("a\n"));
+    expect((await s.sync()).state).toBe("synced");
+    const states: string[] = [];
+    for (let round = 0; round < 5; round++) {
+      putBack(remote);
+      states.push((await s.sync()).state);
+    }
+    expect(states).toEqual(["synced", "synced", "synced", "error", "error"]);
+    expect((await s.status()).detail).toMatch(/keeps undoing/);
+    expect(execFileSync("git", ["-C", remote, "show", `main:${IDS_FILE}`]).toString()).toContain("ghost");
+    await s.write("b.md", text("b\n"));
+    expect((await s.sync()).state).toBe("synced");
+    expect(execFileSync("git", ["-C", remote, "show", `main:${IDS_FILE}`]).toString()).not.toContain("ghost");
+    s.close();
   });
 
   it("reports an unreachable remote as offline and keeps working", async () => {

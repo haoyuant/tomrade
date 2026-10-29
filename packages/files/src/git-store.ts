@@ -43,6 +43,8 @@ export const TREE_LIMIT = 20_000;
 export const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
+/** Pushes in a row that put back what the remote had just undone, before sharing stops to wait. */
+const FLIP_ROUNDS = 3;
 
 export interface GitRemoteTarget {
   url: string;
@@ -121,6 +123,15 @@ export function parseLedger(text: string): Ledger {
   return { byId, byPath };
 }
 
+/** Whether a ledger publishes exactly the ids, paths and stamps `lines` would. */
+function sameLedger(lines: LedgerLine[], ledger: Ledger): boolean {
+  const live = [...ledger.byId].filter(([, v]) => v.path !== null);
+  return live.length === lines.length && lines.every((line) => {
+    const theirs = ledger.byId.get(line.id);
+    return theirs?.path === line.path && theirs.at === line.at;
+  });
+}
+
 export function contentOf(rel: string, bytes: Buffer, fileId: string | null, versionId: string | null): FileContent {
   const mime = mimeOf(rel);
   const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length, hash: sha256(bytes) };
@@ -171,6 +182,8 @@ export class GitFileStore implements FileStore {
   private syncQueue: Promise<FilesStatus> | null = null;
   private lastSyncAt: number | null = null;
   private problem: { state: "offline" | "error"; detail: string } | null = null;
+  /** The trees the last push replaced and published, and how many syncs in a row found the remote back at the replaced one. */
+  private flip = { replaced: null as string | null, published: "", rounds: 0 };
   private ensured = false;
   private closed = false;
   private chain: Promise<unknown> = Promise.resolve();
@@ -1025,6 +1038,10 @@ export class GitFileStore implements FileStore {
         }
         const snapshot = await this.locked(() => this.reconcile(projection));
         if (!snapshot) return;
+        if (this.undoing(await projection.trees())) {
+          this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
+          return;
+        }
         if (!(await projection.push())) {
           this.problem = { state: "error", detail: "The remote moved on; will retry" };
           return;
@@ -1050,6 +1067,18 @@ export class GitFileStore implements FileStore {
       if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
       if (told) this.opts.onChange();
     }
+  }
+
+  /**
+   * Publishing the same tree over the same tree again and again means another
+   * machine keeps putting back what this one replaced: neither will settle, and
+   * each round is a commit on a branch people share.
+   */
+  private undoing({ theirs, ours }: { theirs: string | null; ours: string }): boolean {
+    if (theirs === ours) return false;
+    if (theirs === this.flip.replaced && ours === this.flip.published) this.flip.rounds++;
+    else this.flip = { replaced: theirs, published: ours, rounds: 1 };
+    return this.flip.rounds > FLIP_ROUNDS;
   }
 
   /**
@@ -1181,12 +1210,16 @@ export class GitFileStore implements FileStore {
       baseline[p] = projection.oid(p)!;
       const fileId = ledger.byPath.get(p);
       if (!fileId) continue;
-      lines.push({ id: fileId, path: p, at: ledger.byId.get(fileId)!.at });
+      // Each machine stamps an id when it first records it, so the same id carries a different `at` on each;
+      // publishing our own would undo the other machine's line on every sync, and its sync would undo ours.
+      const at = remoteIds.byPath.get(p) === fileId ? remoteIds.byId.get(fileId)!.at : ledger.byId.get(fileId)!.at;
+      lines.push({ id: fileId, path: p, at });
       const versionId = await this.versionOf(p);
       if (versionId && !this.record({ fileId, versionId })) await this.archive({ fileId, versionId, path: p }, null);
     }
     for (const p of remoteOids.keys()) if (!outgoing.has(p)) await projection.write(p, null);
-    await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
+    // Lines in another order say the same; rewriting them would only start another round.
+    if (!sameLedger(lines, remoteIds)) await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
     await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify({ v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy)));
     await this.exportRecords(projection, selected);
     return { baseline, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };
