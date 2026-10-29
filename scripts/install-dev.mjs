@@ -99,7 +99,16 @@ function installWindows() {
   }
   const exe = path.join(after.dir, "Tomrade.exe");
   console.log(`Installed Tomrade ${after.version} at ${after.dir}`);
-  spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+  // From an administrator terminal it would inherit those rights, and so would the terminal host it starts, which a
+  // Tomrade opened normally afterwards may not open: Explorer starts it as the signed-in user.
+  if (elevated()) {
+    console.log("Starting Tomrade without this terminal's administrator rights");
+    spawn("explorer.exe", [exe], { detached: true, stdio: "ignore" }).unref();
+  } else spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+}
+
+function elevated() {
+  return powershell("([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)") === "True";
 }
 
 /** The installed Tomrade's folder and version, from the uninstall entry its installer wrote (per user or per machine). */

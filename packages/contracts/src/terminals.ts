@@ -43,6 +43,8 @@ export type TerminalBridge =
   | { state: "ready"; version: string }
   /** No backend runs here: herdr's direct attach on native Windows, or a build without the pty host's runtime. */
   | { state: "unsupported" }
+  /** The pty host's pipe is held by a host this app may not open: one run as administrator while the app is not, or the reverse. */
+  | { state: "forbidden" }
   | { state: "notInstalled" }
   | { state: "notRunning"; version: string }
   | { state: "tooOld"; version: string; need: string; fix: string }

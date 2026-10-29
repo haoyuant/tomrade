@@ -2,6 +2,12 @@ import net from "node:net";
 import type { TerminalFrame, TerminalMode, TerminalStream } from "@tomradex/contracts";
 import { clampSize, line, lineReader, parseTerminalLine, PtyHostError, terminalCommand, type AttachParams } from "./protocol.js";
 
+/** Why a connection to the pipe failed: `forbidden` when a host this process may not open holds it (one run as administrator while this app is not), else `unreachable`. */
+function connectError(err: NodeJS.ErrnoException): PtyHostError {
+  if (err.code === "EPERM" || err.code === "EACCES") return new PtyHostError("forbidden", `the terminal host does not let this app in: ${err.message}`);
+  return new PtyHostError("unreachable", `the terminal host is not reachable: ${err.message}`);
+}
+
 /** One request to the host: a line of JSON in, a line back. */
 export function hostCall<T = Record<string, unknown>>(pipe: string, method: string, params: Record<string, unknown> = {}, timeoutMs = 5000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -30,7 +36,7 @@ export function hostCall<T = Record<string, unknown>>(pipe: string, method: stri
       }
       finish(() => resolve(reply.result as T));
     }));
-    connection.once("error", (err) => finish(() => reject(new PtyHostError("unreachable", `the terminal host is not reachable: ${err.message}`))));
+    connection.once("error", (err) => finish(() => reject(connectError(err))));
     connection.once("close", () => finish(() => reject(new PtyHostError("closed", `the terminal host closed the connection before answering ${method}`))));
   });
 }
@@ -63,7 +69,7 @@ export function hostStream(pipe: string, subscriptions: Record<string, unknown>[
     }
     if (typeof parsed.event === "string") onEvent({ event: parsed.event, data: parsed.data ?? {} });
   }));
-  connection.once("error", (err) => end(new PtyHostError("unreachable", `the terminal host is not reachable: ${err.message}`)));
+  connection.once("error", (err) => end(connectError(err)));
   connection.once("close", () => end(null));
   return { close: () => end(null) };
 }
@@ -131,7 +137,7 @@ export function openTerminal(pipe: string, input: { paneId: string; mode: Termin
     else if (parsed?.type === "closed") finish(parsed.reason);
   }));
   connection.once("error", (err) => {
-    const error = new PtyHostError("unreachable", `the terminal host is not reachable: ${err.message}`);
+    const error = connectError(err);
     attach.reject(error);
     finish(error.message);
   });

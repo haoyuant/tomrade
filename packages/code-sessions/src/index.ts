@@ -741,6 +741,8 @@ function apply(ctx: Context, config: Config) {
   /** herdr's server being started again for the windows, and whether the last start did not work (then only the person's retry tries again). */
   let reviving: Promise<void> | null = null;
   let reviveFailed = false;
+  /** The pty host's pipe refused this app when last read: once it lets the app in, the cells cut off attach again. */
+  let shutOut = false;
 
   /** A window with saved terminals, or sessions that run or lately ran in herdr, has panes to bring back. */
   const wantsHerdr = (projectId: string, sessions: SessionRow[]) =>
@@ -840,7 +842,8 @@ function apply(ctx: Context, config: Config) {
     // Only the sessions a state uses are read: the ended ones code link keeps grow by the day.
     const shown = listed(projectId, () => shownSessions(projectId, [...inCells, ...(win?.reveal?.sessionId ? [win.reveal.sessionId] : [])]));
     if (b.state === "ready") reviveFailed = false;
-    if (b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) revive();
+    if ((b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) || (b.state === "ready" && shutOut)) revive();
+    shutOut = b.state === "forbidden";
     // after the start is decided: the bridge read above must not go stale across this await
     if (b.state === "ready") shown.sessions = await withPrompts(shown.sessions);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
@@ -1297,6 +1300,8 @@ function apply(ctx: Context, config: Config) {
         post(win, { type: "closed", cell, reason: restarting });
         return revive();
       }
+      // Starting another host would not help: the one holding the pipe stays until someone ends it.
+      if ((error as { code?: unknown } | null)?.code === "forbidden") return post(win, { type: "closed", cell, reason: words()("hostForbidden") });
       // The pty host names a pane it no longer has; herdr's own words come as they are.
       return post(win, { type: "closed", cell, reason: (error as { code?: unknown } | null)?.code === "pane_not_found" ? words()("paneEnded") : errorMessage(error) });
     }
