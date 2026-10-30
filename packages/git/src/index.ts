@@ -296,10 +296,12 @@ export class GitFolder {
     await this.git(["merge", "-q", "--ff-only", `${name}/${branch}`], { cwd: this.dir });
   }
 
-  /** Non-fast-forward is reported as `false`, never forced. With `onStderr`, git reports its progress there. */
-  async push(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<boolean> {
+  /** A refusal (non-fast-forward, a hook, no access) or a lost connection is reported with git's words, never forced. With `onStderr`, git reports its progress there. */
+  async push(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<PushResult> {
     const r = await this.git(["push", onStderr ? "--progress" : "-q", name, `HEAD:refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr });
-    return r.code === 0;
+    if (r.code === 0) return { ok: true };
+    const detail = pushWords(r.stderr ?? "");
+    return { ok: false, reach: detail && BROKE_OFF.test(detail) ? "offline" : reachOf(detail), detail };
   }
 
   async mergeBase(branch: string, name = "origin"): Promise<string | null> {
@@ -368,6 +370,23 @@ const lastWords = (stderr: string): string | undefined => stderr.replace(/\/\/[^
 const OFFLINE = /could not resolve|failed to connect|couldn't connect|connection (refused|timed out|reset|closed)|network is unreachable|timed out|no route to host|ssl|tls|proxy|unable to look up/i;
 
 const reachOf = (detail: string | undefined): "offline" | "denied" => (detail && OFFLINE.test(detail) ? "offline" : "denied");
+
+/** A push that began and lost the connection is the network too, not the server saying no. */
+const BROKE_OFF = /hung up unexpectedly|early EOF|RPC failed|unexpected disconnect/i;
+
+const PROGRESS = /^(?:remote: )?(?:Enumerating|Counting|Compressing|Writing|Resolving|Delta compression|Total \d)/i;
+
+/** The remote's own reason sits above git's closing line; hints and the `To <url>` line say nothing. */
+const pushWords = (stderr: string): string | undefined =>
+  stderr
+    .replace(/\/\/[^@\s/]*@/g, "//")
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("hint:") && !line.startsWith("To ") && !PROGRESS.test(line))
+    .join(" ")
+    .slice(0, 400) || undefined;
+
+export type PushResult = { ok: true } | { ok: false; reach: "offline" | "denied"; detail?: string };
 
 export async function probeUrl(git: Git, url: string, branch: string): Promise<{ reach: RemoteReach; detail?: string }> {
   const r = await git(["ls-remote", "--exit-code", url, `refs/heads/${branch}`], { ok: true });

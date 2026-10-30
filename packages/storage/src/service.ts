@@ -12,7 +12,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, SyncRecorder, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential, type SyncTrace } from "@tomradex/git";
+import { GitFolder, GitMissingError, SyncRecorder, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential, type PushResult, type SyncTrace } from "@tomradex/git";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
@@ -179,6 +179,9 @@ export class Storage extends Service implements StorageReader {
   private readonly traces = new Map<string, SyncTrace>();
   /** Why the folder's last commit or push failed, until one succeeds: the folder is ahead of git whatever the digests say. */
   private gitFailed = new Map<string, string>();
+  /** Why the last push was turned away or broke off, until one lands: the commits wait here, the status says so. */
+  private pushFailed = new Map<string, { state: "offline" | "error"; detail: string }>();
+  private hubPushFailed: { state: "offline" | "error"; detail: string } | null = null;
   private lastState = new Map<string, SyncState>();
   private lastStatus = new Map<string, StorageStatus>();
   /** Base snapshots for projects whose cache is in memory (tests). */
@@ -992,7 +995,7 @@ export class Storage extends Service implements StorageReader {
       // The folder is where the project is shared unless a remote is; then only a push counts.
       let delivered = true;
       try {
-        if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
+        if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(projectId, entry, summary) : this.pushDedicated(projectId, entry, summary));
         else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
       } catch (error) {
         // A hook or a signing key said no: the status says why, and the next reconcile tries again.
@@ -1036,6 +1039,7 @@ export class Storage extends Service implements StorageReader {
     const recorder = this.recorders.get(projectId);
     recorder?.step("saving");
     await g.commit(summary);
+    this.pushFailed.delete(projectId);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
     recorder?.locate({ remote: remote.url, branch: remote.branch });
@@ -1052,9 +1056,22 @@ export class Storage extends Service implements StorageReader {
       }
     }
     recorder?.step("pushing");
-    if (!(await g.push(remote.branch, "origin", recorder?.stderr))) recorder?.fail();
+    if (!this.pushLanded(projectId, entry.dir!, remote.branch, await g.push(remote.branch, "origin", recorder?.stderr))) {
+      recorder?.fail();
+      return false;
+    }
     this.pushedTo(entry.dir!, remote.branch);
     return true;
+  }
+
+  /** A push turned away is no delivery: the commits stay for the next sync, the status and the log say why. */
+  private pushLanded(projectId: string, dir: string, branch: string, result: PushResult): boolean {
+    if (result.ok) return true;
+    const detail = `Push to ${branch} failed${result.detail ? `: ${result.detail}` : ""}`;
+    this.pushFailed.set(projectId, { state: result.reach === "offline" ? "offline" : "error", detail });
+    this.home.logger.warn(`storage: ${dir} not pushed — ${detail}`);
+    this.notify(projectId);
+    return false;
   }
 
   /**
@@ -1062,14 +1079,15 @@ export class Storage extends Service implements StorageReader {
    * there are any: the remote's news waits for the next launch, which merges
    * it, so a quit never waits on a fetch or a merge.
    */
-  private async pushOnLeaving(entry: CatalogProject, summary: string): Promise<boolean> {
+  private async pushOnLeaving(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
     const committed = await g.commit(summary);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
     // Against the last-known remote tip; without one, assume there is something to push.
-    if (committed || ((await g.aheadBehind(remote.branch))?.ahead ?? 1) > 0) await g.push(remote.branch);
-    return true;
+    if (!committed && ((await g.aheadBehind(remote.branch))?.ahead ?? 1) === 0) return true;
+    this.pushFailed.delete(projectId);
+    return this.pushLanded(projectId, entry.dir!, remote.branch, await g.push(remote.branch));
   }
 
   private async remoteOf(entry: CatalogProject): Promise<{ url: string; branch: string } | null> {
@@ -1521,6 +1539,8 @@ export class Storage extends Service implements StorageReader {
     if (problem) return this.remember(projectId, { ...problem, location, lastSyncAt: entry.lastSyncAt });
     const failed = this.gitFailed.get(projectId);
     if (failed) return this.remember(projectId, { state: "error", location, detail: failed, lastSyncAt: entry.lastSyncAt });
+    const refused = this.pushFailed.get(projectId);
+    if (refused) return this.remember(projectId, { state: refused.state, location, detail: refused.detail, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
       localDirty = this.statusDigest(projectId, entry) !== entry.lastPublishedDigest;
@@ -1909,6 +1929,7 @@ export class Storage extends Service implements StorageReader {
     this.lastState.delete(projectId);
     this.publishedMem.delete(projectId);
     this.gitFailed.delete(projectId);
+    this.pushFailed.delete(projectId);
     this.digests.forget(projectId);
   }
 
@@ -1926,7 +1947,7 @@ export class Storage extends Service implements StorageReader {
     } else {
       await this.refresh(projectId);
       const status = await this.statusFor(projectId);
-      if (status.state === "ahead" || this.gitFailed.has(projectId)) await this.publish(projectId, "catch-up");
+      if (status.state === "ahead" || this.gitFailed.has(projectId) || this.pushFailed.has(projectId)) await this.publish(projectId, "catch-up");
       // A machine that never counted starts from a moment nothing is waiting.
       else if (status.state === "synced" && this.entry(projectId)?.syncedDeviceSeq === null) this.markSynced(projectId, this.ownTop(projectId));
     }
@@ -2088,6 +2109,7 @@ export class Storage extends Service implements StorageReader {
       const g = this.git(dir);
       const probe = await g.probe(remote.branch);
       if (probe === "offline") return { state: "offline", location, detail: `Cannot reach ${location}`, lastSyncAt: null };
+      if (this.hubPushFailed) return { ...this.hubPushFailed, location, lastSyncAt: null };
       if (probe === "absent") return { state: "ahead", location, detail: "Nothing published yet", lastSyncAt: null };
       await g.fetch(remote.branch);
       const counts = await g.aheadBehind(remote.branch);
@@ -2150,7 +2172,15 @@ export class Storage extends Service implements StorageReader {
         await g.commit("tomrade: hub");
       }
     }
-    if (probe !== "offline") await g.push(remote.branch);
+    this.hubPushFailed = null;
+    if (probe !== "offline") {
+      const pushed = await g.push(remote.branch);
+      if (!pushed.ok) {
+        const detail = `Push to ${remote.branch} failed${pushed.detail ? `: ${pushed.detail}` : ""}`;
+        this.hubPushFailed = { state: pushed.reach === "offline" ? "offline" : "error", detail };
+        this.home.logger.warn(`storage: the Hub ${dir} not pushed — ${detail}`);
+      }
+    }
     this.home.get("ipc")?.send("hub.changed");
     void this.restoreMissing();
     return this.hubStatus();
