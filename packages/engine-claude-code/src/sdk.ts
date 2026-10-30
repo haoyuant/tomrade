@@ -32,9 +32,9 @@ export function sdkLaunch(launch: CliLaunch, onStderr?: (data: string) => void):
 /** The tools acceptEdits lets through without asking. */
 const EDITS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
-/** A steer goes into the CLI's queue as written, plus a word for when it lands after the reply was finished. */
+/** A steer goes into the CLI's queue as written, plus a word for the step it cut short. */
 const steerPrompt = (text: string) =>
-  `${text}\n\n(Sent while you were working. If your reply is already finished, answer only what this adds or changes; do not repeat it.)`;
+  `${text}\n\n(Sent while you were working, which stopped here to read it; a command cut short by this was not refused. Do not repeat what you already said.)`;
 
 /** Which of the client's messages a CLI turn answers, when the CLI stamps it (null when it does not). */
 const consumedBy = (message: SDKMessage): string[] | null => {
@@ -111,7 +111,10 @@ export class ClaudeRuntime implements Runtime {
       const steers = new Map<string, string>();
       const unplaced = new Set<string>();
       const consumed = new Set<string>();
-      let prompted = false;
+      const promptId = randomUUID();
+      let started = false;
+      // A steer cut the CLI's turn short, which can then end as an error: that is not the run's end.
+      let cutting = false;
       let over = false;
       const place = (uuids: Iterable<string>) => {
         for (const uuid of uuids) if (unplaced.delete(uuid)) io.steered?.(steers.get(uuid)!);
@@ -127,15 +130,20 @@ export class ClaudeRuntime implements Runtime {
         return true;
       });
       io.steersMedia?.();
-      io.steerTo?.(async (steer) => {
-        if (!prompted || over || turn.cancelled || !this.alive) return false;
+      // Taken once the CLI is answering the prompt: a "now" message sent before then would be answered ahead of it.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
+        if (over || turn.cancelled || !this.alive) return false;
         const uuid = randomUUID();
         steers.set(uuid, steer.id); unplaced.add(uuid);
         const text = steerPrompt(steer.text);
         const content = steer.media?.length ? claudeMediaBlocks(text, steer.media) as SDKUserMessage["message"]["content"] : text;
-        this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
+        cutting = true;
+        // "now" cuts the reply being written, but a running tool only once it ends; an interrupt ends the tool too.
+        // Tomrade's own tools are quick, and a write cut halfway helps no one: those are waited for.
+        if (running.size) await this.query?.interrupt().catch(() => {});
+        this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "now" });
         return true;
-      });
+      };
       // A turn can span the CLI's turns for late steers: their figures add up.
       const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, cacheKnown: false };
       // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
@@ -149,6 +157,10 @@ export class ClaudeRuntime implements Runtime {
       });
       this.onFailure = (error) => finish(turn.failed(String(error), { error }));
       this.onMessage = (message) => {
+        if (!started && message.type !== "result" && (consumedBy(message)?.includes(promptId) || message.type === "stream_event" || message.type === "assistant")) {
+          started = true;
+          io.steerTo?.(forward);
+        }
         // the first frame of a CLI turn names the messages it answers: a late steer is read there
         if (message.type !== "result") { const answers = consumedBy(message); if (answers) place(answers.filter((uuid) => steers.has(uuid))); }
         if (message.type === "system" && message.subtype === "init") {
@@ -223,7 +235,8 @@ export class ClaudeRuntime implements Runtime {
           // an older CLI does not say what it read: nothing is waited for
           for (const uuid of answered ?? steers.keys()) consumed.add(uuid);
           place([...unplaced].filter((uuid) => consumed.has(uuid)));
-          if (!message.is_error && !turn.cancelled && waiting().length) return;
+          // the steer runs as the CLI's next turn, still part of this one
+          if ((!message.is_error || cutting) && !turn.cancelled && waiting().length) { cutting = false; return; }
           over = true;
           const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
           const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
@@ -305,8 +318,7 @@ export class ClaudeRuntime implements Runtime {
         ? claudeMediaInput(input, io, lead) as SDKUserMessage["message"]["content"]
         : lead;
       // with a uuid of its own, so the CLI says on each result which messages that turn answered
-      this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid: randomUUID() });
-      prompted = true;
+      this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid: promptId });
       const result = await done;
       // The SDK's maxBudgetUsd is query-wide. Reopen budgeted sessions on the
       // next turn to preserve Tomrade's existing per-run budget exactly.

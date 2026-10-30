@@ -71,6 +71,22 @@ const run = async () => {
       return { stop: "end" };
     }
   });
+  // an agent that queues steers itself and takes them only once it has started up, as Claude Code does
+  ctx.agent.engine({
+    id: "cold",
+    title: "Cold",
+    author: "ai:cold",
+    steering: "forward",
+    available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      await sleep(1200);
+      const heard = [];
+      io.steerTo(async (steer) => { setTimeout(() => { io.steered(steer.id); heard.push(steer.text); }, 300); return true; });
+      await sleep(1500);
+      io.emit({ type: "text", text: heard.length ? `heard: ${heard.join(" + ")}` : "steady" });
+      return { stop: "end" };
+    }
+  });
   ctx.agent.engine({
     id: "deaf",
     title: "Deaf",
@@ -352,7 +368,7 @@ const run = async () => {
     await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
     await sleep(300);
     // through the panel's own menu, so what it shows is what runs
-    const title = { steerable: "Steerable", deaf: "Deaf", slow: "Slow" }[id];
+    const title = { steerable: "Steerable", cold: "Cold", deaf: "Deaf", slow: "Slow" }[id];
     await press(`[...document.querySelectorAll('.ai-knobs .chip-btn')].at(-1)`);
     await sleep(400);
     await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(title)})`);
@@ -381,6 +397,16 @@ const run = async () => {
   check("a queued message can be steered in", (await agentSaid()).includes("heard: and shiny") && (await queued()).length === 0, await agentSaid());
   await sleep(2500);
   check("all of it was one run", ctx.agent.store.runs(alpha.id, steerThread).length === 1);
+
+  steerThread = await onEngine("cold");
+  await send("paint it");
+  await sleep(300);
+  await setDraft("start blue");
+  await steerKey();
+  await sleep(150);
+  check("⌘Enter while the agent starts up is held for it, not refused", (await queued()).length === 0 && (await $(`document.querySelector('.ai-queued.is-steering')?.textContent ?? ''`)).includes("start blue") && !(await $(`document.body.textContent.includes("can't take messages mid-turn")`)));
+  await sleep(2800);
+  check("and it reaches the agent once it is up, in the same run", (await agentSaid()).includes("heard: start blue") && (await $(`!!document.querySelector('.ai-scroll .turn-user.is-steer')`)) && ctx.agent.store.runs(alpha.id, steerThread).length === 1, await agentSaid());
 
   steerThread = await onEngine("deaf");
   await send("one");
@@ -454,7 +480,7 @@ const run = async () => {
   await steerKey();
   await sleep(300);
   q = await queued();
-  check("an agent that takes no picture mid-turn gets the message queued, with a word about it", q.length === 1 && q[0].text === "look anyway" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "1 attached" && (await $(`document.body.textContent.includes("can't take messages mid-turn")`)), q);
+  check("an agent that takes no picture mid-turn gets the message queued, with a word about it", q.length === 1 && q[0].text === "look anyway" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "1 attached" && (await $(`document.body.textContent.includes("can't take pictures mid-turn")`)), q);
   await until(() => sentFiles(fileThread, "look anyway").length > 0, 40);
   check("and the picture goes out with it after the turn", sentFiles(fileThread, "look anyway").join("|") === "kept.png", sentFiles(fileThread, "look anyway"));
   await until(async () => !(await panel()).working, 40);

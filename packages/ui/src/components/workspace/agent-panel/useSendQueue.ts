@@ -44,7 +44,7 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
       return;
     }
     if (!(queues[inThread] ?? []).some((x) => x.id === entry.id)) editQueue(inThread, (q) => [...q, entry]);
-    toast({ body: t("agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
+    toast({ body: t(entry.attachments?.length && engine?.steers ? "agentPanel.steerFilesQueued" : "agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
   };
   const steeredIds = useMemo(() => new Set((messages ?? []).flatMap((m) => (m.block.type === "text" && m.block.steerId ? [m.block.steerId] : []))), [messages]);
   useEffect(() => {

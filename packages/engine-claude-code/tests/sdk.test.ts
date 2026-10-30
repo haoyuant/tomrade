@@ -123,7 +123,7 @@ it("reports the SDK's retries, drops the failed attempt from the live count, and
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
 
-it("steers a running turn through the SDK's input queue, waits out a steer that missed the turn, and drops unread ones on a stop", async () => {
+it("steers a running turn at once through the SDK's input queue, cutting a running tool, waits out the CLI turn it starts, and drops unread ones on a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-steer-"));
   const log = path.join(dir, "requests.jsonl");
   const bin = path.join(dir, "claude");
@@ -141,11 +141,13 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
   const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
-    steersMedia: () => { steersMedia = true; }, steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+    steersMedia: () => { steersMedia = true; }, steerTo: (fn) => { forward = fn; takenAfter.push(requests().filter((r) => r.type === "user").length); }, steered: (id) => order.push(`steered:${id}`) };
+  // how many messages the CLI had when the engine began taking steers
+  const takenAfter: number[] = [];
   const requests = () => logged(log);
   const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
   try {
-    // while a tool runs: joins the same CLI turn, placed after the tool's result
+    // while a tool runs: the tool is cut, and the steer runs as the CLI's next turn within this one
     let turn = engine.turn(input, io);
     await when(() => order.includes("trace") || requests().some((r) => r.type === "user"));
     await new Promise((r) => setTimeout(r, 100));
@@ -154,9 +156,13 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
     let result = await turn;
     expect(result.stop, result.error).toBe("end");
     expect(order).toEqual(["trace", "steered:s1", "agent:took: make it blue"]);
-    const steer = requests().filter((r) => r.type === "user").at(-1);
-    expect(steer).toMatchObject({ priority: "next" });
-    expect(steer.message.content).toEqual([
+    // the cut CLI turn and the steer's own count as this one run
+    expect(result.costUsd).toBeCloseTo(0.04);
+    // only once the CLI was answering the prompt: a "now" message before then is answered ahead of it
+    expect(takenAfter[0]).toBe(1);
+    const sent = requests().filter((r) => r.type === "user" || r.request?.subtype === "interrupt");
+    expect(sent.slice(-2).map((r) => r.type === "user" ? r.priority : "interrupt")).toEqual(["interrupt", "now"]);
+    expect(sent.at(-1).message.content).toEqual([
       { type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) },
       { type: "image", source: { type: "base64", media_type: "image/png", data: "cG5n" } }
     ]);

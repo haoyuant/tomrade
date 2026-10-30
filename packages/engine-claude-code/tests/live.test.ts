@@ -106,5 +106,49 @@ describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {
     const after = late.said.slice(late.said.findIndex((line) => line.startsWith("user(steer)")) + 1);
     expect(after.some((line) => /PINEAPPLE/.test(line))).toBe(true);
   }, 360_000);
+
+  it("cuts a long command for a message steered in now, and takes one sent while the agent starts up", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-steer-now-${Date.now()}.json`);
+    const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
+    await settle();
+    const runCase = async (prompt: string, steer: string, when: "at-once" | "in-a-command") => {
+      const thread = ctx.agent.newThread(project.id, "claude-code", null, { options: { model: "haiku", codePermissionMode: "bypassPermissions" } });
+      let taken: Promise<boolean> | null = null;
+      const off = ctx.on("agent/event", (id: string, event: { type: string; activity?: string | null }) => {
+        if (id !== thread.id || taken || when !== "in-a-command" || event.type !== "progress" || !event.activity?.startsWith("Bash")) return;
+        taken = new Promise((r) => setTimeout(r, 3000)).then(() => ctx.agent.steer(project.id, thread.id, "s", steer));
+      });
+      const t0 = Date.now();
+      const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: prompt });
+      if (when === "at-once") taken = ctx.agent.steer(project.id, thread.id, "s", steer);
+      while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+        if (Date.now() - t0 > 150_000) throw new Error("live run did not settle");
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      off();
+      const messages = ctx.agent.store.messages(project.id, thread.id);
+      const said = messages.map((m) => (m.block.type === "text" ? `${m.role}${m.block.steerId ? "(steer)" : ""}: ${m.block.text}` : `${m.role}: ${m.block.type}`));
+      console.log(said.join("\n"));
+      return { taken: await taken, run: ctx.agent.store.run(project.id, runId)!, said, blocks: messages.map((m) => m.block), runs: ctx.agent.store.runs(project.id, thread.id).length, ms: Date.now() - t0 };
+    };
+    const answered = (said: string[]) => said.slice(said.findIndex((line) => line.startsWith("user(steer)")) + 1).some((line) => /PINEAPPLE/.test(line));
+
+    const cut = await runCase("Use the Bash tool to run exactly this command, then tell me what it printed: python3 -c \"import time; time.sleep(90); print(42)\"",
+      "Stop that. Reply with only the word PINEAPPLE.", "in-a-command");
+    expect(cut.taken).toBe(true);
+    expect(cut.run.status).toBe("done");
+    expect(cut.runs).toBe(1);
+    // the command was ended for the message, not waited out
+    expect(cut.ms).toBeLessThan(80_000);
+    expect(cut.blocks.some((b) => b.type === "trace" && b.tool === "Bash" && !b.ok)).toBe(true);
+    expect(answered(cut.said)).toBe(true);
+
+    const early = await runCase("In two short sentences, explain what a kanban board is. Do not use any tools.", "Also end with the word PINEAPPLE.", "at-once");
+    expect(early.taken).toBe(true);
+    expect(early.run.status).toBe("done");
+    expect(early.runs).toBe(1);
+    expect(early.said.findIndex((line) => line.startsWith("user(steer)"))).toBeGreaterThan(0);
+    expect(answered(early.said)).toBe(true);
+  }, 360_000);
 });
 

@@ -357,8 +357,9 @@ export class AcpRuntime implements Runtime {
         this.asks.settle();
         return true;
       });
-      if (this.agent.steer) io.steerTo?.(async (steer) => {
-        if (!prompted || over || turn.cancelled || !this.conn?.alive) return false;
+      // Taken once the prompt is sent.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
+        if (over || turn.cancelled || !this.conn?.alive) return false;
         const text = steerText(steer.text);
         forwarded.set(steer.id, text);
         try {
@@ -376,7 +377,7 @@ export class AcpRuntime implements Runtime {
         } catch {}
         forwarded.delete(steer.id);
         return false;
-      });
+      };
 
       const finishCall = (call: Call, ok: boolean) => {
         call.done = true;
@@ -459,7 +460,9 @@ export class AcpRuntime implements Runtime {
       if (this.agent.steer === "method" && this.seesImages()) io.steersMedia?.();
       const blocks = this.prompt(input, io);
       prompted = true;
-      const response = await this.conn!.request("session/prompt", { sessionId: this.session, prompt: blocks }, 0);
+      const prompting = this.conn!.request("session/prompt", { sessionId: this.session, prompt: blocks }, 0);
+      if (this.agent.steer) io.steerTo?.(forward);
+      const response = await prompting;
       // a /steer Hermes never acknowledged arrived after the turn: it runs as a prompt of its own, part of this turn
       if (!turn.cancelled && answering.length) {
         for (const id of [...unanswered]) if (!acknowledged.some((a) => a.id === id)) steered(id);
