@@ -6,7 +6,8 @@ import { useLocaleWords } from "~/lib/dicts";
 import { useFrosted } from "~/lib/frost";
 import { announceKeymap, formatChord, hits, primeKeymap, resolveKeymap } from "~/lib/keybindings";
 import { backdropFills } from "@tomradex/theme-image/colors";
-import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, type Look } from "./bridge";
+import { answerSession, answerThreadAsk, chooseSession, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, type Look } from "./bridge";
+import type { SessionReply } from "./cards";
 import { Cell } from "./Cell";
 import { clipboardOf } from "./clipboard";
 import { GuessContext, guessesByPane } from "./guess";
@@ -361,7 +362,7 @@ export function App() {
   };
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
-  const answer = (s: SessionRow, which: "allow" | "deny") => answerSession(s.id, which);
+  const answer = (s: SessionRow, reply: SessionReply) => (typeof reply === "string" ? answerSession(s.id, reply) : chooseSession(s.id, reply.choice));
   const answerThread = (t: ThreadRow, questionId: string, value: string) => answerThreadAsk(t.id, questionId, value);
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {

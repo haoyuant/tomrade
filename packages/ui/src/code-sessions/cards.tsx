@@ -3,7 +3,7 @@ import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { outcomeLine } from "../lib/review";
 import { rangeLabel, spanLabel } from "../lib/sessionTime";
 import { askText, doingText } from "../lib/terminalSession";
-import { canAnswer, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
+import { asksOnScreen, canAnswer, choicesOf, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
 import { useSay, type Say, type Words } from "./say";
 
 /** Three shapes, the session bar's, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
@@ -94,13 +94,17 @@ export const saidClass = (status: BarStatus): string => (status === "wait" ? "cs
 /** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
 const CHOICES_SHOWN = 3;
 
+/** A terminal session's answer from its card: Allow or Deny for its permission, or one of its question's choices. */
+export type SessionReply = "allow" | "deny" | { choice: string };
+
 /**
  * What can be done from a row without opening it. On a card in the bar, what it waits on is answered in place — a
  * permission prompt on its screen that its agent declared the keys for (Allow with yes under the cursor, else Deny), or
- * an assistant question by one of its choices — or looked at first. In the overview, Allow and Deny, and a row with a
+ * a question by one of its choices, an assistant's or one whose menu a terminal shows — or looked at first; one waiting
+ * on its screen with nothing to press here can still be looked at. In the overview, those answers too, and a row with a
  * pane goes to its cell and a conversation to the app window.
  */
-export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
+export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
   // An answer on its way: no second press, which could answer whatever it asks next.
   const [sending, setSending] = useState(false);
@@ -113,17 +117,16 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
   const answerable = !!s && canAnswer(s);
   const wait = row.kind === "thread" ? row.thread.wait : null;
   const questionId = wait?.questionId ?? null;
-  const choices = questionId && wait?.options ? wait.options.slice(0, CHOICES_SHOWN) : [];
+  const choices = (row.kind === "thread" ? (questionId && wait?.options) || [] : s ? choicesOf(s) : []).slice(0, CHOICES_SHOWN);
   const seeable = big && row.kind !== "thread" && !!(row.kind === "terminal" ? row.terminal.pane : s?.pane);
-  const choiceButtons = row.kind === "thread" && questionId
-    ? choices.map((choice, i) => (
-        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="cs-choice" disabled={sending} onClick={pressOnce(() => onAnswerThread(row.thread, questionId, choice))}>
-          {choice}
-        </button>
-      ))
-    : null;
+  const choose = (choice: string) => (row.kind === "thread" ? onAnswerThread(row.thread, questionId!, choice) : onAnswer(s!, { choice }));
+  const choiceButtons = choices.map((choice, i) => (
+    <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="cs-choice" disabled={sending} onClick={pressOnce(() => choose(choice))}>
+      {choice}
+    </button>
+  ));
   if (!big) {
-    if (!answerable && !choices.length) return null;
+    if (!answerable && !choices.length && !asksOnScreen(row)) return null;
     return (
       <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions" data-choices={choices.length ? "" : undefined}>
         {answerable &&
@@ -143,7 +146,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
       </span>
     );
   }
-  if (!answerable && !seeable && row.kind !== "thread") return null;
+  if (!answerable && !choices.length && !seeable && row.kind !== "thread") return null;
   return (
     <span className="cs-row-actions" data-testid="cs-row-actions">
       {answerable && (

@@ -34,20 +34,32 @@ const clip = (value: string, fromStart: boolean): string | null => {
 export function permissionAsk(tool: string | null | undefined, input: Record<string, unknown> | undefined): SessionAsk {
   const name = tool?.trim() || null;
   if (!name) return { kind: "permission", tool: null, action: null, detail: null };
-  if (QUESTION_TOOL.test(name)) return questionAsk();
+  if (QUESTION_TOOL.test(name)) return questionAsk(input);
   if (RUN_TOOL.test(name)) return { kind: "permission", tool: name, action: "run", detail: clip(text(input, "command", "cmd"), false) };
   if (EDIT_TOOL.test(name)) return { kind: "permission", tool: name, action: "edit", detail: clip(text(input, "file_path", "path", "notebook_path", "filename"), true) };
   return { kind: "permission", tool: name, action: "use", detail: clip(text(input, "description", "query", "url", "pattern", "prompt"), false) };
 }
 
-export const questionAsk = (): SessionAsk => ({ kind: "question", tool: null, action: null, detail: null });
+/**
+ * A question, with what its tool's input says of it (AskUserQuestion's shape): one question's words, and its choices
+ * when it takes exactly one of them — several questions, or several picks, are answered where it is asked.
+ */
+export function questionAsk(input?: Record<string, unknown>): SessionAsk {
+  const questions = Array.isArray(input?.questions) ? (input.questions as unknown[]) : [];
+  const only = questions.length === 1 && questions[0] && typeof questions[0] === "object" ? (questions[0] as Record<string, unknown>) : null;
+  const said = typeof only?.question === "string" ? clip(only.question, false) : null;
+  const labels = Array.isArray(only?.options) ? only.options.map((o: unknown) => (typeof o === "string" ? o : (o as { label?: unknown } | null)?.label)) : [];
+  const choices = labels.every((l): l is string => typeof l === "string" && !!l.trim()) ? labels.map((l) => l.trim()) : [];
+  const options = only?.multiSelect !== true && choices.length >= 2 && new Set(choices).size === choices.length ? choices : null;
+  return { kind: "question", tool: null, action: null, detail: said, ...(options ? { options } : {}) };
+}
 
 /** The same ask, repeated by another hook (Claude Code's PermissionRequest, then its permission Notification). */
 export const sameAsk = (a: SessionAsk | null, b: SessionAsk | null): boolean => !!a && !!b && a.kind === b.kind && a.tool === b.tool && a.detail === b.detail;
 
 /** What a session asks, as a line in the person's language for what the backend says itself: herdr's notice, the waiting list. */
 export function askLine(ask: SessionAsk, w: CodeWords): string {
-  if (ask.kind === "question") return w("askQuestion");
+  if (ask.kind === "question") return ask.detail ?? w("askQuestion");
   if (ask.action === "run") return ask.detail ? w("askRun", { detail: ask.detail }) : w("askRunAny");
   if (ask.action === "edit") return ask.detail ? w("askEdit", { detail: ask.detail }) : w("askEditAny");
   if (ask.tool) return ask.detail ? w("askTool", { tool: ask.tool, detail: ask.detail }) : w("askToolAny", { tool: ask.tool });

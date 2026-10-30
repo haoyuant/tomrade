@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
 import { inputsOf, promptOnScreen, SessionPanel, type CodeLinkStore, type SessionView } from "@tomradex/code-link";
-import { arrowsTo, tailLines, trustOnScreen } from "@tomradex/code-link/prompt";
+import { arrowsTo, choiceOnScreen, tailLines, trustOnScreen } from "@tomradex/code-link/prompt";
 import { Herdr } from "@tomradex/herdr";
 import { FakeHerdr } from "@tomradex/testkit";
 
@@ -136,6 +136,53 @@ describe("a folder's trust on a pane's screen", () => {
     const codebuddy = trustOnScreen(screenFile("codebuddy-blocked-trust.txt"))!;
     expect(arrowsTo(codebuddy, codebuddy.exit)).toEqual(["down", "down", "down"]);
     expect(arrowsTo({ ...codebuddy, selected: 3 }, codebuddy.trust)).toEqual(["up", "up", "up"]);
+  });
+});
+
+/** AskUserQuestion as Claude Code 2.1.314 drew it in a ConPTY pane on Windows (2026-10-31), read as pane.read reads it. */
+const CLAUDE_QUESTION = [
+  "❯ Call the AskUserQuestion tool once: one question 'Which color?' header 'Color', options Red, Green, Blue,   ",
+  "  single select. Then reply with just the answer.",
+  "──────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+  " ☐ Color ",
+  "",
+  "Which color?",
+  "",
+  "❯ 1. Red",
+  "     Red",
+  "  2. Green",
+  "     Green",
+  "  3. Blue",
+  "     Blue",
+  "  4. Type something.",
+  "──────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+  "  5. Chat about this",
+  "",
+  "Enter to select · ↑/↓ to navigate · Esc to cancel"
+].join("\n");
+const COLORS = ["Red", "Green", "Blue"];
+/** The menu with the cursor moved to its `n`th option, as the screen redraws it. */
+const cursorOn = (screen: string, n: number) => screen.replace("❯ 1. Red", "  1. Red  ").replace(`  ${n}. `, `❯ ${n}. `);
+
+describe("a question's menu on a pane's screen", () => {
+  it("reads its numbered options and the cursor's when they begin with the choices its hook told of", () => {
+    expect(choiceOnScreen(CLAUDE_QUESTION, COLORS)).toEqual({ options: ["Red", "Green", "Blue", "Type something.", "Chat about this"], selected: 0 });
+    expect(choiceOnScreen(cursorOn(CLAUDE_QUESTION, 2), COLORS)?.selected).toBe(1);
+    // CodeBuddy's footer, lower case, in a box
+    expect(choiceOnScreen("│ Pick one? │\n│ > 1. Fast │\n│   2. Safe │\n│ enter to select · ↑/↓ to navigate · esc to cancel │", ["Fast", "Safe"])).toEqual({ options: ["Fast", "Safe"], selected: 0 });
+  });
+
+  it("reads none it could not answer whole: other choices, another order, a wrapped label, no cursor, no menu", () => {
+    expect(choiceOnScreen(CLAUDE_QUESTION, ["Red", "Blue", "Green"])).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION, ["Red", "Green", "Blue", "Black", "White", "Grey"])).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION.replace("  3. Blue", "  3. Bl"), COLORS)).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION.replace("❯ 1. Red", "  1. Red"), COLORS)).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION.replace("  2. Green", "❯ 2. Green"), COLORS)).toBeNull();
+    // numbers that do not run down to 1 are no menu of ours
+    expect(choiceOnScreen(CLAUDE_QUESTION.replace("  2. Green", "  7. Green"), COLORS)).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION.replace("Enter to select · ↑/↓ to navigate · Esc to cancel", ""), COLORS)).toBeNull();
+    expect(choiceOnScreen(CLAUDE_ASKS, ["Yes", "Yes, and don't ask again"])).toBeNull();
+    expect(choiceOnScreen(CLAUDE_QUESTION, [])).toBeNull();
   });
 });
 
@@ -318,6 +365,53 @@ describe("the panel's side of a terminal session", () => {
     pane.text = CLAUDE_ASKS;
     expect(await panel.trust("p", "s1", "trust")).toBe("notPrompt");
     expect(fake.of("pane.send_input").length).toBe(sent + 1);
+    fake.close();
+  });
+
+  it("picks a question's choice by moving the cursor to it and pressing Enter only once it is there", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    let lag = 0;
+    const down = () => (pane.text = pane.text.includes("❯ 1. Red") ? cursorOn(pane.text, 2) : pane.text.replace("❯ 2. Green", "  2. Green").replace("  3. Blue", "❯ 3. Blue"));
+    fake.answer = (method, params) => {
+      const keys = (params.keys as string[] | undefined) ?? [];
+      if (method === "pane.send_input" && keys[0] === "down" && Number.isFinite(lag)) for (let i = 0; i < keys.length; i++) setTimeout(down, lag);
+      return undefined;
+    };
+    const asks = { state: "waiting" as const, ask: { kind: "question" as const, tool: null, action: null, detail: "Which color?", options: COLORS } };
+    const panel = await panelOn(fake, { s1: session(asks), mute: session({ ...asks, id: "mute", agent: "mute" }), plain: session({ ...asks, id: "plain", ask: { ...asks.ask, options: undefined } }) });
+    pane.text = CLAUDE_QUESTION;
+    expect(await panel.choose("p", "s1", "Blue")).toBe("answered");
+    expect(fake.of("pane.send_input")).toEqual([{ pane_id: "w1:p1", keys: ["down", "down"] }, { pane_id: "w1:p1", keys: ["enter"] }]);
+    // under the cursor already: Enter alone, whatever keys its agent declared
+    pane.text = CLAUDE_QUESTION;
+    expect(await panel.choose("p", "mute", "Red")).toBe("answered");
+    expect(fake.of("pane.send_input").slice(2)).toEqual([{ pane_id: "w1:p1", keys: ["enter"] }]);
+    // a cursor that never gets there gets no Enter
+    pane.text = CLAUDE_QUESTION;
+    lag = Infinity;
+    const sent = fake.of("pane.send_input").length;
+    expect(await panel.choose("p", "s1", "Green")).toBe("failed");
+    expect(fake.of("pane.send_input").slice(sent)).toEqual([{ pane_id: "w1:p1", keys: ["down"] }]);
+    // a choice it was not asked, a question without choices, or a screen that no longer shows them: nothing pressed
+    pane.text = CLAUDE_QUESTION;
+    expect(await panel.choose("p", "s1", "Black")).toBe("notPrompt");
+    expect(await panel.choose("p", "plain", "Red")).toBe("notPrompt");
+    pane.text = CLAUDE_ASKS;
+    expect(await panel.choose("p", "s1", "Red")).toBe("notPrompt");
+    expect(fake.of("pane.send_input").length).toBe(sent + 1);
+    fake.close();
+  });
+
+  it("glances a question's menu for its card only while the screen shows the choices its hook told of", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    pane.text = CLAUDE_QUESTION;
+    const asks = { state: "waiting" as const, ask: { kind: "question" as const, tool: null, action: null, detail: "Which color?", options: COLORS } };
+    const panel = await panelOn(fake, {});
+    const seen = await panel.glance([session(asks), session({ ...asks, id: "mute", agent: "mute" }), session({ ...asks, id: "other", ask: { ...asks.ask, options: ["Cyan", "Teal"] } }), session({ ...asks, id: "plain", ask: { ...asks.ask, options: undefined } })], 1000);
+    expect([...seen.values()].map((g) => g.prompt)).toEqual(["choice", "choice", null, null]);
+    expect(fake.of("pane.read").map((r) => r.lines).sort()).toEqual([12, 30, 30, 30]);
     fake.close();
   });
 

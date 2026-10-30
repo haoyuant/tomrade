@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
-import { activeRows, away, bundles, canAnswer, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
+import { activeRows, asksOnScreen, away, bundles, canAnswer, choicesOf, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
 import { DONE_SHOWN, DONE_SHOWN_FOR_MS, IDLE_SHOWN, keptEnded, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
@@ -126,6 +126,20 @@ describe("the Terminal window's sidebar", () => {
     expect(canAnswer({ ...asks, approval: false })).toBe(false);
     expect(canAnswer({ ...asks, ask: { kind: "question", tool: null, action: null, detail: null } })).toBe(false);
     expect(canAnswer({ ...asks, state: "ended", endedAt: 1 })).toBe(false);
+  });
+
+  it("puts a terminal question's choices on its card only while its screen shows them, and a look at anything it asks", () => {
+    const asks = row({ id: "q", state: "waiting", needsYou: true, ask: { kind: "question", tool: null, action: null, detail: "Which?", options: ["A", "B"] }, prompt: "choice" });
+    expect(choicesOf(asks)).toEqual(["A", "B"]);
+    expect(choicesOf({ ...asks, prompt: null })).toEqual([]);
+    expect(choicesOf({ ...asks, state: "running" })).toEqual([]);
+    expect(choicesOf({ ...asks, state: "ended", endedAt: 1 })).toEqual([]);
+    // asked, answerable here or not, it can be looked at; a turn that ended asking nothing, or a running one, cannot
+    expect(asksOnScreen({ kind: "session", id: "q", session: { ...asks, prompt: null } })).toBe(true);
+    expect(asksOnScreen({ kind: "session", id: "q", session: { ...asks, ask: null } })).toBe(false);
+    expect(asksOnScreen({ kind: "session", id: "q", session: { ...asks, state: "running" } })).toBe(false);
+    expect(asksOnScreen({ kind: "terminal", id: "t1", terminal: terminal({ id: "t1", agentStatus: "blocked" }), session: null })).toBe(true);
+    expect(asksOnScreen({ kind: "terminal", id: "t1", terminal: terminal({ id: "t1" }), session: null })).toBe(false);
   });
 
   it("keeps the tickets one agent works side by side in one pane together, where the first of them sorts", () => {

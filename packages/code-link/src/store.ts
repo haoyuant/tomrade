@@ -324,13 +324,15 @@ export interface SessionCursor {
 }
 /**
  * What a waiting session asks the person: a tool's permission — to run a command, to change a file, to use another
- * tool — or a question. `detail` is the command or the file, clipped; null when its hooks did not say.
+ * tool — or a question. `detail` is the command, the file or the question, clipped; null when its hooks did not say.
  */
 export interface SessionAsk {
   kind: "permission" | "question";
   tool: string | null;
   action: "run" | "edit" | "use" | null;
   detail: string | null;
+  /** A question's choices, top to bottom as its menu lists them: only for one question that takes one of them. */
+  options?: string[];
 }
 
 /** `error`: the agent stopped on its own account (rate limit, auth) and is not working; the process may still be there. */
