@@ -76,7 +76,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
           <Tag tone={state.tone}>{state.label}</Tag>
         </div>
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-          {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : state.hint}
+          {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : hintOf(t, state, status.data)}
         </p>
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary files-sync" disabled={sync.isPending || !dir} onClick={syncNow}>

@@ -36,7 +36,7 @@ function SharingCard({ projectId, status, state, onOpenSharing }: { projectId: s
         </button>
       </div>
       <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-        {status?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status), detail: status.detail }) : state.hint}
+        {status?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status), detail: status.detail }) : hintOf(t, state, status)}
       </p>
       <SyncScopeSummary projectId={projectId} />
     </div>
