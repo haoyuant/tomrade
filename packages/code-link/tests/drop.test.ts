@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { droppedPaste, heldForDrop, PRIVATE_COPY_MAX, privateFolders, readableDrops, shellEscape } from "../src/drop.js";
+import { droppedPaste, droppedText, heldForDrop, PRIVATE_COPY_MAX, privateFolders, readableDrops, shellEscape } from "../src/drop.js";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-drop-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -17,6 +17,11 @@ it("types the dropped files as one bracketed paste, a space apart and one after,
   expect(droppedPaste(["/tmp/a b.png", "", "/tmp/c"])).toBe("\x1b[200~/tmp/a\\ b.png /tmp/c \x1b[201~");
   expect(droppedPaste(["", ""])).toBeNull();
   expect(droppedPaste([])).toBeNull();
+});
+
+it("gives the same words bare, for a backend that makes the paste itself", () => {
+  expect(droppedText(["/tmp/a b.png", "", "/tmp/c"])).toBe("/tmp/a\\ b.png /tmp/c ");
+  expect(droppedText(["", ""])).toBeNull();
 });
 
 it("knows a screenshot's thumbnail by the temp folder's TemporaryItems, under either spelling of /var", () => {

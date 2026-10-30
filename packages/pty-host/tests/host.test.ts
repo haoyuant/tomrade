@@ -246,6 +246,22 @@ describe("the host", () => {
     await vi.waitFor(() => expect(pty.written).toBe("go on\r"));
   });
 
+  it("sends a paste in the markers only to a program that asked for them, as herdr does", async () => {
+    const { pipe } = await hostOn();
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    const pty = FakePty.last!;
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "/tmp/a.png ", paste: true });
+    await vi.waitFor(() => expect(pty.written).toBe("/tmp/a.png "));
+    pty.written = "";
+    pty.print("\x1b[?2004hready");
+    await vi.waitFor(async () => expect(await hostCall(pipe, "pane.read", { pane_id, lines: 1 })).toEqual({ text: "ready" }));
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "/tmp/a.png ", paste: true });
+    await vi.waitFor(() => expect(pty.written).toBe("\x1b[200~/tmp/a.png \x1b[201~"));
+    pty.written = "";
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "typed" });
+    await vi.waitFor(() => expect(pty.written).toBe("typed"));
+  });
+
   it("presses keys by herdr's names after the text, and refuses a name it does not know before typing anything", async () => {
     const { pipe } = await hostOn();
     const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });

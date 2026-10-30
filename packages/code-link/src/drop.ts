@@ -7,15 +7,16 @@ export function shellEscape(file: string): string {
   return file.replace(/[\s\\'"`$!&|;<>()[\]{}*?#~=%^]/g, "\\$&");
 }
 
-/**
- * What a drop of files types into a terminal: their paths, escaped, one space apart and one after,
- * as a bracketed paste (herdr drops the markers for a program that did not ask for them). Null when
- * no file had a path on disk.
- */
-export function droppedPaste(paths: readonly string[]): string | null {
+/** What a drop of files types: their paths, escaped, one space apart and one after. Null when no file had a path on disk. */
+export function droppedText(paths: readonly string[]): string | null {
   const usable = paths.filter((p) => p.length > 0);
-  if (!usable.length) return null;
-  return `\x1b[200~${usable.map(shellEscape).join(" ")} \x1b[201~`;
+  return usable.length ? `${usable.map(shellEscape).join(" ")} ` : null;
+}
+
+/** The same as a bracketed paste, for a terminal's own stream (herdr drops the markers for a program that did not ask for them). */
+export function droppedPaste(paths: readonly string[]): string | null {
+  const text = droppedText(paths);
+  return text && `\x1b[200~${text}\x1b[201~`;
 }
 
 // macOS gives /var as /private/var too.
@@ -40,6 +41,9 @@ export function privateFolders(home: string | null = process.platform === "darwi
 }
 
 const inside = (file: string, folders: readonly string[]) => folders.some((d) => bare(file).startsWith(`${d}/`));
+
+/** Where a drop's copies go: the temp folder, which the system clears of what has not been used for a while. */
+export const dropsFolder = (): string => path.join(os.tmpdir(), "tomrade-drops");
 
 /**
  * The dropped paths as a terminal's programs can read them: each file held for Tomrade alone is copied, under

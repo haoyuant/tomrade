@@ -347,7 +347,7 @@ export class PtyHost extends Service implements TerminalProvider {
   /** Keystrokes into a pane, the text first and the keys a moment later; the host refuses a key name it does not know. */
   sendInput(paneId: string, input: TerminalInput): Promise<boolean> {
     if (!input.text && !input.keys?.length) return Promise.resolve(false);
-    return this.ok("pane.send_input", { pane_id: paneId, ...(input.text ? { text: input.text } : {}), ...(input.keys?.length ? { keys: input.keys } : {}) });
+    return this.ok("pane.send_input", { pane_id: paneId, ...(input.text ? { text: input.text } : {}), ...(input.keys?.length ? { keys: input.keys } : {}), ...(input.paste ? { paste: true } : {}) });
   }
 
   async readTail(paneId: string, lines = 20): Promise<string | null> {

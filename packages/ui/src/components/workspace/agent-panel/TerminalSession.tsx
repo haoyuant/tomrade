@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView, RecordUsage } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
@@ -17,6 +17,7 @@ import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSe
 import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { looksLikeMarkdown } from "~/lib/markdownDetect";
+import { pathForFile } from "~/lib/shell";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
 import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
@@ -262,6 +263,24 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       setSending(false);
     }
   };
+  const overFiles = (e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const dropFiles = async (e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    const paths = [...e.dataTransfer.files].map(pathForFile).filter((p): p is string => !!p);
+    if (!canType) return void toast({ body: inputNote ?? t("sessionBar.notTaken") });
+    if (trusting) return void toast({ body: t("sessionBar.trustUseButtons") });
+    try {
+      if (paths.length && (await invoke("codeLink.sessionDrop", projectId, session.id, paths))) input.current?.focus();
+      else toast({ body: t("sessionBar.notTaken") });
+    } catch (error) {
+      reportError(error);
+    }
+  };
   const pressEscape = async () => {
     try {
       if (!(await invoke("codeLink.sessionEscape", projectId, session.id))) toast({ body: t("sessionBar.notTaken") });
@@ -385,7 +404,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   return (
     <>
-      <div className="ai-scroll ai-session" data-testid="ai-session" data-session={session.id} data-state={session.state}>
+      <div className="ai-scroll ai-session" data-testid="ai-session" data-session={session.id} data-state={session.state} onDragOver={overFiles} onDrop={dropFiles}>
         <div className="ai-session-head">
           <StatusMark status={status} />
           <span className="ai-session-title" title={title}>
@@ -472,7 +491,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : null}
         </div>
       </div>
-      <div className="ai-foot ai-session-foot">
+      <div className="ai-foot ai-session-foot" onDragOver={overFiles} onDrop={dropFiles}>
         {drawer && session.herdrPane && live && (
           <div className="ai-drawer-box" ref={drawerBox} data-testid="ai-drawer-box">
             <div className="ai-drawer-head">

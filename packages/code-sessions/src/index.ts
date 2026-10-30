@@ -10,7 +10,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
+import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, droppedPaste, dropsFolder, panesOf, readableDrops, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
@@ -19,7 +19,6 @@ import type {} from "@tomradex/mcp";
 import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
-import { droppedPaste, readableDrops } from "./drop.js";
 import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
 import type { ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
@@ -1562,8 +1561,7 @@ function apply(ctx: Context, config: Config) {
         return onMessage(projectId, win, { type: "input", cell: m.cell, data: "\r" });
       }
       case "drop": {
-        // Copies go to the temp folder, which the system clears of what has not been used for a while.
-        const text = droppedPaste(await readableDrops(m.paths, path.join(os.tmpdir(), "tomrade-drops")));
+        const text = droppedPaste(await readableDrops(m.paths, dropsFolder()));
         if (text) win.terminals.get(m.cell)?.input(text);
         return;
       }
