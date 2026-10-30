@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitRunner } from "@tomradex/git";
+import { gitRunner, type Git } from "@tomradex/git";
 import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-"));
@@ -20,10 +20,9 @@ function bare(): string {
   return dir;
 }
 
-async function store(remote: string | null = null, onChange: () => void = noop) {
-  const dir = path.join(root, `store-${n++}`);
+async function store(remote: string | null = null, onChange: () => void = noop, dir = path.join(root, `store-${n++}`), runner: Git = git) {
   return new GitFileStore({
-    git,
+    git: runner,
     gitBinary: "git",
     dir,
     remote: remote ? () => ({ url: remote, branch: "main" }) : null,
@@ -236,6 +235,48 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     expect((await a.read("aside.md"))?.body).toBe("kept on B\n");
     a.close();
     b.close();
+  });
+
+  it("syncs again after a fetch was killed midway, its locks and partial pack left behind", async () => {
+    const s = await store(bare());
+    await s.write("a.md", text("a\n"));
+    expect((await s.sync()).state).toBe("synced");
+    const transport = path.join(s.dir, ".git", "files-sync", "transport");
+    const git = path.join(transport, fs.readdirSync(transport)[0]!, ".git");
+    fs.writeFileSync(path.join(git, "shallow.lock"), "");
+    fs.writeFileSync(path.join(git, "index.lock"), "");
+    fs.mkdirSync(path.join(git, "objects", "pack"), { recursive: true });
+    fs.writeFileSync(path.join(git, "objects", "pack", "tmp_pack_x"), "partial");
+    await s.write("b.md", text("b\n"));
+    expect((await s.sync()).state).toBe("synced");
+    expect(fs.readdirSync(path.join(git, "objects", "pack")).filter((f) => f.startsWith("tmp_"))).toEqual([]);
+    s.close();
+  });
+
+  it("lets a store reopened mid-sync wait for the one before it instead of running git beside it", async () => {
+    let running = 0;
+    let most = 0;
+    // A fetch slow enough that the second store's sync starts while the first is still in it.
+    const slow: Git = async (args, opts) => {
+      if (!opts?.cwd?.includes(`${path.sep}transport${path.sep}`)) return git(args, opts);
+      most = Math.max(most, ++running);
+      try {
+        if (args[0] === "fetch") await new Promise((resolve) => setTimeout(resolve, 300));
+        return await git(args, opts);
+      } finally {
+        running--;
+      }
+    };
+    const remote = bare();
+    const first = await store(remote, noop, undefined, slow);
+    await first.write("a.md", text("a\n"));
+    const second = await store(remote, noop, first.dir, slow);
+    await second.write("b.md", text("b\n"));
+    const states = (await Promise.all([first.sync(), second.sync()])).map((s) => s.state);
+    expect(states).toEqual(["synced", "synced"]);
+    expect(most).toBe(1);
+    first.close();
+    second.close();
   });
 
   it("reports an unreachable remote as offline and keeps working", async () => {

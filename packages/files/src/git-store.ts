@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
 import { GitFolder, execGit, type Git } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
   FileChangedError,
@@ -1018,28 +1018,30 @@ export class GitFileStore implements FileStore {
         this.ensured = true;
       }
       const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
-      if (!(await projection.fetch())) {
-        this.problem = { state: "offline", detail: "Could not reach the remote" };
-        return;
-      }
-      const snapshot = await this.locked(() => this.reconcile(projection));
-      if (!snapshot) return;
-      if (!(await projection.push())) {
-        this.problem = { state: "error", detail: "The remote moved on; will retry" };
-        return;
-      }
-      await this.locked(async () => {
-        this.syncState.baseline = snapshot.baseline;
-        this.syncState.policy = snapshot.policy;
-        this.syncState.agents = snapshot.agents;
-        this.syncState.head = snapshot.head;
-        this.saveSyncState();
-        this.syncedHead = snapshot.head;
-        this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
-        this.agentsDirty = JSON.stringify(this.agents) !== JSON.stringify(snapshot.agents);
+      await exclusiveTransport(projection.dir, async () => {
+        if (!(await projection.fetch())) {
+          this.problem = { state: "offline", detail: "Could not reach the remote" };
+          return;
+        }
+        const snapshot = await this.locked(() => this.reconcile(projection));
+        if (!snapshot) return;
+        if (!(await projection.push())) {
+          this.problem = { state: "error", detail: "The remote moved on; will retry" };
+          return;
+        }
+        await this.locked(async () => {
+          this.syncState.baseline = snapshot.baseline;
+          this.syncState.policy = snapshot.policy;
+          this.syncState.agents = snapshot.agents;
+          this.syncState.head = snapshot.head;
+          this.saveSyncState();
+          this.syncedHead = snapshot.head;
+          this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
+          this.agentsDirty = JSON.stringify(this.agents) !== JSON.stringify(snapshot.agents);
+        });
+        this.problem = null;
+        this.lastSyncAt = Date.now();
       });
-      this.problem = null;
-      this.lastSyncAt = Date.now();
     } catch (error) {
       this.problem = { state: "error", detail: errorMessage(error) };
       told = true;
