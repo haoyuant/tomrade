@@ -10,6 +10,7 @@ import { ConvoLines, ConvoTop, useOpenLines, type AgentText, type ConvoSay } fro
 import { Spacer } from "~/components/ui/atoms";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
+import { followEnd } from "~/lib/followEnd";
 import { STATUS } from "~/lib/domain";
 import { segmentKind, segmentWork, type OutcomeWords } from "~/lib/review";
 import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
@@ -163,14 +164,23 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     }, delayUntil(readAt.current, Date.now()));
   }, [move, session.externalId, readTail]);
 
+  // Lines off screen are laid out at a guessed height until seen, Markdown and ticket cuts come after: the end moves on its own.
+  const end = useRef<ReturnType<typeof followEnd> | null>(null);
+  useLayoutEffect(() => {
+    if (!box.current) return;
+    const watch = followEnd(box.current, following);
+    end.current = watch;
+    return () => {
+      watch.stop();
+      end.current = null;
+    };
+  }, []);
+
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || kept.current === null) return;
-    if (kept.current === -1) {
-      el.scrollTop = el.scrollHeight;
-      // Lines off screen are laid out at a guessed height until seen; once they are, the end has moved.
-      requestAnimationFrame(() => { if (following.current) el.scrollTop = el.scrollHeight; });
-    } else el.scrollTop += el.scrollHeight - kept.current;
+    if (kept.current === -1) end.current?.place();
+    else el.scrollTop += el.scrollHeight - kept.current;
     kept.current = null;
   }, [convo]);
 
@@ -436,9 +446,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           aria-label={t("sessionBar.conversation")}
           ref={box}
           onScroll={(e) => {
-            const el = e.currentTarget;
-            following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-            if (el.scrollTop < 80) readEarlier();
+            end.current?.scrolled();
+            if (e.currentTarget.scrollTop < 80) readEarlier();
           }}
         >
           {convo?.unreadable ? (
