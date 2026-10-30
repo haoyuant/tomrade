@@ -258,6 +258,8 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
+    /** Files dropped on the session: their paths pasted into its pane, as a drop on its cell does. */
+    "codeLink.sessionDrop": (projectId: string, sessionId: string, paths: string[]) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
     /** A folder's trust on the session's pane answered: the cursor moved to trusting it or leaving, then Enter. */
@@ -810,6 +812,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       });
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
+      ctx.ipc.handle("codeLink.sessionDrop", (projectId, sessionId, paths) => ctx.codeLink.sessionDrop(projectId, sessionId, paths));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionTrust", (projectId, sessionId, which) => ctx.codeLink.sessionTrust(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
@@ -1110,6 +1113,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** Text into a terminal session's pane, with Enter, as typed at its keyboard; false when it could not go. */
   sessionSay(projectId: string, sessionId: string, text: string): Promise<boolean> {
     return this.panel.say(projectId, sessionId, text);
+  }
+
+  /** Files dropped on a terminal session: their paths pasted into its pane; false when they could not go. */
+  sessionDrop(projectId: string, sessionId: string, paths: string[]): Promise<boolean> {
+    return this.panel.drop(projectId, sessionId, paths);
   }
 
   /** Esc in a terminal session's pane, as pressed at its keyboard; false when it could not go. */

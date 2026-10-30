@@ -1,6 +1,7 @@
 import type { Context } from "cordis";
 import type { EngineApproval } from "@tomradex/agent";
 import type { TerminalInput } from "@tomradex/contracts";
+import { droppedText, dropsFolder, readableDrops } from "./drop.js";
 import { arrowsTo, PROMPT_LINES, promptOnScreen, tailLines, trustOnScreen } from "./prompt.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
@@ -110,6 +111,15 @@ export class SessionPanel {
     const terminals = this.terminals();
     if (!s?.herdrPane || !terminals?.sendInput || !text) return false;
     return terminals.sendInput(s.herdrPane, { text, keys: ["enter"] });
+  }
+
+  /** Files dropped on the session, as on its cell: their paths pasted into the pane, without Enter. False when they could not go. */
+  async drop(projectId: string, sessionId: string, paths: string[]): Promise<boolean> {
+    const s = this.live(projectId, sessionId);
+    const terminals = this.terminals();
+    if (!s?.herdrPane || !terminals?.sendInput) return false;
+    const text = droppedText(await readableDrops(paths, dropsFolder()));
+    return text ? terminals.sendInput(s.herdrPane, { text, paste: true }) : false;
   }
 
   /** Esc pressed in the session's pane, as at its keyboard: what closes the agent's own menus and panels. False when it could not go. */

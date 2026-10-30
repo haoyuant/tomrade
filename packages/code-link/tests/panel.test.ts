@@ -161,6 +161,21 @@ async function panelOn(fake: FakeHerdr, sessions: Record<string, SessionView>, o
 }
 
 describe("the panel's side of a terminal session", () => {
+  it("pastes dropped files' paths into the pane, escaped and without Enter, and only into a live one", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    const panel = await panelOn(fake, { s1: session({}) });
+    // bare, not droppedPaste's: herdr adds the markers itself when the program asked for them, and two pairs would reach it
+    expect(await panel.drop("p", "s1", ["/tmp/shot 1.png", "/tmp/b.png"])).toBe(true);
+    expect(fake.of("pane.send_input")).toEqual([{ pane_id: pane.pane_id, text: "/tmp/shot\\ 1.png /tmp/b.png " }]);
+    expect(await panel.drop("p", "s1", [])).toBe(false);
+    expect(await panel.drop("p", "s1", [""])).toBe(false);
+    expect(await panel.drop("p", "nobody", ["/tmp/b.png"])).toBe(false);
+    expect(fake.of("pane.send_input")).toHaveLength(1);
+    fake.exit(pane.pane_id);
+    expect(await panel.drop("p", "s1", ["/tmp/b.png"])).toBe(false);
+  });
+
   it("types into the pane with Enter and presses the agent's own keys for Allow and Deny, through the pane surface only", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");

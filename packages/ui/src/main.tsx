@@ -32,6 +32,13 @@ watchWindowChrome();
 // A sheet's scroll lock would otherwise swallow the wheel over an open select's list.
 letOpenSelectsScroll();
 
+// A file dropped where nothing takes it must not open in a window of its own; the views that take files are reached first.
+for (const type of ["dragover", "drop"] as const) {
+  document.addEventListener(type, (e) => {
+    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+  });
+}
+
 // A plugin loading or unloading changes what the palette, cards and status bar show.
 if (window.tomrade) {
   subscribe("account.changed", () => {

@@ -233,7 +233,7 @@ export class Host {
         const unknown = keys.find(([, bytes]) => bytes === null);
         if (unknown) throw new RequestError("invalid_request", `unknown key ${unknown[0]}`);
         const text = String(params.text ?? "");
-        pane.input(text);
+        pane.input(params.paste === true ? pane.pasted(text) : text);
         // Typed text waits before its keys, so a program reading a fast burst as a paste still takes them as keys.
         const press = () => {
           for (const [, bytes] of keys) pane.input(bytes!);

@@ -108,6 +108,8 @@ export interface TerminalLaunch {
 export interface TerminalInput {
   text?: string;
   keys?: string[];
+  /** `text` is a paste: in the bracketed markers when the program asked for them. herdr sends all its text so. */
+  paste?: boolean;
 }
 
 /** How `revive` went: the backend answers (already, or started now), did not come up, is held by the limit, or is not here. */

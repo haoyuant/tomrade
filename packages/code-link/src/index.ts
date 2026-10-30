@@ -56,6 +56,7 @@ export { recordOf, resumeCommand } from "./titles.js";
 export { cutFrom, joinCuts, type CutState } from "./segments.js";
 export { Review, REVIEW_PAGE, cutByTicket, cutThread, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 export type { RawOutput } from "./service.js";
+export { droppedPaste, dropsFolder, readableDrops } from "./drop.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";

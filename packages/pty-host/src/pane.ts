@@ -251,6 +251,11 @@ export class Pane {
     return this.controller === attachment && !this.exited;
   }
 
+  /** Text as a program takes a paste: in the markers when it asked for them. */
+  pasted(text: string): string {
+    return text && this.term.modes.bracketedPasteMode ? `\x1b[200~${text}\x1b[201~` : text;
+  }
+
   input(data: string): void {
     if (this.exited) return;
     // Its echo is painted at the full rate, flood or not: a paint held for a flood's slower frame is brought forward.
