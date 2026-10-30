@@ -292,6 +292,12 @@ interface RunCtx {
 }
 
 
+/**
+ * Runs with a controller in this process, whichever Agent instance holds it: one started after a restart or
+ * on a file opened again settles only what nobody owns. Kept on globalThis so a second copy of this module shares it.
+ */
+const LIVE_RUNS: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("tomradex.agent.liveRuns")] ??= new Set<string>()) as Set<string>;
+
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
 const LIMIT_TRIES = 3;
@@ -402,9 +408,9 @@ export class Agent extends Service implements AgentReader {
     this.store = new AgentStore(this.ctx.db, (id) => this.answering(id));
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
-    // every project file that is open now and in each one opened later.
+    // every project file that is open now and in each one opened later. One still driven here is not touched.
     const reconcile = (projectId: string) => {
-      const interrupted = this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }));
+      const interrupted = this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }), (runId) => LIVE_RUNS.has(runId));
       for (const threadId of interrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
     };
     for (const projectId of this.ctx.db.openIds()) reconcile(projectId);
@@ -534,9 +540,28 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.recommendPlaybook", (projectId, input) => ctx.agent.recommendPlaybook(projectId, input));
     });
+    // Torn down (a restart, a reload) mid-run: each run stops and is settled here, never left going behind the next instance.
     return () => {
-      for (const rc of this.activeById.values()) rc.abort.abort();
+      for (const rc of [...this.activeById.values()]) this.interruptOwned(rc);
     };
+  }
+
+  private interruptOwned(rc: RunCtx): void {
+    rc.abort.abort();
+    this.activeByThread.delete(rc.threadId);
+    this.activeById.delete(rc.run.id);
+    this.limitTries.delete(rc.run.id);
+    LIVE_RUNS.delete(rc.run.id);
+    try {
+      if (!this.store.isOpen(rc.projectId)) return;
+      const w = this.words();
+      const run = this.store.interruptRun(rc.projectId, rc.run.id, w("restartInterrupted"), (title) => w("backgroundInterrupted", { title }));
+      if (!run) return;
+      this.broadcast(rc.threadId, { type: "done", run });
+      this.ctx.emit("agent/interrupted-changed", rc.projectId, rc.threadId);
+    } catch (error) {
+      this.ctx.logger.warn(`could not settle run ${rc.run.id}: ${errorMessage(error)}`);
+    }
   }
 
   // ── registries ─────────────────────────────────────────────────────────────
@@ -1506,6 +1531,7 @@ export class Agent extends Service implements AgentReader {
     const rc = this.makeRunCtx(run, thread, engine);
     this.activeByThread.set(threadId, rc);
     this.activeById.set(run.id, rc);
+    LIVE_RUNS.add(run.id);
     this.broadcast(threadId, { type: "run", run });
     this.ctx.emit("agent/run-started", run, thread);
     // a new run is the interruption's answer: the conversation goes on
@@ -2033,8 +2059,11 @@ export class Agent extends Service implements AgentReader {
 
   private finish(rc: RunCtx, result: TurnResult): void {
     rc.abort.abort();
+    // Settled already, as its instance was torn down.
+    if (this.activeById.get(rc.run.id) !== rc) return;
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    LIVE_RUNS.delete(rc.run.id);
     // Its project closed under it (removed, or the app quitting) and took the file along: there is nowhere to write how it ended.
     if (!this.ctx.db.has(rc.projectId)) return;
     // A run cut short keeps what it had already said, marked as unfinished, and says why it ended.

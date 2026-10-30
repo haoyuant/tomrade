@@ -294,6 +294,11 @@ export class AgentStore {
     return this.pool.for(projectId);
   }
 
+  /** Whether the project's file is open, so its rows can be read and written. */
+  isOpen(projectId: string): boolean {
+    return this.pool.has(projectId);
+  }
+
   transaction<T>(projectId: string, work: () => T): T {
     return this.db(projectId).transaction(work);
   }
@@ -453,19 +458,16 @@ export class AgentStore {
 
   appendMessage(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
     const db = this.db(projectId);
-    const seq = ((db.prepare("SELECT MAX(seq) AS m FROM plugin_agent_messages WHERE thread_id = ?").get(threadId) as { m: number | null }).m ?? 0) + 1;
-    const message: ThreadMessage = { id: randomUUID(), threadId, seq, role, block, runId, at: Date.now() };
-    db.prepare("INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-      message.id,
-      threadId,
-      seq,
-      role,
-      JSON.stringify(block),
-      runId,
-      message.at
-    );
-    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(message.at, threadId);
-    return message;
+    const id = randomUUID();
+    const at = Date.now();
+    // The insert takes the number itself, so no earlier read of the thread can hand out one already taken.
+    const { seq } = db
+      .prepare(
+        "INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ? FROM plugin_agent_messages WHERE thread_id = ? RETURNING seq"
+      )
+      .get(id, threadId, role, JSON.stringify(block), runId, at, threadId) as { seq: number };
+    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(at, threadId);
+    return { id, threadId, seq, role, block, runId, at };
   }
 
   runs(projectId: string, threadId: string): RunView[] {
@@ -488,22 +490,26 @@ export class AgentStore {
   /**
    * Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. A background
    * conversation's interruption is its conclusion: `parentNote` words it for the conversation it reports to.
-   * The runs stop as `interrupted`, and both notes say so, so the conversation can offer to go on. Returns the
-   * conversations interrupted.
+   * The runs stop as `interrupted`, and both notes say so, so the conversation can offer to go on. A run
+   * `owned` by a controller in this process is still going and is left alone. Returns the conversations interrupted.
    */
-  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string): string[] {
-    const db = this.db(projectId);
-    const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
-    if (!stale.length) return [];
-    const now = Date.now();
-    const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?");
-    for (const { id, thread_id } of stale) {
-      update.run(INTERRUPTED, note, now, id);
-      this.appendMessage(projectId, thread_id, "system", { type: "note", text: note, interrupted: true }, id);
-      const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(thread_id) as { title: string; parent_id: string | null } | undefined;
-      if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: thread_id, interrupted: true }, null);
-    }
+  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string, owned: (runId: string) => boolean = () => false): string[] {
+    const stale = (this.db(projectId).prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[]).filter((run) => !owned(run.id));
+    for (const { id } of stale) this.interruptRun(projectId, id, note, parentNote);
     return [...new Set(stale.map((s) => s.thread_id))];
+  }
+
+  /** Stops one running run as `interrupted`, with the notes `reconcileInterrupted` writes. Null when it is not running. */
+  interruptRun(projectId: string, runId: string, note: string, parentNote?: (title: string) => string): RunView | null {
+    const db = this.db(projectId);
+    const row = db.prepare("SELECT thread_id FROM plugin_agent_runs WHERE id = ? AND status = 'running'").get(runId) as { thread_id: string } | undefined;
+    if (!row) return null;
+    const threadId = row.thread_id;
+    db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?").run(INTERRUPTED, note, Date.now(), runId);
+    this.appendMessage(projectId, threadId, "system", { type: "note", text: note, interrupted: true }, runId);
+    const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(threadId) as { title: string; parent_id: string | null } | undefined;
+    if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: threadId, interrupted: true }, null);
+    return this.run(projectId, runId);
   }
 
   /**
