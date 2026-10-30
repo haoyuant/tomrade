@@ -34,6 +34,10 @@ export interface ScrollState {
 export const SCROLLBACK = 5_000;
 /** Paints are at least this far apart: the frames of a burst of output go as one. */
 export const FRAME_MS = 16;
+/** A pane painting every frame for this long is a flood of output: it is painted every `BUSY_FRAME_MS` instead. */
+export const BUSY_MS = 250;
+/** How far apart a flood's paints are: a window parses half as many screens, and none falls behind. */
+export const BUSY_FRAME_MS = 33;
 
 /** How much of a title or progress report detection keeps, as herdr keeps it. */
 const OSC_MAX = 256;
@@ -65,6 +69,9 @@ export class Pane {
   /** Cancels the paint on its way, if one is. */
   private painting: (() => void) | null = null;
   private paintedAt = 0;
+  /** How far apart paints are now, and since when output has come within a frame of every paint (0 after a quiet frame). */
+  private frameMs = FRAME_MS;
+  private busySince = 0;
   private lastScroll: ScrollState | null = null;
   private readonly cell: IBufferCell;
   /** Modes the public API does not report, read off the program's own sequences. */
@@ -156,7 +163,7 @@ export class Pane {
     const { cols, rows } = this.term;
     const offset = Math.min(this.offset, this.maxOffset());
     const top = buffer.baseY - offset;
-    const out: Screen = { width: cols, height: rows, rows: [], widths: [], cursor: null, modes: this.modes() };
+    const out: Screen = { width: cols, height: rows, rows: [], widths: [], cursor: null, modes: this.modes(), alternate: buffer.type === "alternate" };
     for (let y = 0; y < rows; y++) {
       const row = renderRow(buffer.getLine(top + y), cols, this.cell);
       out.rows.push(row.text);
@@ -246,6 +253,16 @@ export class Pane {
 
   input(data: string): void {
     if (this.exited) return;
+    // Its echo is painted at the full rate, flood or not: a paint held for a flood's slower frame is brought forward.
+    if (this.frameMs !== FRAME_MS) {
+      this.frameMs = FRAME_MS;
+      this.busySince = 0;
+      if (this.painting) {
+        this.painting();
+        this.painting = null;
+        this.schedule();
+      }
+    }
     // Typing brings the view back to the bottom, where it goes.
     if (this.offset) {
       this.offset = 0;
@@ -328,7 +345,8 @@ export class Pane {
 
   /**
    * Paints what changed, for every window at once: right after this turn of output when the last paint is a frame
-   * behind (a keystroke's echo), else once it is, so a burst goes as one.
+   * behind (a keystroke's echo), else once it is, so a burst goes as one. Output that keeps coming within a frame of
+   * every paint for `BUSY_MS` is painted every `BUSY_FRAME_MS`, until a frame goes by without any.
    */
   private schedule(): void {
     if (this.painting || this.exited) return;
@@ -336,7 +354,13 @@ export class Pane {
       this.painting = null;
       this.flush();
     };
-    const wait = this.paintedAt + FRAME_MS - Date.now();
+    const now = Date.now();
+    if (now - this.paintedAt >= this.frameMs) {
+      this.frameMs = FRAME_MS;
+      this.busySince = 0;
+    } else if (!this.busySince) this.busySince = this.paintedAt;
+    else if (now - this.busySince >= BUSY_MS) this.frameMs = BUSY_FRAME_MS;
+    const wait = this.paintedAt + this.frameMs - now;
     if (wait <= 0) {
       const soon = setImmediate(paint);
       this.painting = () => clearImmediate(soon);

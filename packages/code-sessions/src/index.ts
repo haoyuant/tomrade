@@ -1211,9 +1211,10 @@ function apply(ctx: Context, config: Config) {
 
   /**
    * One frame joins its cell's batch. A pane can paint faster than a screen shows — a burst of frames
-   * becomes one message, its bytes unchanged and in order.
+   * becomes one message, its bytes unchanged and in order. The built-in host paces its paints itself (slower in a flood):
+   * its frames are `paced` and go at once, since a batch would only hold each one back a frame (TOM-841).
    */
-  const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }) => {
+  const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }, paced = false) => {
     if (win.closed || !frame.bytes.length) return;
     const pending = win.frames.get(cell);
     // Another size paints a screen the open batch no longer fits: what waits goes first.
@@ -1227,7 +1228,7 @@ function apply(ctx: Context, config: Config) {
       win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer });
       // The first frame after a keystroke goes at once: herdr may already have held it for its next paint (other panes
       // watched in the background keep it painting), and a batch on top of that is felt as lag (TOM-713).
-      if (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS) flushFrames(win, cell);
+      if (paced || (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS)) flushFrames(win, cell);
       return;
     }
     batch.bytes.push(frame.bytes);
@@ -1314,7 +1315,8 @@ function apply(ctx: Context, config: Config) {
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
     record(projectId, win, cell, pane);
-    stream.onFrame((f) => pushFrame(win, cell, f));
+    const paced = provider.kind === "builtin";
+    stream.onFrame((f) => pushFrame(win, cell, f, paced));
     stream.onClose(provider.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
