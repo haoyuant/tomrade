@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
-import { GitFolder, execGit, type Git } from "@tomradex/git";
+import { GitFolder, SyncRecorder, execGit, type Git, type SyncProgress, type SyncTrace } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
@@ -68,6 +68,8 @@ export interface GitStoreOptions {
   location: string | null;
   warn(message: string): void;
   onChange(paths?: string[]): void;
+  /** A sync with the remote moved on a step, or its transfer did; null once it ended. Paced, never a flood. */
+  onProgress?(progress: SyncProgress | null): void;
   watch?: boolean;
   /** Outside edits are saved this long after the last one. */
   settleMs?: number;
@@ -184,6 +186,9 @@ export class GitFileStore implements FileStore {
   private syncQueue: Promise<FilesStatus> | null = null;
   private lastSyncAt: number | null = null;
   private problem: { state: "offline" | "error"; detail?: string; failure?: FilesSyncFailure } | null = null;
+  private recorder: SyncRecorder | null = null;
+  /** The last exchange with the remote, kept until the next one. */
+  private trace: SyncTrace | null = null;
   /** The trees the last push replaced and published, and how many syncs in a row found the remote back at the replaced one. */
   private flip = { replaced: null as string | null, published: "", rounds: 0 };
   private ensured = false;
@@ -979,9 +984,10 @@ export class GitFileStore implements FileStore {
   async status(): Promise<FilesStatus> {
     const conflicts = this.closed ? 0 : (await this.unmergedPaths()).length;
     const head = this.closed ? null : await this.head();
-    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head };
+    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head, ...(this.trace ? { trace: this.trace } : {}) };
     if (this.closed) return { ...base, state: "unavailable" };
-    if (this.syncing) return { ...base, state: "syncing" };
+    const progress = this.recorder?.progress();
+    if (this.syncing) return { ...base, state: "syncing", ...(progress ? { progress } : {}) };
     if (conflicts) return { ...base, state: "conflicted", detail: conflicts === 1 ? "1 file needs a decision" : `${conflicts} files need a decision` };
     if (!this.opts.remote) return { ...base, state: "local" };
     if (this.problem) return { ...base, ...this.problem };
@@ -1018,13 +1024,18 @@ export class GitFileStore implements FileStore {
     let told = !!this.opts.remote && !quiet;
     const headBefore = this.syncedHead;
     const problemBefore = JSON.stringify(this.problem);
+    // Only an exchange with a remote has steps worth following; a local save is over at once.
+    const recorder = this.opts.remote ? new SyncRecorder((progress) => this.opts.onProgress?.(progress)) : null;
+    this.recorder = recorder;
     this.syncing = true;
     if (told) this.opts.onChange();
     try {
+      recorder?.step("saving");
       if (await this.locked(() => this.commitAll("Saved"))) told = true;
-      if (!this.opts.remote) return;
+      if (!this.opts.remote || !recorder) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
+      recorder.locate({ remote: remote.url, branch: this.branch, directory: remote.directory });
       if (separateWorlds(boundDirectory(this.dir), remoteDirectory(remote.directory))) throw new Error(DIRECTORY_CHANGED);
       const project = (await this.opts.projectRepository?.()) ?? null;
       if (collidesWithProject(remote, project)) throw new ProjectRepositoryError(project!.folder);
@@ -1034,15 +1045,16 @@ export class GitFileStore implements FileStore {
       }
       const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
       await exclusiveTransport(projection.dir, async () => {
-        const unfetched = await projection.fetch();
+        const unfetched = await projection.fetch(recorder);
         if (unfetched) return this.failed(unfetched);
+        recorder.step("merging");
         const snapshot = await this.locked(() => this.reconcile(projection));
         if (!snapshot) return;
         if (this.undoing(await projection.trees())) {
           this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
           return;
         }
-        const unpushed = await projection.push();
+        const unpushed = await projection.push(recorder);
         if (unpushed) return this.failed(unpushed);
         await this.locked(async () => {
           this.syncState.baseline = snapshot.baseline;
@@ -1058,9 +1070,12 @@ export class GitFileStore implements FileStore {
         this.lastSyncAt = Date.now();
       });
     } catch (error) {
+      recorder?.fail();
       this.problem = { state: "error", detail: errorMessage(error) };
       told = true;
     } finally {
+      if (recorder) this.trace = recorder.finish();
+      this.recorder = null;
       this.syncing = false;
       if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
       if (told) this.opts.onChange();

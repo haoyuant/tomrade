@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { FileReference } from "@tomradex/domain";
 import type { ConnectionState, ProviderConnection as FilesConnection } from "@tomradex/storage";
+import type { SyncProgress, SyncTrace } from "@tomradex/git";
 
 /** Where a project's files stand against what they are shared through. `local` means nothing beyond this machine to be in step with. */
 export type FilesSyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "conflicted" | "syncing" | "offline" | "error" | "unavailable";
@@ -18,6 +19,10 @@ export interface FilesStatus {
   detail?: string;
   /** Set when git refused a step of the exchange; `detail` then holds what it said. */
   failure?: FilesSyncFailure;
+  /** Where a running sync is; `files.progress` tells of it as it moves. */
+  progress?: SyncProgress;
+  /** What the last exchange with the remote did, for the person to read. */
+  trace?: SyncTrace;
   lastSyncAt: number | null;
   conflicts: number;
   ahead: number;
@@ -246,6 +251,8 @@ export interface OpenStoreOptions<C> {
   warn(message: string): void;
   /** The store's files changed underneath the app: a sync, an outside edit. `paths` when the store knows which. */
   onChange(paths?: string[]): void;
+  /** A sync with the remote moved on; null once it ended. */
+  onProgress?(progress: SyncProgress | null): void;
   /** What the service was configured with; a backend takes what applies to it. */
   env: StoreEnv;
   /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root and the store's folder. */

@@ -3,6 +3,7 @@ import type {} from "@tomradex/ipc";
 import type { FileDescription, FileReference, Item } from "@tomradex/domain";
 import type { AttachmentInput, ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SaveResult, SyncMode } from "./types.js";
 import type { AgentIndex } from "./agent-index.js";
+import type { SyncProgress } from "@tomradex/git";
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -65,5 +66,7 @@ declare module "@tomradex/ipc" {
   interface Broadcasts {
     /** This project's files or their sync state moved. `paths` names the files that changed when the writer knows them; without it, refetch everything keyed by the project. */
     "files.changed": (projectId: string, paths?: string[]) => void;
+    /** A sync with the remote moved on a step or along its transfer; null once it ended, and `files.changed` follows. */
+    "files.progress": (projectId: string, progress: SyncProgress | null) => void;
   }
 }

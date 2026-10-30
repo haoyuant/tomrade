@@ -1,3 +1,4 @@
+import { parseGitProgress } from "@tomradex/git";
 import type { FilesSyncFailure } from "./types.js";
 
 /** The step of an exchange with the remote that git refused. */
@@ -33,7 +34,8 @@ export function classifyFailure(step: ExchangeStep, stderr: string): FilesSyncFa
 
 /** The helper's own line, else git's first fatal or the remote's own words, else its last line: hints never say why. */
 export function failureLine(stderr: string): string {
-  const lines = scrub(stderr).split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("hint:"));
+  // A transfer rewrites its progress line with `\r`; none of those says why it failed.
+  const lines = scrub(stderr).split(/[\r\n]+/).map((line) => line.trim()).filter((line) => line && !line.startsWith("hint:") && !parseGitProgress(line));
   return (lines.find((line) => HELPER.test(line)) ?? lines.find((line) => /^(?:fatal|remote):|^! \[/.test(line)) ?? lines.at(-1) ?? "").slice(0, 300);
 }
 

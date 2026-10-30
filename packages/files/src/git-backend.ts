@@ -56,6 +56,7 @@ export function createGitBackend<C>(opts: GitBackendOptions<C>): FilesBackend<C>
         location: shared && opts.describe ? opts.describe(config) : null,
         warn: o.warn,
         onChange: o.onChange,
+        onProgress: o.onProgress,
         watch: o.env.watch,
         settleMs: o.env.settleMs,
         pushMs: o.env.pushMs

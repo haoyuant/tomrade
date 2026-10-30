@@ -12,7 +12,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential } from "@tomradex/git";
+import { GitFolder, GitMissingError, SyncRecorder, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential, type SyncTrace } from "@tomradex/git";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
@@ -174,6 +174,9 @@ export class Storage extends Service implements StorageReader {
   private publishing = new Set<string>();
   /** Each project's folder and git work, one at a time; see `inTurn`. */
   private turns = new Map<string, Promise<void>>();
+  /** The turn running for a project, step by step; and what the last one that reached its remote did. */
+  private readonly recorders = new Map<string, SyncRecorder>();
+  private readonly traces = new Map<string, SyncTrace>();
   /** Why the folder's last commit or push failed, until one succeeds: the folder is ahead of git whatever the digests say. */
   private gitFailed = new Map<string, string>();
   private lastState = new Map<string, SyncState>();
@@ -403,7 +406,7 @@ export class Storage extends Service implements StorageReader {
    * wait for the turn it holds.
    */
   private inTurn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
-    const turn = (this.turns.get(projectId) ?? Promise.resolve()).then(work);
+    const turn = (this.turns.get(projectId) ?? Promise.resolve()).then(() => this.recorded(projectId, work));
     const done = turn.then(
       () => undefined,
       () => undefined
@@ -413,6 +416,22 @@ export class Storage extends Service implements StorageReader {
       if (this.turns.get(projectId) === done) this.turns.delete(projectId);
     });
     return turn;
+  }
+
+  /** A turn's exchange with the remote, told to the window as it goes and kept for it to read once over. */
+  private async recorded<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    const recorder = new SyncRecorder((progress) => this.home.get("ipc")?.send("storage.progress", projectId, progress));
+    this.recorders.set(projectId, recorder);
+    try {
+      return await work();
+    } catch (error) {
+      recorder.fail();
+      throw error;
+    } finally {
+      this.recorders.delete(projectId);
+      const trace = recorder.finish();
+      if (recorder.located) this.traces.set(projectId, trace);
+    }
   }
 
   private quiet(projectId: string, ms = 1_500): void {
@@ -431,7 +450,7 @@ export class Storage extends Service implements StorageReader {
    * by whoever asks meanwhile. A status read takes the last answer while it is
    * fresh; an unreachable remote is asked again only after a growing wait.
    */
-  private askRemote(dir: string, branch: string, use: "status" | "act"): Promise<RemoteProbe> {
+  private askRemote(dir: string, branch: string, use: "status" | "act", recorder?: SyncRecorder): Promise<RemoteProbe> {
     const key = `${dir}\0${branch}`;
     let ask = this.remoteAsks.get(key);
     if (!ask) this.remoteAsks.set(key, (ask = { pending: null, probe: null, at: 0, quiet: 0, failures: 0, fetched: false }));
@@ -446,8 +465,13 @@ export class Storage extends Service implements StorageReader {
     current.pending = (async () => {
       const g = this.git(dir);
       const before = await g.tip(branch);
-      let probe = await g.probe(branch);
-      if (probe === "exists" && !(await g.fetch(branch))) probe = "offline";
+      recorder?.step("reaching");
+      let probe = await g.probe(branch, "origin", recorder?.stderr);
+      if (probe === "exists") {
+        recorder?.step("fetching");
+        if (!(await g.fetch(branch, "origin", recorder?.stderr))) probe = "offline";
+      }
+      if (probe === "offline") recorder?.fail();
       current.quiet = probe === "offline" ? current.quiet : (await g.tip(branch)) === before ? current.quiet + 1 : 0;
       current.failures = probe === "offline" ? current.failures + 1 : 0;
       if (probe === "offline") this.home.logger.info(`storage: cannot reach the remote of ${dir}; asking again in ${Math.round(this.retryAfter(current.failures) / 1000)} s`);
@@ -469,7 +493,9 @@ export class Storage extends Service implements StorageReader {
   private remember(projectId: string, status: StorageStatus): StorageStatus {
     this.lastState.set(projectId, status.state);
     this.lastStatus.set(projectId, status);
-    return status;
+    const trace = this.traces.get(projectId);
+    const progress = this.recorders.get(projectId)?.progress();
+    return { ...status, ...(trace ? { trace } : {}), ...(progress ? { progress } : {}) };
   }
 
   /** Moves whenever this device writes to the project: compare two readings to tell whether a call wrote. */
@@ -1007,13 +1033,17 @@ export class Storage extends Service implements StorageReader {
   /** Commit the folder, then bring the remote's news in before pushing ours out. */
   private async pushDedicated(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
+    const recorder = this.recorders.get(projectId);
+    recorder?.step("saving");
     await g.commit(summary);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
-    const probe = await this.askRemote(entry.dir!, remote.branch, "act");
+    recorder?.locate({ remote: remote.url, branch: remote.branch });
+    const probe = await this.askRemote(entry.dir!, remote.branch, "act", recorder);
     if (probe === "offline") return false; // the commit waits
     const counts = probe === "exists" ? await g.aheadBehind(remote.branch) : null;
     if (counts && counts.behind > 0) {
+      recorder?.step("merging");
       if (counts.ahead === 0) {
         await g.fastForward(remote.branch);
         this.absorbFolder(projectId);
@@ -1021,7 +1051,8 @@ export class Storage extends Service implements StorageReader {
         await this.mergeRemote(projectId, this.mustEntry(projectId), g, remote.branch);
       }
     }
-    await g.push(remote.branch);
+    recorder?.step("pushing");
+    if (!(await g.push(remote.branch, "origin", recorder?.stderr))) recorder?.fail();
     this.pushedTo(entry.dir!, remote.branch);
     return true;
   }
@@ -1256,8 +1287,11 @@ export class Storage extends Service implements StorageReader {
       const remote = await this.remoteOf(entry);
       if (remote) {
         const g = this.git(entry.dir);
-        if ((await this.askRemote(entry.dir, remote.branch, "act")) === "exists") {
+        const recorder = this.recorders.get(projectId);
+        recorder?.locate({ remote: remote.url, branch: remote.branch });
+        if ((await this.askRemote(entry.dir, remote.branch, "act", recorder)) === "exists") {
           const counts = await g.aheadBehind(remote.branch);
+          if (counts && counts.behind > 0) recorder?.step("merging");
           if (counts && counts.behind > 0 && counts.ahead === 0) await g.fastForward(remote.branch);
           else if (counts && counts.behind > 0) {
             await this.mergeRemote(projectId, entry, g, remote.branch);
