@@ -2695,9 +2695,14 @@ button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .icon-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); cursor: pointer; }
 .icon-btn:hover, .icon-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--tag-bg-faint); }
 .icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
-.theme-automation { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--border-soft); display: grid; gap: var(--space-3); }
+.theme-automation { display: grid; gap: var(--space-3); }
 .appearance-theme-heading, .theme-automation-row { display: grid; justify-items: start; gap: var(--space-3); min-width: 0; }
+/* Appearance has one pane heading (.sec-head); every section under it wears this one smaller head */
+.appearance-group-head { margin-bottom: var(--space-3); }
+.sec-head + .appearance-group-head { margin-top: var(--space-5); }
+.appearance-group-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .appearance-group-title { margin: 0; color: var(--fg); font-family: var(--font-display); font-size: var(--text-md); line-height: var(--leading-tight); font-weight: var(--font-weight-medium); }
+.appearance-group-lede { margin-top: var(--space-1); font-size: var(--text-sm); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
 .appearance-theme-heading .theme-switch, .theme-automation-row .theme-switch { max-width: 100%; width: fit-content; }
 
 /* ─── app icon · the image the Dock wears ──
