@@ -13,9 +13,6 @@ function hex(css: string, probe: HTMLElement, pixel: CanvasRenderingContext2D): 
   return `#${[r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** The window wears the system's frosted material (Glass on macOS), so a terminal may let it show through. */
-export const seeThrough = (): boolean => document.documentElement.hasAttribute("data-frosted");
-
 /**
  * The terminal's colours from the theme on this page — the app's look once it has arrived, Tomrade's
  * default before — the ANSI palette included, so programs' colours read on light and dark themes alike.

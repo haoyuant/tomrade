@@ -6,7 +6,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
-import { seeThrough, terminalTheme } from "~/lib/xtermTheme";
+import { terminalTheme } from "~/lib/xtermTheme";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
@@ -163,7 +163,7 @@ function PaneScrollbar({ scroll, onScrollTo, onWheel }: { scroll: PaneScroll | n
  * frame repaints the viewport), clicks as mouse events, files dropped on it as their paths, and the
  * size following the cell.
  */
-export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, autoFocus }: { cell: string; sessionId: string; pane: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean }) {
+export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, autoFocus, clear = false }: { cell: string; sessionId: string; pane: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean; /** Something is behind the window, the system's material or the theme's picture: the grid draws no background of its own. */ clear?: boolean }) {
   // Another ticket the same agent works in this pane is the same terminal: only another pane attaches again.
   const attachAs = useRef(sessionId);
   attachAs.current = sessionId;
@@ -193,7 +193,6 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
         if (!terminal.hasSelection()) send({ type: "openLink", url });
       }
     };
-    const clear = seeThrough();
     const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -287,7 +286,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       terminal.dispose();
       term.current = null;
     };
-    // Tokens and font change the look only; the effect below repaints without reattaching.
+    // Tokens, font and clear change the look only; the effect below repaints without reattaching.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, pane, attempt]);
 
@@ -295,13 +294,12 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       if (!term.current) return;
-      // Frosted, the grid lets the window's material through; a solid theme draws it opaque again, the cheaper way.
-      const clear = seeThrough();
+      // Clear, the grid lets what is behind the window through; a solid theme draws it opaque again, the cheaper way.
       term.current.options.allowTransparency = clear;
       term.current.options.theme = terminalTheme(clear);
     });
     return () => cancelAnimationFrame(frame);
-  }, [tokens]);
+  }, [tokens, clear]);
 
   const takesFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
   const over = (e: DragEvent) => {

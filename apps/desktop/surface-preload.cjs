@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("tomradeSurface", {
   },
   setInteractive: (interactive) => ipcRenderer.send(INTERACTIVE_CHANNEL, !!interactive),
   send: (message) => ipcRenderer.send(MESSAGE_CHANNEL, message),
+  /** The picture a custom theme puts behind the Terminal window, or null; no other picture is reachable from here. */
+  terminalPicture: (themeId) => ipcRenderer.invoke("tomrade:themeImage.read", String(themeId), "terminal"),
   /** A dropped or chosen File's path on disk, "" when it has none; only the preload can read it. */
   pathForFile: (file) => webUtils.getPathForFile(file)
 });

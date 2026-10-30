@@ -3,8 +3,10 @@ import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, Win
 import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
+import { useFrosted } from "~/lib/frost";
 import { hits } from "~/lib/keybindings";
-import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
+import { backdropFills } from "@tomradex/theme-image/colors";
+import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, type Look } from "./bridge";
 import { Cell } from "./Cell";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
@@ -214,6 +216,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  const picture = useTerminalPicture(look);
 
   // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
@@ -256,7 +259,7 @@ export function App() {
       }),
     [change, say, current, setFocused]
   );
-  const shown: Look = look ?? { theme: "", dark: false, tokens: {}, locale };
+  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture }), [look, locale, picture]);
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
@@ -659,4 +662,36 @@ export function App() {
       </WordsContext.Provider>
     </GuessContext.Provider></SayContext.Provider>
   );
+}
+
+const PICTURE_VARS = ["--backdrop-image", "--backdrop-shell", "--backdrop-pane", "--backdrop-tile", "--backdrop-float"];
+/**
+ * The picture a custom theme puts behind this window, painted under translucent panes the way the
+ * main window paints its own; null when the theme has none for it, or this machine lacks it.
+ */
+function useTerminalPicture(look: Look | null): string | null {
+  const [picture, setPicture] = useState<{ theme: string; url: string } | null>(null);
+  const themeId = look?.backdrop?.terminalVeil !== undefined ? look.theme : null;
+  useEffect(() => {
+    if (!themeId) return setPicture(null);
+    let url: string | null = null, gone = false;
+    void terminalPicture(themeId).then(image => {
+      if (gone) return;
+      if (!image) return setPicture(null);
+      url = URL.createObjectURL(new Blob([Uint8Array.from(atob(image.base64), char => char.charCodeAt(0))], { type: image.mime }));
+      setPicture({ theme: themeId, url });
+    });
+    return () => { gone = true; if (url) URL.revokeObjectURL(url); };
+  }, [themeId]);
+  const shown = useFrosted(picture && picture.theme === themeId ? picture.url : null, look?.backdrop?.frost ?? 0);
+  const veil = look?.backdrop?.terminalVeil, bg = look?.tokens["--bg"], surface = look?.tokens["--surface"];
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("cs-backdrop", !!shown);
+    for (const name of PICTURE_VARS) root.style.removeProperty(name);
+    if (!shown || veil === undefined || !bg || !surface) return;
+    root.style.setProperty("--backdrop-image", `url("${shown}")`);
+    for (const [name, value] of Object.entries(backdropFills({ bg, surface }, veil))) root.style.setProperty(`--${name}`, value);
+  }, [shown, veil, bg, surface]);
+  return shown;
 }

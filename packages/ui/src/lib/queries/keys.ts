@@ -50,6 +50,7 @@ export const keys = {
   background: ["background"] as const,
   webSearch: ["webSearch"] as const,
   appIcon: ["appIcon"] as const,
+  themeImage: (themeId: string, slot: string) => ["themeImage", themeId, slot] as const,
   updates: ["updates"] as const,
   hub: ["hub"] as const,
   hubRemote: ["storage", "hub"] as const,

@@ -4,9 +4,11 @@ import { cssColorToHex } from "./theme";
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    "surfaces.look": (look: { theme: string; dark: boolean; tokens: Record<string, string>; locale: string; frosted?: boolean }) => void;
+    "surfaces.look": (look: { theme: string; dark: boolean; tokens: Record<string, string>; locale: string; frosted?: boolean; backdrop?: SurfaceBackdrop }) => void;
   }
 }
+
+export interface SurfaceBackdrop { veil: number; frost: number; terminalVeil?: number }
 
 /** Dark by the background's lightness, so custom themes are judged by how they look, not by their base. */
 const isDark = (hex: string): boolean => {
@@ -18,10 +20,10 @@ const isDark = (hex: string): boolean => {
  * Tells the shell how the app looks now, for plugin windows to match: the theme's variables as painted, and the language.
  * `frosted` asks for the system's frosted material under the windows (Glass); the shell answers through the window chrome.
  */
-export function sendSurfaceLook(theme: string, locale: string, frosted: boolean): void {
+export function sendSurfaceLook(theme: string, locale: string, frosted: boolean, backdrop?: SurfaceBackdrop): void {
   if (typeof window === "undefined" || !window.tomrade) return;
   const styles = getComputedStyle(document.documentElement);
   const tokens = Object.fromEntries([...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES].map((name) => [`--${name}`, styles.getPropertyValue(`--${name}`).trim()]).filter(([, value]) => value));
   const dark = isDark(cssColorToHex(tokens["--bg"] ?? "#ffffff"));
-  void window.tomrade.invoke("surfaces.look", { theme, dark, tokens, locale, frosted }).catch(logQuietly("surfaces.look"));
+  void window.tomrade.invoke("surfaces.look", { theme, dark, tokens, locale, frosted, ...(backdrop ? { backdrop } : {}) }).catch(logQuietly("surfaces.look"));
 }

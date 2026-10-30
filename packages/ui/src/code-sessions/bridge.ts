@@ -8,6 +8,9 @@ export interface Look {
   locale: string;
   /** The shell put the system's frosted material under this window: the page leaves its own background off. */
   frosted?: boolean;
+  backdrop?: { veil: number; frost: number; terminalVeil?: number };
+  /** On this page only: something is behind the window (the system's material or the theme's picture), so terminals draw no background of their own. */
+  clear?: boolean;
 }
 
 interface SurfaceBridge {
@@ -17,6 +20,7 @@ interface SurfaceBridge {
   send(message: unknown): void;
   pathForFile?(file: File): string;
   pickDirectory?(title: string, buttonLabel: string): Promise<string | null>;
+  terminalPicture?(themeId: string): Promise<{ mime: string; base64: string } | null>;
 }
 
 declare global {
@@ -30,6 +34,7 @@ const surface = (): SurfaceBridge | undefined => window.tomradeSurface;
 export const send = (message: WindowMessage): void => surface()?.send(message);
 export const pickDirectory = (title: string, buttonLabel: string): Promise<string | null> => (surface()?.pickDirectory?.(title, buttonLabel) ?? Promise.resolve(null)).catch(() => null);
 export const pathForFile = (file: File): string => surface()?.pathForFile?.(file) ?? "";
+export const terminalPicture = (themeId: string) => (surface()?.terminalPicture?.(themeId) ?? Promise.resolve(null)).catch(() => null);
 export const onState = (listener: (state: WindowState) => void) => surface()?.onState((s) => listener(s as WindowState)) ?? (() => undefined);
 export const onLook = (listener: (look: Look) => void) => surface()?.onLook(listener) ?? (() => undefined);
 

@@ -498,10 +498,7 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.toBackground", (projectId, threadId) => ctx.agent.toBackground(projectId, threadId));
       ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
       ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));
-      ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => {
-        const engineId = ctx.agent.answering(asked);
-        return ctx.agent.engines.get(engineId)?.media?.(options ?? ctx.agent.settingsOf().engines[engineId]) ?? { input: [], output: [] };
-      });
+      ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => ctx.agent.mediaFor(asked, options));
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
@@ -553,6 +550,12 @@ export class Agent extends Service implements AgentReader {
   /** The registered engine that answers for an id: the id itself, or the engine that includes it. */
   answering(id: string): string {
     return [...this.engines.values()].find((e) => e.includes?.includes(id))?.id ?? id;
+  }
+
+  /** What a conversation on `asked` (an engine or one it took in) may attach and get back, under these options or its saved ones. */
+  mediaFor(asked: string, options?: unknown) {
+    const engineId = this.answering(asked);
+    return this.engines.get(engineId)?.media?.(options ?? this.settingsOf().engines[engineId]) ?? { input: [], output: [] };
   }
 
   /** The engines a person chooses between: none that another engine took in. */

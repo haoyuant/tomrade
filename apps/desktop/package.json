@@ -140,6 +140,7 @@
     "@tomradex/storage": "workspace:*",
     "@tomradex/storage-git": "workspace:*",
     "@tomradex/storage-github": "workspace:*",
+    "@tomradex/theme-image": "workspace:*",
     "@tomradex/tools": "workspace:*",
     "@tomradex/web-search": "workspace:*",
     "@tomradex/web-search-tavily": "workspace:*",

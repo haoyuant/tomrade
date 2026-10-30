@@ -105,6 +105,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `desktop-surface` | Contract for plugin-owned auxiliary windows. | `desktopSurfaces` | — |
 | `alerts` | Contract for system notifications and sounds. | `alerts` | — |
 | `pet` | The task-state companion, in the panel or on the desktop. | `pet` | agent, contributions, desktop-surface |
+| `theme-image` | The pictures behind custom themes, kept on this machine; an assistant conversation, or the picture's own palette, turns them into a theme. | — | agent, settings, tools |
 | `keybindings` | The default shortcuts and the person's rebound ones. | — | — |
 
 ## Plugins

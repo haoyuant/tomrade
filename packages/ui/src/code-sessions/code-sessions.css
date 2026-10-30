@@ -267,3 +267,17 @@ html[data-frosted] .cs-side { background: color-mix(in srgb, var(--bg) 30%, tran
 html[data-frosted] .cs-cell { background: color-mix(in srgb, var(--surface) 12%, transparent); }
 html[data-frosted] .cs-term { background: transparent; }
 html[data-frosted] :is(.cs-row, .cs-big) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+
+/* A custom theme's picture for this window: one fixed layer behind it, already frosted, under panes in the
+   theme's own colours made translucent (--backdrop-*, set from the theme's terminal veil). */
+.cs-backdrop body { background: var(--bg); }
+.cs-backdrop body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--backdrop-image) center / cover no-repeat;
+}
+.cs-backdrop :is(.cs-topbar, .cs-keys, .cs-side, .cs-overview) { background: var(--backdrop-shell); }
+.cs-backdrop :is(.cs-cell, .cs-pane-timeline) { background: var(--backdrop-pane); }
+.cs-backdrop :is(.cs-row, .cs-big, .cs-peek, .cs-dot-face, .cs-dot[aria-current="true"]) { background: var(--backdrop-tile); }
+/* The grid reads on its cell's pane: the veil was chosen for text there. */
+.cs-backdrop :is(.cs-term, .cs-row-tail, .cs-big-tail) { background: transparent; }
+.cs-backdrop .xterm .xterm-viewport { background-color: transparent; }

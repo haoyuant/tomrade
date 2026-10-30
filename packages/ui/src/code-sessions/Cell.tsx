@@ -304,7 +304,7 @@ export const Cell = memo(function Cell({ leaf, number, pane, session, terminal, 
       {timeline && timelinePane && <Timeline cell={leaf.id} pane={timelinePane} number={number} cwd={terminal?.cwd ?? closed?.cwd ?? session?.cwd ?? session?.worktree ?? ""} locale={look.locale} look={look} onClose={() => setTimeline(false)} />}
       {session?.pane || terminal?.pane ? (
         <>
-          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} clear={look.clear} />
           <Guess session={session} pane={session?.pane ?? terminal?.pane} place="cell" />
           {!session && terminal?.shell && <ShellHint cell={leaf.id} />}
         </>

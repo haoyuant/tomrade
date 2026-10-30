@@ -196,7 +196,8 @@ const CUSTOM_THEMES: SettingsSection<unknown[]> = {
   id: "customThemes", title: "Custom themes", description: "Hub-synchronized custom colours and fonts.",
   schema: z.array(z.object({
     id: z.string().regex(/^custom:[a-z0-9-]+$/), name: z.string().trim().min(1).max(64),
-    base: z.preprocess(retired, z.enum(BUILT_IN_THEMES)), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial()
+    base: z.preprocess(retired, z.enum(BUILT_IN_THEMES)), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial(),
+    backdrop: z.object({ veil: z.number().min(0.3).max(0.98), frost: z.number().min(0).max(40).optional(), terminalVeil: z.number().min(0.3).max(0.98).optional() }).optional()
   })).max(32),
   defaults: [], order: 0.5, scope: "user", agent: "write"
 };

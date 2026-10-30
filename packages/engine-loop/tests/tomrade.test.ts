@@ -273,3 +273,16 @@ it("hands a conversation to the loop when the built-in pi cannot run the model t
     expect(turns.at(-1)).toMatchObject({ engine: "pi-builtin", input: { options: { profile: "cloud" } } });
   } finally { await done(); }
 });
+
+it("takes the pictures a borrowed local agent takes while no model is connected, and the in-app part's again once one is", async () => {
+  const noModel: EngineAvailability = { ok: false, need: "model", reason: "no model" };
+  const { ctx, done } = await setup(noModel, noModel);
+  try {
+    ctx.agent.engine({ id: "claude-code", title: "Claude Code", author: "ai:claude-code", capabilities: ["backlog", "code", "general"], media: () => ({ input: ["image/png", "image/jpeg"], output: [] }), available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }) });
+    await ctx.agent.engineViews();
+    expect(ctx.agent.mediaFor("tomrade").input).toEqual(["image/png", "image/jpeg"]);
+    noModel.ok = true;
+    await ctx.agent.engineViews();
+    expect(ctx.agent.mediaFor("tomrade").input).toEqual([]);
+  } finally { await done(); }
+});

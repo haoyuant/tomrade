@@ -1,0 +1,28 @@
+/* A custom theme made from a picture: the picture fills the window as one fixed,
+   static layer behind a page that never scrolls, and the panes are the theme's
+   own colours made translucent over it (--backdrop-*, set with the theme from its
+   veil). The picture comes already frosted (lib/frost.ts), so nothing runs a
+   filter under the panes; like Glass, nothing blurs but what floats for a moment. */
+@layer components {
+.backdrop body { background: var(--bg); }
+.backdrop body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--backdrop-image) center / cover no-repeat;
+}
+
+.backdrop :is(.titlebar, .statusbar, .sidebar, .side-rail, .ai, .ai-rail) { background: var(--backdrop-shell); }
+.backdrop :is(.main-col, .detail, .sbar) { background: var(--backdrop-pane); }
+.backdrop .query-bar { background: transparent; }
+
+/* Not inside a theme's preview: each preview draws its own theme. */
+.backdrop :is(.card, .sbar-card, .panel, .banner, .mini-card):not(.mode *) { background: var(--backdrop-tile); }
+.backdrop .card:hover { background: var(--surface); }
+.backdrop .tab[aria-selected="true"] { background: var(--backdrop-tile); }
+.backdrop .side-row:hover { background: var(--backdrop-tile); }
+.backdrop :is(.input, .textarea, .select) { background: var(--backdrop-tile); }
+
+.backdrop :is(.menu, .palette, .slash-menu, .sbar-peek) {
+  background: var(--backdrop-float);
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+}
