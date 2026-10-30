@@ -1,6 +1,6 @@
 import http from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { followSystemProxy, proxyUrlOf } from "../src/system-proxy.js";
+import { followSystemProxy, parseRegQuery, proxyUrlOf, windowsProxyRules } from "../src/system-proxy.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -26,7 +26,7 @@ describe("the system proxy", () => {
     vi.spyOn(http, "setGlobalProxyFromEnv").mockReturnValue(() => {});
     let answer = "SOCKS5 127.0.0.1:7891";
     const env: NodeJS.ProcessEnv = {};
-    const stop = await followSystemProxy(async () => answer, env);
+    const { stop } = await followSystemProxy(async () => answer, { env });
     expect(env).toEqual({ TOMRADE_SOCKS_PROXY: "socks5://127.0.0.1:7891" });
     answer = "PROXY 127.0.0.1:7890";
     await vi.advanceTimersByTimeAsync(60_000);
@@ -40,7 +40,7 @@ describe("the system proxy", () => {
     const global = vi.spyOn(http, "setGlobalProxyFromEnv").mockReturnValue(() => {});
     let answer = "PROXY 127.0.0.1:7900";
     const env: NodeJS.ProcessEnv = { NO_PROXY: "intranet.corp" };
-    const stop = await followSystemProxy(async () => answer, env);
+    const { stop } = await followSystemProxy(async () => answer, { env });
     expect(env).toMatchObject({ HTTPS_PROXY: "http://127.0.0.1:7900", HTTP_PROXY: "http://127.0.0.1:7900" });
     expect(env.NO_PROXY?.split(",")).toEqual(expect.arrayContaining(["intranet.corp", "localhost", "127.0.0.1"]));
     expect(global).toHaveBeenLastCalledWith(env);
@@ -59,9 +59,57 @@ describe("the system proxy", () => {
     const global = vi.spyOn(http, "setGlobalProxyFromEnv");
     const env: NodeJS.ProcessEnv = { https_proxy: "http://mine:8080" };
     const resolve = vi.fn(async () => "PROXY 127.0.0.1:7900");
-    await followSystemProxy(resolve, env);
+    const proxy = await followSystemProxy(resolve, { env });
     expect(env).toEqual({ https_proxy: "http://mine:8080" });
     expect(resolve).not.toHaveBeenCalled();
     expect(global).not.toHaveBeenCalled();
+    const said: string[] = [];
+    proxy.tell((line) => said.push(line));
+    expect(said).toEqual(["not following the system proxy: https_proxy=http://mine:8080 is set in the environment"]);
+  });
+
+  it("reads the manual proxy from Windows' Internet Settings", () => {
+    const values = parseRegQuery(
+      [
+        "",
+        "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+        "    ProxyEnable    REG_DWORD    0x1",
+        "    ProxyServer    REG_SZ    127.0.0.1:7897",
+        "    ProxyOverride    REG_SZ    localhost;127.*;192.168.*;<local>",
+        ""
+      ].join("\r\n")
+    );
+    expect(values).toMatchObject({ ProxyEnable: "0x1", ProxyServer: "127.0.0.1:7897" });
+    expect(windowsProxyRules(values, "github.com")).toBe("PROXY 127.0.0.1:7897");
+    expect(windowsProxyRules({ ...values, ProxyEnable: "0x0" }, "github.com")).toBeNull();
+    expect(windowsProxyRules({ ...values, AutoConfigURL: "http://127.0.0.1:7897/pac" }, "github.com")).toBeNull();
+    expect(windowsProxyRules({ ...values, ProxyOverride: "*.github.com;github.com" }, "github.com")).toBeNull();
+    expect(windowsProxyRules({ ...values, ProxyServer: "http=127.0.0.1:7890;https=127.0.0.1:7891;socks=127.0.0.1:7892" }, "github.com")).toBe("PROXY 127.0.0.1:7891");
+    expect(windowsProxyRules({ ...values, ProxyServer: "socks=127.0.0.1:7892" }, "github.com")).toBe("SOCKS 127.0.0.1:7892");
+  });
+
+  it("takes Windows' manual proxy when Chromium answers DIRECT or fails, and says which it used", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(http, "setGlobalProxyFromEnv").mockReturnValue(() => {});
+    const settings = { ProxyEnable: "0x1", ProxyServer: "127.0.0.1:7897" };
+    const env: NodeJS.ProcessEnv = {};
+    let resolve = async () => "DIRECT";
+    const proxy = await followSystemProxy(() => resolve(), { env, windowsSettings: async () => settings });
+    expect(env.HTTPS_PROXY).toBe("http://127.0.0.1:7897");
+    const said: string[] = [];
+    proxy.tell((line) => said.push(line));
+    expect(said).toEqual(['system proxy: http://127.0.0.1:7897 (Chromium answered "DIRECT"; Windows Internet Settings name "127.0.0.1:7897")']);
+
+    resolve = async () => {
+      throw new Error("network service gone");
+    };
+    settings.ProxyEnable = "0x0";
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(env.HTTPS_PROXY).toBeUndefined();
+    expect(said.at(-1)).toBe("system proxy: none, connecting directly (Chromium could not answer: network service gone)");
+    // Nothing changed: nothing more is said.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(said).toHaveLength(2);
+    proxy.stop();
   });
 });

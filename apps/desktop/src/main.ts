@@ -24,7 +24,7 @@ import { readShellEnvSoon } from "./shell-env.js";
 import { watchSeen } from "./seen.js";
 import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
-import { followSystemProxy } from "./system-proxy.js";
+import { followSystemProxy, readWindowsInternetSettings } from "./system-proxy.js";
 import { keepCommandPlaced } from "./tomrade-command.js";
 import { trustedKeys } from "./trust.js";
 import { TomradeWindows, type TabTarget } from "./windows.js";
@@ -130,7 +130,9 @@ app.whenReady().then(async () => {
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
   const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(appDir, "vendor/npm"), runtime: nodeRuntime(), agentsDir: path.join(machine.userData, "agents") });
   // After it, so a proxy the shell sets stands.
-  await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
+  const systemProxy = await followSystemProxy((url) => session.defaultSession.resolveProxy(url), {
+    windowsSettings: process.platform === "win32" ? readWindowsInternetSettings : undefined
+  });
 
   // Plugins and their switches belong to the machine; projects and settings to the account last signed in.
   const accounts = new AccountFolders(machine);
@@ -195,6 +197,9 @@ app.whenReady().then(async () => {
   const { ctx, dump } = booted;
   if (shellProblem) ctx.logger("shell-env").warn(shellProblem);
   if (borrowed.problem) ctx.logger("borrowed-node").warn(borrowed.problem);
+  // Which proxy the git and agent processes go through, or that they go direct.
+  const proxyLog = ctx.logger("proxy");
+  systemProxy.tell((line) => proxyLog.info(line));
 
   if (argv.includes("--dump-config")) {
     process.stdout.write(dump());
