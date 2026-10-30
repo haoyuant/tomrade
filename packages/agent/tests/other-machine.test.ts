@@ -84,3 +84,52 @@ it("refuses to send into a conversation another machine runs until it is taken o
     await done();
   }
 });
+
+it("stops the turn running here once a sync says another machine took the conversation over, and keeps it taken over", async () => {
+  const { ctx, project, done } = await setup();
+  try {
+    let aborted = false;
+    ctx.agent.engine({
+      id: "slow",
+      title: "Slow",
+      author: "ai:slow",
+      available: async () => ({ ok: true }),
+      turn: (_input, io) =>
+        new Promise((resolve) => {
+          io.emit({ type: "text", text: "Working" });
+          io.signal.addEventListener("abort", () => { aborted = true; resolve({ stop: "end" }); }, { once: true });
+        })
+    });
+    const store = ctx.agent.store;
+    const thread = store.createThread(project.id, "slow", "Here");
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
+    await expect.poll(() => ctx.agent.activeRuns().some((a) => a.run.id === runId)).toBe(true);
+
+    // what a sync brings in from the machine that took it over
+    const note = "Stopped: the conversation was taken over from the machine running this turn.";
+    ctx.db.for(project.id).prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = 'taken-over', error = ? WHERE id = ?").run(note, runId);
+    ctx.emit("storage/imported", project.id);
+
+    await expect.poll(() => ctx.agent.activeRuns().length).toBe(0);
+    expect(aborted).toBe(true);
+    expect(store.run(project.id, runId)).toMatchObject({ status: "cancelled", stop: "taken-over", error: note });
+    expect(store.messages(project.id, thread.id).some((m) => m.block.type === "note" && m.block.text === "Stopped.")).toBe(false);
+  } finally {
+    await done();
+  }
+});
+
+it("refuses to stop a turn another machine is running", async () => {
+  const { ctx, project, fromOtherMachine, done } = await setup();
+  try {
+    const store = ctx.agent.store;
+    const thread = store.createThread(project.id, "coder", "There");
+    const theirRun = store.beginRun(project.id, thread.id, "coder");
+    fromOtherMachine(theirRun.id);
+
+    expect(() => ctx.agent.cancel(theirRun.id)).toThrow(/running on another machine/);
+    expect(store.run(project.id, theirRun.id)).toMatchObject({ status: "running", elsewhere: true });
+  } finally {
+    await done();
+  }
+});

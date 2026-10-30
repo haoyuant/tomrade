@@ -27,6 +27,7 @@
     "@tomradex/llm": "workspace:*",
     "@tomradex/oplog": "workspace:*",
     "@tomradex/settings": "workspace:*",
+    "@tomradex/storage": "workspace:*",
     "@tomradex/tools": "workspace:*",
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",

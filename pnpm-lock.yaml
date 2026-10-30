@@ -374,6 +374,9 @@ importers:
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools

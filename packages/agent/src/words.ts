@@ -37,6 +37,7 @@ export const AGENT_WORDS = defineWords("agent", {
     archivedReadOnly: "This conversation is archived. Restore it from the archive to keep talking.",
     runningElsewhere: "This conversation is running on another machine. Take it over on this one to keep talking here.",
     takenOver: "Stopped: the conversation was taken over from the machine running this turn.",
+    cancelElsewhere: "This turn is running on another machine and can only be stopped there. Take the conversation over to go on here.",
     reopenToContinue: "{{key}} is done. Reopen it to keep working in this conversation.",
     finishedNoWorktree: "{{key}} is done and its worktree is gone. Reopen the ticket and Start it to bring the work back.",
     // The coding moved to a conversation of its own under this one, and what it reports back.
@@ -100,6 +101,7 @@ export const AGENT_WORDS = defineWords("agent", {
     archivedReadOnly: "这段对话已归档。从归档里恢复后才能继续对话。",
     runningElsewhere: "这段对话正在另一台机器上运行。在本机接手后才能在这里继续。",
     takenOver: "已停止：这段对话从运行这一轮的那台机器上被接手走了。",
+    cancelElsewhere: "这一轮正在另一台机器上运行，只能在那台机器上停止。要在这里继续，请接手这段对话。",
     reopenToContinue: "{{key}} 已完成。重新打开工单后才能在这段对话里继续。",
     finishedNoWorktree: "{{key}} 已完成，它的 worktree 也已删除。重新打开这张工单再开始，才会把工作带回来。",
     backgroundTitle: "{{title}} · 写代码",

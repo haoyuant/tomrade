@@ -9,6 +9,7 @@ import { DeliveryStore } from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/fields";
 import type {} from "@tomradex/oplog";
+import type {} from "@tomradex/storage";
 import type {} from "@tomradex/ipc";
 import { writeContext } from "@tomradex/write";
 import { languageName, type Author, type Item, type Patch, type UndoRunResult } from "@tomradex/domain";
@@ -16,7 +17,7 @@ import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
-import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
+import { AgentStore, MIGRATIONS, TABLES, TAKEN_OVER, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import { RULES_MAX_CHARS, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
@@ -421,6 +422,10 @@ export class Agent extends Service implements AgentReader {
     };
     for (const projectId of this.ctx.db.openIds()) reconcile(projectId);
     this.ctx.on("db/opened", reconcile);
+    // Another machine took over a conversation this one is running: the turn here stops, and stays taken over.
+    this.ctx.on("storage/imported", (projectId) => {
+      for (const rc of this.activeById.values()) if (rc.projectId === projectId && this.store.run(projectId, rc.run.id)?.stop === TAKEN_OVER) rc.abort.abort();
+    });
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
     this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
     // A project closing (removed from this machine) stops the runs working in it.
@@ -1615,6 +1620,7 @@ export class Agent extends Service implements AgentReader {
     const projectId = this.store.projectOfRun(runId);
     const run = projectId ? this.store.run(projectId, runId) : null;
     if (!projectId || !run || run.status !== "running") return false;
+    if (run.elsewhere) throw new Error(this.words()("cancelElsewhere"));
     const changes = this.store.changesOf(projectId, runId) + this.ctx.oplog.runChanges(projectId, runId).length;
     const view = this.store.endRun(projectId, runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
     this.broadcast(run.threadId, { type: "done", run: view });
@@ -2121,11 +2127,15 @@ export class Agent extends Service implements AgentReader {
     LIVE_RUNS.delete(rc.run.id);
     // Its project closed under it (removed, or the app quitting) and took the file along: there is nowhere to write how it ended.
     if (!this.ctx.db.has(rc.projectId)) return;
+    // Another machine took the conversation over while this turn ran: it ends taken over, as that machine's note says.
+    const stored = this.store.run(rc.projectId, rc.run.id);
+    const takenOver = stored?.stop === TAKEN_OVER;
+    if (takenOver) result = { ...result, stop: "cancelled", error: stored.error ?? undefined };
     // A run cut short keeps what it had already said, marked as unfinished, and says why it ended.
     if ((result.stop === "cancelled" || result.stop === "error") && rc.partial.text.trim()) {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "text", text: `${rc.partial.text.trim()} …` }, rc.run.id);
     }
-    if (result.stop === "cancelled") {
+    if (result.stop === "cancelled" && !takenOver) {
       const w = this.words();
       const duration = rc.clock.limitMs >= 60_000 ? w("minutes", { n: Math.round(rc.clock.limitMs / 60_000) }) : w("seconds", { n: Math.round(rc.clock.limitMs / 1000) });
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w("timeLimit", { duration, hint: rc.thread.itemId ? "" : w("raiseTimeLimit") }) : w("stopped") }, rc.run.id);
@@ -2151,7 +2161,7 @@ export class Agent extends Service implements AgentReader {
     this.limitTries.delete(rc.run.id);
     const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
     const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
-    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
+    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: takenOver ? TAKEN_OVER : result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
     // what it said last, kept with the thread once the turn is over — never while it streams
     const lastText = this.store.lastText(rc.projectId, rc.threadId, rc.run.id);
     if (lastText) this.store.setSaid(rc.projectId, rc.threadId, firstSentence(lastText));
