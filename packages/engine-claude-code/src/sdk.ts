@@ -36,6 +36,9 @@ const EDITS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 const steerPrompt = (text: string) =>
   `${text}\n\n(Sent while you were working, which stopped here to read it; a command cut short by this was not refused. Do not repeat what you already said, and do not finish a word or sentence it cut off: start with a whole sentence.)`;
 
+/** How long a steer waits for MCP calls in flight before it cuts them anyway: one waiting on the person may never return. */
+const CALL_WAIT_MS = 10_000;
+
 /** Which of the client's messages a CLI turn answers, when the CLI stamps it (null when it does not). */
 const consumedBy = (message: SDKMessage): string[] | null => {
   const stamped = message as { user_message_uuids?: string[]; user_message_uuid?: string };
@@ -105,6 +108,10 @@ export class ClaudeRuntime implements Runtime {
       const seenTools = new Set<string>();
       // Claude Code's own tools, from the call until their result comes back.
       const running = new Map<string, { name: string; args: unknown; at: number }>();
+      // MCP calls, Tomrade's own among them, from the call until their result comes back; and the steers waiting for them.
+      const calls = new Set<string>();
+      const quiet: (() => void)[] = [];
+      const calm = () => { for (const done of quiet.splice(0)) done(); };
       const live = new LiveUsage();
       // Messages sent into this turn, by the uuid they carry into the CLI's queue. One that the
       // turn ends without reading runs as a turn of its own right after: this turn waits for it.
@@ -133,13 +140,19 @@ export class ClaudeRuntime implements Runtime {
       // Taken once the CLI is answering the prompt: a "now" message sent before then would be answered ahead of it.
       const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
         if (over || turn.cancelled || !this.alive) return false;
+        // "now" drops an MCP call's result unread though the server carries the call through, and the agent makes it again: a write twice.
+        if (calls.size) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([new Promise<void>((r) => quiet.push(r)), new Promise<void>((r) => { timer = setTimeout(r, CALL_WAIT_MS); })]);
+          clearTimeout(timer);
+          if (over || turn.cancelled || !this.alive) return false;
+        }
         const uuid = randomUUID();
         steers.set(uuid, steer.id); unplaced.add(uuid);
         const text = steerPrompt(steer.text);
         const content = steer.media?.length ? claudeMediaBlocks(text, steer.media) as SDKUserMessage["message"]["content"] : text;
         cutting = true;
         // "now" cuts the reply being written, but a running tool only once it ends; an interrupt ends the tool too.
-        // Tomrade's own tools are quick, and a write cut halfway helps no one: those are waited for.
         if (running.size) await this.query?.interrupt().catch(() => {});
         this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "now" });
         return true;
@@ -149,6 +162,7 @@ export class ClaudeRuntime implements Runtime {
       // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
       let limit: { until: number | null; text: string | null } | null = null;
       turn.onAbort(() => {
+        calm();
         // A plain interrupt leaves queued messages to run afterwards; ending the process drops them (the session resumes next turn).
         if (waiting().length) { this.close(); return; }
         // A protocol interrupt is scoped to this turn. Kill only on timeout.
@@ -198,7 +212,8 @@ export class ClaudeRuntime implements Runtime {
             if (block.type === "tool_use" && !seenTools.has(block.id)) {
               seenTools.add(block.id); metrics.toolCalls!++;
               // Tomrade's own tools are traced by the gateway they run through.
-              if (!block.name.startsWith("mcp__")) {
+              if (block.name.startsWith("mcp__")) calls.add(block.id);
+              else {
                 running.set(block.id, { name: block.name, args: block.input, at: Date.now() });
                 const hint = stepHint(block.input, 60);
                 io.activity?.(hint ? `${block.name} · ${hint}` : block.name);
@@ -207,6 +222,7 @@ export class ClaudeRuntime implements Runtime {
           }
         } else if (message.type === "user" && !message.parent_tool_use_id && Array.isArray(message.message.content)) {
           for (const block of message.message.content) {
+            if (block.type === "tool_result" && calls.delete(block.tool_use_id) && !calls.size) calm();
             const call = block.type === "tool_result" ? running.get(block.tool_use_id) : undefined;
             if (!call || block.type !== "tool_result") continue;
             running.delete(block.tool_use_id);
@@ -240,6 +256,7 @@ export class ClaudeRuntime implements Runtime {
           // the steer runs as the CLI's next turn, still part of this one
           if ((!message.is_error || cutting) && !turn.cancelled && waiting().length) { cutting = false; return; }
           over = true;
+          calm();
           const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
           const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
           // An error that only reads as a limit is left to runTurn.

@@ -123,7 +123,7 @@ it("reports the SDK's retries, drops the failed attempt from the live count, and
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
 
-it("steers a running turn at once through the SDK's input queue, cutting a running tool, waits out the CLI turn it starts, and drops unread ones on a stop", async () => {
+it("steers a running turn at once through the SDK's input queue, cutting a running tool but not an MCP call in flight, waits out the CLI turn it starts, and drops unread ones on a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-steer-"));
   const log = path.join(dir, "requests.jsonl");
   const bin = path.join(dir, "claude");
@@ -195,6 +195,20 @@ it("steers a running turn at once through the SDK's input queue, cutting a runni
     input.input = { kind: "text", text: "hello" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(order).toEqual(["agent:hello"]);
+
+    // while an MCP call is out: "now" would drop its result though the call goes on to the end, so the steer waits for it
+    order.length = 0;
+    input.input = { kind: "text", text: "MCP_STEER" };
+    turn = engine.turn(input, io);
+    await when(() => requests().some((r) => r.type === "user" && JSON.stringify(r).includes("MCP_STEER")));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await forward!({ id: "s4", text: "say it twice" })).toBe(true);
+    result = await turn;
+    expect(result.stop, result.error).toBe("end");
+    expect(order).toEqual(["steered:s4", "agent:only the addition: say it twice"]);
+    const marks = requests();
+    expect(marks.some((r) => r.dropped)).toBe(false);
+    expect(marks.findIndex((r) => r.returned)).toBeLessThan(marks.findIndex((r) => r.type === "user" && r.priority === "now" && JSON.stringify(r).includes("say it twice")));
 
     // a stop with a steer still unread ends the process rather than leave it queued to run
     const abort = new AbortController(); io.signal = abort.signal;
