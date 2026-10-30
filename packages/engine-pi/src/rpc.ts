@@ -213,8 +213,9 @@ export class PiRuntime implements Runtime {
         return true;
       });
       io.steersMedia?.();
-      io.steerTo?.(async (steer) => {
-        if (!prompted || settled || turn.cancelled || !this.alive) return false;
+      // Taken once the prompt is sent.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
+        if (settled || turn.cancelled || !this.alive) return false;
         // known before the request: pi may put it before the model before it answers
         forwarded.push(steer);
         const reply = await this.request("steer", { message: steer.text, ...imagesField(steer.media ?? []) }).catch(() => ({}) as Json);
@@ -222,7 +223,7 @@ export class PiRuntime implements Runtime {
         const at = forwarded.indexOf(steer);
         if (at >= 0) forwarded.splice(at, 1);
         return false;
-      });
+      };
       this.onFailure = (error) => finish(turn.failed(error.message, { error }));
       // The model's last reply without its text: provider, model, stop reason and Pi's own error words.
       const lastSaid = () => { if (!last) return undefined; const { content: _, ...rest } = last; return rest; };
@@ -322,7 +323,10 @@ export class PiRuntime implements Runtime {
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       prompted = true;
       const message = turnPrompt(input, io, { staleIndex: stale });
-      const accepted = await this.request("prompt", { message: this.fresh ? withRecap(io.recap?.(), message) : message, ...imagesField(attachedMedia(input, io)) });
+      const prompting = this.request("prompt", { message: this.fresh ? withRecap(io.recap?.(), message) : message, ...imagesField(attachedMedia(input, io)) });
+      // pi reads its commands in order: a steer sent from here comes after the prompt
+      io.steerTo?.(forward);
+      const accepted = await prompting;
       this.fresh = false;
       metrics.readyMs = performance.now() - start;
       if (accepted.disposition === "handled") finish(result("end"));

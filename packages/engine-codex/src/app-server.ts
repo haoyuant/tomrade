@@ -130,7 +130,8 @@ export class CodexRuntime implements Runtime {
         return true;
       });
       io.steersMedia?.();
-      io.steerTo?.(async (steer) => {
+      // Taken once Codex has started the turn: turn/steer needs its id.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
         if (!turnId || over || turn.cancelled || !this.alive) return false;
         // known before the request: Codex may add it to the conversation before it answers
         forwarded.set(steer.id, steer.text);
@@ -141,7 +142,12 @@ export class CodexRuntime implements Runtime {
           forwarded.delete(steer.id);
           throw error;
         }
-      });
+      };
+      const began = (id: string) => {
+        const first = !turnId;
+        turnId = id;
+        if (first) io.steerTo?.(forward);
+      };
       this.failure = (error) => finish(turn.failed(error.message, { error, attempts: tried() }));
       const abort = () => {
         if (!turnId) { this.close(); return; }
@@ -151,7 +157,7 @@ export class CodexRuntime implements Runtime {
       turn.onAbort(abort);
       this.notification = (method, params) => {
         if (params.threadId && this.session && params.threadId !== this.session) return;
-        if (method === "turn/started") turnId = params.turn.id;
+        if (method === "turn/started") began(params.turn.id);
         if (method === "thread/tokenUsage/updated") {
           const total = params.tokenUsage.total as Counters;
           if (!turnId || params.turnId !== turnId) { this.totals = total; baseline = total; return; }
@@ -250,7 +256,7 @@ export class CodexRuntime implements Runtime {
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
         input: codexMediaInput(input, io, withRecap(recap, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest }))) });
       recap = "";
-      turnId ??= response.turn.id;
+      if (!turnId) began(response.turn.id);
       if (turn.cancelled) abort();
       const outcome = await done;
       if (outcome.stop === "error") this.close();

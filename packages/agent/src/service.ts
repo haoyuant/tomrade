@@ -291,6 +291,8 @@ interface RunCtx {
   steersMedia: boolean;
   /** Where the engine's agent takes them instead, when it queues them itself. */
   forward: ((steer: SteerInput) => Promise<boolean>) | null;
+  /** Sent before the engine could take them; handed over once it calls `steerTo`. */
+  held: RunCtx["steers"];
   /** How the running engine takes a mode picked mid-turn (`io.modeTo`). */
   mode: ((mode: string) => Promise<boolean>) | null;
 }
@@ -1574,13 +1576,20 @@ export class Agent extends Service implements AgentReader {
   async steer(projectId: string, threadId: string, steerId: string, text: string, attachments?: MediaRef[]): Promise<boolean> {
     const rc = this.activeByThread.get(threadId);
     if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || (!text.trim() && !attachments?.length)) return false;
-    if (attachments?.length && !rc.steersMedia) return false;
+    // before a forwarding engine starts taking steers it has not yet said whether it takes files either
+    const starting = !rc.forward && rc.engine.steering === "forward";
+    if (attachments?.length && !rc.steersMedia && !starting) return false;
     const refs = this.attached(rc.thread, rc.engine, attachments);
     const steer = { id: steerId, text: text.trim(), ...(refs?.length ? { attachments: refs } : {}) };
-    const input = this.steerInput(projectId, threadId, steer);
     rc.steers.push(steer);
-    if (!rc.forward) return true;
-    const taken = await rc.forward(input).catch(() => false);
+    if (rc.forward) return this.handOver(rc, steer);
+    // an agent that queues them itself takes it once its turn is under way (steerTo)
+    if (starting) rc.held.push(steer);
+    return true;
+  }
+
+  private async handOver(rc: RunCtx, steer: RunCtx["steers"][number]): Promise<boolean> {
+    const taken = await rc.forward!(this.steerInput(rc.projectId, rc.threadId, steer)).catch(() => false);
     const at = rc.steers.indexOf(steer);
     if (!taken && at >= 0) rc.steers.splice(at, 1);
     return taken;
@@ -1881,7 +1890,14 @@ export class Agent extends Service implements AgentReader {
       steersMedia: () => { rc.steersMedia = true; },
       takeSteers: () => takeSteerInputs().map((s) => s.text),
       takeSteerInputs,
-      steerTo: (forward) => { rc.forward = forward; },
+      steerTo: (forward) => {
+        rc.forward = forward;
+        for (const steer of rc.held.splice(0)) {
+          // files it turned out not to take wait for the next turn with them, as one refused at once would
+          if (steer.attachments && !rc.steersMedia) rc.steers.splice(rc.steers.indexOf(steer), 1);
+          else void this.handOver(rc, steer);
+        }
+      },
       modeTo: (apply) => { rc.mode = apply; },
       steered: (id) => {
         const at = steers.findIndex((s) => s.id === id);
@@ -1890,7 +1906,7 @@ export class Agent extends Service implements AgentReader {
         placeSteer(s);
       }
     };
-    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, steersMedia: false, forward: null, mode: null };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, steersMedia: false, forward: null, held: [], mode: null };
     return rc;
   }
 

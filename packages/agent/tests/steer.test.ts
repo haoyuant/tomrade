@@ -140,7 +140,7 @@ it("forwards a picture to an agent that says it takes them, and to no other", as
     ctx.agent.setEngine(project.id, thread.id, "sees");
     const file = ctx.agent.uploadMedia(project.id, thread.id, PICTURE);
     let run = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
-    await expect.poll(() => ctx.agent.steer(project.id, thread.id, "s1", "", [file])).toBe(true);
+    expect(await ctx.agent.steer(project.id, thread.id, "s1", "", [file])).toBe(true);
     await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
     expect(got).toMatchObject([{ id: "s1", text: "", media: [{ name: "shot.png", base64: PICTURE.base64 }] }]);
     expect(steeredLine(ctx, project.id, thread.id)).toMatchObject({ text: "", attachments: [{ name: "shot.png" }] });
@@ -155,6 +155,34 @@ it("forwards a picture to an agent that says it takes them, and to no other", as
     expect(await ctx.agent.steer(project.id, thread.id, "s3", "just words")).toBe(true);
     await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
   } finally { stop = true; await done(); }
+});
+
+it("holds a message sent while a forwarding engine starts up and hands it over once the engine takes them", async () => {
+  const { ctx, project, thread, done } = await setup([]);
+  try {
+    const forwarded: string[] = [];
+    let ready!: () => void;
+    const starting = new Promise<void>((resolve) => { ready = resolve; });
+    ctx.agent.engine({ id: "cold", title: "Cold", author: "ai:cold", steering: "forward", available: async () => ({ ok: true }), turn: async (_input, io) => {
+      await starting;
+      let read!: () => void;
+      const taken = new Promise<void>((resolve) => { read = resolve; });
+      io.steerTo?.(async (steer) => { forwarded.push(steer.text); setTimeout(() => { io.steered?.(steer.id); read(); }, 10); return true; });
+      await taken;
+      io.emit({ type: "text", text: "blue it is" });
+      return { stop: "end" };
+    } });
+    ctx.agent.setEngine(project.id, thread.id, "cold");
+    const run = ctx.agent.send(project.id, thread.id, { kind: "text", text: "paint it" });
+    expect(await ctx.agent.steer(project.id, thread.id, "s1", "make it blue")).toBe(true);
+    expect(forwarded).toEqual([]);
+    ready();
+    await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(forwarded).toEqual(["make it blue"]);
+    const messages = ctx.agent.thread(project.id, thread.id).messages;
+    expect(messages.flatMap((m) => (m.block.type === "text" ? [m.block.text] : []))).toEqual(["paint it", "make it blue", "blue it is"]);
+    expect(messages.find((m) => m.block.type === "text" && m.block.steerId === "s1")?.runId).toBe(run.runId);
+  } finally { await done(); }
 });
 
 it("refuses a message when nothing runs or the engine cannot be steered", async () => {

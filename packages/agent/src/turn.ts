@@ -120,7 +120,8 @@ export interface TurnIO {
   takeSteerInputs?(): SteerInput[];
   /**
    * For an engine whose `steering` is `forward` (its agent keeps its own queue: pi, Codex, Claude Code): `forward`
-   * gets each message sent into this turn and resolves whether the agent took it. Call
+   * gets each message sent into this turn and resolves whether the agent took it. Call it once the agent's turn is
+   * under way: what was sent before then is held and handed over at that call. Call
    * `steered(id)` when the agent reads it; that is where it enters the transcript.
    */
   steerTo?(forward: (steer: SteerInput) => Promise<boolean>): void;
