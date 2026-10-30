@@ -1600,17 +1600,20 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 
 /* ─── detail pane ────────────────────────────────────────────────────── */
 .detail {
-  /* the pane yields width to the board before the board starts clipping */
-  width: var(--detail-w); flex-shrink: 1; min-width: 316px;
+  /* the pane yields width to the board before the board starts clipping, never so far that its head clips */
+  width: var(--detail-w); flex-shrink: 1; min-width: min-content;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--bg); border-left: 1px solid var(--border);
 }
-.detail-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.detail-head { display: flex; align-items: center; gap: var(--space-2); min-width: 316px; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+/* a long workstream name gives way before the pane widens for it */
+.detail-head > .tag { min-width: 0; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The body wraps to whatever width the head sets: it never widens the pane itself. */
+.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; contain: inline-size; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .detail-title { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
-.field-row { display: grid; grid-template-columns: 92px 1fr; gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.field-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
 .field-row dt { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); padding-top: 2px; }
-.field-row dd { margin: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.field-row dd { margin: 0; min-width: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 /* activity ledger — provenance vocabulary carried into the detail pane */
 .ledger { display: flex; flex-direction: column; }
