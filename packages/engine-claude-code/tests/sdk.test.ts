@@ -179,6 +179,17 @@ it("steers a running turn at once through the SDK's input queue, cutting a runni
     expect(order).toEqual(["agent:first answer", "steered:s2", "agent:only the addition: end with an emoji"]);
     expect(result.costUsd).toBeCloseTo(0.04);
 
+    // while a reply streams: it is cut mid-word, kept marked as unfinished, and the steer runs as the CLI's next turn
+    order.length = 0;
+    input.input = { kind: "text", text: "STREAM_STEER" }; io.resume = result.resume;
+    turn = engine.turn(input, io);
+    await when(() => takenAfter.length === 3);
+    expect(await forward!({ id: "s4", text: "make it short" })).toBe(true);
+    result = await turn;
+    expect(result.stop, result.error).toBe("end");
+    expect(order).toEqual(["agent:A kanban board is a vis …", "steered:s4", "agent:only the addition: make it short"]);
+    expect(requests().filter((r) => r.type === "user").at(-1).message.content).toMatch(/do not finish a word or sentence it cut off/);
+
     // the next turn is not disturbed by what came before
     order.length = 0;
     input.input = { kind: "text", text: "hello" };

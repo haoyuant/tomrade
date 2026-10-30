@@ -150,5 +150,34 @@ describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {
     expect(early.said.findIndex((line) => line.startsWith("user(steer)"))).toBeGreaterThan(0);
     expect(answered(early.said)).toBe(true);
   }, 360_000);
+
+  it("marks a reply a steer cuts mid-stream as unfinished, and the answer to the steer starts with a whole sentence", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-steer-stream-${Date.now()}.json`);
+    const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
+    await settle();
+    const thread = ctx.agent.newThread(project.id, "claude-code", null, { options: { model: "haiku" } });
+    let streamed = 0;
+    let taken: Promise<boolean> | null = null;
+    const off = ctx.on("agent/event", (id: string, event: { type: string; text?: string }) => {
+      if (id !== thread.id || taken || event.type !== "delta") return;
+      streamed += event.text?.length ?? 0;
+      if (streamed > 200) taken = ctx.agent.steer(project.id, thread.id, "s", "Actually, keep it to one sentence about why teams like it.");
+    });
+    const t0 = Date.now();
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "Write a 500-word essay about kanban boards. Do not use any tools." });
+    while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+      if (Date.now() - t0 > 150_000) throw new Error("live run did not settle");
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    off();
+    const said = ctx.agent.store.messages(project.id, thread.id).flatMap((m) => (m.block.type === "text" ? [{ steer: !!m.block.steerId, role: m.role, text: m.block.text }] : []));
+    console.log(said.map((m) => `${m.role}${m.steer ? "(steer)" : ""}: ${m.text}`).join("\n"));
+    expect(await taken).toBe(true);
+    expect(ctx.agent.store.run(project.id, runId)!.status).toBe("done");
+    const at = said.findIndex((m) => m.steer);
+    expect(said[at - 1]).toMatchObject({ role: "agent", text: expect.stringMatching(/ …$/) });
+    // not the cut word carried on
+    expect(said[at + 1]?.text).toMatch(/^[^a-z]/);
+  }, 180_000);
 });
 
