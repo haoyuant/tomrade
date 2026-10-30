@@ -17,8 +17,6 @@
 /* Not inside a theme's preview: each preview draws its own theme. */
 .backdrop :is(.card, .sbar-card, .panel, .banner, .mini-card, .proj):not(.mode *) { background: var(--backdrop-tile); }
 .backdrop .card:hover { background: var(--surface); }
-/* A project not on this computer yet stays an outline until it is on its way. */
-.backdrop .proj-restore:not([data-restore="restoring"], [data-restore="queued"]) { background: transparent; }
 /* The new-project outline holds muted text: over the bare picture it needs the pane the veil was chosen for. */
 .backdrop .proj-new { background: var(--backdrop-pane); }
 .backdrop .proj-new:hover { background: var(--backdrop-tile); }

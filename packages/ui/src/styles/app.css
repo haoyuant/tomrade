@@ -2588,8 +2588,9 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 }
 .proj-new:hover { background: var(--surface-warm); border-color: var(--meta); color: var(--fg); }
 /* A project in the account that is not on this computer yet: the card's
-   shape, drawn as a placeholder, with the step under way as a running rule. */
-.proj-restore { background: transparent; border-style: dashed; }
+   shape, drawn as a placeholder, with the step under way as a running rule.
+   A fainter surface, not none: over a picture or a tinted page its text must still read. */
+.proj-restore { background: color-mix(in srgb, var(--surface) 55%, transparent); border-style: dashed; }
 .proj-restore:hover { box-shadow: none; border-color: var(--border); }
 .proj-restore[data-restore="restoring"], .proj-restore[data-restore="queued"] { background: var(--surface); }
 .restore-body { overflow-wrap: anywhere; }
