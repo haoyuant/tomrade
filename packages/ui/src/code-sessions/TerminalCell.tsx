@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type ReactElement } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -10,7 +10,8 @@ import { terminalTheme } from "~/lib/xtermTheme";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
-import { modifiedEnter } from "./keys";
+import { clipboardKey, isInterrupt, modifiedEnter } from "./keys";
+import { offerClipboard } from "./clipboard";
 import { frameBatch } from "./frames";
 
 /** Every cell's fit, once a frame and together. */
@@ -163,7 +164,7 @@ function PaneScrollbar({ scroll, onScrollTo, onWheel }: { scroll: PaneScroll | n
  * frame repaints the viewport), clicks as mouse events, files dropped on it as their paths, and the
  * size following the cell.
  */
-export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, autoFocus, clear = false }: { cell: string; sessionId: string; pane: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean; /** Something is behind the window, the system's material or the theme's picture: the grid draws no background of its own. */ clear?: boolean }) {
+export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, autoFocus, clear = false, menu = (node) => node }: { cell: string; sessionId: string; pane: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean; /** Something is behind the window, the system's material or the theme's picture: the grid draws no background of its own. */ clear?: boolean; /** Puts the cell's right-click menu on the terminal. */ menu?: (trigger: ReactElement) => ReactElement }) {
   // Another ticket the same agent works in this pane is the same terminal: only another pane attaches again.
   const attachAs = useRef(sessionId);
   attachAs.current = sessionId;
@@ -193,7 +194,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
         if (!terminal.hasSelection()) send({ type: "openLink", url });
       }
     };
-    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler });
+    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler, rightClickSelectsWord: false });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
@@ -212,6 +213,18 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     setClosed(undefined);
     setScroll(null);
     const selection = followSelection(terminal, el);
+    // Copy takes the selection's snapshot, also once the pane has scrolled it away; paste goes in as xterm pastes.
+    const canCopy = () => selection.text() !== null || terminal.hasSelection();
+    const copy = () => {
+      const text = selection.text() ?? (terminal.hasSelection() ? terminal.getSelection() : "");
+      if (text) void navigator.clipboard.writeText(text).catch(() => undefined);
+    };
+    const paste = () => {
+      void navigator.clipboard.readText().then((text) => text && terminal.paste(text), () => undefined);
+    };
+    // From the menu, the keyboard goes back to the terminal once the menu has closed.
+    const refocus = () => requestAnimationFrame(() => terminal.focus());
+    const clipboard = offerClipboard(cell, { canCopy, copy: () => { copy(); refocus(); }, paste: () => { paste(); refocus(); } });
     // The last frame handed to xterm; a snapshot says it is of the screen as of this one.
     let seq = 0;
     const off = onCell(cell, (post) => {
@@ -236,6 +249,26 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       return false;
     });
     terminal.attachCustomKeyEventHandler((e) => {
+      // The person's copy and paste keys never reach the shell, but a copy key with nothing to copy does:
+      // Ctrl+C without a selection on the screen is the interrupt.
+      const clip = clipboardKey(e);
+      if (clip === "paste") {
+        if (e.type === "keydown") {
+          e.preventDefault();
+          paste();
+        }
+        return false;
+      }
+      if (clip === "copy") {
+        const interrupt = isInterrupt(e);
+        if (interrupt ? !terminal.hasSelection() : !canCopy()) return true;
+        if (e.type === "keydown") {
+          e.preventDefault();
+          copy();
+          if (interrupt) terminal.clearSelection();
+        }
+        return false;
+      }
       const enter = modifiedEnter(e);
       if (enter) {
         // Its keypress would type a plain Enter too.
@@ -254,7 +287,8 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       const box = (el.querySelector(".xterm-screen") ?? el).getBoundingClientRect();
       return { column: Math.min(terminal.cols - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * terminal.cols))), row: Math.min(terminal.rows - 1, Math.max(0, Math.floor(((e.clientY - box.top) / box.height) * terminal.rows))) };
     };
-    const mouse = (action: "down" | "up") => (e: MouseEvent) => send({ type: "mouse", cell, action, button: BUTTONS[e.button] ?? "left", ...at(e) });
+    // The right button opens the cell's menu here, not the program's.
+    const mouse = (action: "down" | "up") => (e: MouseEvent) => e.button !== 2 && send({ type: "mouse", cell, action, button: BUTTONS[e.button] ?? "left", ...at(e) });
     const down = mouse("down");
     const up = mouse("up");
     el.addEventListener("mousedown", down);
@@ -274,6 +308,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     return () => {
       observer.disconnect();
       fits.cancel(refit);
+      clipboard();
       selection.dispose();
       localLinks.dispose();
       el.removeEventListener("mousedown", down);
@@ -320,7 +355,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     term.current?.focus();
   };
 
-  return (
+  return menu(
     <div className="cs-term" onDragEnter={over} onDragOver={over} onDragLeave={leave} onDrop={drop}>
       <div ref={host} className="cs-term-host" />
       <PaneScrollbar scroll={closed === undefined ? scroll : null} onScrollTo={(offset) => send({ type: "scrollTo", cell, offset })} onWheel={wheel} />

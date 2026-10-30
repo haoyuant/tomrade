@@ -95,11 +95,16 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
   });
   // Always copy the snapshot, including between the arrival and parsing of a repaint, and while
   // the selection is outside the viewport. Never copy whatever replaced it at the old screen rows.
+  const text = (): string | null => {
+    if (!picked) return null;
+    const out: string[] = [];
+    for (let line = picked.start[1]; line <= picked.end[1]; line++) out.push((lines.get(line) ?? "").replace(/ /g, " "));
+    return out.join("\n");
+  };
   const copy = (e: ClipboardEvent) => {
-    if (!picked || !e.clipboardData) return;
-    const text: string[] = [];
-    for (let line = picked.start[1]; line <= picked.end[1]; line++) text.push((lines.get(line) ?? "").replace(/ /g, " "));
-    e.clipboardData.setData("text/plain", text.join("\n"));
+    const snapshot = text();
+    if (snapshot === null || !e.clipboardData) return;
+    e.clipboardData.setData("text/plain", snapshot);
     e.preventDefault();
     e.stopImmediatePropagation();
   };
@@ -113,6 +118,8 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
   el.addEventListener("mousedown", press, true);
   window.addEventListener("mouseup", release);
   return {
+    /** The selection's snapshot as the clipboard takes it, wherever the pane has scrolled since; null with none. */
+    text,
     dispose() {
       changed.dispose();
       parsed.dispose();

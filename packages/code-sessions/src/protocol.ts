@@ -191,6 +191,8 @@ export interface WindowState {
   projectName: string;
   /** The app's language, so the window speaks it even before the main window says how it looks. */
   locale: string;
+  /** The commands the person rebound (settings "keybindings".overrides), so the window's copy and paste keys are theirs. */
+  keybindings?: Record<string, string[]>;
   bridge: TerminalBridge;
   /** Which backend the panes are on: herdr, Tomrade's own terminal host (native Windows), or none. */
   provider: "herdr" | "builtin" | null;

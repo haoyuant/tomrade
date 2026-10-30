@@ -32,7 +32,7 @@ export function ShortcutsDialog({ open, onOpenChange, onCustomize }: { open: boo
       </DialogHead>
       <DialogBody>
         <div className="shortcut-groups">
-          {GROUPS.map((group) => {
+          {GROUPS.filter((group) => group.id !== "terminal").map((group) => {
             const rows = [
               ...COMMANDS.filter((c) => c.group === group.id && map[c.id].length).map((c) => ({ id: c.id as string, label: c.label, keys: map[c.id] })),
               ...FIXED.filter((f) => f.group === group.id).map((f) => ({ id: f.label as string, label: f.label, keys: f.keys }))
@@ -59,6 +59,16 @@ export function ShortcutsDialog({ open, onOpenChange, onCustomize }: { open: boo
           <section className="shortcut-group" data-testid="shortcuts-terminal">
             <h3 className="eyebrow">{t("shortcuts.terminal")}</h3>
             <dl>
+              {COMMANDS.filter((c) => c.group === "terminal" && map[c.id].length).map((c) => (
+                <div className="shortcut-row" key={c.id} data-command={c.id}>
+                  <dt>
+                    {map[c.id].map((key) => (
+                      <Kbd key={key}>{formatChord(key)}</Kbd>
+                    ))}
+                  </dt>
+                  <dd>{t(c.label)}</dd>
+                </div>
+              ))}
               {TERMINAL_ROWS.map((row) => (
                 <div className="shortcut-row" key={row.label}>
                   <dt>

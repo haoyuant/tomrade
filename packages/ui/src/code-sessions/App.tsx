@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { useFrosted } from "~/lib/frost";
-import { hits } from "~/lib/keybindings";
+import { announceKeymap, formatChord, hits, primeKeymap, resolveKeymap } from "~/lib/keybindings";
 import { backdropFills } from "@tomradex/theme-image/colors";
 import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, type Look } from "./bridge";
 import { Cell } from "./Cell";
+import { clipboardOf } from "./clipboard";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
@@ -177,6 +178,13 @@ export function App() {
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
   const guesses = useMemo(() => guessesByPane(state?.sessions ?? []), [state]);
+  // The person's keys, as the app's window has them: copy and paste here are theirs.
+  const overrides = state?.keybindings;
+  const overridesKey = JSON.stringify(overrides ?? {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const keymap = useMemo(() => resolveKeymap(overrides), [overridesKey]);
+  primeKeymap(keymap);
+  useLayoutEffect(announceKeymap, [keymap]);
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
@@ -379,8 +387,12 @@ export function App() {
   const cellMenu = (node: Extract<Layout, { type: "leaf" }>): ReactNode => {
     const terminals = state.terminals.filter((t) => !t.sessionId && t.pane);
     const choices = [...state.sessions.filter(live), ...terminals];
+    const clipboard = clipboardOf(node.id);
+    const hint = (chords: string[]) => (chords[0] ? formatChord(chords[0]) : undefined);
     return (
       <>
+        <ContextMenuActionItem icon={null} name={say("copy")} hint={hint(keymap.terminalCopy)} disabled={!clipboard?.canCopy()} onSelect={() => clipboard?.copy()} />
+        <ContextMenuActionItem icon={null} name={say("paste")} hint={hint(keymap.terminalPaste)} disabled={!clipboard} onSelect={() => clipboard?.paste()} />
         <ContextMenuActionItem icon={null} name={node.locked ? say("unlockCell") : say("lockCell")} disabled={!node.sessionId} onSelect={() => change(lock(layout, node.id, !node.locked))} />
         {node.locked ? (
           <ContextMenuActionItem icon={null} name={say("connect")} disabled onSelect={() => undefined} />
