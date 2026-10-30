@@ -2238,6 +2238,7 @@ export const de: PartialMessages = {
     guideHelp: "Diese Anleitung in der Unterhaltung anzeigen (es wird nichts gesendet)",
     guideAttach: "Dateien anhängen – oder hineinziehen oder einfügen",
     queueOrSteerPlaceholder: "Enter reiht ein · {{key}} lenkt sofort…",
+    queuedAttachments: "{{n}} angehängt",
     steerNow: "Jetzt lenken",
     imGroup: "IM-Gruppe",
     imGroupPrivate: "Durchgänge, die du hier startest, bleiben auf dem Desktop; {{group}} sieht sie nicht.",

@@ -940,7 +940,10 @@ What an engine is beyond its turns is said in a few grouped options:
   reads next (`io.takeSteers()`); `forward`: its agent keeps its own queue,
   each is handed over through `io.steerTo(forward)` and placed in the
   transcript when the agent reads it (`io.steered(id)`). Absent, the panel
-  queues them until the turn ends.
+  queues them until the turn ends. A message with files reaches the turn only
+  once the engine calls `io.steersMedia()`: the files come on `steer.media`, or
+  from `io.takeSteerInputs()` under `queue`; otherwise the message waits for
+  the next turn, files included.
 - **`local: { checkCli?, setup?, picks?, mcpLink?, commands?, diagnostics? }`**:
   the agent's own setup on this machine — whether a file is its CLI, its
   install and sign-in commands, its quick picks, its user-level connection to

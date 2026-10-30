@@ -24,7 +24,7 @@ import type { AgentPolicy } from "./hooks.js";
 import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
 import { normalizeEngine } from "./engine-shape.js";
 import { PANEL_SURFACES, type AgentEvent, type Block, type CardView, type FocusRef, type ParkView, type PendingView, type RunView, type ThreadMessage, type ThreadSummary, type ThreadSurface, type UserInput } from "./thread.js";
-import type { OpenDependency, RetryState, TurnInput, TurnIO, TurnResult } from "./turn.js";
+import type { OpenDependency, RetryState, SteerInput, TurnInput, TurnIO, TurnResult } from "./turn.js";
 import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEntry, type PlaybookSource, type Suspended, type TurnFollowUp, type WorkflowIO, type WorkflowSpec } from "./workflow.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
@@ -197,7 +197,7 @@ declare module "@tomradex/ipc" {
     "agent.pendings": (projectId: string) => PendingView[];
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
-    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
+    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string, attachments?: MediaRef[]) => Promise<boolean>;
     "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     /** `fresh` looks for each engine's CLI again instead of answering from a recent probe. */
@@ -286,9 +286,11 @@ interface RunCtx {
   /** Stores a stretch of retries still open when the turn ends. */
   settleRetry: (recovered: boolean) => void;
   /** Sent into this turn and not yet handed to the model. */
-  steers: { id: string; text: string }[];
+  steers: { id: string; text: string; attachments?: MediaRef[] }[];
+  /** The turn's engine said it takes files in a steer. */
+  steersMedia: boolean;
   /** Where the engine's agent takes them instead, when it queues them itself. */
-  forward: ((steer: { id: string; text: string }) => Promise<boolean>) | null;
+  forward: ((steer: SteerInput) => Promise<boolean>) | null;
   /** How the running engine takes a mode picked mid-turn (`io.modeTo`). */
   mode: ((mode: string) => Promise<boolean>) | null;
 }
@@ -512,7 +514,7 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
-      ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
+      ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text, attachments) => ctx.agent.steer(projectId, threadId, steerId, text, attachments));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
       ctx.ipc.handle("agent.engines", (opts) => ctx.agent.engineViews(opts?.fresh));
@@ -1525,10 +1527,7 @@ export class Agent extends Service implements AgentReader {
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
-    if (input.kind === "text" && (input.attachments?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
-    const attachments = input.kind === "text" ? input.attachments?.map(ref => this.media().reference(projectId, threadId, ref.id)) : undefined;
-    const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
-    for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
+    const attachments = input.kind === "text" ? this.attached(thread, engine, input.attachments) : undefined;
     if (input.kind === "text") input = { ...input, attachments };
     const wasInterrupted = !!this.store.interruptedRun(projectId, threadId);
     const { msg, run } = this.store.transaction(projectId, () => {
@@ -1557,14 +1556,31 @@ export class Agent extends Service implements AgentReader {
     return { runId: run.id };
   }
 
+  /** The stored files a message names, each one the thread's agent takes. */
+  private attached(thread: ThreadSummary, engine: Engine, refs: MediaRef[] | undefined): MediaRef[] | undefined {
+    if ((refs?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
+    const attachments = refs?.map(ref => this.media().reference(thread.projectId, thread.id, ref.id));
+    const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
+    for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
+    return attachments;
+  }
+
+  private steerInput(projectId: string, threadId: string, steer: RunCtx["steers"][number]): SteerInput {
+    const { attachments, ...input } = steer;
+    return attachments ? { ...input, media: attachments.map((ref) => this.readMedia(projectId, threadId, ref.id)) } : input;
+  }
+
   /** A message for the running turn: held until the engine reaches a point where the model reads it. */
-  async steer(projectId: string, threadId: string, steerId: string, text: string): Promise<boolean> {
+  async steer(projectId: string, threadId: string, steerId: string, text: string, attachments?: MediaRef[]): Promise<boolean> {
     const rc = this.activeByThread.get(threadId);
-    if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || !text.trim()) return false;
-    const steer = { id: steerId, text: text.trim() };
+    if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || (!text.trim() && !attachments?.length)) return false;
+    if (attachments?.length && !rc.steersMedia) return false;
+    const refs = this.attached(rc.thread, rc.engine, attachments);
+    const steer = { id: steerId, text: text.trim(), ...(refs?.length ? { attachments: refs } : {}) };
+    const input = this.steerInput(projectId, threadId, steer);
     rc.steers.push(steer);
     if (!rc.forward) return true;
-    const taken = await rc.forward(steer).catch(() => false);
+    const taken = await rc.forward(input).catch(() => false);
     const at = rc.steers.indexOf(steer);
     if (!taken && at >= 0) rc.steers.splice(at, 1);
     return taken;
@@ -1686,6 +1702,15 @@ export class Agent extends Service implements AgentReader {
     const clock = { timedOut: false, limitMs: wall.left };
     const partial = { text: "" };
     const steers: RunCtx["steers"] = [];
+    const placeSteer = (s: RunCtx["steers"][number]) =>
+      this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id, ...(s.attachments ? { attachments: s.attachments } : {}) }, run.id);
+    const takeSteerInputs = () => {
+      if (abort.signal.aborted) return [];
+      return steers.splice(0).map((s) => {
+        placeSteer(s);
+        return this.steerInput(thread.projectId, thread.id, s);
+      });
+    };
     const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => { clock.timedOut = true; abort.abort(); }, Math.max(0, wall.left)); };
     const holdClock = () => { clearTimeout(wall.timer); wall.left -= Date.now() - wall.since; };
     runClock();
@@ -1853,22 +1878,19 @@ export class Agent extends Service implements AgentReader {
       signal: abort.signal,
       resume: this.resumeOf(thread, engine),
       recap: () => conversationRecap(this.store.messages(thread.projectId, thread.id)),
-      takeSteers: () => {
-        if (abort.signal.aborted) return [];
-        const taken = steers.splice(0);
-        for (const s of taken) this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
-        return taken.map((s) => s.text);
-      },
+      steersMedia: () => { rc.steersMedia = true; },
+      takeSteers: () => takeSteerInputs().map((s) => s.text),
+      takeSteerInputs,
       steerTo: (forward) => { rc.forward = forward; },
       modeTo: (apply) => { rc.mode = apply; },
       steered: (id) => {
         const at = steers.findIndex((s) => s.id === id);
         if (at < 0) return;
         const [s] = steers.splice(at, 1);
-        this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
+        placeSteer(s);
       }
     };
-    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, forward: null, mode: null };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, steersMedia: false, forward: null, mode: null };
     return rc;
   }
 

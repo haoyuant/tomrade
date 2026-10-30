@@ -6,7 +6,7 @@ import os from "node:os";
 import { createClaudeCodeEngine } from "../src/index.js";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import type { TurnInput, TurnIO } from "@tomradex/agent";
+import type { SteerInput, TurnInput, TurnIO } from "@tomradex/agent";
 
 // The fake CLI appends a line per message while it runs, so a read can land after the file is created but before
 // its first write, or mid-line: only newline-terminated lines are finished.
@@ -136,11 +136,12 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "TOOL_STEER" }, messages: [], cards: [], brief: null, pending: null,
     options: { command: bin }, env: { TOMRADE_TEST_LOG: log } };
   const order: string[] = [];
-  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  let forward: ((steer: SteerInput) => Promise<boolean>) | undefined;
+  let steersMedia = false;
   const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
-    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+    steersMedia: () => { steersMedia = true; }, steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
   const requests = () => logged(log);
   const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
   try {
@@ -148,13 +149,17 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
     let turn = engine.turn(input, io);
     await when(() => order.includes("trace") || requests().some((r) => r.type === "user"));
     await new Promise((r) => setTimeout(r, 100));
-    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    expect(steersMedia).toBe(true);
+    expect(await forward!({ id: "s1", text: "make it blue", media: [{ id: "m1", name: "shot.png", mime: "image/png", size: 3, base64: "cG5n" }] })).toBe(true);
     let result = await turn;
     expect(result.stop, result.error).toBe("end");
     expect(order).toEqual(["trace", "steered:s1", "agent:took: make it blue"]);
     const steer = requests().filter((r) => r.type === "user").at(-1);
     expect(steer).toMatchObject({ priority: "next" });
-    expect(steer.message.content).toMatch(/^make it blue\n\n\(Sent while you were working/);
+    expect(steer.message.content).toEqual([
+      { type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "cG5n" } }
+    ]);
     expect(await forward!({ id: "late", text: "too late" })).toBe(false);
 
     // during the last reply: the CLI answers it in a turn of its own, which this turn waits for

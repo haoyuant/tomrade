@@ -2238,6 +2238,7 @@ export const fr: PartialMessages = {
     guideHelp: "Afficher ce guide dans la conversation (rien n’est envoyé)",
     guideAttach: "Joindre des fichiers — ou les glisser, ou les coller",
     queueOrSteerPlaceholder: "Entrée met en file · {{key}} oriente maintenant…",
+    queuedAttachments: "{{n}} en pièce jointe",
     steerNow: "Orienter maintenant",
     imGroup: "Groupe de messagerie",
     imGroupPrivate: "Les tours que vous démarrez ici restent sur le bureau ; {{group}} ne les voit pas.",

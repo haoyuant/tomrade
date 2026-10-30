@@ -2095,6 +2095,7 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .ai-queued .q-state { flex-shrink: 0; font-size: 11px; color: var(--accent); }
 .ai-queued[data-held] .q-state { color: var(--meta); }
 .ai-queued .q-text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-queued .q-files { flex-shrink: 0; font-size: 11px; color: var(--meta); }
 .ai-queued .q-edit { flex: 1; min-width: 0; resize: none; font-size: var(--text-sm); }
 /* the slash menu sits just above the composer */
 .slash-menu { display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-raised); }

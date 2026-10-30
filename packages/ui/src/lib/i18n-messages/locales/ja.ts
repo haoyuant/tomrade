@@ -2268,6 +2268,7 @@ export const ja: PartialMessages = {
     guideHelp: "このガイドを会話に表示(何も送信されません)",
     guideAttach: "ファイルを添付 — ドラッグや貼り付けも可",
     queueOrSteerPlaceholder: "Enter でキュー · {{key}} で今すぐ割り込み…",
+    queuedAttachments: "添付 {{n}} 件",
     steerNow: "今すぐ割り込み",
     imGroup: "IM グループ",
     imGroupPrivate: "ここで始めたターンはデスクトップにのみ残り、{{group}} には表示されません。",

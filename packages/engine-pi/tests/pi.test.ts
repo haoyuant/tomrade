@@ -7,7 +7,7 @@ import { bridgeSource, createPiEngine, listedModels, piSignedIn, toolSelection }
 import { PERMISSION_MODES } from "../src/options.js";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import type { Block, TurnIO, TurnInput } from "@tomradex/agent";
+import type { Block, SteerInput, TurnIO, TurnInput } from "@tomradex/agent";
 
 it("reads pi's model table and its no-credential answer", () => {
   const table = "provider  model        context  max-out  thinking  images\nopenai    gpt-4.1      1.0M     32.8K    no        yes\nanthropic claude-x     200K     64K      yes       yes\n";
@@ -242,19 +242,21 @@ it("hands a message sent mid-turn to pi's own queue, records it where pi reads i
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "STEER_TAKE" }, messages: [], cards: [], brief: null, pending: null,
     options: { command: bin, model: "fake/fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
   const order: string[] = [];
-  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  let forward: ((steer: SteerInput) => Promise<boolean>) | undefined;
+  let steersMedia = false;
   const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:pi", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
-    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+    steersMedia: () => { steersMedia = true; }, steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
   const requests = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
   try {
     const turn = engine.turn(input, io);
     await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    expect(steersMedia).toBe(true);
+    expect(await forward!({ id: "s1", text: "make it blue", media: [{ id: "m1", name: "shot.png", mime: "image/png", size: 3, base64: "cG5n" }] })).toBe(true);
     expect((await turn).stop).toBe("end");
     expect(order).toEqual(["steered:s1", "agent:took: make it blue"]);
-    expect(requests().find((r) => r.type === "steer")).toMatchObject({ message: "make it blue" });
+    expect(requests().find((r) => r.type === "steer")).toMatchObject({ message: "make it blue", images: [{ type: "image", data: "cG5n", mimeType: "image/png" }] });
     // the turn is over: pi is not asked to take another
     expect(await forward!({ id: "late", text: "too late" })).toBe(false);
 

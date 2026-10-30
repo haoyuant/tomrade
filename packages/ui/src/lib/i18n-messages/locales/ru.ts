@@ -2277,6 +2277,7 @@ export const ru: PartialMessages = {
     guideHelp: "Показать эту справку в беседе (ничего не отправляется)",
     guideAttach: "Прикрепить файлы — или перетащите их сюда, или вставьте",
     queueOrSteerPlaceholder: "Enter — в очередь · {{key}} — скорректировать сейчас…",
+    queuedAttachments: "Вложений: {{n}}",
     steerNow: "Скорректировать сейчас",
     imGroup: "IM-группа",
     imGroupPrivate: "Ходы, начатые здесь, остаются на компьютере; {{group}} их не видит.",
