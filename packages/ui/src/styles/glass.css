@@ -67,7 +67,7 @@
 
 .glass .scrim { background: var(--glass-scrim); }
 
-/* Frosted by the system (macOS): the window is the glass. The page paints no room of its own and leaves
+/* Frosted by the system (macOS, Windows 11): the window is the glass. The page paints no room of its own and leaves
    the desktop and the windows behind to show through, tinted by the panes; sheets frost what is under them. */
 .glass[data-frosted] body { background: transparent; }
 .glass[data-frosted] body::before { content: none; }

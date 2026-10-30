@@ -260,7 +260,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-row-name .sbar-new-badge { margin-left: 2px; }
 .cs-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
 
-/* Frosted by the system (Glass on macOS): the window is the glass. The page tints it instead of covering it,
+/* Frosted by the system (Glass on macOS and Windows 11): the window is the glass. The page tints it instead of covering it,
    down to the terminals, whose grid is drawn see-through; what floats over a terminal keeps its fill. */
 html[data-frosted] body { background: transparent; }
 html[data-frosted] .cs-side { background: color-mix(in srgb, var(--bg) 30%, transparent); }
