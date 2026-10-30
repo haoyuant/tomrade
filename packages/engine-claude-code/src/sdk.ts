@@ -34,7 +34,7 @@ const EDITS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
 /** A steer goes into the CLI's queue as written, plus a word for the step it cut short. */
 const steerPrompt = (text: string) =>
-  `${text}\n\n(Sent while you were working, which stopped here to read it; a command cut short by this was not refused. Do not repeat what you already said.)`;
+  `${text}\n\n(Sent while you were working, which stopped here to read it; a command cut short by this was not refused. Do not repeat what you already said, and do not finish a word or sentence it cut off: start with a whole sentence.)`;
 
 /** Which of the client's messages a CLI turn answers, when the CLI stamps it (null when it does not). */
 const consumedBy = (message: SDKMessage): string[] | null => {
@@ -191,8 +191,10 @@ export class ClaudeRuntime implements Runtime {
             limit = { until: limit?.until ?? null, text: said || limit?.text || null };
           }
           io.retry?.(null);
-          for (const block of message.message.content) {
-            if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
+          // A reply cut short, by a steer sent now or a stop, can end mid-word: marked unfinished, as a stopped run's is.
+          const cut = message.aborted ? message.message.content.map((block) => block.type).lastIndexOf("text") : -1;
+          for (const [at, block] of message.message.content.entries()) {
+            if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: at === cut ? `${block.text.trim()} …` : block.text.trim() });
             if (block.type === "tool_use" && !seenTools.has(block.id)) {
               seenTools.add(block.id); metrics.toolCalls!++;
               // Tomrade's own tools are traced by the gateway they run through.
