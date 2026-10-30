@@ -325,6 +325,12 @@ export interface CustomTheme {
   icon: "i-sun" | "i-moon" | "i-leaf" | "i-tag" | "i-bug" | "i-board" | "i-stack" | "i-sliders";
   tokens: Record<ThemeTokenName, string>;
   fonts: Record<ThemeTypographyName, string>;
+  /**
+   * A picture fills the window behind panes this opaque, blurred by `frost` pixels; `terminalVeil`,
+   * once the Terminal window has a picture of its own, is its panes' opacity. The pictures stay on
+   * the machine they were chosen on.
+   */
+  backdrop?: { veil: number; frost?: number; terminalVeil?: number };
 }
 export type ThemeAutomationMode = "none" | "system" | "schedule" | "shuffle";
 export interface ThemeScheduleRule { start: string; end: string; theme: Exclude<ThemePreference, "system">; }

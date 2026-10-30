@@ -1,0 +1,44 @@
+{
+  "name": "@tomradex/theme-image",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Pictures behind custom themes, kept on this machine, and the worker model's reading of a picture into a theme's colours",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./colors": {
+      "types": "./dist/colors.d.ts",
+      "default": "./dist/colors.js"
+    },
+    "./channels": {
+      "types": "./dist/channels.d.ts",
+      "default": "./dist/channels.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

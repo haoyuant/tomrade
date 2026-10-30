@@ -27,6 +27,8 @@ export interface SurfaceLook {
    * window wears it, and a page under it leaves its own background off. Absent from an older shell.
    */
   frosted?: boolean;
+  /** A custom theme made from pictures: its panes' opacity and frost; `terminalVeil` once the Terminal window has a picture of its own. */
+  backdrop?: { veil: number; frost: number; terminalVeil?: number };
 }
 
 export interface DesktopSurfaceSpec {

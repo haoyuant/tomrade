@@ -4,6 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useI18n, type MessageKey } from "./i18n";
 import { sendSurfaceLook } from "./surface-look";
+import { backdropFills } from "@tomradex/theme-image/colors";
+import { useThemeImageUrl } from "./theme-image";
+import { useFrosted } from "./frost";
 
 export type ResolvedTheme = BuiltInTheme;
 export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" | "i-monitor" }[] = [
@@ -60,12 +63,19 @@ function resolve(preference: Exclude<ThemePreference, "system">, customThemes: C
   if (preference.startsWith("custom:")) { const custom = customThemes.find(theme => theme.id === preference); return custom ? { base: builtIn(custom.base), custom } : { base: "sunrise" }; }
   return { base: builtIn(preference) };
 }
-function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean): void {
+const BACKDROP_VARS = ["backdrop-image", "backdrop-shell", "backdrop-pane", "backdrop-tile", "backdrop-float"];
+function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean, picture: string | null): void {
   const root = document.documentElement, id = custom?.id ?? base;
   if (animate && root.dataset.themeId !== id) root.classList.add("theme-transition");
-  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "sakura"); if (base !== "light") root.classList.add(base);
-  for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES]) root.style.removeProperty(`--${name}`);
+  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "sakura", "backdrop"); if (base !== "light") root.classList.add(base);
+  for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES, ...BACKDROP_VARS]) root.style.removeProperty(`--${name}`);
   if (custom) for (const [name, value] of Object.entries({ ...custom.tokens, ...custom.fonts })) root.style.setProperty(`--${name}`, value);
+  // Without its picture on this machine, the theme is its colours on solid panes.
+  if (custom?.backdrop && picture) {
+    root.classList.add("backdrop");
+    root.style.setProperty("--backdrop-image", `url("${picture}")`);
+    for (const [name, value] of Object.entries(backdropFills(custom.tokens, custom.backdrop.veil))) root.style.setProperty(`--${name}`, value);
+  }
   root.dataset.themeId = id; if (animate) window.setTimeout(() => root.classList.remove("theme-transition"), 650);
 }
 
@@ -79,12 +89,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved = resolve(active, customThemes);
   const [theme, setTheme] = useState<ResolvedTheme>(resolved.base);
   const { locale, t } = useI18n();
+  const picture = useFrosted(useThemeImageUrl(resolved.custom?.backdrop ? resolved.custom.id : null), resolved.custom?.backdrop?.frost ?? 0);
   useEffect(() => {
-    const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true); };
+    const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true, picture); };
     apply();
-  }, [preference, customThemes, automation, active]);
+  }, [preference, customThemes, automation, active, picture]);
   // Plugin windows match the app: told after each paint, and when the language changes.
-  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass"), [active, customThemes, locale, theme]);
+  const backdrop = resolved.custom?.backdrop;
+  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass", backdrop && { veil: backdrop.veil, frost: backdrop.frost ?? 0, terminalVeil: backdrop.terminalVeil }),
+    [active, customThemes, locale, theme, backdrop]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);

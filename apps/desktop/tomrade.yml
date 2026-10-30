@@ -520,6 +520,12 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
+  # The pictures behind custom themes stay on this machine; an assistant
+  # conversation reads one into the theme's colours.
+  - id: theme-image
+    name: "@tomradex/theme-image"
+    config:
+      dir: "${userData}/theme-images"
   # A Terminal window per project, its herdr terminals and code sessions side
   # by side. On from the start; without herdr the window offers to install it.
   - id: code-sessions

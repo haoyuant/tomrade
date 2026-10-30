@@ -105,8 +105,7 @@ export function SettingsDialog({
       group: "app",
       render: () => (
         <>
-          <ThemePane scope={scopeOf("theme")} settings={settings} save={save} editor={themeEditor} />
-          <AppIconSection />
+          <ThemePane scope={scopeOf("theme")} settings={settings} save={save} editor={themeEditor} lead={<AppIconSection />} onLeave={() => onOpenChange(false)} />
         </>
       )
     },

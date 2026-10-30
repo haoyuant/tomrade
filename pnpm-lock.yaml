@@ -236,6 +236,9 @@ importers:
       '@tomradex/storage-github':
         specifier: workspace:*
         version: link:../../packages/storage-github
+      '@tomradex/theme-image':
+        specifier: workspace:*
+        version: link:../../packages/theme-image
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -2584,6 +2587,46 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/theme-image:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/tools:
     dependencies:
       '@tomradex/domain':
@@ -2698,6 +2741,9 @@ importers:
       '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
+      '@tomradex/theme-image':
+        specifier: workspace:*
+        version: link:../theme-image
       '@xterm/addon-fit':
         specifier: 0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)

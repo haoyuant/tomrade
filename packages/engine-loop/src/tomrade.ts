@@ -45,6 +45,8 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
   const own = [config.backlog].flat();
   const ownPart = () => own.map(part).find(Boolean);
   const either = () => ownPart() ?? part(config.work);
+  // Who held, or would hold, a backlog conversation when last asked: what it takes in is what this engine takes.
+  let holder: { engine: Engine; borrowed: boolean } | undefined;
   const words = () => LOOP_WORDS(ctx.settings.locale?.());
   const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability | null> => {
     if (!engine) return null;
@@ -77,6 +79,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     const borrowed = await borrowable();
     return borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false };
   };
+  const hold = (held: { engine: Engine | undefined; borrowed: boolean }) => { holder = held.engine ? { engine: held.engine, borrowed: held.borrowed } : undefined; };
   return {
     id: "tomrade",
     title: "Tomrade",
@@ -104,19 +107,23 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       },
       picks: () => either()?.local?.picks?.() ?? []
     },
-    media: (options) => either()?.media?.(options) ?? { input: [], output: [] },
+    // A signed-in agent holding the conversation for want of a model sees its pictures with its own eyes.
+    media: (options) => (holder?.borrowed ? holder.engine.media?.(optionsFor(holder.engine, options, true)) : either()?.media?.(options)) ?? { input: [], output: [] },
     async available(opts): Promise<EngineAvailability> {
       const [work, ...backlogs] = await Promise.all([config.work, ...own].map((id) => runs(part(id), opts)));
       const backlog = backlogs.find((state) => state?.ok) ?? backlogs.find(Boolean);
+      const borrowed = backlog?.ok ? undefined : await borrowable(opts);
+      hold(borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false });
       if (work?.ok) return { ok: true };
       // Why tickets cannot go to the built-in pi stays said, so setup can name it.
-      if (backlog?.ok || (await borrowable(opts))) return { ok: true, capabilities: ["backlog"], ...(work?.reason ? { reason: work.reason } : {}) };
+      if (backlog?.ok || borrowed) return { ok: true, capabilities: ["backlog"], ...(work?.reason ? { reason: work.reason } : {}) };
       const state = backlog ?? work ?? { ok: false, need: "service", reason: "No in-app agent is installed" };
       // With the built-in pi switched off, there is no ticket work to wait for.
       return work ? state : { ...state, capabilities: ["backlog"] };
     },
     async turn(input, io) {
       const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart(input.options) : { engine: part(config.work), borrowed: false };
+      if (input.purpose === "backlog") hold({ engine, borrowed });
       if (!engine) return { stop: "error", error: "No in-app agent is installed for this kind of work" };
       const options = optionsFor(engine, input.options, borrowed);
       const turnInput: TurnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };

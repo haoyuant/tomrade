@@ -28,7 +28,6 @@ export function AppIconSection() {
 
   return (
     <>
-      <hr className="rule" />
       <SectionHead title={t("settingsDialog.appIconTitle")} aside={<ScopeTag scope="machine" />}>
         {t("settingsDialog.appIconLede")}
       </SectionHead>
@@ -52,6 +51,7 @@ export function AppIconSection() {
           </button>
         ))}
       </div>
+      <hr className="rule" />
     </>
   );
 }

@@ -1028,7 +1028,7 @@ const run = async () => {
   const customThemes = () => ctx.settings.get().customThemes?.length ?? 0;
   // the toast stack lies outside the sheet, where a pointer would dismiss it: its buttons are clicked, not pressed
   const clickToast = (selector) => $(`(() => { const b = ${selector}; if (!b) return false; b.click(); return true; })()`);
-  await press(`document.querySelector('.theme-selection-actions button[aria-label="Create custom theme"]')`);
+  await press(`document.querySelector('.mode-grid button[aria-label="Create custom theme"]')`);
   check("creating a custom theme opens its editor", await wait(() => $(`!!document.querySelector('.theme-custom-controls')`)) && customThemes() === 1);
   check("and brings the token table, which only a custom theme can use", (await $(`document.querySelectorAll('.tok-table .token-picker').length`)) === 21);
   await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
