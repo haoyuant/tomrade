@@ -19,6 +19,9 @@ const ICON_FILES: Record<AppIcon, string> = {
   sun: "icon-mac.png"
 };
 
+/** The sun brings its own background; the transparent logo needs a plate behind it on a dark splash. */
+export const appIconHasBackground = (icon: AppIcon): boolean => icon === "sun";
+
 /** Beside background.json in the machine's app data: the icon this machine wears. */
 export const APP_ICON_FILE = "app-icon.json";
 

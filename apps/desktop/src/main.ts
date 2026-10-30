@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
-import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
+import { APP_ICON_FILE, appIconHasBackground, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
 import { commandOnPath, openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
@@ -120,10 +120,11 @@ app.whenReady().then(async () => {
   // Read now, taken in below: nothing before that point starts a command that needs it.
   const adoptShellEnv = readShellEnvSoon();
   // Until the main window opens; a start at login has nobody waiting for one.
-  if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(appIconPath(appIcon));
+  const splashIcon = { file: appIconPath(appIcon), plate: !appIconHasBackground(appIcon) };
+  if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(splashIcon);
   // Before anything reads a secret: a keyring that asks the person first would hold the start without a word.
   await openKeyring(() => {
-    if (splash) splashWaitsForKeyring(splash, appIconPath(appIcon));
+    if (splash) splashWaitsForKeyring(splash, splashIcon);
   });
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
