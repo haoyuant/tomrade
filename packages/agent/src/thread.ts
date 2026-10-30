@@ -145,6 +145,8 @@ export interface RunView {
   endedAt: number | null;
   /** A run the app's closing interrupted (`stop: "interrupted"`): when the person waved that away; null while it still waits on them. */
   dismissedAt?: number | null;
+  /** Running on another machine, as its last sync said: this one shows it, never drives or settles it. */
+  elsewhere?: boolean;
   metrics?: import("./evaluation.js").TurnMetrics | null;
 }
 

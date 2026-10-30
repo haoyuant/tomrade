@@ -216,7 +216,10 @@ export function AgentPanel({
   }, [progress]);
   useAgentEvents(projectId, threadId, onDelta, onProgress);
 
-  const runningRun = detail.data?.runs.find((r) => r.status === "running");
+  const shownRun = detail.data?.runs.find((r) => r.status === "running");
+  // Another machine's turn, as the last sync said: shown, never stopped or waited on here — sending takes it over.
+  const runningRun = shownRun?.elsewhere ? undefined : shownRun;
+  const otherMachineRun = shownRun?.elsewhere ? shownRun : undefined;
   const {
     usable, defaultEngine, currentEngineId, engine, noEngineReady,
     permissionModes, selectedPermissionMode, activePermissionMode, permissionLabel, setPermissionMode,
@@ -392,6 +395,10 @@ export function AgentPanel({
     sending.current = true; setUploading(true); setAttachmentError(null);
     try {
       let target = threadId;
+      if (target && otherMachineRun) {
+        if (!(await confirm({ body: t("agentPanel.takeOverAsk"), yes: t("agentPanel.takeOverYes") }))) return false;
+        await invoke("agent.takeOver", projectId, target);
+      }
       if (!target) target = (await openThread({ boardId })).id;
       else if (detail.data?.messages.length === 0 && !usable(currentEngineId) && usable(defaultEngine)) await setEngine.mutateAsync({ threadId: target, engineId: defaultEngine });
       pickThread(target);
@@ -1112,6 +1119,7 @@ export function AgentPanel({
             <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={reopening} onClick={() => setAskReopen(false)}>{t("common.cancel")}</button>
           </p>
         )}
+        {otherMachineRun && <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0" }}>{t("agentPanel.runningElsewhere")}</p>}
         {archivedNow && threadId && (
           <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span>{t("agentPanel.archivedHere")}</span>
