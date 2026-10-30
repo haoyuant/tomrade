@@ -21,7 +21,8 @@
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "refresh-agent-detection": "node scripts/refresh-agent-detection.mjs",
-    "bench:detection": "tsc -b && node scripts/bench-detection.mjs"
+    "bench:detection": "tsc -b && node scripts/bench-detection.mjs",
+    "bench:flood": "tsc -b && node scripts/bench-flood.mjs"
   },
   "dependencies": {
     "@tomradex/contracts": "workspace:*",

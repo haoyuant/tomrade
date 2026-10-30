@@ -108,7 +108,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   }
   class FakeHerdr extends Service {
     static provide = "terminals";
-    readonly kind = "herdr" as const;
+    kind: "herdr" | "builtin" = "herdr";
     constructor(ctx: Context) {
       super(ctx, "terminals");
     }
@@ -300,6 +300,14 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "What you typed while the terminal was connecting was not sent" });
   await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
   expect(streams.at(-1)!.sent).toEqual([]);
+  // The built-in host paces its own paints: its frames reach the window as they come, none held for a batch.
+  const terminals = w.ctx.get("terminals") as unknown as FakeHerdr;
+  terminals.kind = "builtin";
+  await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  streams.at(-1)!.frame("one", { full: false });
+  streams.at(-1)!.frame("two", { full: false });
+  expect(shown().slice(-2)).toEqual(["one", "two"]);
+  terminals.kind = "herdr";
   win.spec.onClose();
   expect(streams.at(-1)!.closed).toBe(true);
   // Closed: the next open is a new window, with the remembered layout.
