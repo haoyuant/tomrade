@@ -46,7 +46,6 @@ export const es: PartialMessages = {
     sunrise: "Amanecer",
     daybreak: "Alborada",
     glass: "Vidrio esmerilado",
-    neon: "Neón",
     sakura: "Sakura",
     dawn: "Alba",
     paper: "Papel",

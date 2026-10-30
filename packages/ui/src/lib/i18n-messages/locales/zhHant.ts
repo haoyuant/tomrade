@@ -46,7 +46,6 @@ export const zhHant: PartialMessages = {
     sunrise: "晨曦",
     daybreak: "破曉",
     glass: "磨砂",
-    neon: "霓虹",
     sakura: "櫻",
     dawn: "曙光",
     paper: "紙白",

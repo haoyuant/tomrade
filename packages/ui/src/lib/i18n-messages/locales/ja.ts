@@ -46,7 +46,6 @@ export const ja: PartialMessages = {
     sunrise: "朝焼け",
     daybreak: "夜明け",
     glass: "すりガラス",
-    neon: "ネオン",
     sakura: "桜",
     dawn: "Dawn",
     paper: "Paper",
