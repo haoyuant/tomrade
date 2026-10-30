@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, PANEL_SURFACES, type CardView, type ChecklistCard, type FindingCard, type RunView } from "@tomradex/agent";
-import { BUNDLED, Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport, type Report } from "@tomradex/doctor";
+import { BUNDLED, Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, proxyFact, scrub, type RemoteReport, type Report } from "@tomradex/doctor";
 
 const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `tomrade-doctor-${name}-`));
 
@@ -47,6 +47,15 @@ async function boot() {
 }
 
 const cardsOf = (ctx: Context, projectId: string, threadId: string): CardView[] => ctx.agent.thread(projectId, threadId).cards;
+
+describe("the proxy fact", () => {
+  it("names the proxy git and the agents go through, without its password, or none", () => {
+    expect(proxyFact({ HTTPS_PROXY: "http://127.0.0.1:7897", HTTP_PROXY: "http://127.0.0.1:7897" })).toBe("http://127.0.0.1:7897 (HTTPS_PROXY)");
+    expect(proxyFact({ https_proxy: "http://me:secret@proxy.corp:8080" })).toBe("http://proxy.corp:8080 (https_proxy)");
+    expect(proxyFact({})).toBe("none");
+    expect(proxyFact({ TOMRADE_SOCKS_PROXY: "socks5://127.0.0.1:7891" })).toBe("none (SOCKS proxy socks5://127.0.0.1:7891 not followed)");
+  });
+});
 
 describe("known issues", () => {
   const issue = KnownIssue.parse({
