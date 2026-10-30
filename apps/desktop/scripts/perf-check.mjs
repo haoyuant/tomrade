@@ -8,7 +8,7 @@
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:perf
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -64,7 +64,12 @@ const run = async () => {
   }
   console.log(`seeded 500 tickets in ${Date.now() - started} ms`);
 
-  const win = new BrowserWindow({ width: 1600, height: 1000, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
+  // Windows draws no frames for a window never shown, so each requestAnimationFrame waits about a
+  // second; shown inactive beyond every display, the window paints like one on screen.
+  const offscreen = process.platform === "win32" && !process.env.TOMRADE_SHOW;
+  const left = Math.min(...screen.getAllDisplays().map((d) => d.bounds.x)) - 1700;
+  const win = new BrowserWindow({ width: 1600, height: 1000, show: !!process.env.TOMRADE_SHOW, ...(offscreen ? { x: left, y: 0 } : {}), webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true, backgroundThrottling: !offscreen } });
+  if (offscreen) win.showInactive();
   await win.loadURL(`${process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/"}#/p/${project.id}`);
   const $ = (js) => win.webContents.executeJavaScript(js, true);
   await sleep(4000);

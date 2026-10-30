@@ -193,6 +193,11 @@ export function useSelectedId(): string | null {
   return useSyncExternalStore(selection.subscribe, selection.get);
 }
 
+/** Reads the open ticket when asked, without re-rendering when it changes. */
+export function useReadSelectedId(): () => string | null {
+  return useSelection().get;
+}
+
 /** Re-renders only when this ticket gains or loses the selection. */
 export function useIsSelected(id: string): boolean {
   const selection = useSelection();
