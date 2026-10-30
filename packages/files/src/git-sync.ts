@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GitFolder, cleanRemote, execGit, type Git } from "@tomradex/git";
-import { exchangeFailure, type ExchangeFailure } from "./sync-failure.js";
+import { GitFolder, SyncRecorder, cleanRemote, execGit, type Git } from "@tomradex/git";
+import { exchangeFailure, type ExchangeFailure, type ExchangeStep } from "./sync-failure.js";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
@@ -218,8 +218,8 @@ export class GitProjection {
     adoptCredentialedKey(local, target, this.key);
   }
 
-  private run(args: string[], ok = false) {
-    return this.git(args, { cwd: this.dir, ok });
+  private run(args: string[], ok = false, onStderr?: (text: string) => void) {
+    return this.git(args, { cwd: this.dir, ok, onStderr });
   }
 
   /**
@@ -235,19 +235,21 @@ export class GitProjection {
   }
 
   /** Bring the index to the remote's tip; null once there, else the step git refused and why. */
-  async fetch(): Promise<ExchangeFailure | null> {
+  async fetch(recorder = new SyncRecorder()): Promise<ExchangeFailure | null> {
     fs.mkdirSync(this.dir, { recursive: true });
     this.clearInterrupted();
     if (!fs.existsSync(path.join(this.dir, ".git"))) await this.run(["init", "-q", "-b", this.target.branch]);
     await this.folder.ensureIdentity();
     await this.folder.setRemote(this.target.url);
+    recorder.step("reaching");
     // Exit 2 is a reachable remote without the branch yet: where every project starts.
-    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true);
-    if (probe.code !== 0 && probe.code !== 2) return exchangeFailure("reach", probe.stderr ?? "");
+    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true, recorder.stderr);
+    if (probe.code !== 0 && probe.code !== 2) return this.refused(recorder, "reach", probe.stderr);
     if (probe.code === 0) {
+      recorder.step("fetching");
       const filter = this.prefix ? ["--filter=blob:none"] : [];
-      const fetched = await this.run(["fetch", "-q", "--depth", "1", ...filter, "origin", this.target.branch], true);
-      if (fetched.code !== 0) return exchangeFailure("fetch", fetched.stderr ?? "");
+      const fetched = await this.run(["fetch", "--progress", "--depth", "1", ...filter, "origin", this.target.branch], true, recorder.stderr);
+      if (fetched.code !== 0) return this.refused(recorder, "fetch", fetched.stderr);
       await this.run(["update-ref", "HEAD", `refs/remotes/origin/${this.target.branch}`]);
       await this.run(["read-tree", "HEAD"]);
     } else {
@@ -336,7 +338,8 @@ export class GitProjection {
   }
 
   /** Commit what changed on top of the fetched tip and push, never forced; null once it landed, else why not. */
-  async push(): Promise<ExchangeFailure | null> {
+  async push(recorder = new SyncRecorder()): Promise<ExchangeFailure | null> {
+    recorder.step("pushing");
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
     const head = await this.run(["rev-parse", "--verify", "HEAD"], true);
     if (changed.code !== 0 || head.code !== 0) {
@@ -346,7 +349,12 @@ export class GitProjection {
       const commit = await this.run(["commit-tree", tree, ...parent, "-m", "Synchronize shared files"]);
       await this.run(["update-ref", "HEAD", commit.stdout.trim()]);
     }
-    const pushed = await this.run(["push", "-q", "origin", `HEAD:refs/heads/${this.target.branch}`], true);
-    return pushed.code === 0 ? null : exchangeFailure("push", pushed.stderr ?? "");
+    const pushed = await this.run(["push", "--progress", "origin", `HEAD:refs/heads/${this.target.branch}`], true, recorder.stderr);
+    return pushed.code === 0 ? null : this.refused(recorder, "push", pushed.stderr);
+  }
+
+  private refused(recorder: SyncRecorder, step: ExchangeStep, stderr = ""): ExchangeFailure {
+    recorder.fail();
+    return exchangeFailure(step, stderr);
   }
 }

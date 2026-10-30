@@ -51,6 +51,7 @@ import { statusBar } from "./statusBar";
 import { table } from "./table";
 import { epics } from "./epics";
 import { storageBlock } from "./storageBlock";
+import { syncActivity } from "./syncActivity";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
 import { toast } from "./toast";
@@ -126,6 +127,7 @@ export const en = {
   newProjectDialog: newProjectDialog.en,
   projectSettingsDialog: projectSettingsDialog.en,
   storageBlock: storageBlock.en,
+  syncActivity: syncActivity.en,
 
   titleBar: titleBar.en,
   sidebar: sidebar.en,
@@ -211,6 +213,7 @@ export const zh: typeof en = {
   newProjectDialog: newProjectDialog.zh,
   projectSettingsDialog: projectSettingsDialog.zh,
   storageBlock: storageBlock.zh,
+  syncActivity: syncActivity.zh,
 
   titleBar: titleBar.zh,
   sidebar: sidebar.zh,

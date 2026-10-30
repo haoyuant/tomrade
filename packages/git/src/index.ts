@@ -9,6 +9,8 @@ export interface ExecGitOptions {
   maxBuffer?: number;
   timeout?: number;
   stdin?: string;
+  /** Each piece of stderr as it arrives, for a transfer's `--progress`; it is still collected as well. */
+  onStderr?: (text: string) => void;
 }
 
 /**
@@ -18,7 +20,7 @@ export interface ExecGitOptions {
 export function execGit(binary: string, args: string[], opts: ExecGitOptions & { encoding: "buffer" }): Promise<{ stdout: Buffer; stderr: Buffer }>;
 export function execGit(binary: string, args: string[], opts?: ExecGitOptions & { encoding?: "utf8" }): Promise<{ stdout: string; stderr: string }>;
 export function execGit(binary: string, args: string[], opts: ExecGitOptions & { encoding?: "buffer" | "utf8" } = {}): Promise<{ stdout: string | Buffer; stderr: string | Buffer }> {
-  const { env, stdin, encoding = "utf8", ...rest } = opts;
+  const { env, stdin, onStderr, encoding = "utf8", ...rest } = opts;
   return new Promise((resolve, reject) => {
     const child = execFile(binary, args, { ...rest, encoding, env: { ...process.env, ...GIT_ENV, ...env } }, (error, stdout, stderr) => {
       if (error) {
@@ -26,6 +28,7 @@ export function execGit(binary: string, args: string[], opts: ExecGitOptions & {
         reject(error);
       } else resolve({ stdout, stderr });
     });
+    if (onStderr) child.stderr?.on("data", (chunk: string | Buffer) => onStderr(String(chunk)));
     if (stdin !== undefined) child.stdin?.end(stdin);
   });
 }
@@ -74,7 +77,7 @@ export const GIT_ENV = {
 };
 
 export interface Git {
-  (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string }): Promise<{ stdout: string; stderr?: string; code: number }>;
+  (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string; onStderr?: (text: string) => void }): Promise<{ stdout: string; stderr?: string; code: number }>;
 }
 
 /** git itself takes this lock for a moment even on a "read" like `status`, to opportunistically refresh its index cache. */
@@ -101,7 +104,7 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
     const argv = [...credentialArgs(credentials?.() ?? []), ...args];
     for (let attempt = 0; ; attempt++) {
       try {
-        const { stdout, stderr } = await execGit(binary, argv, { cwd, maxBuffer: 16 * 1024 * 1024, stdin: opts.stdin });
+        const { stdout, stderr } = await execGit(binary, argv, { cwd, maxBuffer: 16 * 1024 * 1024, stdin: opts.stdin, onStderr: opts.onStderr });
         return { stdout, stderr, code: 0 };
       } catch (error) {
         const e = error as { code?: number | string | null; signal?: string | null; stderr?: string | Buffer; stdout?: string | Buffer };
@@ -256,8 +259,8 @@ export class GitFolder {
    * repository nobody has pushed to), or cannot be reached at all. Only the
    * last is "offline"; an empty repository is where every project starts.
    */
-  async probe(branch: string, name = "origin"): Promise<"exists" | "absent" | "offline"> {
-    const r = await this.git(["ls-remote", "--exit-code", name, `refs/heads/${branch}`], { cwd: this.dir, ok: true });
+  async probe(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<"exists" | "absent" | "offline"> {
+    const r = await this.git(["ls-remote", "--exit-code", name, `refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr });
     if (r.code === 0) return "exists";
     return r.code === 2 ? "absent" : "offline";
   }
@@ -268,9 +271,9 @@ export class GitFolder {
     return r.code === 0 ? r.stdout.trim() : null;
   }
 
-  /** `ok`: an unreachable remote is an answer, not a failure. */
-  async fetch(branch: string, name = "origin"): Promise<boolean> {
-    const r = await this.git(["fetch", "-q", name, branch], { cwd: this.dir, ok: true });
+  /** `ok`: an unreachable remote is an answer, not a failure. With `onStderr`, git reports its progress there. */
+  async fetch(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<boolean> {
+    const r = await this.git(["fetch", onStderr ? "--progress" : "-q", name, branch], { cwd: this.dir, ok: true, onStderr });
     return r.code === 0;
   }
 
@@ -293,9 +296,9 @@ export class GitFolder {
     await this.git(["merge", "-q", "--ff-only", `${name}/${branch}`], { cwd: this.dir });
   }
 
-  /** Non-fast-forward is reported as `false`, never forced. */
-  async push(branch: string, name = "origin"): Promise<boolean> {
-    const r = await this.git(["push", "-q", name, `HEAD:refs/heads/${branch}`], { cwd: this.dir, ok: true });
+  /** Non-fast-forward is reported as `false`, never forced. With `onStderr`, git reports its progress there. */
+  async push(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<boolean> {
+    const r = await this.git(["push", onStderr ? "--progress" : "-q", name, `HEAD:refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr });
     return r.code === 0;
   }
 
@@ -395,6 +398,8 @@ export async function cloneInto(git: Git, url: string, branch: string, dir: stri
   const fetched = await git(["fetch", "-q", "origin", branch], { cwd: dir, ok: true });
   if (fetched.code === 0) await git(["reset", "-q", "--hard", `origin/${branch}`], { cwd: dir, ok: true });
 }
+
+export * from "./progress.js";
 
 export const hasConflictMarkers = (text: string): boolean => /^(<{7}|={7}|>{7})( |$)/m.test(text);
 

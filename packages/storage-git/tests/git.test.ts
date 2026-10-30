@@ -58,6 +58,19 @@ describe("a dedicated repository", () => {
     expect(Object.keys((provider!.schema as { properties: Record<string, unknown> }).properties)).toEqual(["remote", "branch"]);
   });
 
+  it("keeps what the last sync did, where it went and each step, for the person to read", async () => {
+    const a = await machine("trace");
+    const remote = bareRemote();
+    a.items.create({ title: "Traced", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    await a.storage.sync(a.project.id);
+    const status = await a.storage.statusFor(a.project.id);
+    expect(status.progress).toBeUndefined();
+    expect(status.trace).toMatchObject({ remote, branch: "main" });
+    expect(status.trace!.steps.map((s) => s.step)).toEqual(expect.arrayContaining(["reaching", "fetching"]));
+    expect(status.trace!.steps.every((s) => s.ok)).toBe(true);
+  });
+
   it("binds the project's own folder to a remote, pushes, and a second machine clones it", async () => {
     const a = await machine("a");
     const remote = bareRemote();

@@ -4,6 +4,7 @@
 import type {} from "cordis";
 import type {} from "@tomradex/ipc";
 import type { RemoteRef } from "@tomradex/hub";
+import type { SyncProgress } from "@tomradex/git";
 import type { HubManifest } from "./hub.js";
 import type { RestoreSummary } from "./restore.js";
 import type { AttentionView, ConnectionState, StorageInfo, StorageProviderView, StorageStatus } from "./types.js";
@@ -54,6 +55,8 @@ declare module "@tomradex/ipc" {
   interface Broadcasts {
     /** This project's rows or its sync state moved; refetch everything keyed by it. */
     "storage.changed": (projectId: string) => void;
+    /** A project's sync moved on a step or along its transfer; null once it ended. */
+    "storage.progress": (projectId: string, progress: SyncProgress | null) => void;
     /** A restore started, moved a step, finished or stopped to wait. */
     "storage.restoresChanged": () => void;
     /** A merge left delivery evidence to settle, or the list changed. */

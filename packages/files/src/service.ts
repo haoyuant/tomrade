@@ -547,6 +547,8 @@ export class Files extends Service implements FilesReader {
         remote: backend ? config : null,
         warn: (m) => this.warn(projectId, m),
         onChange: (paths) => this.notify(projectId, paths),
+        // Its own broadcast: `files.changed` would refetch every file the window holds at each step.
+        onProgress: (progress) => this.home.get("ipc")?.send("files.progress", projectId, progress),
         projectRepository: () => this.projectRepository(projectId),
         env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
       });

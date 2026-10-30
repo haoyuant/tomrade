@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { StorageInfo, StorageProviderView, SyncState } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
+import { SyncActivity } from "~/components/ui/SyncActivity";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -20,6 +21,7 @@ import {
 } from "~/lib/queries";
 import { pickDirectory, reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { useSyncProgress } from "~/lib/syncProgress";
 import { ConnectionPanel, DestinationPicker, message } from "./destination";
 
 /**
@@ -63,6 +65,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
   const labelOf = useNamespaceLabel();
   const info = useStorageInfo(projectId);
   const status = useStorageStatus(projectId);
+  const progress = useSyncProgress("storage.progress", projectId, status.data?.progress);
   const setFolder = useSetFolder(projectId);
   const setAutoCommit = useSetAutoCommit(projectId);
   const setExports = useSetExports(projectId);
@@ -213,10 +216,11 @@ export function StorageBlock({ projectId }: { projectId: string }) {
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
           {status.data?.detail ? t("storageBlock.hintWithDetail", { hint: state.hint, detail: status.data.detail }) : state.hint}
         </p>
+        <SyncActivity id={`storage:${projectId}`} progress={progress} trace={status.data?.trace} />
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary stg-sync" disabled={busy || !dir} onClick={syncNow}>
             <Icon name="i-sync" size={13} />
-            {sync.isPending ? t("storageBlock.syncing") : t("storageBlock.syncNow")}
+            {sync.isPending || progress ? t("storageBlock.syncing") : t("storageBlock.syncNow")}
           </button>
           {!confirmRebuild ? (
             <button type="button" className="btn btn-ghost stg-rebuild" disabled={busy || !dir} onClick={() => setConfirmRebuild(true)}>

@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { GitCredential } from "@tomradex/git";
+import type { GitCredential, SyncProgress, SyncTrace } from "@tomradex/git";
 
 /**
  * Where a project's folder stands relative to what this machine has published.
@@ -14,6 +14,10 @@ export interface StorageStatus {
   /** One line for the state — "3 commits behind origin", "git not found", "folder not found". */
   detail?: string;
   lastSyncAt: number | null;
+  /** Where a running sync is; `storage.progress` tells of it as it moves. */
+  progress?: SyncProgress;
+  /** What the last sync that reached the remote did, for the person to read. */
+  trace?: SyncTrace;
 }
 
 /** A project's sync as far as this machine knows without asking the network. */
