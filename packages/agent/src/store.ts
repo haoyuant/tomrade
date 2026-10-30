@@ -21,7 +21,7 @@ const toPark = (r: ParkedRow): ParkView => ({ threadId: r.thread_id, runId: r.ru
 /** How a run the app's closing cut short stopped — not cancelled by anyone. */
 const INTERRUPTED = "interrupted";
 /** How a run another machine was driving stopped when this one took its conversation over. */
-const TAKEN_OVER = "taken-over";
+export const TAKEN_OVER = "taken-over";
 
 /** Stamped by another machine; a run from before machines were stamped is this one's. */
 const elsewhere = (r: { device?: string | null }, here: string | null): boolean => !!r.device && !!here && r.device !== here;
