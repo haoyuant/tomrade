@@ -13,6 +13,7 @@ import { cssColorToHex, useTheme } from "~/lib/theme";
 import { backdropFills, veilOver } from "@tomradex/theme-image/colors";
 import { useThemeFromImage, useThemeImageUrl } from "~/lib/theme-image";
 import { errorSpec, useToast } from "~/lib/toast";
+import { AppearanceGroupHead } from "./AppearanceGroupHead";
 import { ScopeTag } from "./ScopeTag";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
@@ -177,7 +178,7 @@ function ThemeIconMenu({ value, onChange }: { value: CustomTheme["icon"]; onChan
 function ThemeAutomationPanel({ automation, themes, onChange }: { automation: ThemeAutomation; themes: CustomTheme[]; onChange: (next: ThemeAutomation) => void }) {
   const { t } = useI18n();
   return <div className="theme-automation">
-    <div className="theme-automation-row"><h3 className="appearance-group-title">{t("settingsDialog.themeSwitchMode")}</h3><div className="theme-switch" role="group" aria-label={t("settingsDialog.themeSwitchMode")}>
+    <div className="theme-automation-row"><div className="theme-switch" role="group" aria-label={t("settingsDialog.themeSwitchMode")}>
       {AUTOMATION_MODES.map(mode => <button key={mode.value} type="button" className="theme-seg" aria-pressed={automation.mode === mode.value}
         onClick={() => onChange({ ...automation, mode: mode.value })}><Icon name={mode.icon} size={13} />{t(mode.label)}</button>)}
     </div></div>
@@ -298,7 +299,7 @@ function PictureSection({ theme, onBackdrop }: { theme: CustomTheme & { backdrop
   const withoutTerminal = { veil: theme.backdrop.veil, frost: theme.backdrop.frost };
   return <>
     <hr className="rule" />
-    <SectionHead title={t("settingsDialog.backdropLabel")}>{t("settingsDialog.backdropLede")}</SectionHead>
+    <AppearanceGroupHead title={t("settingsDialog.backdropLabel")}>{t("settingsDialog.backdropLede")}</AppearanceGroupHead>
     <div className="panel theme-picture">
       <div className="picture-form-slots">
         <PictureSlot label={t("settingsDialog.pictureMain")} url={main} disabled={busy} onPick={file => replace(theme.id, file, "main").catch(fail)} />
@@ -393,7 +394,8 @@ export function ThemePane({
         {t("settingsDialog.appearanceLede")}
       </SectionHead>
       {lead}
-      <div className="appearance-theme-heading"><h3 className="appearance-group-title">{t("settingsDialog.themeSelectionTitle")}</h3><div className="theme-selection-row"><ThemeSwitch selectedEditor={
+      <AppearanceGroupHead title={t("settingsDialog.themeSelectionTitle")} />
+      <div className="appearance-theme-heading"><div className="theme-selection-row"><ThemeSwitch selectedEditor={
         selectedCustom && editingTheme === selectedCustom.id && <div className="theme-custom-controls" role="group" aria-label={t("settingsDialog.editTheme")}
           onKeyDown={event => { if (isCancelKey(event)) { event.stopPropagation(); setEditingTheme(null); } }}>
           <ThemeIconMenu value={themeDraft.icon} onChange={icon => setThemeDraft(draft => ({ ...draft, icon }))} />
@@ -417,6 +419,8 @@ export function ThemePane({
       <ThemePreview customThemes={customThemes} preference={preference} onPick={setPreference} onCreate={() => createCustomTheme(openThemeEditor)}
         onPicture={() => setPictureOpen(open => !open)} pictureOpen={pictureOpen} />
       {pictureOpen && <PictureThemeForm onClose={() => setPictureOpen(false)} onConversation={onLeave} />}
+      <hr className="rule" />
+      <AppearanceGroupHead title={t("settingsDialog.themeSwitchMode")} />
       <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
 
       {/* Built-in themes are read-only, so their tokens are nothing to edit: the tables come with a custom theme. */}
@@ -425,7 +429,7 @@ export function ThemePane({
           {selectedCustom.backdrop && <PictureSection theme={{ ...selectedCustom, backdrop: selectedCustom.backdrop }}
             onBackdrop={backdrop => updateCustom(theme => ({ ...theme, backdrop }))} />}
           <hr className="rule" />
-          <SectionHead title={t("settingsDialog.tokensLabel")}>{t("settingsDialog.customTokensLede")}</SectionHead>
+          <AppearanceGroupHead title={t("settingsDialog.tokensLabel")}>{t("settingsDialog.customTokensLede")}</AppearanceGroupHead>
           <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
             <table className="tok-table">
               <thead>
@@ -451,7 +455,7 @@ export function ThemePane({
           </div>
 
           <hr className="rule" />
-          <SectionHead title={t("settingsDialog.fontsLabel")}>{t("settingsDialog.fontsLede")}</SectionHead>
+          <AppearanceGroupHead title={t("settingsDialog.fontsLabel")}>{t("settingsDialog.fontsLede")}</AppearanceGroupHead>
           <div className="panel token-fonts">
             {THEME_TYPOGRAPHY_NAMES.map(name => <FontEditor key={name} name={name} value={resolvedValue(name)}
               onChange={value => updateCustom(theme => ({ ...theme, fonts: { ...theme.fonts, [name]: value } }))} />)}
