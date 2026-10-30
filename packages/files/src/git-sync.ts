@@ -306,6 +306,13 @@ export class GitProjection {
     this.entries.set(full, { mode, oid: written });
   }
 
+  /** The tree the fetched tip holds (null on an empty remote) and the one a push would publish. */
+  async trees(): Promise<{ theirs: string | null; ours: string }> {
+    const theirs = await this.run(["rev-parse", "-q", "--verify", "HEAD^{tree}"], true);
+    const ours = await this.run(["write-tree"]);
+    return { theirs: theirs.code === 0 ? theirs.stdout.trim() : null, ours: ours.stdout.trim() };
+  }
+
   /** Commit what changed on top of the fetched tip and push, never forced. */
   async push(): Promise<boolean> {
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
