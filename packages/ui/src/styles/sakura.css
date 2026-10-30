@@ -55,6 +55,9 @@
 }
 .sakura .btn-primary:disabled { box-shadow: none; }
 .sakura :is(.btn-primary, .theme-seg, .theme-switch) { border-radius: 999px; }
+/* A split button stays one pill: the round ends outside, the halves meeting square. */
+.sakura .split-btn > .btn:not(:last-child) { border-radius: 999px 0 0 999px; }
+.sakura .split-btn > .split-more { border-radius: 0 999px 999px 0; }
 
 .sakura :is(.menu, .palette, .slash-menu) { border-color: var(--tag-bg-strong); }
 .sakura ::selection { background: var(--tag-bg-base); }

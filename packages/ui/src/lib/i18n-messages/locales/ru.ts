@@ -47,7 +47,6 @@ export const ru: PartialMessages = {
     sunrise: "Восход",
     daybreak: "Заря",
     glass: "Матовое стекло",
-    neon: "Неон",
     sakura: "Сакура",
     dawn: "Рассвет",
     paper: "Бумага",

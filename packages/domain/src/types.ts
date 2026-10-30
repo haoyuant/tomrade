@@ -304,7 +304,10 @@ export interface CreateViewInput {
 
 export type ViewPatch = Partial<Pick<View, "name" | "icon" | "layout" | "query" | "rank">>;
 
-export type BuiltInTheme = "light" | "dark" | "matcha" | "dawn" | "sunrise" | "daybreak" | "glass" | "neon" | "sakura";
+export const BUILT_IN_THEMES = ["light", "dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "sakura"] as const;
+export type BuiltInTheme = (typeof BUILT_IN_THEMES)[number];
+/** Built-in themes since retired, each read as the one closest to it, so a setting that still names one keeps working. */
+export const RETIRED_THEMES: Readonly<Record<string, BuiltInTheme>> = { neon: "dark" };
 export type ThemePreference = "system" | BuiltInTheme | `custom:${string}`;
 
 export const THEME_TOKEN_NAMES = ["bg", "surface", "surface-warm", "fg", "fg-2", "muted", "meta", "border", "border-soft", "accent", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as const;

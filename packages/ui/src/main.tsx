@@ -20,7 +20,6 @@ import "./styles/app.css";
 import "./styles/layouts.css";
 import "./styles/sunrise.css";
 import "./styles/glass.css";
-import "./styles/neon.css";
 import "./styles/sakura.css";
 
 // Local SQLite over IPC: refetching on focus buys nothing, invalidation is explicit.

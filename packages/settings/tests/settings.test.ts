@@ -43,6 +43,17 @@ describe("settings", () => {
     });
   });
 
+  it("a retired theme a saved setting still names saves as the one closest to it", async () => {
+    const p = file();
+    fs.writeFileSync(p, JSON.stringify({ theme: "neon" }));
+    const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
+    ctx.settings.set({ ...ctx.settings.get(), themeAutomation: {
+      mode: "schedule", defaultTheme: "neon", shuffleMinutes: 60, schedule: [{ start: "20:00", end: "06:00", theme: "neon" }]
+    } });
+    expect(ctx.settings.get().theme).toBe("dark");
+    expect(ctx.settings.get().themeAutomation).toMatchObject({ defaultTheme: "dark", schedule: [{ theme: "dark" }] });
+  });
+
   it("a plugin section gets defaults under stored values, validation, and a JSON-schema card", async () => {
     const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
     const fiber = await ctx.plugin({
