@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
@@ -179,5 +180,36 @@ describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {
     // not the cut word carried on
     expect(said[at + 1]?.text).toMatch(/^[^a-z]/);
   }, 180_000);
-});
 
+  it("waits out a Tomrade call in flight before steering in now, so the call runs once", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-steer-mcp-${Date.now()}.json`);
+    const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
+    await settle();
+    const thread = ctx.agent.newThread(project.id, "claude-code", null, { options: { model: "haiku" } });
+    let calls = 0;
+    let taken: Promise<boolean> | null = null;
+    ctx.tools.register({
+      name: "slow_note", title: "Slow note", description: "Writes a note; takes about eight seconds.", input: z.object({ text: z.string() }), mcp: true,
+      async execute(args) {
+        if (++calls === 1) taken = new Promise((r) => setTimeout(r, 2000)).then(() => ctx.agent.steer(project.id, thread.id, "s", "Also end your reply with the word PINEAPPLE."));
+        await new Promise((r) => setTimeout(r, 8000));
+        return { written: args.text };
+      }
+    });
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "Call the tomrade slow_note tool once with text \"hello\", then reply with one short sentence saying what it returned." });
+    const t0 = Date.now();
+    while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+      if (Date.now() - t0 > 150_000) throw new Error("live run did not settle");
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const said = ctx.agent.store.messages(project.id, thread.id).map((m) => (m.block.type === "text" ? `${m.role}${m.block.steerId ? "(steer)" : ""}: ${m.block.text}` : `${m.role}: ${m.block.type}`));
+    console.log(said.join("\n"));
+    expect(await taken).toBe(true);
+    expect(calls).toBe(1);
+    expect(ctx.agent.store.run(project.id, runId)!.status).toBe("done");
+    expect(ctx.agent.store.runs(project.id, thread.id)).toHaveLength(1);
+    const at = said.findIndex((line) => line.startsWith("user(steer)"));
+    expect(at).toBeGreaterThan(0);
+    expect(said.slice(at + 1).some((line) => /PINEAPPLE/.test(line))).toBe(true);
+  }, 180_000);
+});
