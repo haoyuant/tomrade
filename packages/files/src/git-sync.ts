@@ -153,7 +153,9 @@ interface IndexEntry {
  * history. No checkout is made, so remote symlinks, attributes and hooks
  * cannot touch the filesystem; read-tree keeps every path outside the scope
  * exactly, and update-index changes only what is ours. Only the tip is
- * fetched: a monorepo's history stays where it is.
+ * fetched: a monorepo's history stays where it is. A scoped remote is fetched
+ * without blobs and then only the scope's are asked for, so a monorepo's
+ * other folders are never downloaded; a server without filters sends all.
  */
 const transportKey = (url: string, branch: string, directory: string): string => createHash("sha256").update(JSON.stringify([url, branch, directory])).digest("hex");
 
@@ -243,7 +245,8 @@ export class GitProjection {
     const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true);
     if (probe.code !== 0 && probe.code !== 2) return exchangeFailure("reach", probe.stderr ?? "");
     if (probe.code === 0) {
-      const fetched = await this.run(["fetch", "-q", "--depth", "1", "origin", this.target.branch], true);
+      const filter = this.prefix ? ["--filter=blob:none"] : [];
+      const fetched = await this.run(["fetch", "-q", "--depth", "1", ...filter, "origin", this.target.branch], true);
       if (fetched.code !== 0) return exchangeFailure("fetch", fetched.stderr ?? "");
       await this.run(["update-ref", "HEAD", `refs/remotes/origin/${this.target.branch}`]);
       await this.run(["read-tree", "HEAD"]);
@@ -261,7 +264,22 @@ export class GitProjection {
     for (const [p, e] of this.entries) {
       if ((this.prefix && this.prefix.startsWith(`${p}/`)) || (p.startsWith(this.prefix) && e.mode !== "100644" && e.mode !== "100755")) throw new Error(`Remote scope contains unsupported entry: ${p}`);
     }
-    return null;
+    return this.prefix ? this.fetchScopeBlobs() : null;
+  }
+
+  /** The scope's blobs a filtered fetch left out, in one request rather than one per read. */
+  private async fetchScopeBlobs(): Promise<ExchangeFailure | null> {
+    const head = await this.run(["rev-parse", "-q", "--verify", "HEAD"], true);
+    if (head.code !== 0) return null;
+    const ours = new Set([...this.listing().values()].map((e) => e.oid));
+    const objects = await this.run(["rev-list", "--objects", "--missing=print", "HEAD"]);
+    const wanted = objects.stdout.split("\n").filter((line) => line.startsWith("?") && ours.has(line.slice(1).trim())).map((line) => line.slice(1).trim());
+    if (!wanted.length) return null;
+    const fetched = await this.git(
+      ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "--stdin", "origin"],
+      { cwd: this.dir, ok: true, stdin: `${wanted.join("\n")}\n` },
+    );
+    return fetched.code === 0 ? null : exchangeFailure("fetch", fetched.stderr ?? "");
   }
 
   /** Every path in scope, relative to it, with what git has there. */
@@ -312,7 +330,8 @@ export class GitProjection {
   /** The tree the fetched tip holds (null on an empty remote) and the one a push would publish. */
   async trees(): Promise<{ theirs: string | null; ours: string }> {
     const theirs = await this.run(["rev-parse", "-q", "--verify", "HEAD^{tree}"], true);
-    const ours = await this.run(["write-tree"]);
+    // --missing-ok: checking every entry would download the blobs a filtered fetch left out.
+    const ours = await this.run(["write-tree", "--missing-ok"]);
     return { theirs: theirs.code === 0 ? theirs.stdout.trim() : null, ours: ours.stdout.trim() };
   }
 
@@ -320,7 +339,13 @@ export class GitProjection {
   async push(): Promise<ExchangeFailure | null> {
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
     const head = await this.run(["rev-parse", "--verify", "HEAD"], true);
-    if (changed.code !== 0 || head.code !== 0) await this.run(["-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "Synchronize shared files"]);
+    if (changed.code !== 0 || head.code !== 0) {
+      // Not `git commit`: it refreshes the index and so downloads the blobs a filtered fetch left out.
+      const tree = (await this.run(["write-tree", "--missing-ok"])).stdout.trim();
+      const parent = head.code === 0 ? ["-p", head.stdout.trim()] : [];
+      const commit = await this.run(["commit-tree", tree, ...parent, "-m", "Synchronize shared files"]);
+      await this.run(["update-ref", "HEAD", commit.stdout.trim()]);
+    }
     const pushed = await this.run(["push", "-q", "origin", `HEAD:refs/heads/${this.target.branch}`], true);
     return pushed.code === 0 ? null : exchangeFailure("push", pushed.stderr ?? "");
   }
