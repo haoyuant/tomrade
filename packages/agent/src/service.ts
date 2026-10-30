@@ -181,6 +181,8 @@ declare module "@tomradex/ipc" {
     "agent.dismissInterrupted": (projectId: string, threadId: string) => boolean;
     /** Continues a conversation the app's closing interrupted: one message in it saying to go on from where it stopped. */
     "agent.continueInterrupted": (projectId: string, threadId: string) => { runId: string };
+    /** Stops the turn another machine is running in this conversation, so this machine can go on with it; false when none is. */
+    "agent.takeOver": (projectId: string, threadId: string) => boolean;
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
@@ -405,7 +407,7 @@ export class Agent extends Service implements AgentReader {
 
   [Service.init]() {
     this.ctx.db.migrate("agent", MIGRATIONS, { tables: TABLES });
-    this.store = new AgentStore(this.ctx.db, (id) => this.answering(id));
+    this.store = new AgentStore(this.ctx.db, (id) => this.answering(id), () => this.ctx.get("hub")?.deviceId ?? null);
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later. One still driven here is not touched.
@@ -498,6 +500,7 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.dismissInterrupted", (projectId, threadId) => ctx.agent.dismissInterrupted(projectId, threadId));
       ctx.ipc.handle("agent.continueInterrupted", (projectId, threadId) => ctx.agent.continueInterrupted(projectId, threadId));
+      ctx.ipc.handle("agent.takeOver", (projectId, threadId) => ctx.agent.takeOver(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
@@ -1157,6 +1160,18 @@ export class Agent extends Service implements AgentReader {
     return this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterInterrupt") });
   }
 
+  /**
+   * Stops the turn another machine is running in this conversation, so this machine can go on with it. Only on
+   * the person's word: that machine's agent keeps working until it hears. False when no other machine runs it.
+   */
+  takeOver(projectId: string, threadId: string): boolean {
+    const running = this.store.runningElsewhere(projectId, threadId);
+    const view = running && this.store.takeOverRun(projectId, running.id, this.words()("takenOver"));
+    if (!view) return false;
+    this.broadcast(threadId, { type: "done", run: view });
+    return true;
+  }
+
   /** Does `change`, and says so when it changed whether the thread is left interrupted. */
   private whileInterrupted<T>(projectId: string, threadId: string, change: () => T): T {
     const before = !!this.store.interruptedRun(projectId, threadId);
@@ -1479,6 +1494,8 @@ export class Agent extends Service implements AgentReader {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words()("archivedReadOnly"));
+    // Two machines on one conversation would each resume the other's session: this one goes on only once it took over.
+    if (!this.activeByThread.has(threadId) && this.store.runningElsewhere(projectId, threadId)) throw new Error(this.words()("runningElsewhere"));
     const ticket = thread.itemId && !thread.execution && !this.activeByThread.has(threadId) ? this.itemOf(projectId, thread.itemId) : null;
     // A done ticket's conversation changes nothing until the ticket is reopened.
     if (ticket?.status === "done") throw new Error(this.words()("reopenToContinue", { key: ticket.key }));
