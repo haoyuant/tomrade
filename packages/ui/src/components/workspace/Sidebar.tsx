@@ -462,6 +462,16 @@ export function Sidebar({
     window.addEventListener("mouseup", onUp);
   }, [width]);
 
+  // the assistant's max-width leaves the board its floor beside this width, so it must be the one drawn
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement.style;
+    root.setProperty("--sidebar-w", `${width}px`);
+    return () => {
+      root.removeProperty("--sidebar-w");
+    };
+  }, [open, width]);
+
   if (!open) {
     return (
       <div className="rail side-rail">

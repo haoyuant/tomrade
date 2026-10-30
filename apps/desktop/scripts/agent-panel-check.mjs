@@ -151,7 +151,10 @@ const run = async () => {
       return true; })()`);
     await sleep(300);
     return $(`({ panel: Math.round(document.querySelector('aside.ai').getBoundingClientRect().width), window: innerWidth,
-      board: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().width ?? -1) })`);
+      board: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().width ?? -1),
+      panelLeft: Math.round(document.querySelector('aside.ai').getBoundingClientRect().left),
+      boardRight: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().right ?? Infinity),
+      barRight: Math.round(document.querySelector('.query-bar')?.getBoundingClientRect().right ?? Infinity) })`);
   };
   win.setSize(2000, 900);
   await sleep(800);
@@ -161,6 +164,11 @@ const run = async () => {
   await sleep(800);
   sized = await dragPanel(2000);
   check("on a narrower window it gives way, and the board keeps a column", sized.board >= 361 && sized.panel <= Math.round(sized.window * 0.6) + 1, sized);
+  // TOM-797: the window's column once grew to the titlebar's width and slid the board, query bar and all, under the panel
+  win.setSize(1440, 900);
+  await sleep(800);
+  sized = await dragPanel(2000);
+  check("dragged all the way at 1440, the board and its query bar end where the panel begins", sized.boardRight <= sized.panelLeft && sized.barRight <= sized.panelLeft, sized);
   // the steps below see the panel as it opens by default
   await $(`localStorage.removeItem("tomrade.ai.width"); document.querySelector('aside.ai').style.width = ''; true`);
   await sleep(300);
