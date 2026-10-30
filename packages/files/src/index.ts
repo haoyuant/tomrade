@@ -30,6 +30,7 @@ export {
   type FilesInfo,
   type FilesStatus,
   type FilesSyncState,
+  type FilesSyncFailure,
   type FilesSyncPolicy,
   type FileSyncPreference,
   type FilesAgentPolicy,

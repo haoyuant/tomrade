@@ -35,14 +35,14 @@ function putBack(remote: string): void {
   run(["update-ref", "refs/heads/main", run(["-c", "user.name=other", "-c", "user.email=other@localhost", "commit-tree", tree, "-p", "main", "-m", "put back"])]);
 }
 
-async function store(remote: string | null = null, onChange: () => void = noop, dir = path.join(root, `store-${n++}`), runner: Git = git) {
+async function store(remote: string | null = null, onChange: () => void = noop, dir = path.join(root, `store-${n++}`), runner: Git = git, warn: (message: string) => void = noop) {
   return new GitFileStore({
     git: runner,
     gitBinary: "git",
     dir,
     remote: remote ? () => ({ url: remote, branch: "main" }) : null,
     location: remote ? "test remote" : null,
-    warn: noop,
+    warn,
     onChange,
     watch: false,
     // Tests sync by hand; a timed push landing mid-test would be joined by their sync() and skip a later write.
@@ -336,10 +336,25 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
   });
 
   it("reports an unreachable remote as offline and keeps working", async () => {
-    const s = await store(path.join(root, "missing.git"));
+    const said: string[] = [];
+    const s = await store(path.join(root, "missing.git"), noop, undefined, git, (m) => said.push(m));
     await s.write("x.md", text("x"));
-    expect((await s.sync()).state).toBe("offline");
+    expect(await s.sync()).toMatchObject({ state: "offline", failure: "network", detail: expect.stringContaining("missing.git") });
+    // Opening syncs once too: each failed sync tells the log once.
+    expect(said.length).toBeGreaterThan(0);
+    for (const line of said) expect(line).toMatch(/^sync: reach failed \(network\): .*missing\.git/);
     expect((await s.read("x.md"))?.body).toBe("x");
+    s.close();
+  });
+
+  it("shows a remote that refuses the push as trouble, not offline, in the remote's own words", async () => {
+    const remote = bare();
+    fs.writeFileSync(path.join(remote, "hooks", "pre-receive"), "#!/bin/sh\necho 'refused by policy' >&2\nexit 1\n", { mode: 0o755 });
+    const said: string[] = [];
+    const s = await store(remote, noop, undefined, git, (m) => said.push(m));
+    await s.write("x.md", text("x"));
+    expect(await s.sync()).toMatchObject({ state: "error", failure: "other", detail: "remote: refused by policy" });
+    expect([...new Set(said)]).toEqual(["sync: push failed (other): remote: refused by policy"]);
     s.close();
   });
 });

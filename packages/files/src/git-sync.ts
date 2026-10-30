@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { GitFolder, cleanRemote, execGit, type Git } from "@tomradex/git";
+import { exchangeFailure, type ExchangeFailure } from "./sync-failure.js";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
@@ -231,17 +232,19 @@ export class GitProjection {
     if (fs.existsSync(pack)) for (const name of fs.readdirSync(pack)) if (name.startsWith("tmp_")) fs.rmSync(path.join(pack, name), { force: true });
   }
 
-  /** Bring the index to the remote's tip. False when the remote cannot be reached. */
-  async fetch(): Promise<boolean> {
+  /** Bring the index to the remote's tip; null once there, else the step git refused and why. */
+  async fetch(): Promise<ExchangeFailure | null> {
     fs.mkdirSync(this.dir, { recursive: true });
     this.clearInterrupted();
     if (!fs.existsSync(path.join(this.dir, ".git"))) await this.run(["init", "-q", "-b", this.target.branch]);
     await this.folder.ensureIdentity();
     await this.folder.setRemote(this.target.url);
-    const probe = await this.folder.probe(this.target.branch);
-    if (probe === "offline") return false;
-    if (probe === "exists") {
-      if ((await this.run(["fetch", "-q", "--depth", "1", "origin", this.target.branch], true)).code !== 0) return false;
+    // Exit 2 is a reachable remote without the branch yet: where every project starts.
+    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true);
+    if (probe.code !== 0 && probe.code !== 2) return exchangeFailure("reach", probe.stderr ?? "");
+    if (probe.code === 0) {
+      const fetched = await this.run(["fetch", "-q", "--depth", "1", "origin", this.target.branch], true);
+      if (fetched.code !== 0) return exchangeFailure("fetch", fetched.stderr ?? "");
       await this.run(["update-ref", "HEAD", `refs/remotes/origin/${this.target.branch}`]);
       await this.run(["read-tree", "HEAD"]);
     } else {
@@ -258,7 +261,7 @@ export class GitProjection {
     for (const [p, e] of this.entries) {
       if ((this.prefix && this.prefix.startsWith(`${p}/`)) || (p.startsWith(this.prefix) && e.mode !== "100644" && e.mode !== "100755")) throw new Error(`Remote scope contains unsupported entry: ${p}`);
     }
-    return true;
+    return null;
   }
 
   /** Every path in scope, relative to it, with what git has there. */
@@ -313,11 +316,12 @@ export class GitProjection {
     return { theirs: theirs.code === 0 ? theirs.stdout.trim() : null, ours: ours.stdout.trim() };
   }
 
-  /** Commit what changed on top of the fetched tip and push, never forced. */
-  async push(): Promise<boolean> {
+  /** Commit what changed on top of the fetched tip and push, never forced; null once it landed, else why not. */
+  async push(): Promise<ExchangeFailure | null> {
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
     const head = await this.run(["rev-parse", "--verify", "HEAD"], true);
     if (changed.code !== 0 || head.code !== 0) await this.run(["-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "Synchronize shared files"]);
-    return this.folder.push(this.target.branch);
+    const pushed = await this.run(["push", "-q", "origin", `HEAD:refs/heads/${this.target.branch}`], true);
+    return pushed.code === 0 ? null : exchangeFailure("push", pushed.stderr ?? "");
   }
 }

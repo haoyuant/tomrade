@@ -6,6 +6,7 @@ import { GitFolder, execGit, type Git } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
+import type { ExchangeFailure } from "./sync-failure.js";
 import {
   FileChangedError,
   FileMovedOnError,
@@ -23,6 +24,7 @@ import {
   type FileSearchResult,
   type FilesAgentPolicy,
   type FilesStatus,
+  type FilesSyncFailure,
   type FilesSyncPolicy,
   type ListMode,
   type PathPolicy,
@@ -181,7 +183,7 @@ export class GitFileStore implements FileStore {
   private syncing = false;
   private syncQueue: Promise<FilesStatus> | null = null;
   private lastSyncAt: number | null = null;
-  private problem: { state: "offline" | "error"; detail: string } | null = null;
+  private problem: { state: "offline" | "error"; detail?: string; failure?: FilesSyncFailure } | null = null;
   /** The trees the last push replaced and published, and how many syncs in a row found the remote back at the replaced one. */
   private flip = { replaced: null as string | null, published: "", rounds: 0 };
   private ensured = false;
@@ -982,7 +984,7 @@ export class GitFileStore implements FileStore {
     if (this.syncing) return { ...base, state: "syncing" };
     if (conflicts) return { ...base, state: "conflicted", detail: conflicts === 1 ? "1 file needs a decision" : `${conflicts} files need a decision` };
     if (!this.opts.remote) return { ...base, state: "local" };
-    if (this.problem) return { ...base, state: this.problem.state, detail: this.problem.detail };
+    if (this.problem) return { ...base, ...this.problem };
     const ahead = this.policyDirty || this.agentsDirty || head !== this.syncedHead;
     return { ...base, ahead: ahead ? 1 : 0, state: ahead ? "ahead" : "synced" };
   }
@@ -1032,20 +1034,16 @@ export class GitFileStore implements FileStore {
       }
       const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
       await exclusiveTransport(projection.dir, async () => {
-        if (!(await projection.fetch())) {
-          this.problem = { state: "offline", detail: "Could not reach the remote" };
-          return;
-        }
+        const unfetched = await projection.fetch();
+        if (unfetched) return this.failed(unfetched);
         const snapshot = await this.locked(() => this.reconcile(projection));
         if (!snapshot) return;
         if (this.undoing(await projection.trees())) {
           this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
           return;
         }
-        if (!(await projection.push())) {
-          this.problem = { state: "error", detail: "The remote moved on; will retry" };
-          return;
-        }
+        const unpushed = await projection.push();
+        if (unpushed) return this.failed(unpushed);
         await this.locked(async () => {
           this.syncState.baseline = snapshot.baseline;
           this.syncState.policy = snapshot.policy;
@@ -1067,6 +1065,12 @@ export class GitFileStore implements FileStore {
       if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
       if (told) this.opts.onChange();
     }
+  }
+
+  /** Only a remote out of reach is offline; every refusal goes to the log with what git said. */
+  private failed({ step, failure, said }: ExchangeFailure): void {
+    this.problem = { state: failure === "network" ? "offline" : "error", failure, ...(said ? { detail: said } : {}) };
+    this.opts.warn(`sync: ${step} failed (${failure})${said ? `: ${said}` : ""}`);
   }
 
   /**

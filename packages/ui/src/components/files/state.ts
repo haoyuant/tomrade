@@ -1,4 +1,4 @@
-import type { FilesStatus, FilesSyncState } from "@tomradex/files";
+import type { FilesStatus, FilesSyncFailure, FilesSyncState } from "@tomradex/files";
 import type { MessageKey } from "~/lib/i18n";
 
 export interface StateView {
@@ -24,5 +24,17 @@ export function stateOf(t: (key: MessageKey) => string): Record<FilesSyncState, 
   };
 }
 
-/** A folder kept without git saves no versions, so the local state's promise of them does not hold. */
-export const hintOf = (t: (key: MessageKey) => string, view: StateView, status: FilesStatus | undefined): string => (status?.versionless ? t("files.stateLocalPlainHint") : view.hint);
+/** Each cause of a failed exchange, with what to do about it. */
+const FAILURE_HINT: Record<FilesSyncFailure, MessageKey> = {
+  network: "files.failureNetworkHint",
+  interrupted: "files.failureInterruptedHint",
+  locked: "files.failureLockedHint",
+  credentials: "files.failureCredentialsHint",
+  helper: "files.failureHelperHint",
+  moved: "files.failureMovedHint",
+  other: "files.failureOtherHint"
+};
+
+/** A folder kept without git saves no versions, so the local state's promise of them does not hold; a failed exchange says why it failed. */
+export const hintOf = (t: (key: MessageKey) => string, view: StateView, status: FilesStatus | undefined): string =>
+  status?.versionless ? t("files.stateLocalPlainHint") : status?.failure ? t(FAILURE_HINT[status.failure]) : view.hint;

@@ -5,11 +5,19 @@ import type { ConnectionState, ProviderConnection as FilesConnection } from "@to
 /** Where a project's files stand against what they are shared through. `local` means nothing beyond this machine to be in step with. */
 export type FilesSyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "conflicted" | "syncing" | "offline" | "error" | "unavailable";
 
+/**
+ * Why an exchange with the remote failed, each with its own remedy. Only
+ * `network` is offline: the others reach the remote, or never got to try.
+ */
+export type FilesSyncFailure = "network" | "interrupted" | "locked" | "credentials" | "helper" | "moved" | "other";
+
 export interface FilesStatus {
   state: FilesSyncState;
   /** Non-secret: "github.com/acme/docs · main", or the folder. */
   location: string | null;
   detail?: string;
+  /** Set when git refused a step of the exchange; `detail` then holds what it said. */
+  failure?: FilesSyncFailure;
   lastSyncAt: number | null;
   conflicts: number;
   ahead: number;
