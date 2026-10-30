@@ -41,7 +41,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
  * It waits for its own page: the boot work behind it keeps the renderer from painting
  * for seconds, and until then the window holds nothing but its background colour.
  */
-export async function showSplash(icon: string): Promise<BrowserWindow> {
+export async function showSplash(icon: SplashIcon): Promise<BrowserWindow> {
   const dark = nativeTheme.shouldUseDarkColors;
   const win = new BrowserWindow({
     width: 320,
@@ -64,19 +64,25 @@ export async function showSplash(icon: string): Promise<BrowserWindow> {
 }
 
 /** The splash says the start waits on the system's keyring dialog, which may sit behind other windows. */
-export function splashWaitsForKeyring(win: BrowserWindow, icon: string): void {
+export function splashWaitsForKeyring(win: BrowserWindow, icon: SplashIcon): void {
   if (win.isDestroyed()) return;
   void win.loadURL(splashPage(icon, words()("keyringWaiting"))).catch(() => undefined);
 }
 
+/** The icon file, and whether it needs a white plate: one with its own background wears none. */
+export interface SplashIcon {
+  file: string;
+  plate: boolean;
+}
+
 /** The splash's page, as a data: URL; the window runs no script, so new words come as a new page. */
-function splashPage(icon: string, text: string): string {
+function splashPage(icon: SplashIcon, text: string): string {
   const dark = nativeTheme.shouldUseDarkColors;
   // The file's own bytes, base64: decoding the icon in the main process drew no
   // logo on Windows, only its white plate.
   let logo = "";
   try {
-    const bytes = fs.readFileSync(icon);
+    const bytes = fs.readFileSync(icon.file);
     // Read empty, or not a PNG at all: an img with nothing to draw is the white plate again.
     if (bytes.length > PNG.length && bytes.subarray(0, PNG.length).equals(PNG)) {
       logo = `<img src="data:image/png;base64,${bytes.toString("base64")}" width="64" height="64" alt="">`;
@@ -88,8 +94,7 @@ function splashPage(icon: string, text: string): string {
 html,body{height:100%;margin:0}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:${dark ? "#e8e8e8" : "#1f1f1f"};cursor:default;user-select:none;-webkit-app-region:drag}
 p{margin:0 24px;opacity:.65;text-align:center}
-img{background:#fff;border-radius:16px;padding:6px}
-</style>${logo}<p>${text}</p>`;
+${icon.plate ? "img{background:#fff;border-radius:16px;padding:6px}\n" : ""}</style>${logo}<p>${text}</p>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
