@@ -26,6 +26,16 @@ const TomradeOptions = z.looseObject({ profile: z.string().optional(), effort: z
 /** A borrowed agent's session is stored marked as its own, so no other part is handed it to resume. */
 const borrowedSession = (id: string) => `@${id}:`;
 
+/** One permission under the names different agents give it: Claude Code calls full access bypassPermissions, and asking default. */
+const SAME_MODE = [["full-access", "bypassPermissions"], ["ask", "default"]];
+
+/** `mode` under the name `modes` gives it, if they have it at all. */
+const modeIn = (mode: string | undefined, modes: Engine["permissionModes"]): string | undefined => {
+  const has = (value: string) => !!modes?.choices.some((choice) => choice.value === value);
+  if (!mode || has(mode)) return mode;
+  return SAME_MODE.find((names) => names.includes(mode))?.find(has);
+};
+
 /**
  * One choice for the in-app agent. A thread's purpose is fixed when it is made,
  * so a thread stays with one part and its history with it.
@@ -115,9 +125,11 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
         const resume = io.resume?.startsWith("@") ? undefined : io.resume;
         return engine.turn(turnInput, resume === io.resume ? io : { ...io, resume });
       }
-      // The mode was picked from the work part's choices; a borrowed agent only takes one of its own.
-      const own = engine.permissionModes?.choices.some((choice) => choice.value === input.permissionMode);
-      if (!own) delete turnInput.permissionMode;
+      // The mode was picked from the work part's choices; a borrowed agent only takes one of its own, under its own name.
+      const theirs = modeIn(input.permissionMode, engine.permissionModes);
+      if (theirs) turnInput.permissionMode = theirs;
+      else delete turnInput.permissionMode;
+      const ours = part(config.work)?.permissionModes;
       const mark = borrowedSession(engine.id);
       const resume = io.resume?.startsWith(mark) ? io.resume.slice(mark.length) : undefined;
       if (!resume)
@@ -125,9 +137,13 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
           type: "note",
           text: words()("holding", { engine: engine.title })
         });
-      // a mode picked mid-turn reaches it only when it is one of its own
-      const modeTo = io.modeTo && ((apply: (mode: string) => Promise<boolean>) => io.modeTo!((mode) => engine.permissionModes?.choices.some((choice) => choice.value === mode) ? apply(mode) : Promise.resolve(false)));
-      const result = await engine.turn(turnInput, { ...io, resume, ...(modeTo ? { modeTo } : {}) });
+      // a mode picked mid-turn reaches it only when it is one of its own; the mode it reports is shown under the name it was picked by
+      const modeTo = io.modeTo && ((apply: (mode: string) => Promise<boolean>) => io.modeTo!((mode) => {
+        const same = modeIn(mode, engine.permissionModes);
+        return same ? apply(same) : Promise.resolve(false);
+      }));
+      const permissionMode = io.permissionMode && ((mode: string) => io.permissionMode!(modeIn(mode, ours) ?? mode));
+      const result = await engine.turn(turnInput, { ...io, resume, ...(modeTo ? { modeTo } : {}), ...(permissionMode ? { permissionMode } : {}) });
       return result.resume ? { ...result, resume: mark + result.resume } : result;
     }
   };
