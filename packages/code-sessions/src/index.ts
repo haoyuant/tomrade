@@ -1788,6 +1788,7 @@ function apply(ctx: Context, config: Config) {
       height: 760,
       minWidth: 640,
       minHeight: 400,
+      captionStrip: true,
       initialState,
       onMessage: (message) => void onMessage(projectId, win, message as WindowMessage).catch((error: unknown) => {
         ctx.logger.warn(`code sessions: ${(message as { type?: string }).type ?? "message"} failed: ${errorMessage(error)}`);

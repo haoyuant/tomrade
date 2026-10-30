@@ -147,6 +147,7 @@
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "electron-updater": "6.8.10",
+    "koffi": "3.3.3",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
     "@tomradex/im": "workspace:*",

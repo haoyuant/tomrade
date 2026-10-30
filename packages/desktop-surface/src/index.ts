@@ -45,6 +45,11 @@ export interface DesktopSurfaceSpec {
   /** Windows only. */
   minWidth?: number;
   minHeight?: number;
+  /**
+   * `window` only: its page keeps a draggable strip `env(titlebar-area-height)` tall at its top. Where a window has to be
+   * born frameless to wear Glass's frost (Windows 10), only such a window wears it; the caption buttons sit over the strip.
+   */
+  captionStrip?: boolean;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   /** Allow keyboard input; defaults to false for passive widgets. */

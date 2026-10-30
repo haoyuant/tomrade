@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
 import { sendToWindow } from "./ipc.js";
-import { isFrosted, takesMaterial } from "./window-material.js";
+import { isFrosted, materialOptions, takesMaterial } from "./window-material.js";
 
 interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
@@ -44,7 +44,7 @@ export interface WindowOptions {
 /** Tells a window how its chrome stands now. */
 export function sayChrome(win: BrowserWindow, lead: boolean): void {
   if (win.isDestroyed()) return;
-  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted() } satisfies WindowChrome);
+  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted(win) } satisfies WindowChrome);
 }
 
 export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
@@ -59,6 +59,7 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     trafficLightPosition: { x: 14, y: 14 },
     // Frosted, the material stays lit when another window has the focus, as the Terminal window over it often does.
     ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
+    ...materialOptions(),
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false, ...(opts.detached ? { additionalArguments: [DETACHED_ARG] } : {}) }
   });
   if (!place || place.maximized) win.maximize();

@@ -9,7 +9,7 @@ import type {} from "@tomradex/settings";
 import { cameBack } from "./background.js";
 import { leadWindow, showMainWindow, takeKeptInFront } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
-import { isFrosted, setFrosted, takesMaterial } from "./window-material.js";
+import { bornForMaterial, isFrosted, materialOptions, setFrosted, takesMaterial } from "./window-material.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
@@ -101,7 +101,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
         if (JSON.stringify(look) !== JSON.stringify(this.look)) writeLook(this.lookFile, look);
         this.look = look;
         setFrosted(!!look.frosted, look.tokens["--bg"]);
-        for (const surface of this.openById.values()) if (surface.loaded && !surface.win.isDestroyed()) surface.win.webContents.send(LOOK_CHANNEL, this.worn(look));
+        for (const surface of this.openById.values()) if (surface.loaded && !surface.win.isDestroyed()) surface.win.webContents.send(LOOK_CHANNEL, this.worn(look, surface.win));
       });
     });
     // A surface that asks for Settings is outside the window; the window comes forward to show it.
@@ -125,8 +125,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
   }
 
   /** The look as a surface's page reads it: frosted only where the shell put the material under it. */
-  private worn(look: SurfaceLook): SurfaceLook {
-    return { ...look, frosted: isFrosted() };
+  private worn(look: SurfaceLook, win: BrowserWindow): SurfaceLook {
+    return { ...look, frosted: isFrosted(win) };
   }
 
   open(spec: DesktopSurfaceSpec): DesktopSurface {
@@ -134,6 +134,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
 
     const caps = capabilities();
     const window = spec.kind === "window";
+    // Where a window is born for the material (Windows 10), only one whose page keeps a caption strip can wear it.
+    const frostable = window && (!!spec.captionStrip || !bornForMaterial());
     let ahead = window ? takeKeptInFront() : null;
     const webPreferences = { preload: path.join(here, "../surface-preload.cjs"), contextIsolation: true, nodeIntegration: false };
     const place = window ? placeWindow(this.places.get(spec.id), spec, [screen.getPrimaryDisplay().workArea, ...screen.getAllDisplays().map((d) => d.workArea)]) : null;
@@ -148,6 +150,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
           title: spec.title,
           backgroundColor: this.look?.tokens["--bg"] || undefined,
           ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
+          ...(frostable ? materialOptions() : {}),
           webPreferences
         })
       : new BrowserWindow({
@@ -241,8 +244,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     this.openById.set(spec.id, record);
     this.openByContents.set(record.contentsId, record);
     // A plugin's own window wears Glass's material with Tomrade's windows; an overlay keeps its own look.
-    if (window) takesMaterial(win, () => {
-      if (record.loaded && this.look && !win.isDestroyed()) win.webContents.send(LOOK_CHANNEL, this.worn(this.look));
+    if (frostable) takesMaterial(win, () => {
+      if (record.loaded && this.look && !win.isDestroyed()) win.webContents.send(LOOK_CHANNEL, this.worn(this.look, win));
     });
     // Registered first, so the search for the app window cannot land on this surface.
     if (!window && spec.anchor && caps.programmaticPosition) void this.anchorOf(spec.anchor).then((at) => {
@@ -270,7 +273,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed()) return;
       record.loaded = true;
-      if (this.look) win.webContents.send(LOOK_CHANNEL, this.worn(this.look));
+      if (this.look) win.webContents.send(LOOK_CHANNEL, this.worn(this.look, win));
       win.webContents.send(STATE_CHANNEL, record.state);
       for (const message of record.queued.splice(0)) win.webContents.send(PUSH_CHANNEL, message);
       if (window && ahead && !ahead.isDestroyed()) {
