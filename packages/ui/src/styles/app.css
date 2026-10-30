@@ -629,6 +629,8 @@ strong { font-weight: var(--font-weight-medium); }
 .app {
   display: grid;
   grid-template-rows: var(--titlebar-h) minmax(0, 1fr) var(--statusbar-h);
+  /* an auto column would grow to the titlebar's widest row and push the board under the assistant */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 .titlebar {
