@@ -872,6 +872,7 @@ function apply(ctx: Context, config: Config) {
       projectId,
       projectName: projectName(projectId),
       locale: ctx.settings.locale(),
+      keybindings: (ctx.settings.get().keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides ?? {},
       bridge: b,
       provider: backend()?.kind ?? null,
       herdrClient: b.state === "ready" && !builtin() && ((await ctx.get("herdr")?.clientAttached().catch(() => false)) ?? false),

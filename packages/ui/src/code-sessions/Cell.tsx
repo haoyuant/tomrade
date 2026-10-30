@@ -235,7 +235,7 @@ function NotHere({ session, cell, locale, picker, onTalk, look }: { session: Ses
 /** One cell of the grid. It redraws when what it shows changes, not on every state the window hears. */
 export const Cell = memo(function Cell({ leaf, number, pane, session, terminal, closed, places, ready, herdrClient, onNewTerminal, onTalk, focused, flash = null, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; number: number; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; closed: ClosedTerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; /** Shown here on an ask from outside (the assistant panel, a start): it flashes once, keyed by the ask. */ flash?: number | null; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
   const say = useSay();
-  // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
+  // Right-click anywhere on the cell, its terminal too: the menu starts with Copy and Paste there.
   const withMenu = (node: ReactElement) => (
     <ContextMenu label={say("cellMenu")} trigger={node}>
       {menu}
@@ -304,7 +304,7 @@ export const Cell = memo(function Cell({ leaf, number, pane, session, terminal, 
       {timeline && timelinePane && <Timeline cell={leaf.id} pane={timelinePane} number={number} cwd={terminal?.cwd ?? closed?.cwd ?? session?.cwd ?? session?.worktree ?? ""} locale={look.locale} look={look} onClose={() => setTimeline(false)} />}
       {session?.pane || terminal?.pane ? (
         <>
-          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} clear={look.clear} />
+          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} clear={look.clear} menu={withMenu} />
           <Guess session={session} pane={session?.pane ?? terminal?.pane} place="cell" />
           {!session && terminal?.shell && <ShellHint cell={leaf.id} />}
         </>

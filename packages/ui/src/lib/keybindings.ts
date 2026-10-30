@@ -30,9 +30,11 @@ export type CommandId =
   | "prevTab"
   | "backlogTab"
   | "readWrite"
-  | "saveBody";
+  | "saveBody"
+  | "terminalCopy"
+  | "terminalPaste";
 
-export type CommandGroup = "anywhere" | "global" | "tabs" | "board" | "writing";
+export type CommandGroup = "anywhere" | "global" | "tabs" | "board" | "writing" | "terminal";
 
 export interface CommandSpec {
   id: CommandId;
@@ -69,7 +71,9 @@ export const COMMANDS: CommandSpec[] = [
   { id: "backlogTab", group: "tabs", label: "shortcuts.backlogTab", defaults: DEFAULT_KEYS.backlogTab },
   { id: "searchTickets", group: "board", label: "shortcuts.searchTickets", defaults: DEFAULT_KEYS.searchTickets },
   { id: "readWrite", group: "writing", label: "shortcuts.readWrite", defaults: DEFAULT_KEYS.readWrite },
-  { id: "saveBody", group: "writing", label: "shortcuts.saveBody", defaults: DEFAULT_KEYS.saveBody }
+  { id: "saveBody", group: "writing", label: "shortcuts.saveBody", defaults: DEFAULT_KEYS.saveBody },
+  { id: "terminalCopy", group: "terminal", label: "shortcuts.termCopy", defaults: DEFAULT_KEYS.terminalCopy },
+  { id: "terminalPaste", group: "terminal", label: "shortcuts.termPaste", defaults: DEFAULT_KEYS.terminalPaste }
 ];
 
 export const FIXED: FixedKey[] = [
@@ -86,7 +90,8 @@ export const GROUPS: { id: CommandGroup; title: MessageKey }[] = [
   { id: "global", title: "shortcuts.global" },
   { id: "tabs", title: "shortcuts.tabs" },
   { id: "board", title: "shortcuts.board" },
-  { id: "writing", title: "shortcuts.writing" }
+  { id: "writing", title: "shortcuts.writing" },
+  { id: "terminal", title: "shortcuts.terminal" }
 ];
 
 const SPEC = new Map(COMMANDS.map((c) => [c.id, c]));
@@ -196,9 +201,10 @@ const GLYPHS: Record<string, string> = {
   Delete: "⌦",
   Space: "Space",
   PageUp: "PgUp",
-  PageDown: "PgDn"
+  PageDown: "PgDn",
+  Insert: "Ins"
 };
-const WORDS: Record<string, string> = { ...GLYPHS, Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Delete: "Del" };
+const WORDS: Record<string, string> = { ...GLYPHS, Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Delete: "Del", Insert: "Insert" };
 
 /** A chord as this platform writes it: "⇧⌘Z" on a Mac, "Ctrl+Shift+Z" elsewhere. */
 export function formatChord(chord: string, mac = isMac): string {
