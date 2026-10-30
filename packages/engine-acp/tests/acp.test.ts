@@ -7,7 +7,7 @@ import { z } from "zod";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 import { localCli } from "@tomradex/engine-kit";
-import type { Block, Engine, TurnIO, TurnInput } from "@tomradex/agent";
+import type { Block, Engine, SteerInput, TurnIO, TurnInput } from "@tomradex/agent";
 import { createAcpEngine, isTomradeTool, PERMISSION_CHOICES, policyOf, type AcpAgent } from "../src/index.js";
 import { innermost, resolveChoice } from "../src/runtime.js";
 
@@ -466,11 +466,13 @@ describe("an ACP agent as an engine", () => {
       const { io, blocks, deltas } = turnIO();
       const order: string[] = [];
       io.emit = (block) => { blocks.push(block); order.push(block.type === "text" ? `agent:${block.text}` : block.type); };
-      let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+      let forward: ((steer: SteerInput) => Promise<boolean>) | undefined;
+      let seesImages = false;
+      io.steersMedia = () => { seesImages = true; };
       io.steerTo = (fn) => { forward = fn; };
       io.steered = (id) => order.push(`steered:${id}`);
       const env = { TOMRADE_TEST_LOG: log, ...(style ? { FAKE_STYLE: style } : {}) };
-      return { io, order, deltas, env, forward: (id: string, text: string) => forward!({ id, text }) };
+      return { io, order, deltas, env, forward: (id: string, text: string, media?: SteerInput["media"]) => forward!({ id, text, media }), seesImages: () => seesImages };
     };
     const hermesMode = (policy: string) => (policy === "full-access" ? "dont_ask" : "default");
     const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 5000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
@@ -478,16 +480,17 @@ describe("an ACP agent as an engine", () => {
     it("hands a message to CodeBuddy's session/steer and records it at the agent's receipt", async () => {
       const engine = createAcpEngine(ctx, spec({ steer: "method" }));
       expect(engine.steering).toBe("forward");
-      const { io, order, env, forward } = steering();
+      const { io, order, env, forward, seesImages } = steering();
       const turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_TOOL" }, env }), io);
       await when(() => fs.existsSync(log) && sent("session/prompt").length > 0);
       await new Promise((r) => setTimeout(r, 100));
-      expect(await forward("s1", "make it blue")).toBe(true);
+      expect(seesImages()).toBe(true);
+      expect(await forward("s1", "make it blue", [{ id: "m1", name: "shot.png", mime: "image/png", size: 3, base64: "cG5n" }])).toBe(true);
       expect(await forward("s2", "and shiny")).toBe(true);
       expect((await turn).stop).toBe("end");
       expect(order).toEqual(["trace", "steered:s1", "steered:s2", expect.stringMatching(/^agent:took: make it blue\n\n\(Sent while you were working.*\+ and shiny/s)]);
       const [first, second] = sent("session/steer").map((r) => r.params);
-      expect(first).toMatchObject({ contentBlocks: [{ type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) }], clientUserMessageId: "s1" });
+      expect(first).toMatchObject({ contentBlocks: [{ type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) }, { type: "image", data: "cG5n", mimeType: "image/png" }], clientUserMessageId: "s1" });
       expect(first.expectedRequestId).toBeUndefined();
       // the next joins only the run the first one joined
       expect(second.expectedRequestId).toMatch(/^run-/);
@@ -514,7 +517,7 @@ describe("an ACP agent as an engine", () => {
 
     it("sends Hermes a /steer alongside, keeps its acknowledgement out of the reply, and records it where Hermes reads it", async () => {
       const engine = createAcpEngine(ctx, spec({ steer: "slash", mode: hermesMode }));
-      const { io, order, deltas, env, forward } = steering("hermes");
+      const { io, order, deltas, env, forward, seesImages } = steering("hermes");
       const turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_TOOL" }, env }), io);
       await when(() => order.includes("trace") || (fs.existsSync(log) && sent("session/prompt").length > 0));
       await new Promise((r) => setTimeout(r, 100));
@@ -523,6 +526,8 @@ describe("an ACP agent as an engine", () => {
       expect(result.stop).toBe("end");
       expect(order).toEqual(["steered:s1", expect.stringMatching(/^agent:took: make it blue\n\n\(Sent while/), "trace"]);
       expect(deltas.join("")).not.toContain("Steer queued");
+      // a /steer is one line of text: a picture stays with the message, for the next turn
+      expect(seesImages()).toBe(false);
       expect(sent("session/prompt").map((r) => r.params.prompt[0].text).filter((t: string) => t.startsWith("/steer"))).toEqual([expect.stringMatching(/^\/steer make it blue\n\n\(Sent while/)]);
     });
 

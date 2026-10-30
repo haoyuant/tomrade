@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,8 +9,38 @@ import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import engineClaudeCode from "@tomradex/engine-claude-code";
 
+/** A 32×32 square of solid red. */
+const RED = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJ0lEQVR42u3NsQkAAAjAsP7/tF7hIASyp6lTCQQCgUAgEAgEgi/BAjLD/C5w/SM9AAAAAElFTkSuQmCC";
+
 /** Opt-in: spawns the real `claude` CLI with the user's own login. TOMRADE_LIVE_CC=1 pnpm test */
 describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {
+  it("sees a picture sent into the running turn", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-live-picture-"));
+    const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], [Agent, { mediaDir: path.join(root, "media") }], [Mcp, { port: 0 }], engineClaudeCode] });
+    await settle();
+    const thread = ctx.agent.newThread(project.id, "claude-code", null, { options: { model: "haiku" } });
+    const file = ctx.agent.uploadMedia(project.id, thread.id, { name: "square.png", mime: "image/png", base64: RED });
+    let taken: Promise<boolean> | null = null;
+    const off = ctx.on("agent/event", (id: string, event: { type: string; message?: { block: { type: string } } }) => {
+      if (id === thread.id && !taken && event.type === "message" && event.message?.block.type === "trace")
+        taken = ctx.agent.steer(project.id, thread.id, "s", "What single colour fills the attached picture? Name it in English in your reply.", [file]);
+    });
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "Call the tomrade list_items tool, then the count_items tool, then reply in one short sentence. Create nothing." });
+    const t0 = Date.now();
+    while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+      if (Date.now() - t0 > 150_000) throw new Error("live run did not settle");
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    off();
+    const said = ctx.agent.store.messages(project.id, thread.id).map((m) => (m.block.type === "text" ? `${m.role}${m.block.steerId ? "(steer)" : ""}: ${m.block.text}` : `${m.role}: ${m.block.type}`));
+    console.log(said.join("\n"));
+    expect(await taken).toBe(true);
+    expect(ctx.agent.store.runs(project.id, thread.id)).toHaveLength(1);
+    const at = said.findIndex((line) => line.startsWith("user(steer)"));
+    expect(at).toBeGreaterThan(0);
+    expect(said.slice(at + 1).some((line) => /\bred\b/i.test(line))).toBe(true);
+  }, 180_000);
+
   it("conducts one real turn, calling tomrade tools over MCP", async () => {
     const settingsPath = path.join(os.tmpdir(), `tomrade-live-${Date.now()}.json`);
     const { ctx, items, project, board } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });

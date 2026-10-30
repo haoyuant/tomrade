@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
+import { codexMediaBlocks, codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
 import { engineLocale, JsonLinePeer, jsonRpc, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
 import { CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
@@ -129,12 +129,13 @@ export class CodexRuntime implements Runtime {
         this.asks.settle();
         return true;
       });
+      io.steersMedia?.();
       io.steerTo?.(async (steer) => {
         if (!turnId || over || turn.cancelled || !this.alive) return false;
         // known before the request: Codex may add it to the conversation before it answers
         forwarded.set(steer.id, steer.text);
         try {
-          await this.request("turn/steer", { threadId: this.session, expectedTurnId: turnId, clientUserMessageId: steer.id, input: [{ type: "text", text: steer.text, text_elements: [] }] });
+          await this.request("turn/steer", { threadId: this.session, expectedTurnId: turnId, clientUserMessageId: steer.id, input: codexMediaBlocks(steer.text, steer.media ?? []) });
           return true;
         } catch (error) {
           forwarded.delete(steer.id);

@@ -769,7 +769,21 @@ export function ErrorBlock({ text, details, engine, others, onOpenSettings, onRe
 }
 
 /** A message written while a run works: it goes out by itself once the run ends well. */
-export type Queued = { id: string; text: string; focus: FocusRef[] };
+export type Queued = {
+  id: string;
+  text: string;
+  focus: FocusRef[];
+  attachments?: File[];
+  /** Its send failed: it waits for the person, or every turn of the queue would try it again. */
+  stuck?: boolean;
+};
+
+export function QueuedFiles({ entry }: { entry: Queued }) {
+  const { t } = useI18n();
+  const files = entry.attachments ?? [];
+  if (!files.length) return null;
+  return <span className="q-files" title={files.map((file) => file.name).join("\n")}>{t("agentPanel.queuedAttachments", { n: files.length })}</span>;
+}
 
 export function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, onSteer }: { entry: Queued; held: boolean; canSend: boolean; onSave: (text: string) => void; onRemove: () => void; onSendNow: () => void; onSteer?: () => void }) {
   const { t } = useI18n();
@@ -792,12 +806,13 @@ export function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, o
             if (isCancelKey(e)) { e.preventDefault(); e.stopPropagation(); setEditing(null); }
             else if (isCommitKey(e) && !e.shiftKey) {
               e.preventDefault();
-              if (editing.trim()) onSave(editing.trim()); else onRemove();
+              if (editing.trim() || entry.attachments?.length) onSave(editing.trim()); else onRemove();
               setEditing(null);
             }
           }}
         />
       )}
+      <QueuedFiles entry={entry} />
       <span className="q-actions">
         {held && canSend && (
           <button type="button" className="btn btn-ghost btn-xs" onClick={onSendNow}>{t("agentPanel.queuedSendNow")}</button>

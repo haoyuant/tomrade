@@ -2311,6 +2311,7 @@ export const zhHant: PartialMessages = {
     guideHelp: "在對話裡顯示這份指南（不會傳給助理）",
     guideAttach: "附加檔案——也可以拖進來或貼上",
     queueOrSteerPlaceholder: "Enter 排隊 · {{key}} 立即插話…",
+    queuedAttachments: "{{n}} 個附件",
     steerNow: "立即插話",
     imGroup: "IM 群組",
     imGroupPrivate: "在這裡發起的輪次只留在桌面，{{group}} 看不到。",

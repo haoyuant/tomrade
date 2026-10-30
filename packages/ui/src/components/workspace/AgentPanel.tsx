@@ -21,7 +21,7 @@ import { openSettingsPane } from "~/lib/settingsHost";
 import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
-import { ImGroupShare, LiveReply, LiveWorkingLine, QueuedRow, type Queued } from "./agent-panel/blocks";
+import { ImGroupShare, LiveReply, LiveWorkingLine, QueuedFiles, QueuedRow, type Queued } from "./agent-panel/blocks";
 import { liveStore, useLive } from "./agent-panel/liveStore";
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
@@ -264,7 +264,6 @@ export function AgentPanel({
   });
   const acceptedMedia = mediaCapabilities.data?.input ?? [];
   const addAttachments = (files: File[]) => {
-    if (busy) return;
     if (attachments.length + files.length > 8) { setAttachmentError(t("agentPanel.tooManyAttachments")); return; }
     if (files.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
     if (files.some(file => !file.size || file.size > 32 * 1024 * 1024)) { setAttachmentError(t("agentPanel.attachmentSize")); return; }
@@ -386,9 +385,13 @@ export function AgentPanel({
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
 
-  /** `queued` sends a waiting message as it was written: its own focus, no attachments, the draft left alone. */
+  const uploadFiles = (target: string, files: File[]) => Promise.all(files.map(async file => invoke("agent.media.upload", projectId, target, {
+    name: file.name, mime: file.type, base64: await readAttachment(file)
+  })));
+
+  /** `queued` sends a waiting message as it was written: its own focus and attachments, the draft left alone. */
   const doSend = async (text = draft.trim(), queued?: Queued) => {
-    const files = queued ? [] : attachments;
+    const files = queued ? (queued.attachments ?? []) : attachments;
     if ((!text && !files.length) || busy || blocked || sending.current) return false;
     if (doneTicket) { setAskReopen(true); return false; }
     if (files.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return false; }
@@ -402,14 +405,13 @@ export function AgentPanel({
       if (!target) target = (await openThread({ boardId })).id;
       else if (detail.data?.messages.length === 0 && !usable(currentEngineId) && usable(defaultEngine)) await setEngine.mutateAsync({ threadId: target, engineId: defaultEngine });
       pickThread(target);
-      const refs = await Promise.all(files.map(async file => invoke("agent.media.upload", projectId, target!, {
-        name: file.name, mime: file.type, base64: await readAttachment(file)
-      })));
+      const refs = await uploadFiles(target, files);
       following.current = true;
       const focusNow = queued ? queued.focus : sendFocus;
       const { runId } = await send.mutateAsync({ threadId: target, text, focus: focusNow.length ? focusNow : undefined, attachments: refs.length ? refs : undefined });
       setSentRun(runId);
-      if (!queued) { if (text) history.remember(text); setDraft(""); setAttachments([]); }
+      // what was dropped in during the upload stays for the next message
+      if (!queued) { if (text) history.remember(text); setDraft(""); setAttachments(previous => previous.filter(file => !files.includes(file))); }
       return true;
     } catch (error) { setAttachmentError(readableError(error)); return false; }
     finally { sending.current = false; setUploading(false); }
@@ -439,22 +441,31 @@ export function AgentPanel({
   const lastRun = runList[runList.length - 1];
   const caughtUp = !sentRun || runList.some((r) => r.id === sentRun);
   const queueHeld = !lastRun || lastRun.status !== "done" || !!pending || !!doneTicket || blocked;
-  const sendQueue = useSendQueue({ projectId, threadId, engine, currentEngineId, runningRun, messages: detail.data?.messages, busy, held: queueHeld, caughtUp, sending, doSend });
+  // Holds the queue like a send does, so a message waiting to steer is not sent out from under it.
+  const steerFiles = async (inThread: string, entry: Queued) => {
+    if (sending.current) return false;
+    sending.current = true; setUploading(true);
+    try { return await invoke("agent.steer", projectId, inThread, entry.id, entry.text, await uploadFiles(inThread, entry.attachments ?? [])); }
+    finally { sending.current = false; setUploading(false); }
+  };
+  const sendQueue = useSendQueue({ projectId, threadId, engine, currentEngineId, runningRun, messages: detail.data?.messages, busy, held: queueHeld, caughtUp, sending, doSend, steerFiles });
   const { queue, steeringNow } = sendQueue;
 
-  const enqueue = () => {
+  const takeDraft = (): Queued => {
     const text = draft.trim();
-    if (!threadId || !text || attachments.length || blocked) return;
-    sendQueue.editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
-    history.remember(text);
+    if (text) history.remember(text);
     setDraft("");
+    setAttachments([]);
+    return { id: crypto.randomUUID(), text, focus: sendFocus, ...(attachments.length ? { attachments } : {}) };
+  };
+  const enqueue = () => {
+    if (!threadId || (!draft.trim() && !attachments.length) || blocked) return;
+    const entry = takeDraft();
+    sendQueue.editQueue(threadId, (q) => [...q, entry]);
   };
   const steerDraft = () => {
-    const text = draft.trim();
-    if (!threadId || !runningRun || !text || attachments.length || blocked) return;
-    history.remember(text);
-    setDraft("");
-    void sendQueue.steer(threadId, { id: crypto.randomUUID(), text, focus: sendFocus });
+    if (!threadId || !runningRun || (!draft.trim() && !attachments.length) || blocked) return;
+    void sendQueue.steer(threadId, takeDraft());
   };
 
   const reopenAndSend = async () => {
@@ -1051,7 +1062,7 @@ export function AgentPanel({
           <QueuedRow
             key={entry.id}
             entry={entry}
-            held={!runningRun && queueHeld}
+            held={(!runningRun && queueHeld) || !!entry.stuck}
             canSend={!busy}
             onSave={(text) => sendQueue.editQueue(threadId, (q) => q.map((x) => (x.id === entry.id ? { ...x, text } : x)))}
             onRemove={() => sendQueue.editQueue(threadId, (q) => q.filter((x) => x.id !== entry.id))}
@@ -1063,6 +1074,7 @@ export function AgentPanel({
           <div key={entry.id} className="ai-queued is-steering">
             <span className="q-state">{t("agentPanel.steering")}</span>
             <p className="q-text" title={entry.text}>{entry.text}</p>
+            <QueuedFiles entry={entry} />
           </div>
         ))}
         {slash.pick && <SlashMenu matches={slash.matches} pick={slash.pick} onRun={runSlash} />}
@@ -1109,7 +1121,7 @@ export function AgentPanel({
           onStop={runningRun ? () => cancel.mutate(runningRun.id) : undefined}
         />
         {!!attachments.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-          {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={busy} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
+          {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={uploading} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
         </div>}
         {attachmentError && <p className="ai-error" role="alert">{attachmentError}</p>}
         {askReopen && doneTicket && (

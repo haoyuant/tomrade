@@ -1,3 +1,4 @@
+import type { MediaContent } from "./media.js";
 import type { TurnIO, TurnInput } from "./turn.js";
 
 export function attachedMedia(input: TurnInput, io: TurnIO) {
@@ -6,21 +7,29 @@ export function attachedMedia(input: TurnInput, io: TurnIO) {
   return refs.map(ref => io.media!.read(ref.id));
 }
 
-export function claudeMediaInput(input: TurnInput, io: TurnIO, text: string) {
+export function claudeMediaBlocks(text: string, media: MediaContent[]) {
   return [
     { type: "text" as const, text },
-    ...attachedMedia(input, io).map(media => ({
+    ...media.map(media => ({
       type: media.mime === "application/pdf" ? "document" as const : "image" as const,
       source: { type: "base64" as const, media_type: media.mime, data: media.base64 }
     }))
   ];
 }
 
-export function codexMediaInput(input: TurnInput, io: TurnIO, text: string) {
+export function claudeMediaInput(input: TurnInput, io: TurnIO, text: string) {
+  return claudeMediaBlocks(text, attachedMedia(input, io));
+}
+
+export function codexMediaBlocks(text: string, media: MediaContent[]) {
   return [
     { type: "text", text, text_elements: [] },
-    ...attachedMedia(input, io).map(media => ({ type: media.mime.startsWith("audio/") ? "audio" : "image", url: `data:${media.mime};base64,${media.base64}` }))
+    ...media.map(media => ({ type: media.mime.startsWith("audio/") ? "audio" : "image", url: `data:${media.mime};base64,${media.base64}` }))
   ];
+}
+
+export function codexMediaInput(input: TurnInput, io: TurnIO, text: string) {
+  return codexMediaBlocks(text, attachedMedia(input, io));
 }
 
 /** Codex app-server imageGeneration items contain final base64 image bytes. */

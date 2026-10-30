@@ -2238,6 +2238,7 @@ export const es: PartialMessages = {
     guideHelp: "Mostrar esta guía en la conversación (no se envía nada)",
     guideAttach: "Adjuntar archivos, o arrastrarlos o pegarlos",
     queueOrSteerPlaceholder: "Intro pone en cola · {{key}} redirige ya…",
+    queuedAttachments: "{{n}} adjuntos",
     steerNow: "Redirigir ya",
     imGroup: "Grupo de mensajería",
     imGroupPrivate: "Los turnos que inicias aquí se quedan en el escritorio; {{group}} no los ve.",

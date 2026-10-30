@@ -25,6 +25,7 @@ const check = (name, cond, detail) => {
   if (!cond && detail !== undefined) console.log(`  saw ${JSON.stringify(detail)}`);
 };
 const LINES = ["step one", "step two", "all done"];
+const PICTURES = { input: ["image/png"], output: [] };
 
 const run = async () => {
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]] });
@@ -38,6 +39,7 @@ const run = async () => {
     id: "slow",
     title: "Slow",
     author: "ai:slow",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn(_input, io) {
       await sleep(600);
@@ -55,12 +57,15 @@ const run = async () => {
     title: "Steerable",
     author: "ai:steerable",
     steering: "queue",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn(_input, io) {
+      io.steersMedia();
       for (let i = 0; i < 4; i++) {
         await sleep(800);
-        const heard = io.takeSteers();
-        if (heard.length) io.emit({ type: "text", text: `heard: ${heard.join(" + ")}` });
+        const heard = io.takeSteerInputs();
+        const files = heard.flatMap((s) => s.media ?? []).map((m) => m.name);
+        if (heard.length) io.emit({ type: "text", text: `heard: ${heard.map((s) => s.text).join(" + ")}${files.length ? ` with ${files.join(", ")}` : ""}` });
       }
       io.emit({ type: "text", text: "steady" });
       return { stop: "end" };
@@ -71,6 +76,7 @@ const run = async () => {
     title: "Deaf",
     author: "ai:deaf",
     steering: "queue",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn() {
       await sleep(1200);
@@ -398,6 +404,60 @@ const run = async () => {
   await sleep(4200);
   check("it then goes out after the turn", (await asked()).includes("queue me instead"));
   await sleep(4000);
+
+  // ── attachments while a run works: queued with the message, or steered in with it ──
+  const fileScript = (name, type) => `(() => { const data = new DataTransfer(); data.items.add(new File([Uint8Array.of(137, 80, 78, 71)], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} })); return data; })()`;
+  const paste = (name, type = "image/png") => $(`document.querySelector('.ai-input').dispatchEvent(new ClipboardEvent('paste', { clipboardData: ${fileScript(name, type)}, bubbles: true, cancelable: true }));true`);
+  const drop = (name, type = "image/png") => $(`document.querySelector('.ai-foot').dispatchEvent(new DragEvent('drop', { dataTransfer: ${fileScript(name, type)}, bubbles: true, cancelable: true }));true`);
+  // the composer's file chips, not the context chips beside them
+  const attached = () => $(`[...document.querySelectorAll('.ai-foot .tag > button[aria-label^="Remove "]')].map((b) => b.getAttribute('aria-label').slice(7))`);
+  const sentFiles = (thread, text) => ctx.agent.thread(alpha.id, thread).messages.filter((m) => m.role === "user" && m.block.type === "text" && m.block.text === text).flatMap((m) => m.block.attachments ?? []).map((m) => m.name);
+  let fileThread = await onEngine("slow");
+  await send("working");
+  await sleep(300);
+  check("the attach button stays open while a run works", await $(`!document.querySelector('.ai-composer > .btn-icon').disabled`));
+  await paste("pasted.png");
+  await drop("dropped.png");
+  await sleep(150);
+  check("a picture pasted or dropped while a run works lands in the composer", (await attached()).join("|") === "pasted.png|dropped.png", await attached());
+  await paste("notes.txt", "text/plain");
+  await sleep(150);
+  check("a kind the agent cannot take still says so", /does not support this attachment/.test(await $(`document.querySelector('.ai-foot .ai-error')?.textContent ?? ''`)), await $(`document.querySelector('.ai-foot .ai-error')?.textContent ?? ''`));
+  await setDraft("with pictures");
+  await key({});
+  await sleep(200);
+  q = await queued();
+  check("Enter queues the message with its pictures, and the row says so", q.length === 1 && q[0].text === "with pictures" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "2 attached" && !(await attached()).length, q);
+  await until(() => sentFiles(fileThread, "with pictures").length > 0, 60);
+  check("once the turn ends the pictures go out with the message", sentFiles(fileThread, "with pictures").join("|") === "pasted.png|dropped.png", sentFiles(fileThread, "with pictures"));
+  await until(async () => !(await panel()).working, 60);
+
+  fileThread = await onEngine("steerable");
+  await send("paint it again");
+  await sleep(300);
+  await paste("blue.png");
+  await sleep(100);
+  await setDraft("like this");
+  await steerKey();
+  await until(async () => (await agentSaid()).includes("heard: like this with blue.png"), 30);
+  check("a steer with a picture reaches the running turn when the agent takes them", (await agentSaid()).includes("heard: like this with blue.png") && !(await attached()).length && (await queued()).length === 0, await agentSaid());
+  check("and the picture stays with the line in the transcript", sentFiles(fileThread, "like this").join("|") === "blue.png");
+  await until(async () => !(await panel()).working, 60);
+  check("all of it one run", ctx.agent.store.runs(alpha.id, fileThread).length === 1);
+
+  fileThread = await onEngine("deaf");
+  await send("cannot see");
+  await sleep(200);
+  await paste("kept.png");
+  await sleep(100);
+  await setDraft("look anyway");
+  await steerKey();
+  await sleep(300);
+  q = await queued();
+  check("an agent that takes no picture mid-turn gets the message queued, with a word about it", q.length === 1 && q[0].text === "look anyway" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "1 attached" && (await $(`document.body.textContent.includes("can't take messages mid-turn")`)), q);
+  await until(() => sentFiles(fileThread, "look anyway").length > 0, 40);
+  check("and the picture goes out with it after the turn", sentFiles(fileThread, "look anyway").join("|") === "kept.png", sentFiles(fileThread, "look anyway"));
+  await until(async () => !(await panel()).working, 40);
 
   // ── ↑ brings back what was sent ──────────────────────────────────────
   await onEngine("slow");

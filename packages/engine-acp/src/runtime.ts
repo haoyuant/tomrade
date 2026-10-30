@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
-import { attachedMedia, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, withRecap, type MediaContent, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
 import { engineLocale, KIT_WORDS, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
@@ -14,6 +14,8 @@ type Json = Record<string, any>;
 /** What Hermes answers a `/steer` with (acp_adapter/commands.py): said to the client, never part of the reply. */
 const STEER_QUEUED = "⏩ Steer queued for the active turn: ";
 const STEER_SAID = /^(⏩ Steer queued for the active turn: |⚠️ Steer failed: |No active turn — queued for the next turn\.)/;
+
+const imageBlocks = (media: MediaContent[]): Json[] => media.map((m) => ({ type: "image", data: m.base64, mimeType: m.mime }));
 
 /** A steer as the agent gets it: as written, plus a word for when it lands after the reply was finished. */
 const steerText = (text: string) => `${text}\n\n(Sent while you were working. If your reply is already finished, answer only what this adds or changes; do not repeat it.)`;
@@ -248,6 +250,10 @@ export class AcpRuntime implements Runtime {
     return true;
   }
 
+  private seesImages(): boolean {
+    return this.caps.promptCapabilities?.image === true;
+  }
+
   private prompt(input: TurnInput, io: TurnIO): Json[] {
     const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
     let text = turnPrompt(input, io, { staleIndex: stale });
@@ -255,9 +261,9 @@ export class AcpRuntime implements Runtime {
     // A new session on a thread with history (the agent cannot reopen, or the thread came from another engine) gets the conversation too.
     if (this.brief) { text = `${sessionSystem(input, this.agent.title)}\n\n${withRecap(io.recap?.(), text)}`; this.brief = false; }
     const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/"));
-    const seesImages = this.caps.promptCapabilities?.image === true;
+    const seesImages = this.seesImages();
     if (images.length && !seesImages) io.emit({ type: "note", text: `${this.agent.title} takes no images in a prompt, so the attached ones were left out` });
-    return [{ type: "text", text }, ...(seesImages ? images.map((media) => ({ type: "image", data: media.base64, mimeType: media.mime })) : [])];
+    return [{ type: "text", text }, ...(seesImages ? imageBlocks(images) : [])];
   }
 
   private explain(error: unknown): string {
@@ -357,7 +363,7 @@ export class AcpRuntime implements Runtime {
         forwarded.set(steer.id, text);
         try {
           if (this.agent.steer === "method") {
-            const answer = await this.conn.request("session/steer", { sessionId: this.session, contentBlocks: [{ type: "text", text }], clientUserMessageId: steer.id, ...(owner ? { expectedRequestId: owner } : {}) });
+            const answer = await this.conn.request("session/steer", { sessionId: this.session, contentBlocks: [{ type: "text", text }, ...imageBlocks(steer.media ?? [])], clientUserMessageId: steer.id, ...(owner ? { expectedRequestId: owner } : {}) });
             if (answer?.steered === true) { owner = typeof answer.ownerRequestId === "string" ? answer.ownerRequestId : owner; return true; }
           } else {
             // Answered at once while the turn runs; after it, Hermes runs it as a prompt of its own, which this turn waits out.
@@ -449,6 +455,8 @@ export class AcpRuntime implements Runtime {
       }
       metrics.readyMs = performance.now() - start;
       if (turn.cancelled) return result("cancelled");
+      // Known once it is open. `/steer` is a line of text; `session/steer` takes the blocks a prompt does.
+      if (this.agent.steer === "method" && this.seesImages()) io.steersMedia?.();
       const blocks = this.prompt(input, io);
       prompted = true;
       const response = await this.conn!.request("session/prompt", { sessionId: this.session, prompt: blocks }, 0);

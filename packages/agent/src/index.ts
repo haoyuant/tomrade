@@ -1,5 +1,5 @@
 import type {} from "cordis";
-export { attachedMedia, claudeMediaInput, codexMediaInput, publishNativeImage } from "./native-media.js";
+export { attachedMedia, claudeMediaBlocks, claudeMediaInput, codexMediaBlocks, codexMediaInput, publishNativeImage } from "./native-media.js";
 export { AgentMediaStore, MAX_MEDIA_BYTES, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 
 export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type GeneralPreparation, type GeneralStartOptions, type NewThreadOptions, type PlaybookRecommendation, type ThreadDetail, type ThreadOrigins, type WorkdirStatus } from "./service.js";
@@ -38,6 +38,7 @@ export {
   type OpenDependency,
   type RetryState,
   type TurnInput,
+  type SteerInput,
   type TurnIO,
   type TurnPurpose,
   type TurnResult

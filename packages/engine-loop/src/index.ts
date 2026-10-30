@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptParts, type AgentRequest, type AgentTurnInfo, type Engine, type EngineStepLimit, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptParts, type AgentRequest, type AgentTurnInfo, type Engine, type EngineStepLimit, type SteerInput, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
@@ -204,11 +204,14 @@ export function withoutMedia(messages: Message[], kinds: readonly InputModality[
  * What the person sent while the turn ran, worded so the model takes it as a change of course.
  * After a finished reply the model must not write it again: the person has already read it.
  */
-export const steering = (texts: string[], afterReply = false) => ({
-  type: "text" as const,
-  text: texts.map((t) => `(The user added while you were working: ${t})`).join("\n") +
-    (afterReply ? "\n(Your reply above is already on the user's screen. Answer only what this adds or changes; do not repeat it.)" : "")
-});
+export const steering = (steers: SteerInput[], afterReply = false): Message["content"] => [
+  {
+    type: "text",
+    text: steers.map((s) => `(The user added while you were working: ${s.text})`).join("\n") +
+      (afterReply ? "\n(Your reply above is already on the user's screen. Answer only what this adds or changes; do not repeat it.)" : "")
+  },
+  ...steers.flatMap((s) => (s.media ?? []).map((media) => ({ type: "media" as const, media })))
+];
 
 /** The system prompt in two parts: the stable one a provider caches, and what this turn changes after it. */
 const system = (input: TurnInput, io: TurnIO, options: LoopOptions): { system: string; systemTail?: string } => {
@@ -312,6 +315,7 @@ export function createLoopEngine(ctx: Context): Engine {
       };
       const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
+      if (model.capabilities.mediaInput?.length) io.steersMedia?.();
       // A workflow that finished on the user's answer may have spoken last. A request may not end on the
       // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
       if (messages.at(-1)?.role === "assistant") messages.push({ role: "user", content: [{ type: "text", text: "(That ran in reply to the user's last message. Reply to the user now.)" }] });
@@ -455,9 +459,9 @@ export function createLoopEngine(ctx: Context): Engine {
         }
         if (!collected.toolCalls.length) {
           // A message that came in while the model wrote its last reply still belongs to this turn.
-          const late = io.takeSteers?.() ?? [];
+          const late = io.takeSteerInputs?.() ?? [];
           if (late.length) {
-            messages.push(assistantMessage(collected), { role: "user", content: [steering(late, !!collected.text.trim())] });
+            messages.push(assistantMessage(collected), { role: "user", content: steering(late, !!collected.text.trim()) });
             continue;
           }
           // A plugin whose condition does not hold yet keeps the turn going, a few times at most.
@@ -521,8 +525,8 @@ export function createLoopEngine(ctx: Context): Engine {
           messages.push(answered);
           return { stop: "asked", ...spent() };
         }
-        const steered = io.takeSteers?.() ?? [];
-        if (steered.length) answered.content.push(steering(steered));
+        const steered = io.takeSteerInputs?.() ?? [];
+        if (steered.length) answered.content.push(...steering(steered));
         messages.push(answered);
         if (step === options.maxSteps - 1)
           messages.push({ role: "user", content: [{ type: "text", text: "(budget nearly spent: wrap up — summarize what happened, make no more writes)" }] });

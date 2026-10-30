@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
+import { claudeMediaBlocks, claudeMediaInput, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
 import { engineLocale, KIT_WORDS, localCli, MessageQueue, MODE_ALLOWS, OpenAsks, runtimeDirectory, runTurn, sessionSystem, spawnCli, STDERR_CAP, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
 import { lostConversation } from "./cli.js";
 import { ClaudeCodeOptions, retryReason } from "./engine.js";
@@ -126,11 +126,14 @@ export class ClaudeRuntime implements Runtime {
         this.asks.settle();
         return true;
       });
+      io.steersMedia?.();
       io.steerTo?.(async (steer) => {
         if (!prompted || over || turn.cancelled || !this.alive) return false;
         const uuid = randomUUID();
         steers.set(uuid, steer.id); unplaced.add(uuid);
-        this.queue.push({ type: "user", message: { role: "user", content: steerPrompt(steer.text) }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
+        const text = steerPrompt(steer.text);
+        const content = steer.media?.length ? claudeMediaBlocks(text, steer.media) as SDKUserMessage["message"]["content"] : text;
+        this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
         return true;
       });
       // A turn can span the CLI's turns for late steers: their figures add up.
