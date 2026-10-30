@@ -80,6 +80,23 @@ function pruneConpty(modules, platform, arch) {
 }
 exports.pruneConpty = pruneConpty;
 
+/**
+ * Glass's blur on Windows 10 calls DWM through koffi (src/window-material.ts), which loads its binary from
+ * @koromix/koffi-<platform>-<arch>. A Windows app keeps its own arch's; other apps carry no koffi at all.
+ */
+function pruneKoffi(modules, platform, arch) {
+  const scope = path.join(modules, "@koromix");
+  if (platform !== "win32") {
+    for (const gone of ["koffi", "@koromix"]) fs.rmSync(path.join(modules, gone), { recursive: true, force: true });
+    return;
+  }
+  const own = `koffi-win32-${arch}`;
+  // without it Glass on Windows 10 quietly keeps its painted room: fail the build, not the look
+  if (!fs.existsSync(path.join(scope, own, `win32_${arch}`, "koffi.node"))) throw new Error(`koffi has no prebuilt win32-${arch}`);
+  for (const name of fs.readdirSync(scope)) if (name !== own) fs.rmSync(path.join(scope, name), { recursive: true, force: true });
+}
+exports.pruneKoffi = pruneKoffi;
+
 const TS_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
 const DECLARATION = /\.d\.(?:ts|mts|cts)$/;
 const NOTES = /^(?:readme|changelog|history)(?:\.(?:md|markdown|txt))?$/i;
@@ -146,11 +163,11 @@ exports.pruneUnused = pruneUnused;
 /**
  * What stays real files beside app.asar, in app.asar.unpacked: what another program starts or reads by path (Pi and
  * npm, run by the app's binary as Node and by cmd; esbuild's binary; the icons the system shows), the native SQLite
- * addon, the official plugins, and the pty host with all it loads (node-pty and its ConPTY runtime, xterm's headless
- * terminal), which outlives the app and so holds no part of app.asar.
+ * addon and koffi's, the official plugins, and the pty host with all it loads (node-pty and its ConPTY runtime,
+ * xterm's headless terminal), which outlives the app and so holds no part of app.asar.
  */
 const UNPACKED =
-  "{vendor,official-plugins,assets,node_modules/@esbuild,node_modules/better-sqlite3,node_modules/node-pty,node_modules/@xterm/headless,node_modules/@tomradex/pty-host}";
+  "{vendor,official-plugins,assets,node_modules/@esbuild,node_modules/better-sqlite3,node_modules/node-pty,node_modules/@xterm/headless,node_modules/@tomradex/pty-host,node_modules/koffi,node_modules/@koromix}";
 
 /** electron-builder's app.asar, back into resources/app to be pruned like an app that has none. */
 function unpackAsar(resources) {
@@ -189,6 +206,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
   prune("@anthropic-ai", (name) => name.startsWith("claude-agent-sdk-"));
   pruneSqlite(modules, electronPlatformName, own);
   pruneConpty(modules, electronPlatformName, own);
+  pruneKoffi(modules, electronPlatformName, own);
   restoreSdkDeclarations(modules);
   prune("@esbuild", (name) => {
     const [, os, cpu] = name.match(/^([a-z0-9]+)-([a-z0-9]+)$/) ?? [];

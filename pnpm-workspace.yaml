@@ -9,6 +9,8 @@ allowBuilds:
   # Squirrel.Windows only; the Windows build is NSIS.
   electron-winstaller: false
   esbuild: true
+  # Loads the prebuilt binary its @koromix/koffi-<os>-<arch> package brings; never compiled.
+  koffi: false
   node-pty: false
 
 # The editor's parsers ride on caret ranges; hold them at releases that have

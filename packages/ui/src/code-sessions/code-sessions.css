@@ -1,5 +1,8 @@
 /* The code sessions window: a layout of terminals with the session bar on its right. Colours are the app's theme variables. */
 html, body, #root { height: 100%; margin: 0; }
+/* The caption buttons' strip, where the window has no frame (Glass on Windows 10): as in the main window. */
+.caption-strip { height: env(titlebar-area-height, 0px); -webkit-app-region: drag; }
+#root { height: calc(100% - env(titlebar-area-height, 0px)); }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); overflow: hidden; }
 
 /* One gutter for the window: the top bar's sides, the cells' and the overview's margin, the session bar's padding. */

@@ -569,6 +569,10 @@ html[data-traffic-lights="on"] {
  * [hidden]{display:none}. This keeps the attribute authoritative. */
 [hidden] { display: none !important; }
 html, body, #root { height: 100%; }
+/* Frosted on Windows 10 the window has no frame: its caption buttons sit over this strip, which moves the window as
+   the title bar did. No height elsewhere. */
+.caption-strip { height: env(titlebar-area-height, 0px); -webkit-app-region: drag; }
+#root { height: calc(100% - env(titlebar-area-height, 0px)); }
 body {
   margin: 0;
   background: var(--bg);
