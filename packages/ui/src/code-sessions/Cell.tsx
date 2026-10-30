@@ -313,7 +313,7 @@ export const Cell = memo(function Cell({ leaf, number, pane, session, terminal, 
       ) : session ? (
         withMenu(
           <div className="cs-cell-empty">
-            {session.mode === "run" ? say("runMode") : <NotHere session={session} cell={leaf.id} locale={look.locale} picker={<NewTerminal places={places} initial={session.worktree ?? session.cwd} ready={ready} onOpen={onNewTerminal} />} onTalk={() => onTalk(session)} look={look} />}
+            {session.mode === "run" ? say("runMode") : <NotHere session={session} cell={leaf.id} locale={look.locale} picker={<NewTerminal places={places} ready={ready} onOpen={onNewTerminal} />} onTalk={() => onTalk(session)} look={look} />}
           </div>
         )
       ) : closed ? (
