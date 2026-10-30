@@ -23,6 +23,7 @@ import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { askPanel } from "~/lib/panelRequests";
 import { openCapabilities } from "~/lib/capabilities";
+import { paletteFilter } from "~/lib/paletteFilter";
 import { PaletteSessions, PaletteStart, useLooseStart } from "./PaletteSessions";
 
 export interface PaletteActions {
@@ -170,6 +171,48 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     }))
   ];
 
+  const middleGroups = (
+    <>
+      <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
+        {ws.views.map((view) => (
+          <Command.Item key={view.id} value={`${view.name} ${LAYOUT_LABEL[view.layout].label}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
+            <Icon name={viewIcon(view.icon)} size={14} style={{ color: "var(--meta)" }} />
+            <span className="p-label">
+              {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
+            </span>
+            <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+
+      <Command.Group heading={t("commandPalette.workstreamsGroup")} className="eyebrow palette-group">
+        {ws.boards.map((b) => (
+          <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
+            <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
+            <span className="p-label">{b.name}</span>
+            <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+
+      <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
+        {shownTickets.map((item) => (
+          <Command.Item
+            key={item.id}
+            value={`${item.key} ${item.title}`}
+            className="palette-row"
+            // the pane looks the issue up across the project, so opening it in place beats navigating away
+            onSelect={() => run(() => ws.select(item.id))}
+          >
+            <StatusMark status={item.status} size={14} />
+            <span className="p-label">{item.title}</span>
+            <span className="card-id">{item.key}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+    </>
+  );
+
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -183,6 +226,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
           <RadixDialog.Title className="sr-only">{t("commandPalette.title")}</RadixDialog.Title>
           <Command
             loop
+            filter={paletteFilter}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isComposing(e)) return;
               shift.current = e.shiftKey;
@@ -221,45 +265,8 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
 
               {!startMode && (
               <>
-              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} onStart={() => setStartHere(true)} />}
-
-              <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
-                {ws.views.map((view) => (
-                  <Command.Item key={view.id} value={`${view.name} ${LAYOUT_LABEL[view.layout].label}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
-                    <Icon name={viewIcon(view.icon)} size={14} style={{ color: "var(--meta)" }} />
-                    <span className="p-label">
-                      {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
-                    </span>
-                    <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
-
-              <Command.Group heading={t("commandPalette.workstreamsGroup")} className="eyebrow palette-group">
-                {ws.boards.map((b) => (
-                  <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
-                    <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
-                    <span className="p-label">{b.name}</span>
-                    <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
-
-              <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
-                {shownTickets.map((item) => (
-                  <Command.Item
-                    key={item.id}
-                    value={`${item.key} ${item.title}`}
-                    className="palette-row"
-                    // the pane looks the issue up across the project, so opening it in place beats navigating away
-                    onSelect={() => run(() => ws.select(item.id))}
-                  >
-                    <StatusMark status={item.status} size={14} />
-                    <span className="p-label">{item.title}</span>
-                    <span className="card-id">{item.key}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
+              {/* what ended is listed after the tickets: a ticket typed for is not pushed out of sight by old conversations */}
+              {dock ? <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} onStart={() => setStartHere(true)}>{middleGroups}</PaletteSessions> : middleGroups}
 
               {shownFiles.length > 0 && (
                 <Command.Group heading={t("notes.paletteFiles")} className="eyebrow palette-group">

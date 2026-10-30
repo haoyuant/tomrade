@@ -3,6 +3,7 @@ import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { ReviewHit, SessionRow, TicketRow } from "@tomradex/code-sessions";
 import { isComposing } from "~/lib/keys";
+import { LOOK_BACK, paletteFilter } from "~/lib/paletteFilter";
 import { onReviewFound, send } from "./bridge";
 import { Mark, rowAgent, rowName, rowSaid, rowTitle } from "./cards";
 import { keyLabel } from "./keys";
@@ -75,14 +76,14 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, ticket
     const n = cellOf(r);
     return n ? say("paletteToCell", { n }) : say("paletteIntoCell");
   };
-  const row = (r: HereRow, onSelect: () => void = () => onRow(r), inApp = false) => {
+  const row = (r: HereRow, onSelect: () => void = () => onRow(r), inApp = false, ended = false) => {
     const status = statusOf(r);
     const name = rowName(r, say);
     const title = rowTitle(r, say);
     const said = rowSaid(r, status, say, words);
     const agent = rowAgent(r);
     return (
-      <Command.Item key={r.id} value={`${name} ${title ?? ""} ${agent ?? ""} ${said ?? ""} ${r.id}`} className="palette-row" data-row={r.id} onSelect={() => choose(onSelect)}>
+      <Command.Item key={r.id} value={`${name} ${title ?? ""} ${agent ?? ""} ${said ?? ""} ${r.id}`} keywords={ended ? [LOOK_BACK, name, title ?? ""] : undefined} className="palette-row" data-row={r.id} onSelect={() => choose(onSelect)}>
         <span className="palette-mark"><Mark status={status} /></span>
         <span className="p-label">
           {name}
@@ -107,7 +108,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, ticket
         <RadixDialog.Overlay className="scrim" />
         <RadixDialog.Content className="palette" aria-label={say("paletteTitle")} data-testid="cs-palette" onEscapeKeyDown={(e) => { if (isComposing(e)) e.preventDefault(); }}>
           <RadixDialog.Title className="sr-only">{say("paletteTitle")}</RadixDialog.Title>
-          <Command loop>
+          <Command loop filter={paletteFilter}>
             <Command.Input className="palette-input" placeholder={say("paletteSearch")} aria-label={say("paletteSearch")} value={search} onValueChange={setSearch} />
             <Command.List className="palette-list">
               <Command.Empty>
@@ -148,9 +149,9 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, ticket
               </Command.Group>
               {(ended.length > 0 || older.length > 0) && (
                 <Command.Group heading={say("paletteHistory")} className="eyebrow palette-group" data-testid="cs-palette-history">
-                  {ended.map((s) => row(asRow(s)))}
+                  {ended.map((s) => row(asRow(s), undefined, false, true))}
                   {older.map((r) => (
-                    <Command.Item key={`review:${r.id}`} value={`${r.key ?? ""} ${r.title} ${r.agent ?? ""} ${r.said ?? ""} review:${r.id}`} className="palette-row" data-row={`review:${r.id}`} onSelect={() => choose(() => send(r.kind === "session" ? { type: "show", sessionId: r.id } : { type: "showThread", threadId: r.id }))}>
+                    <Command.Item key={`review:${r.id}`} value={`${r.key ?? ""} ${r.title} ${r.agent ?? ""} ${r.said ?? ""} review:${r.id}`} keywords={[LOOK_BACK, r.key ?? "", r.title]} className="palette-row" data-row={`review:${r.id}`} onSelect={() => choose(() => send(r.kind === "session" ? { type: "show", sessionId: r.id } : { type: "showThread", threadId: r.id }))}>
                       <span className="palette-mark"><Mark status={r.kind === "idle" ? "idle" : "done"} /></span>
                       <span className="p-label">
                         {r.key ?? r.title}

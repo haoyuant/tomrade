@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, type MutableRefObject } from "react";
+import { useDeferredValue, useMemo, type MutableRefObject, type ReactNode } from "react";
 import { Command } from "cmdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineView, ThreadSummary } from "@tomradex/agent";
@@ -14,6 +14,7 @@ import { useI18n } from "~/lib/i18n";
 import { keyLabel, formatChord } from "~/lib/keybindings";
 import { askPanel, usePanelSession } from "~/lib/panelRequests";
 import { keys } from "~/lib/queries";
+import { LOOK_BACK } from "~/lib/paletteFilter";
 import { outcomeLine } from "~/lib/review";
 import { paletteSessionGroups, sessionBarRows, type BarRow } from "~/lib/sessionBar";
 import { beginStarting, startWays } from "~/lib/startWays";
@@ -134,9 +135,9 @@ export function PaletteStart({ start, words, fresh, run }: {
 
 /**
  * ⌘K's sessions and the things to do with them: waiting on you, in progress, ended. ↵ opens one here; ⇧↵ in a
- * Terminal window cell, where a terminal session has one.
+ * Terminal window cell, where a terminal session has one. What ended comes after `children`, the tickets among them.
  */
-export function PaletteSessions({ projectId, items, search, run, shift, onStart }: {
+export function PaletteSessions({ projectId, items, search, run, shift, onStart, children }: {
   projectId: string;
   items: Item[];
   /** What is typed in the palette: past two characters, the look back is searched for older ended sessions too. */
@@ -147,6 +148,8 @@ export function PaletteSessions({ projectId, items, search, run, shift, onStart 
   shift: MutableRefObject<boolean>;
   /** ⌘K turns to its ways to start a session, the words typed kept. */
   onStart: () => void;
+  /** The groups listed between what is to do and what ended. */
+  children?: ReactNode;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -198,8 +201,8 @@ export function PaletteSessions({ projectId, items, search, run, shift, onStart 
     openPanel();
     askPanel(r.kind === "thread" ? { kind: "review", threadId: r.id } : { kind: "review", sessionId: r.id });
   };
-  const olderRow = (r: ReviewRow) => (
-    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => openOlder(r))}>
+  const olderRow = (r: ReviewRow, ended = false) => (
+    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} keywords={ended ? [LOOK_BACK, ...r.tickets.map((x) => x.key), r.title] : undefined} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => openOlder(r))}>
       <span className="palette-mark"><StatusMark status={r.kind === "idle" ? "idle" : "done"} size={12} /></span>
       <span className="p-label">
         {r.tickets[0]?.key ?? r.title}
@@ -224,7 +227,7 @@ export function PaletteSessions({ projectId, items, search, run, shift, onStart 
   const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null) : doingText(r, t));
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const row = (r: BarRow) => (
-    <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} className="palette-row" data-session={r.key} data-depth={r.depth || undefined} onSelect={() => pick(r)}>
+    <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} keywords={r.status === "done" ? [LOOK_BACK, r.ticket ?? "", r.title] : undefined} className="palette-row" data-session={r.key} data-depth={r.depth || undefined} onSelect={() => pick(r)}>
       <span className="palette-mark"><StatusMark status={r.status} size={12} /></span>
       <span className="p-label">
         {name(r)}
@@ -253,7 +256,7 @@ export function PaletteSessions({ projectId, items, search, run, shift, onStart 
       {(groups.active.length > 0 || olderIdle.length > 0) && (
         <Command.Group heading={t("commandPalette.activeGroup")} className="eyebrow palette-group" data-testid="palette-active">
           {groups.active.map(row)}
-          {olderIdle.map(olderRow)}
+          {olderIdle.map((r) => olderRow(r))}
         </Command.Group>
       )}
       <Command.Group heading={t("commandPalette.doGroup")} className="eyebrow palette-group" data-testid="palette-do">
@@ -265,10 +268,11 @@ export function PaletteSessions({ projectId, items, search, run, shift, onStart 
           </Command.Item>
         ))}
       </Command.Group>
+      {children}
       {(groups.history.length > 0 || olderEnded.length > 0) && (
         <Command.Group heading={t("commandPalette.historyGroup")} className="eyebrow palette-group" data-testid="palette-history">
           {groups.history.map(row)}
-          {olderEnded.map(olderRow)}
+          {olderEnded.map((r) => olderRow(r, true))}
         </Command.Group>
       )}
     </>
