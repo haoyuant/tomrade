@@ -1650,11 +1650,16 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
  * renders inside a Radix dialog when the pane is expanded, and an OS menu
  * neither fights that focus trap nor gets clipped by the overlay, which
  * establishes a containing block with its own `overflow: hidden`. */
-.fset { position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+/* --fsel-shift pulls the select's hover box out past the text column so its
+   text lines up with the plain values above it. It is a relative offset, not
+   a negative margin: Chromium takes a flex item's negative margin out of the
+   select's own width, which clipped a two-character name to one and an
+   ellipsis (TOM-836). */
+.fset { --fsel-shift: 5px; position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
 .fsel {
   appearance: none; -webkit-appearance: none;
   max-width: 100%; min-width: 0;
-  margin-inline-start: -5px; padding: 2px 19px 2px 5px;
+  position: relative; inset-inline-start: calc(-1 * var(--fsel-shift)); padding: 2px 19px 2px 5px;
   font-family: var(--font-display); font-size: 14px; line-height: 1.4;
   color: inherit; background: transparent;
   border: 1px solid transparent; border-radius: var(--radius-sm);
@@ -1668,7 +1673,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* the chevron is the affordance, so it appears with the hover state and
    never occupies width the resting field has to reserve */
 .fchev {
-  position: absolute; right: 4px; color: var(--meta); pointer-events: none;
+  position: absolute; right: calc(4px + var(--fsel-shift)); color: var(--meta); pointer-events: none;
   opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .fset:hover .fchev, .fsel:focus-visible ~ .fchev { opacity: 1; }

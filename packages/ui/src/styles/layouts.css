@@ -93,7 +93,8 @@
 .tbl-title-text { min-width: 0; overflow-wrap: anywhere; }
 .tbl-dim { color: var(--meta); font-size: var(--text-sm); }
 .tbl-prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); }
-.tbl-cell .fsel, .tbl-cell .fval { margin-inline-start: 0; }
+.tbl-cell .fset { --fsel-shift: 0px; }
+.tbl-cell .fval { margin-inline-start: 0; }
 .tbl-cell .labset { flex-wrap: nowrap; }
 /* a group heading spans every column and reads like a lane head */
 .tbl-group .tbl-cell {
