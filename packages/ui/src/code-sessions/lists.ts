@@ -38,6 +38,12 @@ export function statusOf(r: HereRow): BarStatus {
 /** The session waits on a permission its card can answer: its agent declared the keys, and its screen shows that prompt. */
 export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== null && live(s) && isApprovalAsk(s);
 
+/** The choices of the question the session waits on, when its screen shows them as its hook told of them: picked from its card. */
+export const choicesOf = (s: SessionRow): string[] => (s.prompt === "choice" && live(s) && s.state === "waiting" && s.ask?.kind === "question" ? (s.ask.options ?? []) : []);
+
+/** Something on its screen waits on the person — a permission, a question, a prompt its agent's detection saw — whether or not its card can answer it. */
+export const asksOnScreen = (r: HereRow): boolean => (r.kind === "terminal" && !r.session ? r.terminal.agentStatus === "blocked" : r.kind !== "thread" && !!r.session && live(r.session) && r.session.state === "waiting" && !!r.session.ask);
+
 /** How long a row says it is new: the assistant panel's session bar's rule. */
 export const NEW_MS = 60_000;
 

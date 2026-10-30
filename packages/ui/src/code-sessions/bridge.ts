@@ -104,6 +104,9 @@ function answer(message: (token: number) => WindowMessage): Promise<void> {
 /** A terminal session's prompt allowed or denied from its card. */
 export const answerSession = (sessionId: string, which: "allow" | "deny"): Promise<void> => answer((token) => ({ type: "answer", sessionId, which, token }));
 
+/** A terminal session's question answered from its card with one of its choices. */
+export const chooseSession = (sessionId: string, choice: string): Promise<void> => answer((token) => ({ type: "choose", sessionId, choice, token }));
+
 /** An assistant conversation's question answered from its card. */
 export const answerThreadAsk = (threadId: string, questionId: string, value: string): Promise<void> => answer((token) => ({ type: "answerThread", threadId, questionId, value, token }));
 

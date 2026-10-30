@@ -11,7 +11,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, droppedPaste, dropsFolder, panesOf, readableDrops, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
-import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
+import { choiceOnScreen, PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/herdr";
@@ -776,8 +776,9 @@ function apply(ctx: Context, config: Config) {
   };
 
   /**
-   * What each waiting session's screen asks, read only for those whose agent declared its keys: a prompt seen stays
-   * known until the session's next event, none is looked for again at most every PROMPT_RECHECK_MS.
+   * What each waiting session's screen asks, read only for a permission whose agent declared its keys and a question
+   * whose choices its hook told of: a prompt seen stays known until the session's next event, none is looked for again
+   * at most every PROMPT_RECHECK_MS.
    */
   const prompts = new Map<string, { at: number; event: number | null; prompt: SessionRow["prompt"] }>();
   const withPrompts = async (rows: SessionRow[]): Promise<SessionRow[]> => {
@@ -785,14 +786,16 @@ function apply(ctx: Context, config: Config) {
     const now = Date.now();
     return Promise.all(
       rows.map(async (r) => {
-        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || r.ask?.kind !== "permission") {
+        const choices = r.ask?.kind === "question" ? (r.ask.options ?? null) : null;
+        if (!provider || r.endedAt !== null || !r.pane || r.state !== "waiting" || !(choices || (r.approval && r.ask?.kind === "permission"))) {
           prompts.delete(r.id);
           return r;
         }
         const known = prompts.get(r.id);
         if (known && known.event === r.lastEventAt && (known.prompt || now - known.at < PROMPT_RECHECK_MS)) return { ...r, prompt: known.prompt };
-        const seen = promptOnScreen((await provider.readTail(r.pane, PROMPT_LINES).catch(() => null)) ?? "");
-        const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
+        const screen = (await provider.readTail(r.pane, PROMPT_LINES).catch(() => null)) ?? "";
+        const seen = choices ? null : promptOnScreen(screen);
+        const prompt = choices ? (choiceOnScreen(screen, choices) ? "choice" : null) : seen ? (seen.allows ? "allow" : "deny") : null;
         prompts.set(r.id, { at: now, event: r.lastEventAt, prompt });
         return { ...r, prompt };
       })
@@ -1451,6 +1454,17 @@ function apply(ctx: Context, config: Config) {
     if (result === "notPrompt") await show(projectId, m.sessionId);
     return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
   };
+  // A card's choice for a terminal session's question, picked on its pane's menu.
+  const chooseSession = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "choose" }>) => {
+    const result = await ctx.codeLink.sessionChoose(projectId, m.sessionId, m.choice).catch(() => "failed" as const);
+    prompts.delete(m.sessionId);
+    if (result === "answered") {
+      post(win, { type: "toast", text: words()("answeredStay", { name: nameOf(projectId, m.sessionId) }) });
+      return void refresh(projectId);
+    }
+    if (result === "notPrompt") await show(projectId, m.sessionId);
+    return post(win, { type: "toast", text: words()(result === "notPrompt" ? "choiceInPane" : "answerNotTaken") });
+  };
   // A card's choice for an assistant conversation's question.
   const answerThread = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "answerThread" }>) => {
     const agent = ctx.get("agent");
@@ -1635,6 +1649,13 @@ function apply(ctx: Context, config: Config) {
       case "answer": {
         try {
           return await answerSession(win, projectId, m);
+        } finally {
+          if (m.token !== undefined) post(win, { type: "answered", token: m.token });
+        }
+      }
+      case "choose": {
+        try {
+          return await chooseSession(win, projectId, m);
         } finally {
           if (m.token !== undefined) post(win, { type: "answered", token: m.token });
         }

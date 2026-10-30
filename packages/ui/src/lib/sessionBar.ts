@@ -47,8 +47,11 @@ export interface BarRow {
   outcome: SessionOutcome | null;
   /** The Terminal window cell that shows it, by the window's number; null when no cell does. */
   cell: number | null;
-  /** A terminal session waiting on what its card can answer: a permission (Allow with yes under the cursor, else Deny), or a folder's trust; null otherwise. */
-  prompt: "allow" | "deny" | "trust" | null;
+  /**
+   * A terminal session waiting on what its card can answer: a permission (Allow with yes under the cursor, else Deny), a
+   * folder's trust, or the menu of its question (`ask.options`); null otherwise.
+   */
+  prompt: "allow" | "deny" | "trust" | "choice" | null;
   /** A live terminal session's pane: its last lines that say something; null otherwise. */
   tail: string[] | null;
   itemIds: string[];
@@ -93,7 +96,7 @@ export const threadFinished = (t: { idle: boolean; live: boolean; ticketDone: bo
 export function sessionBarRows(input: {
   threads: ThreadSummary[];
   /** The session lists' rows; an ended one carries what came of it, a waiting one what its screen asks. */
-  sessions: (SessionView & { outcome?: SessionOutcome | null; approval?: boolean; prompt?: "allow" | "deny" | "trust" | null; tail?: string[] | null })[];
+  sessions: (SessionView & { outcome?: SessionOutcome | null; approval?: boolean; prompt?: "allow" | "deny" | "trust" | "choice" | null; tail?: string[] | null })[];
   /** Which Terminal window cell shows each session, by session id. */
   cells?: Record<string, number>;
   attention: AttentionEntry[];
@@ -147,7 +150,7 @@ export function sessionBarRows(input: {
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
       activity: ended ? null : s.activity, failedTool: ended ? null : s.failedTool, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
-      prompt: status === "wait" && isApprovalAsk(s) && (s.approval || s.prompt === "trust") ? (s.prompt ?? null) : null, tail: ended ? null : (s.tail ?? null), ask: status === "wait" && s.state === "waiting" ? (s.ask ?? null) : null,
+      prompt: status !== "wait" ? null : s.prompt === "choice" ? (s.state === "waiting" && s.ask?.kind === "question" && s.ask.options?.length ? "choice" : null) : isApprovalAsk(s) && (s.approval || s.prompt === "trust") ? (s.prompt ?? null) : null, tail: ended ? null : (s.tail ?? null), ask: status === "wait" && s.state === "waiting" ? (s.ask ?? null) : null,
       itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0
     });

@@ -264,6 +264,8 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
     /** A folder's trust on the session's pane answered: the cursor moved to trusting it or leaving, then Enter. */
     "codeLink.sessionTrust": (projectId: string, sessionId: string, which: "trust" | "exit") => AnswerResult;
+    /** One of the choices of the question the session asks, picked on its pane's menu: the cursor moved to it, then Enter. */
+    "codeLink.sessionChoose": (projectId: string, sessionId: string, choice: string) => AnswerResult;
     "codeLink.sessionEscape": (projectId: string, sessionId: string) => boolean;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
@@ -815,6 +817,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionDrop", (projectId, sessionId, paths) => ctx.codeLink.sessionDrop(projectId, sessionId, paths));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionTrust", (projectId, sessionId, which) => ctx.codeLink.sessionTrust(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionChoose", (projectId, sessionId, choice) => ctx.codeLink.sessionChoose(projectId, sessionId, choice));
       ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
@@ -1133,6 +1136,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** A folder's trust on a terminal session's pane answered from its card; see `SessionPanel.trust`. */
   sessionTrust(projectId: string, sessionId: string, which: "trust" | "exit"): Promise<AnswerResult> {
     return this.panel.trust(projectId, sessionId, which);
+  }
+
+  /** A question's choice picked on a terminal session's pane from its card; see `SessionPanel.choose`. */
+  sessionChoose(projectId: string, sessionId: string, choice: string): Promise<AnswerResult> {
+    return this.panel.choose(projectId, sessionId, choice);
   }
 
   /**

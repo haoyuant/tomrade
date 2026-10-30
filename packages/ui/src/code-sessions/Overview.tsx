@@ -1,6 +1,6 @@
 import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { tailLines } from "../lib/terminalSession";
-import { Mark, RowActions, rowAgent, rowName, rowSaid, rowTitle, statusWord, whereOf } from "./cards";
+import { Mark, RowActions, rowAgent, rowName, rowSaid, rowTitle, statusWord, whereOf, type SessionReply } from "./cards";
 import { paneOf, statusOf, type HereRow } from "./lists";
 import { useSay, useWords } from "./say";
 
@@ -19,7 +19,7 @@ const TAIL_SHOWN = 4;
  * Every session as one big card, in the bar's order: what it is doing — its pane's last lines, the question it waits
  * with, or what came of it — and what can be done from here. "See in a pane" goes back to the cells on it.
  */
-export function Overview({ rows, scope, tails, active, cells, onSee, onThread, onAnswer, onAnswerThread }: { rows: HereRow[]; scope: OverviewScope; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
+export function Overview({ rows, scope, tails, active, cells, onSee, onThread, onAnswer, onAnswerThread }: { rows: HereRow[]; scope: OverviewScope; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
   const words = useWords();
   return (

@@ -824,6 +824,10 @@ export function AgentPanel({
         const result = await invoke("codeLink.sessionTrust", projectId, row.sessionId!, reply.trust);
         if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
         if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else if ("choice" in reply) {
+        const result = await invoke("codeLink.sessionChoose", projectId, row.sessionId!, reply.choice);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.choiceInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
       } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
     } catch (error) {
       return reportError(error);
