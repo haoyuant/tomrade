@@ -29,8 +29,9 @@ directories:
 publish:
   provider: generic
   url: https://download.tomrade.com
-  # Otherwise named after the package, @tomrade/desktop.
-  updaterCacheDirName: tomrade-updater
+# The updater's cache (the last update.zip and its blockmap, which a differential
+# download starts from) is @tomradedesktop-updater: electron-builder always names
+# it after the package and ignores any updaterCacheDirName here.
 generateUpdatesFilesForAllChannels: true
 # Off on purpose: Plugin Studio runs agent-written code in a Node child with the
 # permission model on, and that child — and esbuild's native binary — must be
