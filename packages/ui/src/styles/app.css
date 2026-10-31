@@ -296,16 +296,17 @@ html[data-traffic-lights="on"] {
   --warn: #9a6a00;
   --danger: #b8233f;
 
+  /* the sunrise sky in order: sun, gold, lilac, twilight — validated for CVD on the surface */
   --chart-1: #c93a24;
-  --chart-2: #2f7a4f;
-  --chart-3: #b07a00;
-  --chart-4: #6b4fb8;
-  --chart-5: #1f7f86;
-  --chart-6: #b8233f;
-  --chart-7: #2f6fb0;
-  --chart-8: #a2582a;
-  --chart-9: #5b5f9a;
-  --chart-10: #a2457f;
+  --chart-2: #b98208;
+  --chart-3: #7a5fd6;
+  --chart-4: #34499c;
+  --chart-5: #c2407e;
+  --chart-6: #2a86c8;
+  --chart-7: #a2582a;
+  --chart-8: #009488;
+  --chart-9: #9a4fb0;
+  --chart-10: #6f7a12;
   --tag-bg-faint: #fdf1ed;
   --tag-bg-soft: #fbe5de;
   --tag-bg-base: #f6d4c9;
@@ -345,16 +346,17 @@ html[data-traffic-lights="on"] {
   --warn: #ffd166;
   --danger: #ff6b81;
 
+  /* Sunrise's order at night: sun, gold, lilac, twilight — validated for CVD on the surface */
   --chart-1: #ff8a5c;
-  --chart-2: #6fdc9a;
-  --chart-3: #ffd166;
-  --chart-4: #b79cff;
-  --chart-5: #5fd3e0;
-  --chart-6: #ff6b81;
-  --chart-7: #7fb2ff;
-  --chart-8: #e0a878;
-  --chart-9: #9aa0d8;
-  --chart-10: #f08cc8;
+  --chart-2: #fec84b;
+  --chart-3: #b48df4;
+  --chart-4: #4777d2;
+  --chart-5: #f589b6;
+  --chart-6: #73edfa;
+  --chart-7: #ca7d44;
+  --chart-8: #6ed889;
+  --chart-9: #bc6ece;
+  --chart-10: #c8d563;
   --tag-bg-faint: #221c3a;
   --tag-bg-soft: #2b2143;
   --tag-bg-base: #3a2a4f;
@@ -2151,6 +2153,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
   --usage-plot-height: 152px;
   --usage-plot-gap: var(--space-1);
   --usage-share-height: 14px;
+  /* what a mark's far end lifts toward; Sunrise and Daybreak light it with the sun's gold */
+  --usage-sheen: var(--surface);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -2188,19 +2192,25 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .usage-col.is-empty::before { content: ""; height: 1px; background: var(--border); }
 .usage-seg { display: block; width: 100%; min-height: 1px; }
 .usage-seg + .usage-seg { box-shadow: inset 0 1px 0 var(--surface); }
-.usage-seg.tok-new, .usage-swatch.tok-new { background: var(--chart-1); }
-.usage-seg.tok-read, .usage-swatch.tok-read { background: var(--chart-2); }
-.usage-seg.tok-write, .usage-swatch.tok-write { background: var(--chart-3); }
-.usage-seg.tok-out, .usage-swatch.tok-out { background: var(--chart-4); }
-.usage-seg.spend { background: var(--chart-1); }
-.usage-seg.calls { background: var(--chart-2); }
-.usage-seg.calls-failed { background: var(--danger); }
+/* Every mark keeps its series colour at the baseline and lifts toward the sheen at its far end. */
+.usage-seg, .usage-swatch, .usage-share-seg, .usage-purpose-fill, .usage-purpose-fail {
+  --series-base: var(--series, var(--meta));
+  --series-lit: color-mix(in oklab, var(--series-base) 70%, var(--usage-sheen));
+  background: linear-gradient(to top, var(--series-base), var(--series-lit));
+}
+.usage-share-seg, .usage-purpose-fill, .usage-purpose-fail { background: linear-gradient(to right, var(--series-base), var(--series-lit)); }
+.usage-swatch { background: linear-gradient(135deg, var(--series-lit), var(--series-base)); }
+.usage-dashboard :is(.tok-new, .spend) { --series: var(--chart-1); }
+.usage-dashboard :is(.tok-read, .calls, .usage-purpose-fill) { --series: var(--chart-2); }
+.usage-dashboard .tok-write { --series: var(--chart-3); }
+.usage-dashboard .tok-out { --series: var(--chart-4); }
+.usage-dashboard :is(.calls-failed, .usage-purpose-fail) { --series: var(--danger); }
 .usage-flag { position: absolute; top: 0; left: 50%; transform: translate(-50%, -5px); width: 5px; height: 5px; border: 1px solid var(--warn); border-radius: 50%; background: var(--surface); }
 .usage-labels { display: grid; gap: var(--usage-plot-gap); padding-top: var(--space-2); }
 .usage-labels span { overflow: visible; white-space: nowrap; text-align: center; font-size: var(--text-xs); color: var(--meta); }
 .usage-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 .usage-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--fg-2); }
-.usage-swatch { flex: none; width: 9px; height: 9px; border-radius: var(--radius-xs); background: var(--meta); }
+.usage-swatch { flex: none; width: 9px; height: 9px; border-radius: var(--radius-xs); }
 
 .usage-shares { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3) var(--space-4); }
 .usage-share-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--meta); }
@@ -2220,8 +2230,7 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .usage-purpose-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .usage-purpose-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-4); font-size: var(--text-xs); color: var(--fg-2); }
 .usage-purpose-track { display: flex; height: 10px; border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-warm); }
-.usage-purpose-fill { height: 100%; background: var(--chart-2); }
-.usage-purpose-fail { height: 100%; background: var(--danger); }
+.usage-purpose-fill, .usage-purpose-fail { height: 100%; }
 .usage-purpose-count { text-align: right; color: var(--fg); }
 
 .usage-table-wrap { overflow-x: auto; }
