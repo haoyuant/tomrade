@@ -1,28 +1,42 @@
 /* Sunrise and Daybreak's lights: the sky and horizon behind the workspace, the
    sun's line under the bar, vermilion running into gold on what you press.
-   Everything is static paint: no animation, filter or backdrop-filter, and the
-   one full-window layer is fixed behind a page that never scrolls, so it is
-   rastered once. Colours come from the --sun-* tokens in app.css. */
+   The sky and the sun move slowly, by opacity and transform alone: each moving
+   layer is painted once and the compositor runs the rest, with no repaint, no
+   filter and no backdrop-filter. The motion rests while the window is hidden
+   or another window has the focus, and stays still for reduced motion or when
+   Chromium composites without the GPU, where every frame would cost the CPU.
+   Colours come from the --sun-* tokens in app.css. */
 @layer components {
+/* One layer for the sky and the sun, reaching past the top and left edges so it
+   can settle towards the sun's corner without showing an edge. */
 :is(.sunrise, .daybreak) body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  content: ""; position: fixed; inset: -6vh 0 0 -6vw; z-index: -1; pointer-events: none;
   background:
-    radial-gradient(ellipse 70% 55% at 88% 112%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 34% 26% at 82% 104%, var(--sun-glow), transparent 72%),
-    radial-gradient(ellipse 55% 40% at 8% -8%, var(--sun-sky-haze), transparent 70%);
+    radial-gradient(ellipse 70vw 55vh at 94vw 118vh, var(--sun-haze), transparent 70%),
+    radial-gradient(ellipse 34vw 26vh at 88vw 110vh, var(--sun-glow), transparent 72%),
+    radial-gradient(ellipse 55vw 40vh at 14vw -2vh, var(--sun-sky-haze), transparent 70%);
+  transform-origin: 100% 100%;
+  animation: sun-swell 37s ease-in-out infinite alternate;
 }
 /* A few stars before the sun is up, only along the top of the sky. */
 .daybreak body::before {
   background:
-    radial-gradient(1px 1px at 22px 34px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 141px 92px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1.5px 1.5px at 236px 18px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 90px 171px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(ellipse 70% 55% at 88% 112%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 34% 26% at 82% 104%, var(--sun-glow), transparent 72%),
-    radial-gradient(ellipse 55% 40% at 8% -8%, var(--sun-sky-haze), transparent 70%);
+    radial-gradient(1px 1px at 22px 34px, var(--sun-star), transparent) 0 6vh / 280px 210px repeat-x,
+    radial-gradient(1px 1px at 141px 92px, var(--sun-star), transparent) 0 6vh / 280px 210px repeat-x,
+    radial-gradient(1.5px 1.5px at 236px 18px, var(--sun-star), transparent) 0 6vh / 280px 210px repeat-x,
+    radial-gradient(1px 1px at 90px 171px, var(--sun-star), transparent) 0 6vh / 280px 210px repeat-x,
+    radial-gradient(ellipse 70vw 55vh at 94vw 118vh, var(--sun-haze), transparent 70%),
+    radial-gradient(ellipse 34vw 26vh at 88vw 110vh, var(--sun-glow), transparent 72%),
+    radial-gradient(ellipse 55vw 40vh at 14vw -2vh, var(--sun-sky-haze), transparent 70%);
 }
-
+@keyframes sun-swell {
+  from { opacity: 0.7; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sun-breathe {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
 /* The horizon: one hairline from the sky's lilac through the sun's red to gold. */
 :is(.sunrise, .daybreak) .titlebar {
   border-bottom-color: transparent;
@@ -38,12 +52,26 @@
     var(--surface);
 }
 
-/* The assistant's open floor is where the sun comes up. */
-:is(.sunrise, .daybreak) .ai {
+/* The assistant's open floor is where the sun comes up, breathing in place. Its surface and its sun sit under its
+   content without making the panel a stacking context, so its tooltips and resize handle still stack as before. */
+:is(.sunrise, .daybreak) .ai { background: transparent; }
+:is(.sunrise, .daybreak) .ai::before,
+:is(.sunrise, .daybreak) .ai::after { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; }
+:is(.sunrise, .daybreak) .ai::before { background: var(--surface); }
+:is(.sunrise, .daybreak) .ai::after {
   background:
     radial-gradient(ellipse 95% 38% at 72% 108%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 48% 20% at 66% 103%, var(--sun-glow), transparent 72%),
-    var(--surface);
+    radial-gradient(ellipse 48% 20% at 66% 103%, var(--sun-glow), transparent 72%);
+  animation: sun-breathe 37s ease-in-out infinite alternate;
+}
+/* Both moving layers rest or stay still together; after them, so these win. */
+[data-window-idle]:is(.sunrise, .daybreak) body::before,
+[data-window-idle]:is(.sunrise, .daybreak) .ai::after { animation-play-state: paused; }
+[data-software-compositing]:is(.sunrise, .daybreak) body::before,
+[data-software-compositing]:is(.sunrise, .daybreak) .ai::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.sunrise, .daybreak) body::before,
+  :is(.sunrise, .daybreak) .ai::after { animation: none; }
 }
 
 /* The sidebar lets the sky through instead of covering it. */
