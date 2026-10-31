@@ -1902,7 +1902,7 @@ export const fr: PartialMessages = {
     exported: "Image du graphe enregistrée",
     showSettled: "Afficher {{n}} réglés",
     hideSettled: "Masquer {{n}} réglés",
-    settledHint: "Tickets dont toutes les dépendances sont déjà terminées ou annulées",
+    settledHint: "Tickets terminés ou annulés, et tickets dont toutes les dépendances sont déjà terminées ou annulées",
     empty: "Rien à dessiner — les filtres ne laissent aucun ticket dans cette vue.",
     noGraph: "Aucun plugin ne fournit de graphe. Activez-en un, comme Dependencies, dans Plugins."
   },

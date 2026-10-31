@@ -1902,7 +1902,7 @@ export const es: PartialMessages = {
     exported: "Imagen del grafo guardada",
     showSettled: "Mostrar {{n}} resueltos",
     hideSettled: "Ocultar {{n}} resueltos",
-    settledHint: "Tickets cuyas dependencias ya están todas hechas o canceladas",
+    settledHint: "Tickets hechos o cancelados, y tickets cuyas dependencias ya están todas hechas o canceladas",
     empty: "Nada que dibujar: los filtros no dejaron tickets en esta vista.",
     noGraph: "Ningún plugin aporta un grafo. Activa uno, como Dependencias, en Plugins."
   },

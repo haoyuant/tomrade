@@ -18,7 +18,9 @@ export const BACKLOG_WORDS = defineWords("agent-backlog", {
     dependenciesApply: "Update now",
     dependenciesSkip: "Not now",
     dependenciesUpdated: "Dependencies updated: {{added}} added, {{removed}} removed.",
-    dependenciesNotUpdated: " Not updated: {{failed}}"
+    dependenciesNotUpdated: " Not updated: {{failed}}",
+    dependenciesCheckFailed: "Could not check dependencies: {{reason}}",
+    dependenciesNoWorker: "no worker model is set up and ready (Settings → Models)"
   },
   zh: {
     planAsk: "这份计划会写入 {{writes}}（1 个总 epic、{{epics}}、{{tickets}}）。写入 backlog 吗？",
@@ -37,6 +39,8 @@ export const BACKLOG_WORDS = defineWords("agent-backlog", {
     dependenciesApply: "现在更新",
     dependenciesSkip: "暂不",
     dependenciesUpdated: "依赖已更新：新增 {{added}} 条，移除 {{removed}} 条。",
-    dependenciesNotUpdated: "未能更新：{{failed}}"
+    dependenciesNotUpdated: "未能更新：{{failed}}",
+    dependenciesCheckFailed: "没能检查依赖：{{reason}}",
+    dependenciesNoWorker: "没有设置好可用的工作模型（设置 → 模型）"
   }
 });

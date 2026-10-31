@@ -1902,7 +1902,7 @@ export const de: PartialMessages = {
     exported: "Graph-Bild gespeichert",
     showSettled: "{{n}} erledigte zeigen",
     hideSettled: "{{n}} erledigte ausblenden",
-    settledHint: "Tickets, deren Abhängigkeiten alle schon erledigt oder abgebrochen sind",
+    settledHint: "Erledigte oder abgebrochene Tickets und Tickets, deren Abhängigkeiten alle schon erledigt oder abgebrochen sind",
     empty: "Nichts zu zeichnen — die Filter lassen in dieser Ansicht keine Tickets übrig.",
     noGraph: "Kein Plugin stellt einen Graphen bereit. Aktiviere eines, z. B. Abhängigkeiten, unter Plugins."
   },

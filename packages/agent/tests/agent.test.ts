@@ -521,6 +521,38 @@ describe("dependencies after ticket changes", () => {
     expect(reviews[0]).toContain(`created: ${replacement.key} "New sync design"`);
     expect(agent.thread(project.id, thread.id).pending!.question.text).toContain(`+ ${replacement.key} New sync design → ${ship.key} Ship sync`);
   });
+
+  it("says why a check asked for by name could not run, instead of reading as nothing to change", async () => {
+    const results: string[] = [];
+    const respond = (system: string): unknown => {
+      if (system.includes("dependencies between backlog tickets")) throw new Error('LLM request failed 402: {"error":{"message":"Insufficient Balance","type":"insufficient_balance_error"}}');
+      return { duplicates: [], related: [] };
+    };
+    // Each run asks for the check, then reads its result; the step count runs on across runs.
+    const script = (req: ChatRequest): FakeTurn => {
+      const last = JSON.stringify(req.messages.at(-1));
+      if (last.includes("recheck the dependencies")) return { toolCalls: [{ name: "review_dependencies", args: {} }] };
+      results.push(last);
+      return { text: "Reported." };
+    };
+    const { ctx, agent, items, board, project } = await boot(script, respond);
+    items.create({ projectId: project.id, boardId: board.id, title: "Anything", by: "human" });
+    const notes = (threadId: string, runId: string) => agent.store.messages(project.id, threadId).filter((m) => m.runId === runId && m.block.type === "note").map((m) => (m.block as { text: string }).text);
+
+    const thread = agent.newThread(project.id);
+    const failed = agent.send(project.id, thread.id, { kind: "text", text: "recheck the dependencies" });
+    expect((await settled(ctx, project.id, failed.runId)).status).toBe("done");
+    expect(results[0]).toContain("LLM request failed 402: Insufficient Balance");
+    expect(notes(thread.id, failed.runId)).toEqual(["Could not check dependencies: LLM request failed 402: Insufficient Balance"]);
+
+    // No worker at all reads the same way, naming where to set one up.
+    (ctx.get("llm") as { worker: () => Promise<unknown> }).worker = async () => ({ ok: false });
+    const again = agent.newThread(project.id);
+    const unset = agent.send(project.id, again.id, { kind: "text", text: "recheck the dependencies" });
+    expect((await settled(ctx, project.id, unset.runId)).status).toBe("done");
+    expect(results[1]).toContain("no worker model is set up and ready");
+    expect(notes(again.id, unset.runId)).toEqual(["Could not check dependencies: no worker model is set up and ready (Settings → Models)"]);
+  });
 });
 
 describe("a conversation's project", () => {

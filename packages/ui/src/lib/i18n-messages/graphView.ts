@@ -13,7 +13,7 @@ export const graphView = {
     exported: "Graph image saved",
     showSettled: "Show {{n}} settled",
     hideSettled: "Hide {{n}} settled",
-    settledHint: "Tickets whose every dependency is already done or cancelled",
+    settledHint: "Done or cancelled tickets, and tickets whose every dependency is already done or cancelled",
     empty: "Nothing to draw — the filters left no tickets in this view.",
     noGraph: "No plugin contributes a graph. Enable one, such as Dependencies, in Plugins."
   },
@@ -31,7 +31,7 @@ export const graphView = {
     exported: "关系图图片已保存",
     showSettled: "显示 {{n}} 张已了结",
     hideSettled: "隐藏 {{n}} 张已了结",
-    settledHint: "依赖全部已完成或已取消的工单",
+    settledHint: "已完成或已取消的工单，以及依赖全部已完成或已取消的工单",
     empty: "没有可绘制的内容——筛选没有在此视图留下任何工单。",
     noGraph: "没有插件提供关系图。请在「插件」中启用一个，例如「依赖关系」。"
   }

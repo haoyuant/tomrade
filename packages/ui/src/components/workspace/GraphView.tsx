@@ -227,8 +227,8 @@ function Canvas() {
   // The filter decides which issues are nodes; the sort is irrelevant on a canvas.
   const visibleIds = useMemo(() => new Set(ws.visible.map((i) => i.id)), [ws.visible]);
   const statusOf = useMemo(() => new Map(ws.visible.map((i) => [i.id, i.status])), [ws.visible]);
-  // A ticket with dependencies but none still live — both ends open — says nothing the graph is
-  // for; it steps out of the picture, and a foot button brings those back.
+  // A done or cancelled ticket, and one whose dependencies are none of them still live — both ends
+  // open — say nothing the graph is for; they step out of the picture, and a foot button brings them back.
   const [showSettled, setShowSettled] = useState(false);
   const settledIds = useMemo(() => {
     const linked = new Set<string>();
@@ -239,8 +239,8 @@ function Canvas() {
       linked.add(e.from).add(e.to);
       if (open(e.from) && open(e.to)) live.add(e.from).add(e.to);
     }
-    return new Set([...linked].filter((id) => !live.has(id)));
-  }, [serverEdges.data, visibleIds, statusOf]);
+    return new Set(ws.visible.filter((i) => !open(i.id) || (linked.has(i.id) && !live.has(i.id))).map((i) => i.id));
+  }, [serverEdges.data, visibleIds, statusOf, ws.visible]);
   const shown = useMemo(() => (showSettled || !settledIds.size ? ws.visible : ws.visible.filter((i) => !settledIds.has(i.id))), [ws.visible, showSettled, settledIds]);
   const shownIds = useMemo(() => new Set(shown.map((i) => i.id)), [shown]);
   const edges = useMemo(() => (serverEdges.data ?? []).filter((e) => shownIds.has(e.from) && shownIds.has(e.to)), [serverEdges.data, shownIds]);

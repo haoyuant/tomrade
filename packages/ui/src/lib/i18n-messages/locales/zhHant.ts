@@ -1969,7 +1969,7 @@ export const zhHant: PartialMessages = {
     exported: "關係圖圖片已儲存",
     showSettled: "顯示 {{n}} 張已了結",
     hideSettled: "隱藏 {{n}} 張已了結",
-    settledHint: "相依全部已完成或已取消的工單",
+    settledHint: "已完成或已取消的工單，以及相依全部已完成或已取消的工單",
     empty: "沒有可繪製的內容——篩選沒有在此檢視留下任何工單。",
     noGraph: "沒有外掛提供關係圖。請在「外掛」中啟用一個，例如「相依關係」。"
   },

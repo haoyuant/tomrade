@@ -59,6 +59,10 @@ const run = async () => {
     if (blocks.length) ctx.items.update(project.id, made[i].id, { blocks: blocks.map((j) => made[j].id) }, "human");
   });
   ctx.items.update(project.id, made[0].id, { status: "done" }, "human");
+  // a finished loner and a cancelled one: nothing for the graph to say about either
+  ctx.items.update(project.id, made[7].id, { status: "done" }, "human");
+  ctx.items.update(project.id, made[10].id, { status: "cancelled" }, "human");
+  const HIDDEN = 3;
   const allEdges = TICKETS.reduce((n, [, , blocks]) => n + blocks.length, 0);
   // AL-1 is done, so none of its links is live: it steps out of the picture with them.
   const settledEdges = TICKETS[0][2].length;
@@ -83,7 +87,7 @@ const run = async () => {
   for (let i = 0; i < 50 && (await $(`document.querySelectorAll('.react-flow__edge').length`)) < edgeCount; i++) await sleep(200);
   await sleep(800);
 
-  check("every ticket with a live dependency is a card; a settled one is not", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === TICKETS.length - 1);
+  check("open tickets are cards; done, cancelled and settled ones are not", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === TICKETS.length - HIDDEN);
   check("every live dependency is an arrow", (await $(`document.querySelectorAll('.react-flow__edge').length`)) === edgeCount);
 
   // Geometry in flow coordinates, so it holds at any zoom and off screen.
@@ -165,7 +169,7 @@ const run = async () => {
   const downstream = first.edges.filter((e) => e.source === focusId).map((e) => e.target);
   check("what it waits on is lit as upstream", (await $(`[...document.querySelectorAll('.react-flow__node.is-up')].map((n) => n.dataset.id).sort().join()`)) === upstream.sort().join());
   check("what waits on it is lit as downstream", (await $(`[...document.querySelectorAll('.react-flow__node.is-down')].map((n) => n.dataset.id).sort().join()`)) === downstream.sort().join());
-  check("every other card steps back", (await $(`document.querySelectorAll('.react-flow__node.is-dim').length`)) === TICKETS.length - 2 - neighbours.size);
+  check("every other card steps back", (await $(`document.querySelectorAll('.react-flow__node.is-dim').length`)) === TICKETS.length - HIDDEN - 1 - neighbours.size);
   check("its incoming arrows are lit as upstream, outgoing as downstream", (await $(`[document.querySelectorAll('.react-flow__edge.is-up').length, document.querySelectorAll('.react-flow__edge.is-down').length].join()`)) === `${upstream.length},${downstream.length}`);
   check("upstream and downstream wear different colours", (await $(`(() => { const u = document.querySelector('.react-flow__node.is-up'); const d = document.querySelector('.react-flow__node.is-down'); return !u || !d || u.style.getPropertyValue('--ring') !== d.style.getPropertyValue('--ring'); })()`)) === true);
   await shot("graph-02-detail-open");
@@ -211,7 +215,7 @@ const run = async () => {
   check("every live dependency carries a flowing dot", (await $(`document.querySelectorAll('.edge-flow').length`)) === edgeCount, await $(`document.querySelectorAll('.edge-flow').length`));
 
   // The settled ticket comes back on request, its arrows dashed and still, and goes again.
-  check("the foot counts the settled tickets", (await $(`document.querySelector('[data-testid="graph-settled"]')?.textContent`))?.includes("1") === true);
+  check("the foot counts the settled tickets", (await $(`document.querySelector('[data-testid="graph-settled"]')?.textContent`))?.includes(String(HIDDEN)) === true);
   await press(`document.querySelector('[data-testid="graph-settled"]')`);
   await sleep(1200);
   check("showing them draws every ticket", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === TICKETS.length);
@@ -223,7 +227,7 @@ const run = async () => {
   await shot("graph-02b-settled-shown");
   await press(`document.querySelector('[data-testid="graph-settled"]')`);
   await sleep(1200);
-  check("hiding them again takes the settled ticket out", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === TICKETS.length - 1);
+  check("hiding them again takes the settled tickets out", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === TICKETS.length - HIDDEN);
   await $(`document.querySelector('.detail-close, [data-testid="detail-close"]')?.click()`);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await sleep(600);
