@@ -56,6 +56,7 @@
     "test:storage-race": "electron scripts/storage-race-check.mjs",
     "test:attention": "electron scripts/attention-check.mjs",
     "test:repo-setup": "electron scripts/repo-setup-check.mjs",
+    "test:graph": "electron scripts/graph-check.mjs",
     "test:usage": "electron scripts/usage-check.mjs",
     "test:rules": "electron scripts/rules-check.mjs",
     "test:brief": "electron scripts/brief-check.mjs",

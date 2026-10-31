@@ -36,6 +36,8 @@ declare module "@tomradex/ipc" {
     "shell.about": () => AboutInfo;
     /** Native save dialog, then the text written there. The chosen path, or null when cancelled. */
     "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
+    /** Native save dialog, then a PNG data URL written there as an image. The chosen path, or null when cancelled. */
+    "shell.saveImageFile": (opts: { title?: string; defaultName: string; dataUrl: string }) => string | null;
     /** Native open dialog for one text file, read back. Null when cancelled. */
     "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
     /** Quit through the usual questions and start again — once without the person's own plugins when `safe`. */

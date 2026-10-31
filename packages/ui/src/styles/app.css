@@ -3231,6 +3231,17 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__handle:hover { border-color: var(--accent); }
 .graph-region .react-flow__edge { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
+/* a selected card lights its neighbours in their status colour; everything else steps back */
+.graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity 180ms ease; }
+.graph-region .react-flow__node.is-dim { opacity: 0.32; }
+.graph-region .react-flow__edge.is-dim { opacity: 0.22; }
+.graph-region .react-flow__node.is-related .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
+/* an open dependency carries a dot from the blocker to what it blocks */
+.graph-region .edge-flow { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .graph-region .edge-flow { display: none; }
+  .graph-region .react-flow__node, .graph-region .react-flow__edge { transition: none; }
+}
 .graph-region .react-flow__connectionline { stroke: var(--accent); }
 .graph-empty { position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none; }
 .graph-foot {
@@ -3239,6 +3250,9 @@ button.kref { cursor: pointer; }
   pointer-events: none;
 }
 .graph-foot > * { pointer-events: auto; }
+.graph-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-actions { display: flex; flex: none; gap: var(--space-1); }
+.graph-actions .btn { padding: 4px 8px; white-space: nowrap; background: var(--surface); }
 
 /* dependency chips in the field strips: a label chip that opens an issue */
 .lab.dep { padding-left: 5px; }
