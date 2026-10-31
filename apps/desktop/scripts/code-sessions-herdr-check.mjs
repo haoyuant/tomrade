@@ -1246,7 +1246,8 @@ app.whenReady().then(async () => {
     const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
     check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
     const startsIn = await tjs(`${goneCell}?.querySelector('[data-testid=cs-new-terminal-where]')?.value`);
-    check("目录默认是这个会话的 worktree", startsIn === worktree, startsIn);
+    // Ended, its branch's worktree is done with: the folder goes back to the project's repo (TOM-842).
+    check("目录默认是项目的主 repo，不是这个会话的 worktree", startsIn === repoDir, startsIn);
     const order = await tjs(`(() => { const box = ${goneCell}.querySelector('.cs-new-terminal'); const a = box.querySelector('select').getBoundingClientRect(); const b = box.querySelector('[data-testid=cs-new-terminal]').getBoundingClientRect(); return b.top >= a.bottom; })()`);
     const boxed = await tjs(`(() => { const s = getComputedStyle(${goneCell}.querySelector('select')); return s.borderTopStyle !== 'none' && parseFloat(s.borderTopWidth) > 0; })()`);
     check("目录下拉框有边框，「新终端」在它下方", order && boxed);
@@ -1261,8 +1262,8 @@ app.whenReady().then(async () => {
     // Followed by the cell's own id, not its place: other cells may come and go while herdr opens the pane.
     const goneId = await tjs(`${goneCell}.closest('.cs-cell').dataset.cell`);
     await tjs(`${goneCell}.querySelector('[data-testid=cs-new-terminal]').click(); true`);
-    const took = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 20000);
-    check("在那里开的新终端占了这个格子，目录就是 worktree", took);
+    const took = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && (() => { const name = cell.querySelector('.cs-cell-name').textContent; return name.includes(${JSON.stringify(repoDir)}) && !name.includes(${JSON.stringify(wtDir)}); })(); })()`), 20000);
+    check("在那里开的新终端占了这个格子，目录就是主 repo", took);
     if (!took) {
       // What the cell showed instead, for TOM-404's last flaky step.
       const seen = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return cell ? { terminal: cell.dataset.cellTerminal ?? null, xterm: !!cell.querySelector('.xterm'), name: cell.querySelector('.cs-cell-name')?.textContent ?? null, body: cell.textContent.slice(0, 200) } : null; })()`);
