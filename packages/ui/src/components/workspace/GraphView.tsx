@@ -7,7 +7,6 @@ import {
   getNodesBounds,
   getViewportForBounds,
   Handle,
-  MarkerType,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -145,12 +144,16 @@ const near = (p: XY, x: number, y: number) => Math.abs(p.x - x) <= ROUTE_SLACK &
 
 /** The dot travels at one speed, so a long dependency takes longer to cross than a short one. */
 const FLOW_SPEED = 110;
+const ARROW_LENGTH = 10;
+const ARROW_HALF_WIDTH = 4.5;
 
 /**
  * dagre's route while both cards sit where it put them; a dragged card, or a loop, falls back to a plain curve.
  * An unfinished dependency carries a dot from the blocker to what it blocks, in `data.flow`'s colour.
+ * Every route ends level into the card's left side, so the arrowhead always points right; drawn here
+ * rather than as an SVG marker, it fades with its line instead of swapping marker when the colour does.
  */
-function RoutedEdgeView({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style, interactionWidth }: EdgeProps<RoutedEdge>) {
+function RoutedEdgeView({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, style, interactionWidth }: EdgeProps<RoutedEdge>) {
   const route = data?.route;
   const points =
     route && near(route[0], sourceX, sourceY) && near(route[route.length - 1], targetX, targetY)
@@ -160,7 +163,12 @@ function RoutedEdgeView({ sourceX, sourceY, targetX, targetY, sourcePosition, ta
   const length = (points ?? [{ x: sourceX, y: sourceY }, { x: targetX, y: targetY }]).reduce((sum, p, i, all) => (i ? sum + Math.hypot(p.x - all[i - 1].x, p.y - all[i - 1].y) : 0), 0);
   return (
     <>
-      <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+      <BaseEdge path={path} style={style} interactionWidth={interactionWidth} />
+      <path
+        className="edge-arrow"
+        d={`M${targetX - ARROW_LENGTH},${targetY - ARROW_HALF_WIDTH} L${targetX},${targetY} L${targetX - ARROW_LENGTH},${targetY + ARROW_HALF_WIDTH} Z`}
+        style={{ fill: style?.stroke }}
+      />
       {data?.flow && (
         <circle className="edge-flow" r={3} style={{ fill: data.flow }}>
           <animateMotion dur={`${Math.max(1.2, length / FLOW_SPEED).toFixed(2)}s`} repeatCount="indefinite" path={path} />
@@ -176,6 +184,8 @@ const edgeTypes = { routed: RoutedEdgeView };
 const FIT_MIN_ZOOM = 0.65;
 // fitting a wide graph never shrinks the cards past reading; the rest is a pan away
 const FIT = { padding: 0.15, maxZoom: 1, minZoom: FIT_MIN_ZOOM };
+const HOVER_ENTER_MS = 90;
+const HOVER_LEAVE_MS = 120;
 /** How far from the canvas edge a graph too big to fit starts. */
 const FIT_INSET = 24;
 const EXPORT_PAD = 32;
@@ -274,6 +284,13 @@ function Canvas() {
   const placed = useMemo(() => layout(shown, edges, heights), [shown, edgeShape, heights]); // eslint-disable-line react-hooks/exhaustive-deps
   // The card under the pointer, else the selected one, lights up what it waits on and what waits on it; the rest steps back.
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // Hover intent: a pointer sweeping across cards, or crossing the gap between two, does not strobe the graph.
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hoverSoon = (id: string | null) => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHoverId(id), id ? HOVER_ENTER_MS : HOVER_LEAVE_MS);
+  };
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
   const focusId = hoverId && shownIds.has(hoverId) ? hoverId : selectedId && shownIds.has(selectedId) ? selectedId : null;
   const focus = useMemo(() => {
     if (!focusId) return null;
@@ -348,7 +365,6 @@ function Canvas() {
           selectable: editable,
           deletable: editable,
           style: { stroke, strokeWidth: lit ? 2.5 : e.tone === "danger" ? 2 : 1.5, ...(settled ? { strokeDasharray: "4 3" } : {}) },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: stroke }
         };
       }),
     [edges, editable, placed, statusOf, focus]
@@ -431,8 +447,8 @@ function Canvas() {
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete}
         onPaneClick={() => ws.select(null)}
-        onNodeMouseEnter={(_, node) => setHoverId(node.id)}
-        onNodeMouseLeave={() => setHoverId(null)}
+        onNodeMouseEnter={(_, node) => hoverSoon(node.id)}
+        onNodeMouseLeave={() => hoverSoon(null)}
         // a null event is a move the code made, such as a fit
         onMoveStart={(event) => void (event && (touched.current = true))}
         nodesConnectable={editable}

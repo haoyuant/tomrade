@@ -208,10 +208,36 @@ const run = async () => {
   win.webContents.sendInputEvent({ type: "mouseDown", x: centre.x, y: centre.y, button: "left", clickCount: 1 });
   win.webContents.sendInputEvent({ type: "mouseUp", x: centre.x, y: centre.y, button: "left", clickCount: 1 });
   await sleep(900);
+  // Sweeping across cards is not a hover on each: the focus stays put until the pointer rests.
+  const centres = await $(`[...document.querySelectorAll('.react-flow__node:not(.is-focus) .card')].slice(0, 3).map((c) => { const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), id: c.closest('.react-flow__node').dataset.id }; })`);
+  const before = await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id ?? null`);
+  const seen = new Set();
+  for (const c of centres) {
+    win.webContents.sendInputEvent({ type: "mouseMove", x: c.x, y: c.y });
+    await sleep(30);
+    seen.add(await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id ?? null`));
+  }
+  check("a pointer sweeping across cards does not strobe the focus", seen.size === 1 && seen.has(before), [...seen]);
+  await sleep(400);
+  check("and the focus settles where it rests", (await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id`)) === centres.at(-1).id);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: centre.x, y: centre.y });
+  await sleep(400);
   check("a real click on the hovered card opens it", (await $(`document.querySelector('.detail .card-id')?.textContent`)) === (await $(`document.querySelector('.react-flow__node[data-id="${hovered}"] .card-id')?.textContent`)));
   win.webContents.sendInputEvent({ type: "mouseMove", x: 5, y: 5 });
   await press(`document.querySelector('.react-flow__pane')`);
   await sleep(500);
+  // The highlight fades rather than snaps: rings, lines and arrowheads all ease between states.
+  const fades = await $(`(() => {
+    const ms = (el, prop) => { const cs = getComputedStyle(el); const props = cs.transitionProperty.split(', '); const i = props.indexOf(prop); return i < 0 ? 0 : parseFloat(cs.transitionDuration.split(', ')[i]) * 1000; };
+    return {
+      ring: ms(document.querySelector('.react-flow__node .card'), 'box-shadow'),
+      dim: ms(document.querySelector('.react-flow__node'), 'opacity'),
+      line: ms(document.querySelector('.react-flow__edge-path'), 'stroke'),
+      arrow: ms(document.querySelector('.edge-arrow'), 'fill')
+    };
+  })()`);
+  check("the ring, the dimming, the lines and the arrowheads fade", Object.values(fades).every((v) => v >= 250), fades);
+  check("every arrow has its own arrowhead in its line's colour", (await $(`[...document.querySelectorAll('.react-flow__edge')].every((g) => g.querySelector('.edge-arrow')?.style.fill === g.querySelector('.react-flow__edge-path').style.stroke)`)) === true);
   check("every live dependency carries a flowing dot", (await $(`document.querySelectorAll('.edge-flow').length`)) === edgeCount, await $(`document.querySelectorAll('.edge-flow').length`));
 
   // The settled ticket comes back on request, its arrows dashed and still, and goes again.

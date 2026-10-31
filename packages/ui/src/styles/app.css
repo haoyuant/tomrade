@@ -3231,17 +3231,29 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__handle:hover { border-color: var(--accent); }
 .graph-region .react-flow__edge { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
-/* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back */
-.graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity 180ms ease; }
+.graph-region .react-flow__edge.selected .edge-arrow { fill: var(--accent) !important; }
+/* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back.
+   Rings, lines, arrowheads and the dimming all fade, slower than a hover, so a change of focus reads as one soft shift. */
+.graph-region { --graph-fade: 280ms; }
+.graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity var(--graph-fade) var(--ease-standard); }
+.graph-region .react-flow__node .card {
+  transition: box-shadow var(--graph-fade) var(--ease-standard), border-color var(--graph-fade) var(--ease-standard);
+}
+.graph-region .react-flow__edge-path {
+  transition: stroke var(--graph-fade) var(--ease-standard), stroke-width var(--graph-fade) var(--ease-standard);
+}
+.graph-region .edge-arrow { pointer-events: none; transition: fill var(--graph-fade) var(--ease-standard); }
 .graph-region .react-flow__node.is-dim { opacity: 0.32; }
 .graph-region .react-flow__edge.is-dim { opacity: 0.22; }
 .graph-region .react-flow__node.is-focus .card { box-shadow: var(--focus-ring); }
 .graph-region .react-flow__node.is-up .card, .graph-region .react-flow__node.is-down .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
-/* an open dependency carries a dot from the blocker to what it blocks */
-.graph-region .edge-flow { pointer-events: none; }
+/* an open dependency carries a dot from the blocker to what it blocks; it fades in rather than popping */
+.graph-region .edge-flow { pointer-events: none; animation: graph-fade-in var(--graph-fade) var(--ease-standard) both; }
+@keyframes graph-fade-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .graph-region .edge-flow { display: none; }
-  .graph-region .react-flow__node, .graph-region .react-flow__edge { transition: none; }
+  .graph-region .react-flow__node, .graph-region .react-flow__edge, .graph-region .react-flow__node .card,
+  .graph-region .react-flow__edge-path, .graph-region .edge-arrow { transition: none; }
 }
 .graph-region .react-flow__connectionline { stroke: var(--accent); }
 .graph-empty { position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none; }
