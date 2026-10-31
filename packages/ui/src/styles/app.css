@@ -1115,7 +1115,7 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .board-scroll-area[data-has-more="true"] { padding-bottom: 48px; }
 .board-scroll-fade {
-  position: absolute; top: 0; right: 0; bottom: 48px; width: 32px;
+  position: absolute; top: 0; right: 0; bottom: 0; width: 32px;
   background: linear-gradient(to right, transparent, var(--bg));
   pointer-events: none;
 }
