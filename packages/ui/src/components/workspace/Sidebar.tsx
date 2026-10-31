@@ -10,6 +10,7 @@ import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
 import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
 import { viewIcon } from "~/lib/domain";
+import { GROUPED_TABLE_PRESETS, groupedTableQuery } from "~/lib/viewPresets";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import { useCreateBoard, useCreateView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
@@ -110,6 +111,11 @@ function NewViewRow() {
   const undoWrite = useToastUndo(project.id);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const presets = useRef<HTMLDivElement | null>(null);
+  // The row sits at the foot of a long list: bring the presets under it into sight.
+  useEffect(() => {
+    if (editing) presets.current?.scrollIntoView({ block: "nearest" });
+  }, [editing]);
 
   if (!editing) {
     return (
@@ -120,26 +126,46 @@ function NewViewRow() {
     );
   }
 
+  const make = (input: Parameters<typeof create.mutate>[0]) =>
+    create.mutate(input, {
+      onSuccess: (view) => {
+        setEditing(false);
+        openView(view.id);
+        toast({
+          body: <>{tx("sidebar.createdViewToast", { name: <span className="num">{view.name}</span> })}</>,
+          onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
+        });
+      },
+      onError: (err) => toast(errorSpec(err))
+    });
+
   const commit = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return setEditing(false);
-    create.mutate(
-      { name: trimmed, icon: "i-board", layout: "board", query: { columnBy: "status" } },
-      {
-        onSuccess: (view) => {
-          setEditing(false);
-          openView(view.id);
-          toast({
-            body: <>{tx("sidebar.createdViewToast", { name: <span className="num">{trimmed}</span> })}</>,
-            onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
-          });
-        },
-        onError: (err) => toast(errorSpec(err))
-      }
-    );
+    make({ name: trimmed, icon: "i-board", layout: "board", query: { columnBy: "status" } });
   };
 
-  return <InlineNameRow icon="i-board" ariaLabel={t("sidebar.newViewNameAria")} placeholder={t("sidebar.viewNamePlaceholder")} onCommit={commit} onCancel={() => setEditing(false)} />;
+  return (
+    <>
+      <InlineNameRow icon="i-board" ariaLabel={t("sidebar.newViewNameAria")} placeholder={t("sidebar.viewNamePlaceholder")} onCommit={commit} onCancel={() => setEditing(false)} />
+      <div ref={presets} className="side-presets" role="group" aria-label={t("sidebar.presetsLabel")}>
+        <span className="side-presets-label">{t("sidebar.presetsLabel")}</span>
+        {GROUPED_TABLE_PRESETS.map((p) => (
+          <button
+            type="button"
+            key={p.groupBy}
+            className="side-row side-add"
+            // Keeps the name field focused: its blur would close this row before the click lands.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => make({ name: t(p.name), icon: p.icon, layout: "table", query: groupedTableQuery(p.groupBy) })}
+          >
+            <Icon className="ico" name={p.icon} size={14} />
+            <span className="side-name">{t(p.name)}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
 }
 
 /**

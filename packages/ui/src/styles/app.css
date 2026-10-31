@@ -724,6 +724,8 @@ strong { font-weight: var(--font-weight-medium); }
 .side-row[aria-current="true"] .side-count { color: var(--muted); }
 .side-add { color: var(--muted); font-size: var(--text-sm); }
 .side-add:hover { color: var(--fg); }
+.side-presets { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.side-presets-label { padding: 4px var(--space-2) 2px 12px; font-size: var(--text-xs); color: var(--meta); }
 
 /* A sidebar row is a VIEW — one saved way of looking at the project's backlog,
  * whatever its layout. Workstreams are a field, not a place, so they live in

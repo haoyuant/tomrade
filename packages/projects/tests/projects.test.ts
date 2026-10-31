@@ -50,14 +50,14 @@ describe("projects", () => {
     expect(project.keyPrefix).toBe("TOM");
     expect(projects.list().length).toBe(1);
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
-    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Backlog", "Recently updated"]);
+    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Backlog", "Recently updated", "By status", "By epic", "By priority", "By workstream"]);
   });
 
   it("names the seeded workstream and views in the language asked for", async () => {
     const { projects, boards, views } = await fresh();
     const p = projects.create({ name: "番茄", locale: "zh-CN" });
     expect(boards.list(p.id).map((b) => b.name)).toEqual(["主线"]);
-    expect(views.listForProject(p.id).map((v) => v.name)).toEqual(["看板", "最近更新"]);
+    expect(views.listForProject(p.id).map((v) => v.name)).toEqual(["看板", "最近更新", "按状态", "按需求组", "按优先级", "按工作流"]);
   });
 
   it("a seed fills a project before anyone hears of it, leaves no history, and takes the project with it when it fails", async () => {
@@ -167,7 +167,7 @@ describe("projects", () => {
     const project = second.projects.list()[0]!;
     expect(project.name).toBe("Default Project");
     expect(second.boards.list(project.id).length).toBe(1);
-    expect(second.views.listForProject(project.id).length).toBe(2);
+    expect(second.views.listForProject(project.id).length).toBe(6);
     await second.fiber.dispose();
   });
 
