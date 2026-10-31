@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FileChange, FileEntry } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { InlineNameRow } from "~/components/workspace/InlineNameRow";
 import { useWorkspace } from "~/components/workspace/context";
@@ -62,6 +63,14 @@ function useExpanded(projectId: string, current: string | null) {
     });
   const show = (path: string) => setOpen((prev) => (prev.has(path) ? prev : persist(new Set(prev).add(path))));
   return { open, toggle, show };
+}
+
+/** A folder's rows, kept in view while the fold closes; the rows are built only for an open folder. */
+function Branch({ open, build }: { open: boolean; build: () => ReactNode[] }) {
+  const last = useRef<ReactNode[]>([]);
+  if (open) last.current = build();
+  // a long folder only fades, so the rows below it are not laid out on every frame
+  return <Collapse open={open} fade className="side-file-branch">{last.current}</Collapse>;
 }
 
 /**
@@ -296,7 +305,7 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
           <AgentContextActions actions={agentActions} paths={[entry.path]} entry={entry} />
           <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => deleteEntry(entry)} />
         </ContextMenu>,
-        ...(expanded ? rows(entry.path, depth + 1) : [])
+        ...(dir ? [<Branch key={`${entry.path}\0branch`} open={expanded && !!children.get(entry.path)?.length} build={() => rows(entry.path, depth + 1)} />] : [])
       ];
     });
 

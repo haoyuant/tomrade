@@ -45,6 +45,7 @@ import { useSendQueue } from "./agent-panel/useSendQueue";
 import { useSlashMenu } from "./agent-panel/useSlashMenu";
 import { useThreadSelection } from "./agent-panel/useThreadSelection";
 import { useConfirm } from "~/lib/confirm";
+import { swapPanels } from "~/lib/motion";
 
 /** What each kind of waiting is called in the queue line. */
 const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
@@ -141,7 +142,8 @@ export function AgentPanel({
   const [swap, setSwap] = useState<{ from: BarMode; to: BarMode } | null>(null);
   if (swap && swap.from !== fromSetting) setSwap(null);
   const barMode = swap?.from === fromSetting ? swap.to : fromSetting;
-  const chooseBarMode = useCallback((mode: BarMode) => setSwap({ from: fromSetting, to: mode }), [fromSetting]);
+  // Asked for, the bar swaps as a view transition; one that follows the panel's width as it is dragged just changes.
+  const chooseBarMode = useCallback((mode: BarMode) => swapPanels(() => setSwap({ from: fromSetting, to: mode })), [fromSetting]);
   const recentSessions = useRecentSessions(projectId, open);
   const sessionCells = useSessionCells(projectId, open);
   const startingAll = useStartingAll();

@@ -19,6 +19,7 @@ import { Palette, type PaletteAction } from "./Palette";
 import { redrawTerminals } from "./TerminalCell";
 import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
+import { swapPanels } from "~/lib/motion";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
 /** What a cell's buttons and menu do, read from the window's latest render when they are used. */
@@ -182,7 +183,7 @@ export function App() {
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
   const folded = foldedHere ?? state?.folded ?? false;
   const toggleFold = useCallback(() => {
-    setFoldedHere(!folded);
+    swapPanels(() => setFoldedHere(!folded));
     send({ type: "fold", folded: !folded });
   }, [folded]);
   // The cells, or every session as one big card over them; the cells stay attached underneath.

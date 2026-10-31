@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ContractSpec, ModuleView, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { usePanelOpen } from "~/lib/panel";
 import { useAddFolder, useInstallFile, useUpdates } from "~/lib/plugins";
@@ -182,15 +183,15 @@ function FoldSection({
             <Icon className="plug-fold-chev" name="i-chev" size={14} />
             <h3 className="sec-title">{title}</h3>
           </button>
-          {open && lede && (
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              {lede}
-            </p>
-          )}
+          <Collapse open={open && !!lede} as="p" className="sec-lede plug-fold-lede">
+            {lede}
+          </Collapse>
         </div>
         {aside && <div style={{ marginLeft: "auto" }}>{aside}</div>}
       </div>
-      {open && children}
+      <Collapse open={open} fade={id === "installed"} className="plug-fold-body">
+        {children}
+      </Collapse>
     </section>
   );
 }

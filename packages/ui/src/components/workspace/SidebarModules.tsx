@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import type { SidebarModuleView, SidebarRow } from "@tomradex/contributions";
 import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
@@ -134,7 +135,7 @@ export function SidebarModule({
         <ContextMenuActionItem icon={<Icon name="i-chev" size={13} style={{ transform: "rotate(90deg)" }} />} name={t("sidebar.moveModuleDown")} disabled={!canMove.down} onSelect={() => onMove(1)} />
         <ContextMenuActionItem icon={<Icon name="i-undo" size={13} />} name={t("sidebar.resetModuleOrder")} onSelect={onResetOrder} />
       </ContextMenu>
-      {foldable && !folded && <div className="side-module-body">{children}</div>}
+      {foldable && <Collapse open={!folded} className="side-module-body">{children}</Collapse>}
     </div>
   );
 }

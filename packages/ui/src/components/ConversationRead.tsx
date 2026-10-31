@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { logQuietly } from "~/lib/api";
 import { codingFromLines, foldTools, workConclusion, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
 
@@ -69,13 +70,13 @@ export function ConvoLineRow({ line, open, onToggle, say, agentText }: { line: C
       <button type="button" className="link-btn cs-convo-copy" onClick={copy}>
         {say(copied ? "convoCopied" : "convoCopy")}
       </button>
-      {detail && open && (
-        <div className="cs-convo-detail" data-testid="cs-convo-detail">
+      {detail && (
+        <Collapse open={open} className="cs-convo-detail" data-testid="cs-convo-detail">
           <span className="cs-row-meta">{say("convoInput")}</span>
           <pre>{detail.input}</pre>
           <span className="cs-row-meta">{say("convoOutput")}</span>
           {detail.output !== undefined ? <pre>{detail.output}</pre> : <span className="cs-row-meta">{say("convoNoOutput")}</span>}
-        </div>
+        </Collapse>
       )}
     </div>
   );

@@ -69,7 +69,7 @@ export function ProjectShell() {
   const { projectId } = useParams({ strict: false }) as { projectId: string };
   const navigate = useNavigate();
   // A window a tab moved into starts without the assistant: the window it came from has it.
-  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey, { detached: false });
+  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey, { detached: false, swap: true });
   const [binding, setBinding] = useState<ScreenBinding | null>(null);
   const [requestedThread, setRequestedThread] = useState<{ id: string; at: number } | null>(null);
   const showThread = useCallback(

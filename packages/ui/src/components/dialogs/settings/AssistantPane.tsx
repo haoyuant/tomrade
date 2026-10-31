@@ -7,6 +7,7 @@ import { conducts, findEngine, useEngines, usePlaybooks } from "~/lib/agent";
 import { Icon } from "~/components/icons";
 import { ProviderInstallProblem } from "~/components/setup/QuickModelSetup";
 import { Fold, FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { invoke } from "~/lib/api";
 import { detectedHere, failedTry, pickFallbackName, pickTitleOf } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -404,43 +405,35 @@ function EngineRow({
           {t("settingsDialog.terminalOnlyNote", { title: engine.title })}
         </div>
       )}
-      {open && engine.cli && (
-        <div className="eng-body">
-          <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />
-        </div>
-      )}
-      {open && engine.mcpLink && (
-        <div className="eng-body">
-          <McpLinkSection engine={engine} />
-        </div>
-      )}
-      {open && canTry && (
-        <div className="eng-body">
-          <EngineTryRow engine={engine} command={typeof options.command === "string" ? options.command : undefined} />
-        </div>
-      )}
-      {open && (hasPicks || stepLimit) && (
-        <div className="eng-body grid-2">
-          {(engine.picks ?? []).map((pick) => (
-            <EnginePickField
-              key={pick.key}
-              engine={engine}
-              pick={pick}
-              value={typeof options[pick.key] === "string" ? (options[pick.key] as string) : ""}
-              onCommit={(value) => onCommit(pick.key, value)}
-            />
-          ))}
-          {stepLimit && (
-            <StepLimitField
-              key={String(options[stepLimit.key])}
-              engine={engine}
-              limit={stepLimit}
-              value={typeof options[stepLimit.key] === "number" ? (options[stepLimit.key] as number) : undefined}
-              onCommit={(value) => onCommit(stepLimit.key, value)}
-            />
-          )}
-        </div>
-      )}
+      <Collapse open={open && !!engine.cli} className="eng-body">
+        {engine.cli && <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />}
+      </Collapse>
+      <Collapse open={open && !!engine.mcpLink} className="eng-body">
+        <McpLinkSection engine={engine} />
+      </Collapse>
+      <Collapse open={open && canTry} className="eng-body">
+        <EngineTryRow engine={engine} command={typeof options.command === "string" ? options.command : undefined} />
+      </Collapse>
+      <Collapse open={open && (hasPicks || !!stepLimit)} className="eng-body grid-2">
+        {(engine.picks ?? []).map((pick) => (
+          <EnginePickField
+            key={pick.key}
+            engine={engine}
+            pick={pick}
+            value={typeof options[pick.key] === "string" ? (options[pick.key] as string) : ""}
+            onCommit={(value) => onCommit(pick.key, value)}
+          />
+        ))}
+        {stepLimit && (
+          <StepLimitField
+            key={String(options[stepLimit.key])}
+            engine={engine}
+            limit={stepLimit}
+            value={typeof options[stepLimit.key] === "number" ? (options[stepLimit.key] as number) : undefined}
+            onCommit={(value) => onCommit(stepLimit.key, value)}
+          />
+        )}
+      </Collapse>
     </div>
   );
 }

@@ -812,10 +812,11 @@ strong { font-weight: var(--font-weight-medium); }
 .side-ws-container:hover .side-count { visibility: hidden; }
 .side-ws-help {
   display: flex; flex-direction: column; gap: var(--space-2);
-  margin: 2px 0 var(--space-2); padding: 10px 10px 8px;
+  padding: 10px 10px 8px;
   border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border);
   font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2);
 }
+.side-ws-help-fold { margin: 2px 0 var(--space-2); }
 .side-ws-help-head { display: flex; align-items: center; }
 .side-ws-help-head strong { color: var(--fg); font-family: var(--font-display); font-size: var(--text-sm); }
 .side-ws-help-head .btn-icon { width: 20px; height: 20px; color: var(--meta); }
@@ -1829,6 +1830,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
    rows always render, so following the bottom lands on real heights. */
 .ai-scroll > :is(.turn, .trace-fold):not(:nth-last-child(-n + 12)) { content-visibility: auto; contain-intrinsic-size: auto 4em; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
+.ai-foot > .collapse { --collapse-gap: var(--space-2); }
 /* A conversation read back from an agent's record: the Terminal window's ended cells and the assistant panel's terminal sessions draw its rows alike. */
 .cs-convo-top { margin: 0; align-self: center; color: var(--meta); font-size: var(--text-xs); }
 /* Lines off screen are neither laid out nor painted until scrolled to: a long record stays quick. */
@@ -2007,7 +2009,9 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .agent-note .note-thread { color: var(--muted); }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
 /* The last few to end, below a rule so they never read as still going. */
-.sbar-ended { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+.sbar-ended { display: flex; flex-direction: column; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+/* its own margin, not the parent's gap, so the list folds without leaving a gap behind */
+.sbar-ended-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }
 .sbar-peek-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--fg); }
@@ -2693,6 +2697,9 @@ button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .picture-sliders input[type="range"] { width: 100%; min-width: 0; max-width: none; margin: 0; }
 .picture-sliders .picture-who { grid-column: 2 / -1; justify-self: start; }
 .picture-form { display: flex; flex-wrap: wrap; gap: var(--space-5); margin-top: var(--space-3); padding: var(--space-4); }
+/* the fold carries the gap above the form, so it opens and closes with it */
+.picture-form-fold { margin-top: var(--space-3); }
+.picture-form-fold > .picture-form { margin-top: 0; }
 .picture-form-slots { display: flex; align-items: flex-start; gap: var(--space-4); flex-shrink: 0; }
 .picture-form-hint { margin: 0; font-size: var(--text-xs); color: var(--muted); max-width: 52ch; }
 .picture-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
@@ -3262,6 +3269,8 @@ button.kref { cursor: pointer; }
 .side-label-btn[aria-current="true"] .side-label,
 .side-label-btn[aria-expanded="true"] .side-label { color: var(--fg); }
 .side-file-row-container { position: relative; display: flex; align-items: center; border-radius: var(--radius-sm); }
+/* a folder's rows sit in the list as if they were its own rows */
+.side-file-branch { display: flex; flex-direction: column; gap: 1px; }
 .side-file-row-container .side-row { flex: 1; }
 .side-file-row-container.is-drag-over { background: var(--tag-bg-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .side-files-list.is-drag-over { background: var(--tag-bg-faint); box-shadow: inset 0 0 0 1px var(--border); border-radius: var(--radius-sm); }
@@ -3463,7 +3472,11 @@ button.kref { cursor: pointer; }
 .fold-head:hover { color: var(--accent); }
 .fold-head:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .fold-body { margin-top: var(--space-3); }
-.plug-fold.folded .sec-head { margin-bottom: 0; }
+/* the gap under the head belongs to the body, so it folds away with it */
+.plug-fold > .sec-head, #settingsSheet .plug-fold > .sec-head { margin-bottom: 0; }
+.plug-fold-body { margin-top: var(--space-4); }
+.plug-fold-lede { margin-top: 4px; }
+#settingsSheet .plug-fold-body { margin-top: var(--space-3); }
 .plug-fold-head { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; }
 .plug-fold-head:disabled { cursor: default; }
 .plug-fold-head:hover:not(:disabled) .sec-title { color: var(--accent); }

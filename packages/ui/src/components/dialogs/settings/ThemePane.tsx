@@ -3,6 +3,7 @@ import { useParams } from "@tanstack/react-router";
 import { THEME_TYPOGRAPHY_NAMES, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { SectionHead, Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -420,7 +421,7 @@ export function ThemePane({
       </div></div></div>
       <ThemePreview customThemes={customThemes} preference={preference} onPick={setPreference} onCreate={() => createCustomTheme(openThemeEditor)}
         onPicture={() => setPictureOpen(open => !open)} pictureOpen={pictureOpen} />
-      {pictureOpen && <PictureThemeForm onClose={() => setPictureOpen(false)} onConversation={onLeave} />}
+      <Collapse open={pictureOpen} className="picture-form-fold"><PictureThemeForm onClose={() => setPictureOpen(false)} onConversation={onLeave} /></Collapse>
       <hr className="rule" />
       <AppearanceGroupHead title={t("settingsDialog.themeSwitchMode")} />
       <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />

@@ -1,0 +1,83 @@
+/* Folds and panels move for a moment when they open and close, then stop: nothing here runs while the page is still.
+   A fold lays out only itself for those few frames; a whole panel swaps as a view transition, snapshots the GPU moves,
+   so the board is never laid out frame by frame. Nothing moves for reduced motion, performance mode, or when Chromium
+   composites without the GPU (data-performance, data-software-compositing on <html>); motion.ts asks the same. */
+@layer components {
+
+/* ─── a fold that React shows and hides (components/ui/collapse.tsx) ─── */
+.collapse { interpolate-size: allow-keywords; }
+.collapse[data-phase] { transition: opacity var(--motion-base) var(--ease-standard); }
+.collapse[data-phase="exit"] { opacity: 0; }
+@starting-style { .collapse[data-phase="enter"] { opacity: 0; } }
+/* It grows and folds too, unless it is a long list that only fades: then its height arrives at once, and nothing
+   below it is laid out again on every frame. It clips only while it moves. */
+.collapse:not(.is-fade)[data-phase] {
+  overflow: clip;
+  /* a flex item would not shrink below its content otherwise: clip, unlike hidden, leaves its automatic minimum */
+  min-block-size: 0;
+  transition:
+    block-size var(--motion-base) var(--ease-standard),
+    padding-block var(--motion-base) var(--ease-standard),
+    margin-block var(--motion-base) var(--ease-standard),
+    opacity var(--motion-base) var(--ease-standard);
+}
+/* In a flex or grid parent with a gap, the site names that gap as --collapse-gap: folded, the fold's margin takes it
+   back, so the gap closes with the fold instead of jumping when it comes and goes. */
+.collapse:not(.is-fade)[data-phase="exit"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
+@starting-style {
+  .collapse:not(.is-fade)[data-phase="enter"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
+}
+
+/* A fold's arrow turns rather than jumps. */
+:is(summary, [aria-expanded], .fold-chev) svg { transition: transform var(--motion-base) var(--ease-standard); }
+
+/* ─── a native <details> ───
+   Its content grows to its height and folds back. It clips while it moves, and only then, so a tooltip or menu inside
+   an open one is not cut off: the clip lifts once the opening is done, and returns at once when it starts closing. */
+details { interpolate-size: allow-keywords; }
+details::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition:
+    block-size var(--motion-base) var(--ease-standard),
+    content-visibility var(--motion-base) allow-discrete,
+    overflow 0s allow-discrete;
+}
+details[open]::details-content {
+  block-size: auto;
+  overflow: visible;
+  transition:
+    block-size var(--motion-base) var(--ease-standard),
+    content-visibility var(--motion-base) allow-discrete,
+    overflow 0s var(--motion-base) allow-discrete;
+}
+
+/* ─── whole panels (motion.ts swapPanels) ───
+   Named only while a swap runs. Each panel's two snapshots keep their own size and slide with the panel's edge
+   rather than stretching to fit it. */
+.panel-swap :is(.sidebar, .side-rail) { view-transition-name: sidebar; }
+.panel-swap .main-col { view-transition-name: board; }
+.panel-swap aside.detail:not(.expanded) { view-transition-name: detail; }
+.panel-swap :is(.ai, .ai-rail) { view-transition-name: assistant; }
+.panel-swap .sbar { view-transition-name: session-bar; }
+.panel-swap .cs-main { view-transition-name: terminals; }
+.panel-swap .cs-side { view-transition-name: terminal-bar; }
+::view-transition-group(*) { animation-duration: var(--motion-base); animation-timing-function: var(--ease-standard); }
+::view-transition-group(sidebar), ::view-transition-group(board), ::view-transition-group(detail),
+::view-transition-group(assistant), ::view-transition-group(session-bar),
+::view-transition-group(terminals), ::view-transition-group(terminal-bar) { overflow: clip; }
+::view-transition-old(sidebar), ::view-transition-new(sidebar), ::view-transition-old(board), ::view-transition-new(board),
+::view-transition-old(detail), ::view-transition-new(detail), ::view-transition-old(assistant), ::view-transition-new(assistant),
+::view-transition-old(session-bar), ::view-transition-new(session-bar), ::view-transition-old(terminals), ::view-transition-new(terminals),
+::view-transition-old(terminal-bar), ::view-transition-new(terminal-bar) {
+  block-size: 100%; inline-size: 100%; object-fit: none; object-position: left top;
+}
+
+/* ─── still ─── */
+:root:is([data-performance], [data-software-compositing]) :is(.collapse[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
+:root:is([data-performance], [data-software-compositing]) :is(details, details[open])::details-content { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.collapse[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
+  :is(details, details[open])::details-content { transition: none; }
+}
+}

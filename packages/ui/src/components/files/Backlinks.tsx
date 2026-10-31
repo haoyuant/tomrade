@@ -3,6 +3,7 @@ import type { Mention } from "@tomradex/notes";
 import { linkTarget, noteName, parseNote } from "@tomradex/notes/syntax";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { useWorkspace } from "~/components/workspace/context";
 import { invoke } from "~/lib/api";
 import { nameOf } from "~/lib/files";
@@ -91,22 +92,20 @@ export function Backlinks({ projectId, path, paths }: { projectId: string; path:
             <Eyebrow>{t("notes.unlinked")}</Eyebrow>
             <span className="meta-txt num">{unlinked.length}</span>
           </button>
-          {showUnlinked && (
-            <div className="mention-list" data-kind="unlinked">
-              {unlinked.map((m) => (
-                <MentionRow
-                  key={`${m.path}:${m.line}`}
-                  mention={m}
-                  onOpen={() => openFile(m.path)}
-                  action={
-                    <button type="button" className="btn btn-ghost mention-link" onClick={() => void link(m)}>
-                      {t("notes.linkIt")}
-                    </button>
-                  }
-                />
-              ))}
-            </div>
-          )}
+          <Collapse open={showUnlinked} fade className="mention-list" data-kind="unlinked">
+            {unlinked.map((m) => (
+              <MentionRow
+                key={`${m.path}:${m.line}`}
+                mention={m}
+                onOpen={() => openFile(m.path)}
+                action={
+                  <button type="button" className="btn btn-ghost mention-link" onClick={() => void link(m)}>
+                    {t("notes.linkIt")}
+                  </button>
+                }
+              />
+            ))}
+          </Collapse>
         </>
       )}
     </section>

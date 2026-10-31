@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { McpClientSettings, McpServerConfig, McpServerView, McpTestResult } from "@tomradex/mcp-client";
 import { Icon } from "~/components/icons";
 import { FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpServers, useParseMcpConfig, useReconnectMcpServer, useTestMcpServer } from "~/lib/mcpClient";
 import { useSaveSettings, useSettings } from "~/lib/queries";
@@ -305,12 +306,10 @@ function ServerRow({
           <button type="button" className="switch" role="switch" aria-checked={server.enabled} aria-label={t("mcpServers.enableAria", { id: server.id })} disabled={busy} onClick={onToggle} />
         </div>
       </div>
-      {open && foldable && (
-        <div className="mcp-detail fold-row-body">
-          {server.state === "failed" && server.error && <pre className="mcp-error">{server.error}</pre>}
-          {server.state === "connected" && <ToolTable server={server} />}
-        </div>
-      )}
+      <Collapse open={open && foldable} fade className="mcp-detail fold-row-body">
+        {server.state === "failed" && server.error && <pre className="mcp-error">{server.error}</pre>}
+        {server.state === "connected" && <ToolTable server={server} />}
+      </Collapse>
     </div>
   );
 }

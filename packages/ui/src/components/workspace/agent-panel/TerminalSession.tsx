@@ -8,6 +8,7 @@ import { PROMPT_LINES, promptOnScreen, trustOnScreen } from "@tomradex/code-link
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type AgentText, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
 import { followEnd } from "~/lib/followEnd";
@@ -492,7 +493,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         </div>
       </div>
       <div className="ai-foot ai-session-foot" onDragOver={overFiles} onDrop={dropFiles}>
-        {drawer && session.herdrPane && live && (
+        <Collapse open={drawer && !!session.herdrPane && live}>
           <div className="ai-drawer-box" ref={drawerBox} data-testid="ai-drawer-box">
             <div className="ai-drawer-head">
               <span className="ai-drawer-title" data-testid="ai-drawer-title">{[title || t("agentPanel.newThread"), cell ? t("sessionBar.whereCell", { n: cell }) : null, canType ? t("sessionBar.drawerTypes") : null].filter(Boolean).join(" · ")}</span>
@@ -526,7 +527,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               </label>
             )}
           </div>
-        )}
+        </Collapse>
         {usage?.turn && <TurnLine turn={usage.turn} runs={live && (session.state === "running" || isApprovalAsk(session))} />}
         {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
         {trusting && canType ? (

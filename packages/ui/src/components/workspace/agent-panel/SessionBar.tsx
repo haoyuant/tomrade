@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement }
 import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { FoldChevron } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
@@ -314,7 +315,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
               <FoldChevron open={endedOpen} label={t("sessionBar.justEnded", { n: ended.length })} testId="sbar-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
               <span className="meta-txt dense">{t("sessionBar.justEnded", { n: ended.length })}</span>
             </span>
-            {endedOpen && ended.map(card)}
+            <Collapse open={endedOpen} className="sbar-ended-list">{ended.map(card)}</Collapse>
           </div>
         )}
         {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}

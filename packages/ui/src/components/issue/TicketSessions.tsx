@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TimelineEntry, TimelineStop } from "@tomradex/code-link";
 import { Eyebrow, FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
 import { Icon } from "~/components/icons";
+import { Collapse } from "~/components/ui/collapse";
 import { findEngine, useEngines } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { offerApart, useTicketTimeline } from "~/lib/codeLink";
@@ -89,8 +90,7 @@ export function TicketSessions({ projectId, itemId, variant = "pane" }: { projec
                 </span>
                 <span className="ticket-timeline-outcome">{e.outcome ?? t("codeLink.timelineNoOutcome")}</span>
                 {facts(e) && <span className="meta-txt dense">{facts(e)}</span>}
-                {unfolded && (
-                  <div className="ticket-timeline-stops" data-testid="ticket-timeline-stops">
+                <Collapse open={unfolded} className="ticket-timeline-stops" data-testid="ticket-timeline-stops">
                     <span className="eyebrow">{t("codeLink.timelineStops")}</span>
                     <ol>
                       {e.stops.map((s) => (
@@ -99,8 +99,7 @@ export function TicketSessions({ projectId, itemId, variant = "pane" }: { projec
                         </li>
                       ))}
                     </ol>
-                  </div>
-                )}
+                </Collapse>
               </div>
             </li>
           );
