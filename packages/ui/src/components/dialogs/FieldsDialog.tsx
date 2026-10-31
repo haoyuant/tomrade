@@ -3,6 +3,7 @@ import type { FieldDef, FieldType, Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { Eyebrow, FoldChevron, FoldChevronSpace, Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { FIELD_TYPE_LABEL, fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import {
@@ -18,6 +19,7 @@ import {
 import { errorSpec, useToast } from "~/lib/toast";
 import { InlineEdit } from "~/components/ui/InlineEdit";
 import { isCommitKey } from "~/lib/keys";
+import { motionAllowed } from "~/lib/motion";
 import { WorkstreamEditor } from "./WorkstreamEditor";
 
 const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select", "checkbox"];
@@ -72,6 +74,10 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
     setConfirming(false);
     setRemoving(null);
     ref.current?.scrollIntoView({ block: "nearest" });
+    // An editor that grows open has its full height only once the fold is done; look again then.
+    if (!motionAllowed()) return;
+    const grown = window.setTimeout(() => ref.current?.scrollIntoView({ block: "nearest" }), 240);
+    return () => window.clearTimeout(grown);
   }, [def.id]);
 
   const fail = (err: Error) => toast(errorSpec(err));
@@ -150,15 +156,14 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
                 >
                   <Icon name="i-close" size={13} />
                 </button>
-                {removing?.optionId === o.id && (
-                  <div className="fld-opt-confirm" role="group" aria-label={t("fieldsDialog.removeOptionAria", { name: o.name })}>
+                <Collapse open={removing?.optionId === o.id} className="fld-opt-confirm" role="group" aria-label={t("fieldsDialog.removeOptionAria", { name: o.name })}>
                     <p className="meta-txt dense">{t(holding(o.id) === 1 ? "fieldsDialog.removeOptionHeldOne" : "fieldsDialog.removeOptionHeldMany", { n: holding(o.id), name: o.name })}</p>
                     <div className="row" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
                       <select
                         className="input"
                         style={{ width: "auto" }}
                         aria-label={t("fieldsDialog.removeOptionTargetAria", { name: o.name })}
-                        value={removing.moveTo}
+                        value={removing?.optionId === o.id ? removing.moveTo : ""}
                         onChange={(e) => setRemoving({ optionId: o.id, moveTo: e.target.value })}
                       >
                         <option value="">{t("fieldsDialog.removeOptionClear")}</option>
@@ -170,15 +175,14 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
                             </option>
                           ))}
                       </select>
-                      <button type="button" className="btn btn-danger" disabled={removeOption.isPending} onClick={() => dropOption(o.id, removing.moveTo)}>
+                      <button type="button" className="btn btn-danger" disabled={removeOption.isPending} onClick={() => dropOption(o.id, removing?.optionId === o.id ? removing.moveTo : "")}>
                         <Icon name="i-trash" size={13} /> {t("fieldsDialog.confirmRemoveOption", { name: o.name })}
                       </button>
                       <button type="button" className="btn btn-ghost" onClick={() => setRemoving(null)}>
                         {t("common.cancel")}
                       </button>
                     </div>
-                  </div>
-                )}
+                </Collapse>
               </div>
             ))}
             <div className="row" style={{ gap: "var(--space-2)" }}>
@@ -342,7 +346,7 @@ function FieldsSheet({
               f.id === "board" ? (
                 <div key={f.id} className="fld-item">
                   <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
-                  {selectedId === f.id && <div className="fold-row-body"><WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} /></div>}
+                  <Collapse open={selectedId === f.id} className="fold-row-body"><WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} /></Collapse>
                 </div>
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />
@@ -368,7 +372,7 @@ function FieldsSheet({
                 {custom.map((f) => (
                   <div key={f.id} className="fld-item">
                     <FieldRow def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
-                    {f.id === selectedId && <div className="fold-row-body"><FieldEditor projectId={projectId} def={f} items={rows} onDeleted={() => setSelectedId(null)} /></div>}
+                    <Collapse open={f.id === selectedId} className="fold-row-body"><FieldEditor projectId={projectId} def={f} items={rows} onDeleted={() => setSelectedId(null)} /></Collapse>
                   </div>
                 ))}
               </div>

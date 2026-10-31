@@ -3,6 +3,7 @@ import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImNotifyKind, ImPa
 import { GROUP_PRESETS, presetOf, type GroupPreset } from "@tomradex/im/presets";
 import { Icon, type IconId } from "~/components/icons";
 import { FoldChevron, SectionHead, Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { useEngines } from "~/lib/agent";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import {
@@ -233,18 +234,22 @@ function SharedNotify({ notify, busy, onChange }: { notify: ImSettings["notify"]
         <FoldChevron open={open} label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name: t("imSettings.notifyShared") })} onToggle={() => setOpen(!open)} testId="im-notify-fold" />
         <SectionHead title={t("imSettings.notifyShared")}>{t("imSettings.notifySharedHelp")}</SectionHead>
       </div>
-      {!open && <p className="meta-txt dense fold-row-body" data-testid="im-notify-summary">{on.length ? t("imSettings.notifyOn", { kinds: on.join(t("imSettings.listSep")) }) : t("imSettings.notifyNone")}</p>}
-      {open && NOTIFY.map(([key, label, help, icon]) => (
-        <div key={key} className={cn("cfg-row", !notify[key] && "off")} data-im-notify-kind={key}>
-          <Icon name={icon} size={15} style={{ color: notify[key] ? "var(--accent)" : "var(--meta)" }} />
-          <div className="cfg-name">
-            {t(label)}
-            <div className="meta-txt dense">{t(help)}</div>
+      <Collapse open={!open} as="p" className="meta-txt dense fold-row-body" data-testid="im-notify-summary">
+        {on.length ? t("imSettings.notifyOn", { kinds: on.join(t("imSettings.listSep")) }) : t("imSettings.notifyNone")}
+      </Collapse>
+      <Collapse open={open} className="stack-2">
+        {NOTIFY.map(([key, label, help, icon]) => (
+          <div key={key} className={cn("cfg-row", !notify[key] && "off")} data-im-notify-kind={key}>
+            <Icon name={icon} size={15} style={{ color: notify[key] ? "var(--accent)" : "var(--meta)" }} />
+            <div className="cfg-name">
+              {t(label)}
+              <div className="meta-txt dense">{t(help)}</div>
+            </div>
+            <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} disabled={busy}
+              onClick={() => onChange({ ...notify, [key]: !notify[key] })} />
           </div>
-          <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} disabled={busy}
-            onClick={() => onChange({ ...notify, [key]: !notify[key] })} />
-        </div>
-      ))}
+        ))}
+      </Collapse>
     </div>
   );
 }
@@ -310,160 +315,158 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
           )}
         </div>
       </div>
-      {open && (
-        <div className="fold-row-body">
-          <div className="panel stack-2">
-            <div className="grid-2">
-              <div className="field">
-                <label htmlFor={id("project")}>{t("imSettings.project")}</label>
-                <ProjectSelect id={id("project")} value={route.projectId} onChange={(projectId) => set({ projectId, boardId: null })} />
-              </div>
-              <div className="field">
-                <label htmlFor={id("engine")}>{t("imSettings.engine")}</label>
-                <select id={id("engine")} className="input" value={route.engine ?? ""} onChange={(e) => set({ engine: e.target.value || undefined, options: undefined, permissionMode: undefined })}>
-                  <option value="">{t("imSettings.engineDefault")}</option>
-                  {(engines.data ?? []).filter((e) => (e.ok && !e.terminalOnly) || e.id === route.engine).map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-                </select>
-              </div>
-              {(engine?.picks ?? []).map((pick) => (
-                <div className="field" key={pick.key}>
-                  <label htmlFor={id(`pick-${pick.key}`)}>{pick.title}</label>
-                  <select id={id(`pick-${pick.key}`)} className="input" value={String(route.options?.[pick.key] ?? "")} onChange={(e) => {
-                    const { [pick.key]: _old, ...rest } = route.options ?? {};
-                    const options = e.target.value ? { ...rest, [pick.key]: e.target.value } : rest;
-                    set({ options: Object.keys(options).length ? options : undefined });
-                  }}>
-                    <option value="">{t("imSettings.optionDefault")}</option>
-                    {pick.choices.map((c) => <option key={c.value} value={c.value}>{c.label ?? c.value}</option>)}
-                  </select>
-                </div>
-              ))}
-              {engine?.permissionModes && (
-                <div className="field">
-                  <label htmlFor={id("mode")}>{t("imSettings.mode")}</label>
-                  <select id={id("mode")} className="input" value={route.permissionMode ?? ""} onChange={(e) => set({ permissionMode: e.target.value || undefined })}>
-                    <option value="">{t("imSettings.optionDefault")}</option>
-                    {engine.permissionModes.choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-              )}
-              {route.kind === "group" && (
-                <div className="field">
-                  <label htmlFor={id("purpose")}>{t("imSettings.purpose")}</label>
-                  <select id={id("purpose")} className="input" value={preset ?? "custom"} onChange={(e) => choose(e.target.value)}>
-                    {PURPOSES.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
-                    <option value="custom">{t("imSettings.purposeCustom")}</option>
-                  </select>
-                </div>
-              )}
-              {route.kind !== "dm" && detailed && (
-                <div className="field">
-                  <label htmlFor={id("activation")}>{t("imSettings.activation")}</label>
-                  <select id={id("activation")} className="input" value={route.groupActivation} disabled={!route.allowGroups} onChange={(e) => set({ groupActivation: e.target.value as ImRoute["groupActivation"] })}>
-                    <option value="mention">{t("imSettings.activationMention")}</option>
-                    <option value="reply">{t("imSettings.activationReply")}</option>
-                    <option value="all">{t("imSettings.activationAll")}</option>
-                  </select>
-                </div>
-              )}
-              <div className="field">
-                <label htmlFor={id("output")}>{t("imSettings.output")}</label>
-                <select id={id("output")} className="input" value={route.output} onChange={(e) => set({ output: e.target.value as ImRoute["output"] })}>
-                  <option value="progress">{t("imSettings.outputProgress")}</option>
-                  <option value="final">{t("imSettings.outputFinal")}</option>
-                  <option value="verbose">{t("imSettings.outputVerbose")}</option>
-                </select>
-              </div>
+      <Collapse open={open} className="fold-row-body">
+        <div className="panel stack-2">
+          <div className="grid-2">
+            <div className="field">
+              <label htmlFor={id("project")}>{t("imSettings.project")}</label>
+              <ProjectSelect id={id("project")} value={route.projectId} onChange={(projectId) => set({ projectId, boardId: null })} />
             </div>
-            {switches.length > 0 && (
-              <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-                {switches.map(([key, label]) => (
-                  <label key={key} className="row" style={{ gap: 6 }}>
-                    <button type="button" className="switch" role="switch" aria-checked={route[key]} aria-label={t(label)} onClick={() => set({ [key]: !route[key] })} />
-                    {t(label)}
-                  </label>
-                ))}
+            <div className="field">
+              <label htmlFor={id("engine")}>{t("imSettings.engine")}</label>
+              <select id={id("engine")} className="input" value={route.engine ?? ""} onChange={(e) => set({ engine: e.target.value || undefined, options: undefined, permissionMode: undefined })}>
+                <option value="">{t("imSettings.engineDefault")}</option>
+                {(engines.data ?? []).filter((e) => (e.ok && !e.terminalOnly) || e.id === route.engine).map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+              </select>
+            </div>
+            {(engine?.picks ?? []).map((pick) => (
+              <div className="field" key={pick.key}>
+                <label htmlFor={id(`pick-${pick.key}`)}>{pick.title}</label>
+                <select id={id(`pick-${pick.key}`)} className="input" value={String(route.options?.[pick.key] ?? "")} onChange={(e) => {
+                  const { [pick.key]: _old, ...rest } = route.options ?? {};
+                  const options = e.target.value ? { ...rest, [pick.key]: e.target.value } : rest;
+                  set({ options: Object.keys(options).length ? options : undefined });
+                }}>
+                  <option value="">{t("imSettings.optionDefault")}</option>
+                  {pick.choices.map((c) => <option key={c.value} value={c.value}>{c.label ?? c.value}</option>)}
+                </select>
+              </div>
+            ))}
+            {engine?.permissionModes && (
+              <div className="field">
+                <label htmlFor={id("mode")}>{t("imSettings.mode")}</label>
+                <select id={id("mode")} className="input" value={route.permissionMode ?? ""} onChange={(e) => set({ permissionMode: e.target.value || undefined })}>
+                  <option value="">{t("imSettings.optionDefault")}</option>
+                  {engine.permissionModes.choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
               </div>
             )}
-            {detailed && (
-              <div className="stack-2" data-im-notify={route.id}>
-                <label className="row" style={{ gap: 6 }}>
-                  <button type="button" className="switch" role="switch" aria-checked={!custom} aria-label={t("imSettings.notifyFollow")}
-                    onClick={() => set({ notify: custom ? undefined : { ...notify } })} />
-                  {t("imSettings.notifyFollow")}
-                </label>
-                {custom && (
-                  <>
-                    <div className="eyebrow">{t("imSettings.notify")}</div>
-                    <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-                      {NOTIFY.map(([key, label]) => (
-                        <label key={key} className="row" style={{ gap: 6 }}>
-                          <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} onClick={() => set({ notify: { ...notify, [key]: !notify[key] } })} />
-                          {t(label)}
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
+            {route.kind === "group" && (
+              <div className="field">
+                <label htmlFor={id("purpose")}>{t("imSettings.purpose")}</label>
+                <select id={id("purpose")} className="input" value={preset ?? "custom"} onChange={(e) => choose(e.target.value)}>
+                  {PURPOSES.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
+                  <option value="custom">{t("imSettings.purposeCustom")}</option>
+                </select>
               </div>
             )}
-            {route.allowGroups && route.kind !== "dm" && detailed && (
-              <div className="stack-2" data-im-ticket-topics={route.id}>
-                <label className="row" style={{ gap: 6 }}>
-                  <button type="button" className="switch" role="switch" aria-checked={route.ticketTopics !== false} aria-label={t("imSettings.ticketTopics")}
-                    onClick={() => set({ ticketTopics: route.ticketTopics === false })} />
-                  {t("imSettings.ticketTopics")}
-                </label>
-                <p className="meta-txt dense">{t("imSettings.ticketTopicsHelp")}</p>
-              </div>
-            )}
-            {route.allowGroups && route.kind !== "dm" && (
-              <div className="stack-2" data-im-group-context={route.id}>
-                <label className="row" style={{ gap: 6 }}>
-                  <button type="button" className="switch" role="switch" aria-checked={windowed.enabled} aria-label={t("imSettings.groupContext")} onClick={() => setWindow({ enabled: !windowed.enabled })} />
-                  {t("imSettings.groupContext")}
-                </label>
-                <p className="meta-txt dense">{t("imSettings.groupContextHelp")}</p>
-                {windowed.enabled && (
-                  <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-                    <div className="field">
-                      <label htmlFor={id("window-messages")}>{t("imSettings.groupContextMessages")}</label>
-                      <input id={id("window-messages")} className="input num" type="number" min={1} max={100} value={windowed.messages}
-                        onChange={(e) => setWindow({ messages: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={id("window-hours")}>{t("imSettings.groupContextHours")}</label>
-                      <input id={id("window-hours")} className="input num" type="number" min={1} max={720} value={windowed.retentionHours}
-                        onChange={(e) => setWindow({ retentionHours: Math.min(720, Math.max(1, Number(e.target.value) || 1)) })} />
-                    </div>
-                    <button type="button" className="btn btn-secondary" disabled={clear.isPending}
-                      onClick={() => clear.mutate([route.id], { onSuccess: (n) => setCleared(n) })}>
-                      {t("imSettings.groupContextClear")}
-                    </button>
-                    {cleared !== null && <span className="meta-txt">{t("imSettings.groupContextCleared", { n: cleared })}</span>}
-                  </div>
-                )}
+            {route.kind !== "dm" && detailed && (
+              <div className="field">
+                <label htmlFor={id("activation")}>{t("imSettings.activation")}</label>
+                <select id={id("activation")} className="input" value={route.groupActivation} disabled={!route.allowGroups} onChange={(e) => set({ groupActivation: e.target.value as ImRoute["groupActivation"] })}>
+                  <option value="mention">{t("imSettings.activationMention")}</option>
+                  <option value="reply">{t("imSettings.activationReply")}</option>
+                  <option value="all">{t("imSettings.activationAll")}</option>
+                </select>
               </div>
             )}
             <div className="field">
-              <label>{t("imSettings.people")}</label>
-              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                {route.allowedActors.map((actor) => (
-                  <span key={actor} className="row" style={{ gap: 2 }}>
-                    <Tag tone="neutral">{names.get(actor) ?? actor}</Tag>
-                    {route.allowedActors.length > 1 && (
-                      <button type="button" className="icon-btn" aria-label={t("imSettings.removePerson", { name: names.get(actor) ?? actor })}
-                        onClick={() => set({ allowedActors: route.allowedActors.filter((a) => a !== actor) })}>
-                        <Icon name="i-close" size={11} />
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
+              <label htmlFor={id("output")}>{t("imSettings.output")}</label>
+              <select id={id("output")} className="input" value={route.output} onChange={(e) => set({ output: e.target.value as ImRoute["output"] })}>
+                <option value="progress">{t("imSettings.outputProgress")}</option>
+                <option value="final">{t("imSettings.outputFinal")}</option>
+                <option value="verbose">{t("imSettings.outputVerbose")}</option>
+              </select>
+            </div>
+          </div>
+          {switches.length > 0 && (
+            <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+              {switches.map(([key, label]) => (
+                <label key={key} className="row" style={{ gap: 6 }}>
+                  <button type="button" className="switch" role="switch" aria-checked={route[key]} aria-label={t(label)} onClick={() => set({ [key]: !route[key] })} />
+                  {t(label)}
+                </label>
+              ))}
+            </div>
+          )}
+          {detailed && (
+            <div className="stack-2" data-im-notify={route.id}>
+              <label className="row" style={{ gap: 6 }}>
+                <button type="button" className="switch" role="switch" aria-checked={!custom} aria-label={t("imSettings.notifyFollow")}
+                  onClick={() => set({ notify: custom ? undefined : { ...notify } })} />
+                {t("imSettings.notifyFollow")}
+              </label>
+              {custom && (
+                <>
+                  <div className="eyebrow">{t("imSettings.notify")}</div>
+                  <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+                    {NOTIFY.map(([key, label]) => (
+                      <label key={key} className="row" style={{ gap: 6 }}>
+                        <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} onClick={() => set({ notify: { ...notify, [key]: !notify[key] } })} />
+                        {t(label)}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {route.allowGroups && route.kind !== "dm" && detailed && (
+            <div className="stack-2" data-im-ticket-topics={route.id}>
+              <label className="row" style={{ gap: 6 }}>
+                <button type="button" className="switch" role="switch" aria-checked={route.ticketTopics !== false} aria-label={t("imSettings.ticketTopics")}
+                  onClick={() => set({ ticketTopics: route.ticketTopics === false })} />
+                {t("imSettings.ticketTopics")}
+              </label>
+              <p className="meta-txt dense">{t("imSettings.ticketTopicsHelp")}</p>
+            </div>
+          )}
+          {route.allowGroups && route.kind !== "dm" && (
+            <div className="stack-2" data-im-group-context={route.id}>
+              <label className="row" style={{ gap: 6 }}>
+                <button type="button" className="switch" role="switch" aria-checked={windowed.enabled} aria-label={t("imSettings.groupContext")} onClick={() => setWindow({ enabled: !windowed.enabled })} />
+                {t("imSettings.groupContext")}
+              </label>
+              <p className="meta-txt dense">{t("imSettings.groupContextHelp")}</p>
+              {windowed.enabled && (
+                <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <div className="field">
+                    <label htmlFor={id("window-messages")}>{t("imSettings.groupContextMessages")}</label>
+                    <input id={id("window-messages")} className="input num" type="number" min={1} max={100} value={windowed.messages}
+                      onChange={(e) => setWindow({ messages: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={id("window-hours")}>{t("imSettings.groupContextHours")}</label>
+                    <input id={id("window-hours")} className="input num" type="number" min={1} max={720} value={windowed.retentionHours}
+                      onChange={(e) => setWindow({ retentionHours: Math.min(720, Math.max(1, Number(e.target.value) || 1)) })} />
+                  </div>
+                  <button type="button" className="btn btn-secondary" disabled={clear.isPending}
+                    onClick={() => clear.mutate([route.id], { onSuccess: (n) => setCleared(n) })}>
+                    {t("imSettings.groupContextClear")}
+                  </button>
+                  {cleared !== null && <span className="meta-txt">{t("imSettings.groupContextCleared", { n: cleared })}</span>}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="field">
+            <label>{t("imSettings.people")}</label>
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {route.allowedActors.map((actor) => (
+                <span key={actor} className="row" style={{ gap: 2 }}>
+                  <Tag tone="neutral">{names.get(actor) ?? actor}</Tag>
+                  {route.allowedActors.length > 1 && (
+                    <button type="button" className="icon-btn" aria-label={t("imSettings.removePerson", { name: names.get(actor) ?? actor })}
+                      onClick={() => set({ allowedActors: route.allowedActors.filter((a) => a !== actor) })}>
+                      <Icon name="i-close" size={11} />
+                    </button>
+                  )}
+                </span>
+              ))}
             </div>
           </div>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -504,7 +507,7 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
               </div>
             ))}
             {(view.pending + view.uncertain + view.failed) > 0 && <div className="meta-txt dense">{t("imSettings.counts", { pending: view.pending, uncertain: view.uncertain, failed: view.failed })}</div>}
-            {!open && <div className="meta-txt dense" data-testid="im-folded-summary">{t("imSettings.foldedSummary", { routes: routes.length, people: paired.length })}</div>}
+            <Collapse open={!open} className="meta-txt dense" data-testid="im-folded-summary">{t("imSettings.foldedSummary", { routes: routes.length, people: paired.length })}</Collapse>
           </div>
           <Tag tone={view.state === "connected" ? "strong" : view.state === "unconfigured" ? "faint" : "neutral"}>{t(STATE_KEY[view.state])}</Tag>
           <button type="button" className="icon-btn" aria-label={t("imSettings.edit")} title={t("imSettings.edit")} disabled={!adapter} onClick={onEdit}>
@@ -520,20 +523,18 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
           <button type="button" className="switch" role="switch" aria-checked={!!spec?.enabled} aria-label={t("imSettings.enableAria", { name })} disabled={busy} onClick={onToggle} />
         </div>
       </div>
-      {open && (
-        <div className="stack-3 fold-row-body">
-          <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
-          {view.state === "connected" && <GroupGuide adapter={adapter} routes={routes} />}
-          <div className="stack-2">
-            <div className="eyebrow">{t("imSettings.routes")}</div>
-            {routes.length ? routes.map((route) => (
-              <RouteRow key={route.id} route={route} names={names} shared={im.notify ?? SHARED}
-                onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
-                onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
-            )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
-          </div>
+      <Collapse open={open} fade className="stack-3 fold-row-body">
+        <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
+        {view.state === "connected" && <GroupGuide adapter={adapter} routes={routes} />}
+        <div className="stack-2">
+          <div className="eyebrow">{t("imSettings.routes")}</div>
+          {routes.length ? routes.map((route) => (
+            <RouteRow key={route.id} route={route} names={names} shared={im.notify ?? SHARED}
+              onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
+              onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
+          )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -557,26 +558,24 @@ function GroupGuide({ adapter, routes }: { adapter?: ImAdapterView; routes: ImRo
         <div className="eyebrow">{t("imSettings.groupGuide")}</div>
       </div>
       {routes.length > 0 && !groups.length && <p className="meta-txt dense fold-row-body" data-testid="im-only-direct">{t("imSettings.onlyDirect")}</p>}
-      {open && (
-        <div className="stack-2 fold-row-body">
-          <ol className="meta-txt" style={{ margin: 0, paddingLeft: 18, whiteSpace: "pre-wrap", listStyle: "decimal" }}>
-            {steps.map((step, i) => <li key={i}>{step}</li>)}
-            <li>
-              {t("imSettings.groupStepAfter")}
-              <ul style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }}>
-                <li>{t("imSettings.afterWork")}</li>
-                <li>{t("imSettings.afterStatus")}</li>
-                <li>{t("imSettings.afterChat")}</li>
-              </ul>
-            </li>
-          </ol>
-          {groups.length > 0 && (
-            <ul className="meta-txt dense" style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }} data-testid="im-group-channels">
-              {groups.map((r) => <li key={r.id}>{t("imSettings.groupChannel", { conversation: r.label ?? r.conversationId, role: t(roleOf(r)) })}</li>)}
+      <Collapse open={open} className="stack-2 fold-row-body">
+        <ol className="meta-txt" style={{ margin: 0, paddingLeft: 18, whiteSpace: "pre-wrap", listStyle: "decimal" }}>
+          {steps.map((step, i) => <li key={i}>{step}</li>)}
+          <li>
+            {t("imSettings.groupStepAfter")}
+            <ul style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }}>
+              <li>{t("imSettings.afterWork")}</li>
+              <li>{t("imSettings.afterStatus")}</li>
+              <li>{t("imSettings.afterChat")}</li>
             </ul>
-          )}
-        </div>
-      )}
+          </li>
+        </ol>
+        {groups.length > 0 && (
+          <ul className="meta-txt dense" style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }} data-testid="im-group-channels">
+            {groups.map((r) => <li key={r.id}>{t("imSettings.groupChannel", { conversation: r.label ?? r.conversationId, role: t(roleOf(r)) })}</li>)}
+          </ul>
+        )}
+      </Collapse>
     </div>
   );
 }

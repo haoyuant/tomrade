@@ -181,7 +181,7 @@ export function Workspace() {
   const navigate = useNavigate();
 
   const { setAiOpen, showThread } = useAgentDock();
-  const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
+  const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey, { swap: true });
   // The note search lives in the sidebar: asking for it, from anywhere, unfolds the sidebar.
   const searchFocus = useNotesSearchState().focus;
   useEffect(() => {

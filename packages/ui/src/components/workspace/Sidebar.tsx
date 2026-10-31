@@ -5,6 +5,7 @@ import { move } from "@dnd-kit/helpers";
 import { repoPathLabel, type Board, type Repo, type View } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { Hint } from "~/components/ui/hint";
 import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
@@ -341,7 +342,7 @@ function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardI
             <Icon name="i-sliders" size={13} />
           </button>
         </div>
-        {helpOpen && <WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} />}
+        <Collapse open={helpOpen} className="side-ws-help-fold"><WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} /></Collapse>
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {boards.map((b) => (
             <WorkstreamRow key={b.id} board={b} repo={repoOf(b)} onEdit={() => editWorkstream(b.id)} />

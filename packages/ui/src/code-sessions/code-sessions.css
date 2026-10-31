@@ -119,11 +119,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-chip[data-state="done"] { background: color-mix(in oklab, var(--success) 16%, transparent); color: var(--success); }
 /* One agent's tickets in one pane: framed together, the frame tinted while a cell shows that pane. */
 .cs-bundle { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; padding: 4px 4px 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-lg, 10px); }
+.cs-bundle > .collapse { --collapse-gap: 4px; }
 .cs-bundle[data-shown] { border-color: color-mix(in oklab, var(--accent) 22%, var(--border-soft)); }
 .cs-bundle[data-selected] { border-color: color-mix(in oklab, var(--accent) 45%, var(--border-soft)); }
 .cs-bundle-head { padding: 0 var(--space-2) 0 6px; font-size: var(--text-xs); color: var(--meta); }
 /* The last few to end, below a rule so they never read as still going. */
 .cs-ended { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.cs-ended > .collapse { --collapse-gap: 4px; }
 /* A pane that ran sessions before: its chevron left of the card, the earlier sessions under it. */
 .cs-fold-row { gap: 2px; }
 .cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }

@@ -8,6 +8,7 @@ import { sessionBarRows, type BarRow } from "../src/lib/sessionBar";
 
 vi.mock("~/components/icons", () => ({ Icon: () => null }));
 vi.mock("~/components/ui/atoms", () => ({ FoldChevron: () => null }));
+vi.mock("~/components/ui/collapse", () => ({ Collapse: ({ open, children }: { open: boolean; children: unknown }) => (open ? children : null) }));
 vi.mock("~/components/ui/menu", () => ({ ContextMenu: ({ trigger }: { trigger: unknown }) => trigger, ContextMenuActionItem: () => null }));
 vi.mock("~/lib/attention", () => ({ ATTENTION_KEY: {} }));
 vi.mock("~/lib/agent", () => ({ findEngine: () => undefined }));
