@@ -13,7 +13,7 @@ import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
 import { invalidateContributions, invalidateFiles, invalidateProject, invalidateWrites, keys, sessionsRefresher } from "./lib/queries/index.js";
-import { isLeadWindow, watchWindowAttention, watchWindowChrome } from "./lib/window-chrome.js";
+import { isLeadWindow, watchWindowChrome } from "./lib/window-chrome.js";
 import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
 import "./styles/app.css";
@@ -28,7 +28,6 @@ const queryClient = createQueryClient({ queries: { refetchOnWindowFocus: false, 
 
 // The header's left gutter tracks the traffic lights, which live outside React.
 watchWindowChrome();
-watchWindowAttention();
 
 // A sheet's scroll lock would otherwise swallow the wheel over an open select's list.
 letOpenSelectsScroll();

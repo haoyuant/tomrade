@@ -212,6 +212,12 @@ const THEME_AUTOMATION: SettingsSection<unknown> = {
   defaults: { mode: "none", defaultTheme: "sunrise", schedule: [], shuffleMinutes: 60 }
 };
 
+const PERFORMANCE_MODE: SettingsSection<boolean> = {
+  id: "performanceMode", title: "Performance mode",
+  description: "On this machine, stop decorative animation such as the Sunrise and Daybreak themes' moving light, to spare the GPU and the battery.",
+  schema: z.boolean(), defaults: false, order: 0.75, scope: "machine", agent: "write"
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** A refused value names the field and why, rather than a dump of every issue. */
@@ -328,6 +334,7 @@ export class Settings extends Service implements SettingsReader {
     this.register(THEME);
     this.register(THEME_AUTOMATION);
     this.register(CUSTOM_THEMES);
+    this.register(PERFORMANCE_MODE);
     this.register(LANGUAGE);
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());

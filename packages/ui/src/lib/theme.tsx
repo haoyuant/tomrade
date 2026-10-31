@@ -84,6 +84,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const preference = settings.data?.theme ?? "sunrise";
   const customThemes = useMemo(() => (settings.data?.customThemes ?? []) as CustomTheme[], [settings.data?.customThemes]);
   const automation = useMemo(() => ({ ...AUTOMATION_DEFAULT, ...((settings.data?.themeAutomation ?? {}) as Partial<ThemeAutomation>) }), [settings.data?.themeAutomation]);
+  const performanceMode = settings.data?.performanceMode === true;
+  // Decorative motion reads this off <html>; the stylesheets stop it.
+  useEffect(() => { document.documentElement.toggleAttribute("data-performance", performanceMode); }, [performanceMode]);
   const [clock, setClock] = useState(0);
   const active = activePreference(preference, automation, customThemes);
   const resolved = resolve(active, customThemes);
