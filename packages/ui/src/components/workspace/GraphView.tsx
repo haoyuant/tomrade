@@ -184,7 +184,7 @@ const edgeTypes = { routed: RoutedEdgeView };
 const FIT_MIN_ZOOM = 0.65;
 // fitting a wide graph never shrinks the cards past reading; the rest is a pan away
 const FIT = { padding: 0.15, maxZoom: 1, minZoom: FIT_MIN_ZOOM };
-const HOVER_ENTER_MS = 90;
+const HOVER_ENTER_MS = 50;
 const HOVER_LEAVE_MS = 120;
 /** How far from the canvas edge a graph too big to fit starts. */
 const FIT_INSET = 24;

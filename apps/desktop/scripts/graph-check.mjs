@@ -181,9 +181,21 @@ const run = async () => {
   check("a click on the canvas lets every card back", (await $(`document.querySelectorAll('.react-flow__node.is-dim, .react-flow__node.is-focus').length`)) === 0);
   // The pointer alone lights a card the same way, and takes it with it when it leaves.
   const hovered = first.edges[0].target;
-  await $(`document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))`);
+  const latency = await $(`new Promise((resolve) => {
+    const start = performance.now();
+    document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const tick = () => document.querySelector('.react-flow__node.is-focus') ? resolve(Math.round(performance.now() - start)) : performance.now() - start > 1000 ? resolve(-1) : requestAnimationFrame(tick);
+    requestAnimationFrame(tick);
+  })`);
+  check("the highlight answers the pointer within 100 ms", latency >= 0 && latency <= 100, latency);
   await sleep(300);
   check("hovering a card puts it in focus", (await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id`)) === hovered);
+  const fadeIn = await $(`(() => {
+    const ms = (el, prop) => { const cs = getComputedStyle(el); const i = cs.transitionProperty.split(', ').indexOf(prop); return i < 0 ? 0 : parseFloat(cs.transitionDuration.split(', ')[i]) * 1000; };
+    const lit = document.querySelector('.react-flow__node.is-up, .react-flow__node.is-down') ?? document.querySelector('.react-flow__node.is-focus');
+    return { ring: ms(lit.querySelector('.card'), 'box-shadow'), dim: ms(document.querySelector('.react-flow__node.is-dim'), 'opacity'), line: ms(document.querySelector('.react-flow__edge.is-up .react-flow__edge-path, .react-flow__edge.is-down .react-flow__edge-path'), 'stroke') };
+  })()`);
+  check("and fades into it quickly", Object.values(fadeIn).every((v) => v > 0 && v <= 150), fadeIn);
   check("and lights its blockers", (await $(`document.querySelectorAll('.react-flow__node.is-up').length`)) === first.edges.filter((e) => e.target === hovered).length);
   await $(`document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))`);
   await sleep(300);
@@ -239,7 +251,7 @@ const run = async () => {
       arrow: ms(document.querySelector('.edge-arrow'), 'fill')
     };
   })()`);
-  check("the ring, the dimming, the lines and the arrowheads fade", Object.values(fades).every((v) => v >= 250), fades);
+  check("the ring, the dimming, the lines and the arrowheads fade slowly out of a focus", Object.values(fades).every((v) => v >= 250), fades);
   check("every arrow has its own arrowhead in its line's colour", (await $(`[...document.querySelectorAll('.react-flow__edge')].every((g) => g.querySelector('.edge-arrow')?.style.fill === g.querySelector('.react-flow__edge-path').style.stroke)`)) === true);
   check("every live dependency carries a flowing dot", (await $(`document.querySelectorAll('.edge-flow').length`)) === edgeCount, await $(`document.querySelectorAll('.edge-flow').length`));
 

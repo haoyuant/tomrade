@@ -3237,8 +3237,10 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
 .graph-region .react-flow__edge.selected .edge-arrow { fill: var(--accent) !important; }
 /* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back.
-   Rings, lines, arrowheads and the dimming all fade, slower than a hover, so a change of focus reads as one soft shift. */
+   Rings, lines, arrowheads and the dimming all fade: quickly into a focus, so it answers the pointer,
+   and slowly out of one, so letting go reads as one soft shift. A state's own duration is the way into it. */
 .graph-region { --graph-fade: 280ms; }
+.graph-region :is(.react-flow__node, .react-flow__edge):is(.is-focus, .is-up, .is-down, .is-dim) { --graph-fade: 120ms; }
 .graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity var(--graph-fade) var(--ease-standard); }
 .graph-region .react-flow__node .card {
   transition: box-shadow var(--graph-fade) var(--ease-standard), border-color var(--graph-fade) var(--ease-standard);
