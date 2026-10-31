@@ -16,6 +16,7 @@ import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock
 import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
+import { redrawTerminals } from "./TerminalCell";
 import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
@@ -50,19 +51,32 @@ const sameTails = (a: Record<string, string | null>, b: Record<string, string | 
 /** Whether anyone can see the window: not when it is minimised, hidden or covered. */
 const seen = () => document.visibilityState !== "hidden";
 
-/** The keys the window keeps, said along its bottom edge the way this platform writes them. */
+/** The keys the window keeps, said along its bottom edge the way this platform writes them; at its end, a way to redraw a spoiled terminal. */
 function KeysFooter() {
   const say = useSay();
   return (
     <footer className="cs-keys" data-testid="cs-keys">
-      <span>{say("keysNote")}</span>
-      <span><kbd>{keyLabel("splitRight")}</kbd> {say("keySplitRight")}</span>
-      <span><kbd>{keyLabel("splitDown")}</kbd> {say("keySplitDown")}</span>
-      <span><kbd>{keyLabel("close")}</kbd> {say("keyClose")}</span>
-      <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
-      <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
-      <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
-      <span>{say("keyOnlyNew")} <kbd>{keyLabel("palette")}</kbd></span>
+      <div className="cs-keys-list">
+        <span>{say("keysNote")}</span>
+        <span><kbd>{keyLabel("splitRight")}</kbd> {say("keySplitRight")}</span>
+        <span><kbd>{keyLabel("splitDown")}</kbd> {say("keySplitDown")}</span>
+        <span><kbd>{keyLabel("close")}</kbd> {say("keyClose")}</span>
+        <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
+        <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
+        <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
+        <span>{say("keyOnlyNew")} <kbd>{keyLabel("palette")}</kbd></span>
+      </div>
+      <div className="cs-redraw">
+        <button type="button" className="cs-redraw-ask" aria-describedby="cs-redraw-what">{say("redrawAsk")}</button>
+        <div className="cs-redraw-card" role="tooltip" id="cs-redraw-what">
+          <div className="cs-redraw-card-box">
+            <p>{say("redrawWhat")}</p>
+            <button type="button" className="btn btn-secondary btn-xs" onClick={redrawTerminals}>
+              {say("redrawDo")}
+            </button>
+          </div>
+        </div>
+      </div>
     </footer>
   );
 }

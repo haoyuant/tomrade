@@ -17,7 +17,17 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-views { flex: none; }
 .cs-views > button { line-height: 18px; }
 /* The keys the window keeps, along the bottom. */
-.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px var(--cs-gutter); border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
+.cs-keys { display: flex; align-items: center; gap: 14px; min-height: 24px; padding: 2px var(--cs-gutter); border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; white-space: nowrap; }
+.cs-keys-list { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; flex: 1; min-width: 0; overflow: hidden; }
+/* At the footer's right end: the question, and on hover or focus a card above it that says why and redraws. */
+.cs-redraw { position: relative; flex: none; }
+.cs-redraw-ask { border: 0; padding: 0; background: none; font: inherit; color: var(--meta); cursor: default; text-decoration: underline dotted; text-underline-offset: 2px; }
+.cs-redraw:is(:hover, :focus-within) .cs-redraw-ask { color: var(--fg); }
+/* Its transparent border bridges the gap to the question, so the pointer reaches the button without the card closing. */
+.cs-redraw-card { display: none; position: absolute; right: 0; bottom: 100%; z-index: 45; width: 280px; border-bottom: 6px solid transparent; background-clip: padding-box; white-space: normal; }
+.cs-redraw:is(:hover, :focus-within) .cs-redraw-card { display: block; }
+.cs-redraw-card-box { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--elev-raised); }
+.cs-redraw-card p { margin: 0; color: var(--fg); font-size: 12px; line-height: 1.5; }
 .cs-keys kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border-input); border-radius: 4px; color: var(--muted); }
 
 /* The session bar reads like the assistant panel's: its background, cards that say where each session stands, dots when folded. */
