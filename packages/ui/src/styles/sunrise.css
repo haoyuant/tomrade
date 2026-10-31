@@ -86,6 +86,9 @@
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sun-red) 70%, transparent) 30%, color-mix(in srgb, var(--sun-gold) 70%, transparent) 70%, transparent) top / 100% 1px no-repeat, var(--surface);
 }
 
+/* Charts rise like the sun: each mark runs from its colour into gold. */
+:is(.sunrise, .daybreak) .usage-dashboard { --usage-sheen: var(--sun-gold); }
+
 :is(.sunrise, .daybreak) .live-dot { box-shadow: 0 0 6px var(--success); }
 :is(.sunrise, .daybreak) ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 }

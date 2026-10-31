@@ -108,7 +108,7 @@ const run = async () => {
   check("four headline numbers lead the pane", kpis.length === 4 && kpis[0][1] === "$1.75" && kpis[2][1] === "3", kpis);
   check("a token bar and a spend bar per day of the range", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`)) === 14, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`));
   check("the engine's share is drawn on both measures", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`)) === 2, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`));
-  const swatches = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-chart-card .usage-legend .usage-swatch')].map((s) => getComputedStyle(s).backgroundColor)`);
+  const swatches = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-chart-card .usage-legend .usage-swatch')].map((s) => getComputedStyle(s).backgroundImage)`);
   check("the four token swatches name four different colours", new Set(swatches).size === 4, swatches);
   const shareLefts = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-share')].map((b) => Math.round(b.getBoundingClientRect().left))`);
   check("both share bars start on the same line", shareLefts.length === 2 && shareLefts[0] === shareLefts[1], shareLefts);
