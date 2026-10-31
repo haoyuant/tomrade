@@ -3231,11 +3231,12 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__handle:hover { border-color: var(--accent); }
 .graph-region .react-flow__edge { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
-/* a selected card lights its neighbours in their status colour; everything else steps back */
+/* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back */
 .graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity 180ms ease; }
 .graph-region .react-flow__node.is-dim { opacity: 0.32; }
 .graph-region .react-flow__edge.is-dim { opacity: 0.22; }
-.graph-region .react-flow__node.is-related .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
+.graph-region .react-flow__node.is-focus .card { box-shadow: var(--focus-ring); }
+.graph-region .react-flow__node.is-up .card, .graph-region .react-flow__node.is-down .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
 /* an open dependency carries a dot from the blocker to what it blocks */
 .graph-region .edge-flow { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {

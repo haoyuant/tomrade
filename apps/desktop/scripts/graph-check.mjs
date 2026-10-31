@@ -161,14 +161,26 @@ const run = async () => {
   const focusId = await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id`);
   const neighbours = new Set(first.edges.flatMap((e) => (e.source === focusId ? [e.target] : e.target === focusId ? [e.source] : [])));
   check("the selected card is marked as the focus", !!focusId);
-  check("its direct blockers and blocked are lit", (await $(`[...document.querySelectorAll('.react-flow__node.is-related')].map((n) => n.dataset.id).sort().join()`)) === [...neighbours].sort().join());
+  const upstream = first.edges.filter((e) => e.target === focusId).map((e) => e.source);
+  const downstream = first.edges.filter((e) => e.source === focusId).map((e) => e.target);
+  check("what it waits on is lit as upstream", (await $(`[...document.querySelectorAll('.react-flow__node.is-up')].map((n) => n.dataset.id).sort().join()`)) === upstream.sort().join());
+  check("what waits on it is lit as downstream", (await $(`[...document.querySelectorAll('.react-flow__node.is-down')].map((n) => n.dataset.id).sort().join()`)) === downstream.sort().join());
   check("every other card steps back", (await $(`document.querySelectorAll('.react-flow__node.is-dim').length`)) === TICKETS.length - 2 - neighbours.size);
-  check("only the arrows at the selected card stay lit", (await $(`document.querySelectorAll('.react-flow__edge.is-related').length`)) === first.edges.filter((e) => e.source === focusId || e.target === focusId).length);
-  check("a lit neighbour wears its status colour", (await $(`[...document.querySelectorAll('.react-flow__node.is-related')].every((n) => n.style.getPropertyValue('--ring'))`)) === true);
+  check("its incoming arrows are lit as upstream, outgoing as downstream", (await $(`[document.querySelectorAll('.react-flow__edge.is-up').length, document.querySelectorAll('.react-flow__edge.is-down').length].join()`)) === `${upstream.length},${downstream.length}`);
+  check("upstream and downstream wear different colours", (await $(`(() => { const u = document.querySelector('.react-flow__node.is-up'); const d = document.querySelector('.react-flow__node.is-down'); return !u || !d || u.style.getPropertyValue('--ring') !== d.style.getPropertyValue('--ring'); })()`)) === true);
   await shot("graph-02-detail-open");
   await press(`document.querySelector('.react-flow__pane')`);
   await sleep(500);
   check("a click on the canvas lets every card back", (await $(`document.querySelectorAll('.react-flow__node.is-dim, .react-flow__node.is-focus').length`)) === 0);
+  // The pointer alone lights a card the same way, and takes it with it when it leaves.
+  const hovered = first.edges[0].target;
+  await $(`document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))`);
+  await sleep(300);
+  check("hovering a card puts it in focus", (await $(`document.querySelector('.react-flow__node.is-focus')?.dataset.id`)) === hovered);
+  check("and lights its blockers", (await $(`document.querySelectorAll('.react-flow__node.is-up').length`)) === first.edges.filter((e) => e.target === hovered).length);
+  await $(`document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))`);
+  await sleep(300);
+  check("leaving it lets every card back", (await $(`document.querySelectorAll('.react-flow__node.is-dim, .react-flow__node.is-focus').length`)) === 0);
   check("every live dependency carries a flowing dot", (await $(`document.querySelectorAll('.edge-flow').length`)) === edgeCount, await $(`document.querySelectorAll('.edge-flow').length`));
 
   // The settled ticket comes back on request, its arrows dashed and still, and goes again.

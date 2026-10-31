@@ -202,15 +202,10 @@ const STATUS_STROKE: Record<ItemStatus, string> = {
   cancelled: "var(--border)"
 };
 const settledStatus = (status: ItemStatus | undefined) => status === "done" || status === "cancelled";
-/** The ring a card related to the selected one wears: still open, being worked on, or out of the way. */
-const STATUS_RING: Record<ItemStatus, string> = {
-  backlog: "var(--warn)",
-  todo: "var(--warn)",
-  doing: "var(--accent-light)",
-  verifying: "var(--accent-light)",
-  done: "var(--success)",
-  cancelled: "var(--border-input)"
-};
+// Around the card in focus, direction speaks louder than status: what it waits on
+// is amber (upstream), what waits on it is blue (downstream); dashes still say settled.
+const UPSTREAM = "var(--warn)";
+const DOWNSTREAM = "var(--accent-light)";
 
 function Canvas() {
   const { t } = useI18n();
@@ -277,16 +272,20 @@ function Canvas() {
   const edgeShape = edges.map((e) => `${e.from}>${e.to}`).join();
   // dagre runs when the nodes or the edges change, not when a card is selected
   const placed = useMemo(() => layout(shown, edges, heights), [shown, edgeShape, heights]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A selected card lights up what it waits on and what waits on it; the rest steps back.
+  // The card under the pointer, else the selected one, lights up what it waits on and what waits on it; the rest steps back.
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const focusId = hoverId && shownIds.has(hoverId) ? hoverId : selectedId && shownIds.has(selectedId) ? selectedId : null;
   const focus = useMemo(() => {
-    if (!selectedId || !shownIds.has(selectedId)) return null;
-    const related = new Set([selectedId]);
+    if (!focusId) return null;
+    const up = new Set<string>();
+    const down = new Set<string>();
     for (const e of edges) {
-      if (e.from === selectedId) related.add(e.to);
-      if (e.to === selectedId) related.add(e.from);
+      if (e.from === focusId) down.add(e.to);
+      if (e.to === focusId) up.add(e.from);
     }
-    return related;
-  }, [selectedId, shownIds, edges]);
+    return { id: focusId, up, down };
+  }, [focusId, edges]);
+  const nodeClass = (id: string) => (!focus ? undefined : id === focus.id ? "is-focus" : focus.up.has(id) ? "is-up" : focus.down.has(id) ? "is-down" : "is-dim");
 
   useEffect(() => {
     setNodes(
@@ -298,11 +297,11 @@ function Canvas() {
         deletable: false,
         connectable: editable,
         selected: item.id === selectedId,
-        className: focus ? (focus.has(item.id) ? (item.id === selectedId ? "is-focus" : "is-related") : "is-dim") : undefined,
-        style: focus?.has(item.id) && item.id !== selectedId ? ({ "--ring": STATUS_RING[item.status] } as CSSProperties) : undefined
+        className: nodeClass(item.id),
+        style: focus?.up.has(item.id) ? ({ "--ring": UPSTREAM } as CSSProperties) : focus?.down.has(item.id) ? ({ "--ring": DOWNSTREAM } as CSSProperties) : undefined
       }))
     );
-  }, [shown, placed, editable, selectedId, focus, setNodes]);
+  }, [shown, placed, editable, selectedId, focus, setNodes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Fits the graph; one too big to fit at a readable size starts at its first column and top row rather than mid-graph. */
   const fitGraph = (duration?: number) => {
@@ -330,9 +329,10 @@ function Canvas() {
       edges.map((e) => {
         const status = statusOf.get(e.from);
         // a loop is the plugin's to call; otherwise the blocker's status speaks
-        const stroke = e.tone === "danger" ? "var(--danger)" : status ? STATUS_STROKE[status] : e.tone === "faint" ? "var(--border)" : "var(--meta)";
+        const direction = !focus ? null : e.to === focus.id ? "up" : e.from === focus.id ? "down" : null;
+        const stroke = e.tone === "danger" ? "var(--danger)" : direction === "up" ? UPSTREAM : direction === "down" ? DOWNSTREAM : status ? STATUS_STROKE[status] : e.tone === "faint" ? "var(--border)" : "var(--meta)";
         const settled = e.tone === "faint" || settledStatus(status);
-        const lit = focus ? focus.has(e.from) && focus.has(e.to) && (e.from === selectedId || e.to === selectedId) : false;
+        const lit = direction !== null;
         return {
           id: `${e.from}>${e.to}`,
           type: "routed" as const,
@@ -340,14 +340,14 @@ function Canvas() {
           target: e.to,
           data: { route: placed.routes.get(`${e.from}>${e.to}`), flow: settled || e.tone === "danger" || (focus && !lit) ? undefined : stroke },
           title: e.title,
-          className: focus ? (lit ? "is-related" : "is-dim") : undefined,
+          className: !focus ? undefined : direction === "up" ? "is-up" : direction === "down" ? "is-down" : "is-dim",
           selectable: editable,
           deletable: editable,
           style: { stroke, strokeWidth: lit ? 2.5 : e.tone === "danger" ? 2 : 1.5, ...(settled ? { strokeDasharray: "4 3" } : {}) },
           markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: stroke }
         };
       }),
-    [edges, editable, placed, statusOf, focus, selectedId]
+    [edges, editable, placed, statusOf, focus]
   );
 
   const findItem = (id: string) => ws.items.find((i) => i.id === id);
@@ -427,6 +427,8 @@ function Canvas() {
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete}
         onPaneClick={() => ws.select(null)}
+        onNodeMouseEnter={(_, node) => setHoverId(node.id)}
+        onNodeMouseLeave={() => setHoverId(null)}
         // a null event is a move the code made, such as a fit
         onMoveStart={(event) => void (event && (touched.current = true))}
         nodesConnectable={editable}
