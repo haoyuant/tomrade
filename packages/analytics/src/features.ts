@@ -115,6 +115,14 @@ export const FEATURES: readonly FeatureDefinition[] = [
     sinceRegistry: 1
   },
   {
+    id: "backlog.plugin",
+    title: "Plugin layout",
+    titleZh: "插件布局",
+    kind: "surface",
+    actions: [counted("open")],
+    sinceRegistry: 3
+  },
+  {
     id: "backlog.issue",
     title: "Ticket",
     titleZh: "工单详情",
@@ -317,7 +325,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
 ];
 
 /** Bumped whenever any row, action or `counted` flag changes. */
-export const FEATURE_REGISTRY_VERSION = 2;
+export const FEATURE_REGISTRY_VERSION = 3;
 
 const BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
 

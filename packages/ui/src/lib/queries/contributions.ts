@@ -11,6 +11,7 @@ export const useStatusItems = (projectId?: string) =>
 export const useSections = (projectId: string, itemId: string | undefined) =>
   useQuery({ queryKey: keys.sections(projectId, itemId ?? ""), queryFn: () => invoke("contributions.sections", projectId, itemId!), enabled: !!itemId });
 export const useGraphs = () => useQuery({ queryKey: keys.graphs, queryFn: () => invoke("contributions.graphs") });
+export const useLayouts = () => useQuery({ queryKey: keys.layouts, queryFn: () => invoke("contributions.layouts") });
 export const useGraphEdges = (projectId: string, graphId: string | null) =>
   useQuery({ queryKey: keys.graphEdges(projectId, graphId ?? ""), queryFn: () => invoke("contributions.graph", graphId!, { projectId }), enabled: !!graphId });
 export const useAssistantAccessories = () =>

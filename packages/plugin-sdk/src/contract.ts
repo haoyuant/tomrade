@@ -4,6 +4,7 @@ import type { TerminalsApi } from "./terminals.js";
 import type { WebSearchApi } from "./web-search.js";
 import type { ModelsApi } from "./models.js";
 import type { LocalAgentOptions, LocalAgentSpec } from "./local-agents.js";
+import type { LayoutSpec } from "./layout.js";
 import type {
   Author,
   Board,
@@ -281,6 +282,8 @@ export interface ContributionsApi {
   graph(def: { id: string; title: string; icon?: string; edits?: "blocks"; compute(items: Item[], scope: { projectId: string }): Maybe<GraphEdge[]> }): Promise<Disposer>;
   /** A module in the project sidebar. Without `rows` it is a single door; rows returning null hide it in that project. */
   sidebarModule(def: { id: string; title: Localized; icon?: string; command?: string; rows?(scope: { projectId: string }): Maybe<SidebarRow[] | null> }): Promise<Disposer>;
+  /** SDK 0.2.31: a backlog layout of the plugin's own — see `LayoutSpec`. `render: "native"` needs `permissions.renderer`. */
+  layout(def: LayoutSpec): Promise<Disposer>;
 }
 
 export interface PlaybookSpec {

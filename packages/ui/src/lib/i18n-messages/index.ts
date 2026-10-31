@@ -65,6 +65,7 @@ import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
+import { pluginLayout } from "./pluginLayout";
 import { history } from "./history";
 import { hubSetup } from "./hubSetup";
 import { hubPane } from "./hubPane";
@@ -140,6 +141,7 @@ export const en = {
   table: table.en,
   epics: epics.en,
   graphView: graphView.en,
+  pluginLayout: pluginLayout.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
 
@@ -226,6 +228,7 @@ export const zh: typeof en = {
   table: table.zh,
   epics: epics.zh,
   graphView: graphView.zh,
+  pluginLayout: pluginLayout.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,
 

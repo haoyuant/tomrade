@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CLOSED_STATUSES, LAYOUTS, repoPathLabel, type Layout } from "@tomradex/domain";
+import { CLOSED_STATUSES, repoPathLabel } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
-import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
+import { FIELD_LABEL, viewIcon } from "~/lib/domain";
+import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { useRepoStates } from "~/lib/codeLink";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
@@ -38,6 +39,7 @@ export function TitleBar({
   const { project, projects, view, views, items, filePath, routines } = useWorkspace();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const layouts = useLayoutOptions();
   const open = items.filter((i) => i.kind !== "epic" && i.status !== "done" && i.status !== "cancelled").length;
   const openTerminal = useOpenTerminalWindow(project.id);
 
@@ -191,6 +193,7 @@ const READINESS_KEY = { empty: "codeLink.readiness_empty", scaffolded: "codeLink
 export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }: { onOpenViewSettings: () => void; onOpenFields: () => void; onEditWorkstream: (boardId: string) => void }) {
   const ws = useWorkspace();
   const { t, tx } = useI18n();
+  const layouts = useLayoutOptions();
   const repos = useRepos(ws.project.id);
   // Old done and cancelled tickets the board has not loaded still belong to the view.
   const shownCount = ws.visible.length + CLOSED_STATUSES.reduce((n, status) => n + ws.closed.hidden(status), 0);
@@ -235,7 +238,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
               key={v.id}
               checked={v.id === ws.view.id}
               name={v.name}
-              sub={LAYOUT_LABEL[v.layout].label}
+              sub={layoutLabel(v.layout, layouts)}
               mark={<Icon name={viewIcon(v.icon)} size={13} />}
               count={ws.viewCounts[v.id]}
               onSelect={() => {
@@ -296,17 +299,17 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
       </div>
       <Spacer />
       <div className="seg quiet layout-seg" role="group" aria-label={t("titleBar.layoutAria")}>
-        {LAYOUTS.map((l: Layout) => (
+        {layouts.map((l) => (
           <button
-            key={l}
+            key={l.id}
             type="button"
-            data-layout={l}
-            aria-pressed={ws.layout === l}
-            title={t("titleBar.layoutTitle", { layout: LAYOUT_LABEL[l].label })}
-            onClick={() => ws.layout !== l && ws.setLayout(l)}
+            data-layout={l.id}
+            aria-pressed={ws.layout === l.id}
+            title={t("titleBar.layoutTitle", { layout: l.label })}
+            onClick={() => ws.layout !== l.id && ws.setLayout(l.id)}
           >
-            <Icon className="ico" name={LAYOUT_LABEL[l].icon} size={13} />
-            <span className="seg-lbl">{LAYOUT_LABEL[l].label}</span>
+            <Icon className="ico" name={l.icon} size={13} />
+            <span className="seg-lbl">{l.label}</span>
           </button>
         ))}
       </div>
@@ -332,7 +335,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
             </button>
           }
         >
-          <MenuHead title={ws.view.name} aside={LAYOUT_LABEL[ws.view.layout].label} />
+          <MenuHead title={ws.view.name} aside={layoutLabel(ws.view.layout, layouts)} />
           <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("titleBar.renameView")} onSelect={() => setEditRequest((n) => n + 1)} />
           <MenuActionItem
             icon={<Icon name="i-stack" size={13} />}

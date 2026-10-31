@@ -1,4 +1,6 @@
+import path from "node:path";
 import type { ContributionsApi } from "@tomradex/plugin-sdk";
+import { packageFile } from "./package-file.js";
 import { COMMAND_MS, RENDER_MS, type Facade } from "./shared.js";
 
 export const contributionsApi = ({ host }: Facade): ContributionsApi => {
@@ -50,6 +52,15 @@ export const contributionsApi = ({ host }: Facade): ContributionsApi => {
         host.own(def.id, "sidebar module");
         const rows = def.rows ? host.back(def.rows, `sidebar module ${def.id}`, { ms: RENDER_MS }) : undefined;
         return host.disposerOf(c().sidebarModule({ id: def.id, title: host.say(def.title), icon: def.icon, command: def.command, ...(rows ? { rows } : {}) }));
+      }),
+    layout: (def) =>
+      host.call(() => {
+        host.own(def.id, "layout");
+        const render = def.render ?? "sandbox";
+        if (render === "native" && host.identity.origin === "extension" && !host.identity.renderer) throw new Error(`${host.identity.id} draws layout "${def.id}" inside Tomrade's window but its manifest does not grant permissions.renderer`);
+        const file = packageFile(host, def.module, "layout module");
+        const root = host.identity.root!;
+        return host.disposerOf(c().layout({ id: def.id, title: host.say(def.title), icon: def.icon, module: path.relative(root, file).split(path.sep).join("/"), render, plugin: { id: host.identity.id, root } }));
       })
   };
 };

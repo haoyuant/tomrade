@@ -19,6 +19,7 @@ import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
 import { askForMainWindow, provideMainWindow } from "./main-window.js";
 import { nodeRuntime } from "./node-runtime.js";
+import { registerPluginFilesScheme, servePluginFiles } from "./plugin-files.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { readShellEnvSoon } from "./shell-env.js";
 import { watchSeen } from "./seen.js";
@@ -72,6 +73,8 @@ if (primary) {
 
 // Everything under the app's own roots resolves as usual; anything else is an extension.
 registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
+// A plugin's layout is served from its package on a scheme of its own, declared before the app is ready.
+registerPluginFilesScheme();
 
 let splash: BrowserWindow | null = null;
 
@@ -207,6 +210,8 @@ app.whenReady().then(async () => {
     app.exit(0);
     return;
   }
+  const uiIndex = app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html");
+  servePluginFiles(ctx, path.join(path.dirname(uiIndex), "plugin-layout-shell.html"));
 
   app.on("before-quit", (event) => {
     if (quitApproved()) return;
@@ -251,7 +256,7 @@ app.whenReady().then(async () => {
     {
       preload: path.join(here, "../preload.cjs"),
       // A packaged build carries the renderer beside dist/; a checkout builds it in packages/ui.
-      uiIndex: app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html"),
+      uiIndex,
       icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
     },

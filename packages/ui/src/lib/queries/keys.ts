@@ -73,6 +73,7 @@ export const keys = {
   sections: (projectId: string, itemId: string) => ["contributions", "sections", projectId, itemId] as const,
   sidebarModules: (projectId: string) => ["contributions", "sidebar", projectId] as const,
   graphs: ["contributions", "graphs"] as const,
+  layouts: ["contributions", "layouts"] as const,
   graphEdgesAll: (projectId: string) => ["contributions", "graph", projectId] as const,
   graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const,
   assistantAccessories: ["contributions", "assistant-accessories"] as const,

@@ -3214,6 +3214,10 @@ button.kref { cursor: pointer; }
 
 /* ─── dependency graph (board region in graph mode) ──────────────────── */
 .graph-region { position: relative; flex: 1; min-height: 0; }
+/* A plugin's layout fills the region as the graph does; native it draws into the root, sandboxed into a frame of its own. */
+.plugin-layout-region { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.plugin-layout-root { flex: 1; min-height: 0; overflow: auto; }
+.plugin-layout-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: transparent; }
 .graph-region .react-flow__node { cursor: grab; }
 .graph-region .react-flow__node:active { cursor: grabbing; }
 .gnode { position: relative; }

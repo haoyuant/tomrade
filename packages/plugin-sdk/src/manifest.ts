@@ -3,7 +3,7 @@ import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.30";
+export const SDK_CONTRACT = "0.2.31";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -27,10 +27,12 @@ export const PermissionsSchema = z
     exec: z.boolean().default(false),
     /** SDK 0.2.11: opens working windows of its own (a surface of kind "window"), which take keys like any app window. */
     window: z.boolean().default(false),
+    /** SDK 0.2.31: runs its own code inside Tomrade's window (a layout with `render: "native"`), with everything the renderer reaches. */
+    renderer: z.boolean().default(false),
     /** Why the plugin needs a wide permission, in a sentence a person installing it can judge. Official plugins must say. */
-    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1), window: z.string().min(1), full: z.string().min(1) }).partial().optional()
+    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1), window: z.string().min(1), renderer: z.string().min(1), full: z.string().min(1) }).partial().optional()
   })
-  .default({ network: [], fs: "none", exec: false, window: false });
+  .default({ network: [], fs: "none", exec: false, window: false, renderer: false });
 
 export const ContributesSchema = z
   .object({
@@ -52,7 +54,9 @@ export const ContributesSchema = z
     /** SDK 0.2.16: the model providers it registers. */
     modelProviders: z.array(z.string()).default([]),
     /** SDK 0.2.17: the local agents it registers. */
-    localAgents: z.array(z.string()).default([])
+    localAgents: z.array(z.string()).default([]),
+    /** SDK 0.2.31: the backlog layouts it draws. */
+    layouts: z.array(z.string()).default([])
   })
   .partial();
 
@@ -154,19 +158,20 @@ export type RiskLevel = "low" | "elevated" | "high";
 
 export interface Risk {
   level: RiskLevel;
-  /** Stable keys the UI words: `full`, `rows`, `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `models`, `window`. */
+  /** Stable keys the UI words: `full`, `rows`, `exec`, `fs-any`, `network-any`, `renderer`, `network`, `fs-project`, `db`, `models`, `window`. */
   reasons: string[];
 }
 
 /**
  * High risk is labelled, not refused: running with Tomrade's whole context or
- * changing its own rows, running programs, reading anywhere on disk, or talking
- * to any host. Elevated is what a person should still see.
+ * changing its own rows, running programs, reading anywhere on disk, talking
+ * to any host, or running code inside Tomrade's own window. Elevated is what a
+ * person should still see.
  */
 export function riskOf(manifest: Pick<Manifest, "permissions" | "inject" | "optional"> & Partial<Pick<Manifest, "context" | "rows">>): Risk {
   const p = manifest.permissions;
   const full = manifest.context === "full";
-  const high = [full && "full", full && manifest.rows?.length && "rows", p.exec && "exec", p.fs === "any" && "fs-any", p.network.includes("*") && "network-any"].filter(Boolean) as string[];
+  const high = [full && "full", full && manifest.rows?.length && "rows", p.exec && "exec", p.fs === "any" && "fs-any", p.network.includes("*") && "network-any", p.renderer && "renderer"].filter(Boolean) as string[];
   const elevated = [
     p.network.length && !p.network.includes("*") && "network",
     p.fs === "project" && "fs-project",

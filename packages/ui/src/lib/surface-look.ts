@@ -1,4 +1,6 @@
+import { useSyncExternalStore } from "react";
 import { THEME_TOKEN_NAMES, THEME_TYPOGRAPHY_NAMES } from "@tomradex/domain";
+import type { LayoutLook } from "@tomradex/plugin-sdk";
 import { logQuietly } from "./api";
 import { cssColorToHex } from "./theme";
 
@@ -21,9 +23,27 @@ const isDark = (hex: string): boolean => {
  * `frosted` asks for the system's frosted material under the windows (Glass); the shell answers through the window chrome.
  */
 export function sendSurfaceLook(theme: string, locale: string, frosted: boolean, backdrop?: SurfaceBackdrop): void {
-  if (typeof window === "undefined" || !window.tomrade) return;
+  if (typeof window === "undefined") return;
   const styles = getComputedStyle(document.documentElement);
   const tokens = Object.fromEntries([...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES].map((name) => [`--${name}`, styles.getPropertyValue(`--${name}`).trim()]).filter(([, value]) => value));
   const dark = isDark(cssColorToHex(tokens["--bg"] ?? "#ffffff"));
+  publishLook({ theme, dark, tokens, locale });
+  if (!window.tomrade) return;
   void window.tomrade.invoke("surfaces.look", { theme, dark, tokens, locale, frosted, ...(backdrop ? { backdrop } : {}) }).catch(logQuietly("surfaces.look"));
 }
+
+// Plugin layouts in this window read the same look the shell is told, without computing it again.
+const FIRST_LOOK: LayoutLook = { theme: "light", dark: false, tokens: {}, locale: "en" };
+let look: LayoutLook = FIRST_LOOK;
+const watchers = new Set<() => void>();
+const publishLook = (next: LayoutLook): void => {
+  look = next;
+  for (const w of watchers) w();
+};
+const watchLook = (w: () => void): (() => void) => {
+  watchers.add(w);
+  return () => void watchers.delete(w);
+};
+
+/** How the app looks now, as the last paint computed it. */
+export const useLook = (): LayoutLook => useSyncExternalStore(watchLook, () => look, () => look);

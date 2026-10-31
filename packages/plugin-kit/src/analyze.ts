@@ -214,7 +214,7 @@ export function analyzePackage(dir: string, manifest: Manifest): Analysis {
     else if (/\.html?$/.test(rel)) analyzeDocument(text, rel, observed, findings);
   }
   if (observed.network) observed.hosts.sort();
-  findings.push(...fullMode(manifest), ...mismatches(manifest, observed));
+  findings.push(...fullMode(manifest), ...nativeRenderer(manifest), ...mismatches(manifest, observed));
   const worst = findings.reduce<Severity | null>((w, f) => (w === null || RANK[f.severity] > RANK[w] ? f.severity : w), null);
   return { observed, findings, worst };
 }
@@ -248,6 +248,12 @@ function fullMode(manifest: Manifest): Finding[] {
   const changes = manifest.rows.map((r) => `${r.id} (${r.disabled ? "switched off" : r.name ? "plugin replaced or added" : "config changed"})`);
   if (changes.length) out.push(at("rows", `changes Tomrade's own rows: ${changes.join(", ")}`));
   return out;
+}
+
+/** A layout drawn inside Tomrade's own window runs with everything the renderer reaches; declared, so named. */
+function nativeRenderer(manifest: Manifest): Finding[] {
+  if (!manifest.permissions.renderer) return [];
+  return [{ rule: "renderer", severity: "high", message: "runs its own code inside Tomrade's window, with everything the renderer reaches and no sandbox", file: "tomrade-plugin.json", line: 1 }];
 }
 
 /** Where the code does more than the manifest admits. Named, not refused: the listing shows what was observed. */

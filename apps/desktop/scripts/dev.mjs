@@ -35,6 +35,10 @@ function startUi(port) {
   });
 }
 
+// The page a sandboxed plugin layout runs in is served from the built UI even in dev: one small build, kept current here.
+const shell = spawnSync("pnpm", ["-F", "@tomradex/ui", "build:shell"], { stdio: "inherit" });
+if (shell.status !== 0) console.warn("Could not build the plugin layout frame; plugin layouts will not show");
+
 // The built-in agent's Pi; a no-op once fetched. Offline, the app still starts without it.
 const fetchPi = spawnSync("node", [path.join(path.dirname(fileURLToPath(import.meta.url)), "fetch-pi.mjs")], { stdio: "inherit" });
 if (fetchPi.status !== 0) console.warn("Could not fetch the built-in agent; starting without it");
