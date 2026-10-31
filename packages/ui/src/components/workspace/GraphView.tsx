@@ -288,19 +288,23 @@ function Canvas() {
   const nodeClass = (id: string) => (!focus ? undefined : id === focus.id ? "is-focus" : focus.up.has(id) ? "is-up" : focus.down.has(id) ? "is-down" : "is-dim");
 
   useEffect(() => {
-    setNodes(
-      shown.map((item) => ({
+    // A node handed back without its measured size is hidden until React Flow measures it again:
+    // on hover that hides the card under the pointer, which ends the hover, which brings it back.
+    setNodes((previous) => {
+      const measured = new Map(previous.map((n) => [n.id, n.measured]));
+      return shown.map((item) => ({
         id: item.id,
         type: "issue" as const,
         position: dragged.current.get(item.id) ?? placed.pos.get(item.id) ?? { x: 0, y: 0 },
         data: { item },
+        measured: measured.get(item.id),
         deletable: false,
         connectable: editable,
         selected: item.id === selectedId,
         className: nodeClass(item.id),
         style: focus?.up.has(item.id) ? ({ "--ring": UPSTREAM } as CSSProperties) : focus?.down.has(item.id) ? ({ "--ring": DOWNSTREAM } as CSSProperties) : undefined
-      }))
-    );
+      }));
+    });
   }, [shown, placed, editable, selectedId, focus, setNodes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Fits the graph; one too big to fit at a readable size starts at its first column and top row rather than mid-graph. */

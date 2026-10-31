@@ -181,6 +181,33 @@ const run = async () => {
   await $(`document.querySelector('.react-flow__node[data-id="${hovered}"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))`);
   await sleep(300);
   check("leaving it lets every card back", (await $(`document.querySelectorAll('.react-flow__node.is-dim, .react-flow__node.is-focus').length`)) === 0);
+  // A real pointer resting on a card: the focus holds still (no card hides for a frame, which would
+  // end the hover and start it again), and a real click lands.
+  const centre = await $(`(() => { const r = document.querySelector('.react-flow__node[data-id="${hovered}"] .card').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: centre.x - 40, y: centre.y });
+  win.webContents.sendInputEvent({ type: "mouseMove", x: centre.x, y: centre.y });
+  const steady = await $(`new Promise((resolve) => {
+    // once the focus lands on the card, every frame it is elsewhere is a flicker
+    let hidden = 0, lost = 0, landed = false;
+    const start = performance.now();
+    const tick = () => {
+      hidden += [...document.querySelectorAll('.react-flow__node')].filter((n) => getComputedStyle(n).visibility === 'hidden').length;
+      const now = document.querySelector('.react-flow__node.is-focus')?.dataset.id ?? null;
+      if (now === '${hovered}') landed = true;
+      else if (landed) lost++;
+      if (performance.now() - start < 1000) requestAnimationFrame(tick); else resolve({ hidden, lost, focus: now });
+    };
+    requestAnimationFrame(tick);
+  })`);
+  check("a resting pointer keeps every card shown", steady.hidden === 0, steady);
+  check("and keeps the focus still on that card", steady.lost === 0 && steady.focus === hovered, steady);
+  win.webContents.sendInputEvent({ type: "mouseDown", x: centre.x, y: centre.y, button: "left", clickCount: 1 });
+  win.webContents.sendInputEvent({ type: "mouseUp", x: centre.x, y: centre.y, button: "left", clickCount: 1 });
+  await sleep(900);
+  check("a real click on the hovered card opens it", (await $(`document.querySelector('.detail .card-id')?.textContent`)) === (await $(`document.querySelector('.react-flow__node[data-id="${hovered}"] .card-id')?.textContent`)));
+  win.webContents.sendInputEvent({ type: "mouseMove", x: 5, y: 5 });
+  await press(`document.querySelector('.react-flow__pane')`);
+  await sleep(500);
   check("every live dependency carries a flowing dot", (await $(`document.querySelectorAll('.edge-flow').length`)) === edgeCount, await $(`document.querySelectorAll('.edge-flow').length`));
 
   // The settled ticket comes back on request, its arrows dashed and still, and goes again.
