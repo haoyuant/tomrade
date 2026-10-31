@@ -28,6 +28,8 @@ const WEBGL_RETRIES = 3;
  * The browser keeps only so many contexts, so a pane out of sight (folded, scrolled away) gives its own back for the
  * ones on screen, and one the browser took is asked for again rather than left on the DOM renderer for good. A
  * minimized window keeps them: Chromium already frees its surfaces. Without WebGL2 the DOM renderer carries on.
+ * Coming back from another screen or Space can spoil the glyphs without a context loss (a blank grid, a broken
+ * image), so the window's return draws them anew.
  */
 function drawWithWebgl(terminal: Terminal, el: HTMLElement): { dispose: () => void } {
   let webgl: WebglAddon | null = null;
@@ -64,8 +66,19 @@ function drawWithWebgl(terminal: Terminal, el: HTMLElement): { dispose: () => vo
     } else if (webgl) release = setTimeout(drop, WEBGL_RELEASE_MS);
   });
   sight.observe(el);
+  const freshen = () => {
+    if (document.visibilityState === "hidden") return;
+    losses = 0;
+    if (webgl) webgl.clearTextureAtlas();
+    else take();
+    terminal.refresh(0, terminal.rows - 1);
+  };
+  document.addEventListener("visibilitychange", freshen);
+  window.addEventListener("focus", freshen);
   return {
     dispose: () => {
+      document.removeEventListener("visibilitychange", freshen);
+      window.removeEventListener("focus", freshen);
       sight.disconnect();
       clearTimeout(release);
       clearTimeout(retry);
@@ -73,6 +86,11 @@ function drawWithWebgl(terminal: Terminal, el: HTMLElement): { dispose: () => vo
     }
   };
 }
+
+const redraws = new EventTarget();
+
+/** Builds every terminal in the window anew on the pane it shows: the program in it goes on undisturbed. */
+export const redrawTerminals = () => redraws.dispatchEvent(new Event("redraw"));
 
 /** Where a pane's view is in herdr's scrollback, in rows. */
 type PaneScroll = Omit<Extract<WindowPost, { type: "scrolled" }>, "type" | "cell">;
@@ -324,6 +342,12 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     // Tokens, font and clear change the look only; the effect below repaints without reattaching.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, pane, attempt]);
+
+  useEffect(() => {
+    const again = () => setAttempt((n) => n + 1);
+    redraws.addEventListener("redraw", again);
+    return () => redraws.removeEventListener("redraw", again);
+  }, []);
 
   // The window writes the look's variables in its own effect, after this one: read them a frame later.
   useEffect(() => {

@@ -1026,6 +1026,14 @@ app.whenReady().then(async () => {
     check("底部一行写着沿用的按键", keyLabels.every((k) => keysText.includes(k)), keysText);
     check("按键栏写「按键和现在一样」「新加的只有 ⌘K」", keysText.includes("按键和现在一样") && keysText.includes("新加的只有"), keysText);
 
+    // At the footer's right end, "显示异常？" opens a card on focus; its button builds every terminal anew on the same pane.
+    await tjs(`document.querySelectorAll('.cs-term-host .xterm').forEach((x) => x.dataset.before = '1'); document.querySelector('.cs-redraw-ask').focus(); true`);
+    const redrawCard = await tjs(`(() => { const card = document.querySelector('.cs-redraw-card'); return document.querySelector('.cs-redraw-ask')?.textContent === '显示异常？' && getComputedStyle(card).display !== 'none' && card.textContent.includes('重新绘制终端'); })()`);
+    const termsBefore = await tjs(`document.querySelectorAll('.cs-term-host .xterm').length`);
+    await tjs(`document.querySelector('.cs-redraw-card button').click(); true`);
+    const redrawn = await wait(async () => tjs(`(() => { const xs = [...document.querySelectorAll('.cs-term-host .xterm')]; return xs.length === ${termsBefore} && xs.every((x) => !x.dataset.before) && !document.querySelector('.cs-term-closed'); })()`), 5000);
+    check("底部右下角「显示异常？」悬浮说明，点「重新绘制终端」重建每个终端且不断开", redrawCard && termsBefore > 0 && redrawn, JSON.stringify({ redrawCard, termsBefore, redrawn }));
+
     // An assistant conversation, the built-in kind: listed as a card with no pane; opening it brings the app window up on it.
     const opens = [];
     ctx.on("desktop/open", (target) => opens.push(target));
