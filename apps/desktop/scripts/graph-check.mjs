@@ -59,6 +59,9 @@ const run = async () => {
     if (blocks.length) ctx.items.update(project.id, made[i].id, { blocks: blocks.map((j) => made[j].id) }, "human");
   });
   ctx.items.update(project.id, made[0].id, { status: "done" }, "human");
+  // two epics: each card wears its epic's tag, in a hue of the epic's own
+  const epics = ["Storage rewrite", "Editing in place"].map((title) => ctx.items.create({ projectId: project.id, boardId: board.id, title, kind: "epic", by: "human" }));
+  for (const [i, epic] of [[1, 0], [2, 0], [3, 1], [4, 1]]) ctx.items.update(project.id, made[i].id, { parentId: epics[epic].id }, "human");
   // a finished loner and a cancelled one: nothing for the graph to say about either
   ctx.items.update(project.id, made[7].id, { status: "done" }, "human");
   ctx.items.update(project.id, made[10].id, { status: "cancelled" }, "human");
@@ -257,6 +260,32 @@ const run = async () => {
   await $(`document.querySelector('.detail-close, [data-testid="detail-close"]')?.click()`);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await sleep(600);
+
+  // ── epic tags ──
+  const epicTags = await $(`[...document.querySelectorAll('.react-flow__node .card-epic')].map((t) => ({ name: t.textContent, hue: Number(t.style.getPropertyValue('--epic-hue')) }))`);
+  check("each card in an epic wears the epic's tag", epicTags.length === 4 && epicTags.filter((t) => t.name === "Storage rewrite").length === 2 && epicTags.filter((t) => t.name === "Editing in place").length === 2, epicTags);
+  const hueOf = (name) => epicTags.find((t) => t.name === name)?.hue;
+  const apart = Math.abs(hueOf("Storage rewrite") - hueOf("Editing in place")) % 360;
+  check("two epics wear hues well apart", Math.min(apart, 360 - apart) >= 60, epicTags);
+  check("no epic wears the reds, oranges or ambers a blocked or upstream mark speaks in", epicTags.every((t) => t.hue >= 120 && t.hue <= 340), epicTags);
+  const contrast = await $(`(() => {
+    const paint = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const rgb = (c) => { paint.clearRect(0, 0, 1, 1); paint.fillStyle = '#000'; paint.fillStyle = c; paint.fillRect(0, 0, 1, 1); return [...paint.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+    const lum = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (a, b) => { const [x, y] = [lum(rgb(a)), lum(rgb(b))].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+    const root = document.documentElement;
+    const before = root.className;
+    const out = {};
+    for (const theme of ['', 'dark', 'matcha', 'dawn', 'sunrise', 'daybreak', 'sakura']) {
+      root.classList.remove('dark', 'matcha', 'dawn', 'sunrise', 'daybreak', 'glass', 'sakura', 'backdrop');
+      if (theme) root.classList.add(theme);
+      out[theme || 'light'] = Math.min(...[...document.querySelectorAll('.react-flow__node .card-epic')].map((t) => { const cs = getComputedStyle(t); return ratio(cs.color, cs.backgroundColor); })).toFixed(2);
+    }
+    root.className = before;
+    return out;
+  })()`);
+  check("every epic tag reads at 4.5:1 or better in every theme", Object.values(contrast).every((r) => Number(r) >= 4.5), contrast);
+  console.log("epic tag contrast by theme:", JSON.stringify(contrast));
 
   // ── export ──
   check("the foot offers Export image", (await $(`!!document.querySelector('[data-testid="graph-export"]')`)) === true);

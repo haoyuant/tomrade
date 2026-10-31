@@ -1277,20 +1277,24 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .card-foot { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
 .card-date { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--meta); }
-/* Epic is structural context, not an attribute — it appears on almost every
- * card, so it earns quiet text rather than a tinted chip. Draining it frees
- * the accent budget for the provenance tick, the only mark that must be seen. */
+/* The workstream is quiet text: it rarely tells cards in one view apart. */
 .card-board {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
   color: var(--meta); max-width: 96px; overflow: hidden; white-space: nowrap;
 }
 .card-board svg { color: var(--meta); flex-shrink: 0; }
-.card-epic {
-  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
-  color: var(--meta); min-width: 0; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* An epic's tag wears the epic's own hue, so a glance groups its cards (in the graph
+ * above all). Soft tints, mixed into the theme's own text and surface: legible in
+ * every theme, and quieter than the accent the provenance tick and the focus use. */
+.tag.card-epic {
+  --epic: oklch(0.62 0.13 var(--epic-hue, 250));
+  gap: 3px; min-width: 0; max-width: 100%;
+  color: color-mix(in oklch, var(--epic) 50%, var(--fg));
+  background: color-mix(in oklch, var(--epic) 14%, var(--surface));
 }
+.tag.card-epic > svg { flex: none; }
+.card-epic-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── status dot — shape-coded, not colour-coded ─────────────────────── */
 .sdot { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
