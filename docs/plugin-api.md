@@ -68,8 +68,12 @@ not a sandbox.** What the system does guarantee:
   project. An extension that claims `"human"` outside a person's call is
   refused by the write policy, which also keeps purge out of its reach.
 - **Everything it registers carries its namespace**: tools, commands, badges,
-  status items, sections, graphs, settings sections, playbooks, surfaces, and
-  `plugin_<namespace>_*` tables. Two extensions cannot share one.
+  status items, sections, graphs, layouts, settings sections, playbooks,
+  surfaces, and `plugin_<namespace>_*` tables. Two extensions cannot share one.
+- A [layout](#layouts) runs in a sandboxed frame unless the manifest grants
+  `permissions.renderer`, which lets it run inside Tomrade's own window with
+  everything the renderer reaches; every install and build dialog lists that
+  as high risk, and the person decides.
 - Every tool call passes `tools/pre-execute`, and every write `write/pre-commit`:
   a policy there — the app's own or an extension's gate — can refuse it, and a
   tool policy can change its arguments or answer in the tool's place.
@@ -118,7 +122,7 @@ returns is disposed when the service goes.
 | `db` | `migrate(steps, { scope, tables })` for `plugin_<namespace>_*`; `all`, `get`, `run`, `batch` (one transaction) against a project id or `"hub"`; `isOpen` |
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
-| `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
+| `contributions` | `command`, `badge`, `statusItem`, `section`, `graph`, `sidebarModule`; SDK 0.2.31: `layout` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send; SDK 0.2.25 takes `setup.download` and `setup.desktop`; SDK 0.2.26 takes `{ npm: package }` installers and `setup.signInRun`, which the app runs itself as one-click setup; SDK 0.2.27 takes `{ archive: { url, file, platform } }` installers, a zip the app downloads and unpacks itself |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
@@ -2281,6 +2285,61 @@ dragging between cards and deleting an arrow write `Item.blocks` patches
 through the ordinary guarded path. `@tomradex/deps-graph` is the shipped
 example — the Dependencies graph plus a `blocked` badge for issues waiting on
 unfinished work.
+
+### Layouts
+
+SDK 0.2.31. A **layout** is a page of the plugin's own in the backlog, beside
+Board, Table and Graph: the switcher offers it with its title and icon, a view
+saves it as `layout: "plugin:<id>"`, and the title bar, query bar and detail
+pane stay around it. The plugin ships one ES module whose default export is a
+`LayoutModule`:
+
+```ts
+// in apply()
+ctx.contributions.layout({ id: "hello.timeline", title: { en: "Timeline", zh: "时间线" }, icon: "i-grid", module: "dist/timeline.js" });
+
+// dist/timeline.js — framework-free here; bundle React or anything else if you like
+export default {
+  mount(root, api) {
+    const draw = (state) => { root.textContent = state.items.map((i) => i.key).join(" "); };
+    draw(api.state);
+    const stop = api.onChange((state, changed) => { if (changed.has("items") || changed.has("selectedId")) draw(state); });
+    root.onclick = () => api.select(api.state.items[0]?.id ?? null);
+    return { unmount: () => { stop(); root.onclick = null; } };
+  }
+};
+```
+
+`api.state` is `{ projectId, items, fields, query, selectedId, look }`: the
+view's tickets after its filter, search and sort, in order; the project's
+fields; the view's query; the ticket open in the detail pane; and the look —
+`{ theme, dark, tokens, locale }`, the theme's CSS variables as the window
+computes them. `onChange` hears one coalesced change per frame with the keys
+that differ; an unchanged ticket keeps its object across changes, so `===`
+tells what moved. `select(id)` opens a ticket (null closes), `update(id,
+patch)` patches one as the person — undoable, and refused where any write
+would be. `mount` returns `{ unmount }`, called when the region goes away.
+
+`module` is a file inside the plugin's package, served by the app on
+`tomrade-plugin://<publisher>/<name>/<path>` — the module's own relative
+imports, stylesheets and images resolve there, and nothing outside the package
+is reachable. `render` picks how it runs:
+
+- `"sandbox"` (the default): a frame on the plugin's own origin
+  (`tomrade-plugin://<publisher>`), out of the window's reach and with none of
+  its bridges — no forms, popups or navigation either — wearing the look's
+  tokens on its root element; the api crosses a `MessagePort`, so tickets
+  travel as deltas and calls come back answered. Needs no permission.
+- `"native"`: the module is imported into Tomrade's own window and mounted on
+  a root element in the backlog region — the same data, the same thread, the
+  window's popovers and theme for free, and everything the renderer reaches.
+  It needs `permissions.renderer` (with `why.renderer`); registration without
+  it is refused, and the install, store and build-confirm dialogs name it as
+  high risk. There is no sandbox here by design.
+
+The same module runs either way: the api has the same shape, and only the
+manifest says which. A view whose layout's plugin is off keeps its layout and
+shows a notice naming it; nothing is rewritten.
 
 ## Channels
 

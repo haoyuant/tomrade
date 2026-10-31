@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Context, Service } from "cordis";
 import type { Item } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
@@ -30,6 +31,13 @@ export interface CommandResult {
 /** Words a plugin may compute when shown, so they come out in the person's language at that moment. */
 export type Words = string | (() => string);
 const said = (w: Words | undefined): string | undefined => (typeof w === "function" ? w() : w);
+
+/** A relative file that stays under the root once resolved. */
+function withinRoot(root: string, file: string): boolean {
+  if (!file || path.isAbsolute(file) || /^[a-z][a-z0-9+.-]*:/i.test(file)) return false;
+  const rel = path.relative(root, path.resolve(root, file));
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
 
 export interface Command {
   id: string;
@@ -124,6 +132,46 @@ export interface GraphSpec {
 }
 
 export type GraphInfo = Omit<GraphSpec, "compute">;
+
+/**
+ * A backlog layout of a plugin's own: one ES module the renderer mounts into
+ * the backlog region, sandboxed in a frame or native in the window. The
+ * service keeps where the plugin's package is, so the desktop can serve the
+ * module and what it imports from there and nowhere else.
+ */
+export interface LayoutSpec {
+  id: string;
+  title: Words;
+  /** Icon id from the renderer's sprite; unknown names fall back. */
+  icon?: string;
+  /** The module, relative to the package root, with forward slashes. */
+  module: string;
+  render: "sandbox" | "native";
+  plugin: { id: string; root: string };
+}
+
+export interface LayoutInfo {
+  id: string;
+  title: string;
+  icon?: string;
+  module: string;
+  render: "sandbox" | "native";
+  pluginId: string;
+}
+
+/** The scheme the desktop serves a layout plugin's package files on: `tomrade-plugin://<publisher>/<name>/<file>`. */
+export const PLUGIN_FILES_SCHEME = "tomrade-plugin";
+
+export const pluginFileUrl = (pluginId: string, file: string): string => `${PLUGIN_FILES_SCHEME}://${pluginId}/${file.replace(/^\/+/, "")}`;
+
+/** The page a sandboxed layout runs in, served under every layout plugin's origin from the app's own build, never from the package. */
+export const LAYOUT_SHELL_FILE = "__tomrade__/plugin-layout-shell.html";
+
+/** The plugin and file a `tomrade-plugin://` URL names, or null for any other shape. */
+export function parsePluginFileUrl(url: string): { pluginId: string; file: string } | null {
+  const m = /^tomrade-plugin:\/\/([^/?#]+)\/([^/?#]+)\/([^?#]*)/.exec(url);
+  return m ? { pluginId: `${m[1]}/${m[2]}`, file: decodeURIComponent(m[3]!) } : null;
+}
 
 /**
  * What a row's value is doing right now, drawn as a mark before it: `live`
@@ -267,6 +315,7 @@ declare module "@tomradex/ipc" {
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
     "contributions.assistantAccessories": () => AssistantAccessory[];
     "contributions.sidebarModules": (projectId: string) => SidebarModuleView[];
+    "contributions.layouts": () => LayoutInfo[];
   }
   interface Broadcasts {
     "contributions.changed": () => void;
@@ -284,6 +333,7 @@ export class Contributions extends Service {
   private graphMap = new Map<string, GraphSpec>();
   private assistantAccessoryMap = new Map<string, AssistantAccessory>();
   private sidebarModuleMap = new Map<string, SidebarModule>();
+  private layoutMap = new Map<string, LayoutSpec>();
   private notify: () => void = () => {};
 
   constructor(ctx: Context) {
@@ -301,6 +351,7 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
       ctx.ipc.handle("contributions.assistantAccessories", () => ctx.contributions.assistantAccessories());
       ctx.ipc.handle("contributions.sidebarModules", (projectId) => ctx.contributions.sidebarModules(projectId));
+      ctx.ipc.handle("contributions.layouts", () => ctx.contributions.layouts());
       this.notify = () => ctx.ipc.send("contributions.changed");
       return () => {
         this.notify = () => {};
@@ -334,6 +385,28 @@ export class Contributions extends Service {
 
   sidebarModule(def: SidebarModule): () => void {
     return this.add(this.sidebarModuleMap, def, "sidebarModule");
+  }
+
+  layout(def: LayoutSpec): () => void {
+    if (!def.plugin.root || !path.isAbsolute(def.plugin.root)) throw new Error(`layout "${def.id}" names no package directory to serve "${def.module}" from`);
+    if (!withinRoot(def.plugin.root, def.module)) throw new Error(`layout "${def.id}" module "${def.module}" is outside the plugin`);
+    return this.add(this.layoutMap, { ...def, module: def.module.split(path.sep).join("/") }, "layout");
+  }
+
+  layouts(): LayoutInfo[] {
+    return [...this.layoutMap.values()].map((l) => ({ id: l.id, title: said(l.title)!, ...(l.icon ? { icon: l.icon } : {}), module: l.module, render: l.render, pluginId: l.plugin.id }));
+  }
+
+  /** Where a plugin that registered a layout keeps its package, or null for any other plugin. */
+  layoutRoot(pluginId: string): string | null {
+    return [...this.layoutMap.values()].find((l) => l.plugin.id === pluginId)?.plugin.root ?? null;
+  }
+
+  /** The file a layout plugin's package holds at `file`, or null: another plugin's, a path that leaves the package, or no layout from that plugin. */
+  layoutFile(pluginId: string, file: string): string | null {
+    const root = this.layoutRoot(pluginId);
+    if (!root || !withinRoot(root, file)) return null;
+    return path.resolve(root, file);
   }
 
   /** Whether a command is registered, without reading every title in the current language. */

@@ -33,6 +33,7 @@ beforeAll(async () => {
   await db.exec(migration("202610230001_analytics.sql"));
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
   await db.exec(migration("202610290001_analytics_activation.sql"));
+  await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -78,9 +79,9 @@ describe("analytics ingest", () => {
       .sort((a, b) => a.feature_id.localeCompare(b.feature_id) || a.action.localeCompare(b.action));
     const stored = [...rows].sort((a, b) => a.feature_id.localeCompare(b.feature_id) || a.action.localeCompare(b.action));
     expect(stored).toEqual(expected);
-    // Registry 1 stays exactly as an older client knows it.
+    // Registry 1 stays exactly as an older client knows it: registry 2 added five steps, registry 3 one surface.
     const old = await db.query<{ n: number }>("select count(*)::int as n from public.tomrade_analytics_registry where registry = 1");
-    expect(old.rows[0]!.n).toBe(rows.length - 5);
+    expect(old.rows[0]!.n).toBe(rows.length - 6);
   });
 
   it("takes registry 2's activation steps, never as a use, and flags none of them unknown", async () => {

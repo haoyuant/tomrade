@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { EMPTY_KEY, LAYOUTS, groupKeyOf, type FilterClause, type Layout } from "@tomradex/domain";
+import { EMPTY_KEY, groupKeyOf, type FilterClause, type Layout } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
-import { BOARD_GLYPHS, DEFAULT_SHOWN_FIELDS, LAYOUT_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
+import { BOARD_GLYPHS, defaultShownFields, fieldLabel, viewIcon } from "~/lib/domain";
+import { useLayoutOptions } from "~/lib/layouts";
 import { useI18n } from "~/lib/i18n";
 import { isClosed } from "~/lib/closedWindow";
 import { useClosedTotals, useGraphs, useUpdateView } from "~/lib/queries";
@@ -30,6 +31,7 @@ function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange
   const closedTotals = useClosedTotals(ws.project.id, NO_FILTER, "", open);
   const update = useUpdateView(ws.project.id);
   const graphs = useGraphs();
+  const layouts = useLayoutOptions();
   const toast = useToast();
   const [name, setName] = useState(ws.view.name);
   const [icon, setIcon] = useState<IconId>(viewIcon(ws.view.icon));
@@ -51,7 +53,7 @@ function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange
   };
 
   // An empty list means the layout's default; the first toggle materializes it.
-  const shownFields = fields.length ? fields : DEFAULT_SHOWN_FIELDS[layout];
+  const shownFields = fields.length ? fields : defaultShownFields(layout);
   const toggleField = (id: string) => setFields(shownFields.includes(id) ? shownFields.filter((f) => f !== id) : [...shownFields, id]);
   const graphOptions = graphs.data ?? [];
 
@@ -96,10 +98,10 @@ function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange
         <div>
           <Eyebrow>{t("viewSettingsDialog.layoutLabel")}</Eyebrow>
           <div className="seg quiet vs-layout" role="group" aria-label={t("viewSettingsDialog.layoutLabel")} style={{ marginTop: "var(--space-2)", display: "inline-flex" }}>
-            {LAYOUTS.map((l) => (
-              <button key={l} type="button" data-layout={l} aria-pressed={layout === l} onClick={() => setLayout(l)}>
-                <Icon className="ico" name={LAYOUT_LABEL[l].icon} size={13} />
-                <span className="seg-lbl">{LAYOUT_LABEL[l].label}</span>
+            {layouts.map((l) => (
+              <button key={l.id} type="button" data-layout={l.id} aria-pressed={layout === l.id} onClick={() => setLayout(l.id)}>
+                <Icon className="ico" name={l.icon} size={13} />
+                <span className="seg-lbl">{l.label}</span>
               </button>
             ))}
           </div>

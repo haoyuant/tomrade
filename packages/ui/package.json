@@ -7,7 +7,8 @@
   "description": "React UI (TanStack Router + Query, Tailwind v4, Radix). Talks to the main process through the typed channel contract and renders plugin contributions as data.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc -p tsconfig.json --noEmit",
+    "build": "vite build && vite build -c vite.shell.config.ts && tsc -p tsconfig.json --noEmit",
+    "build:shell": "vite build -c vite.shell.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

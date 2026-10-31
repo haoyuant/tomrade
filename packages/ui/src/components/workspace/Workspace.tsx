@@ -33,6 +33,7 @@ import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { TabStrip } from "./TabStrip";
 import { Table } from "./Table";
+import { PluginLayoutRegion } from "./PluginLayout";
 import { EpicStrip } from "./EpicStrip";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { UnplacedRepoBanner } from "./UnplacedRepoBanner";
@@ -48,6 +49,7 @@ const BoardRegion = memo(Board);
 const TableRegion = memo(Table);
 const GraphRegion = memo(GraphView);
 const EpicStripRegion = memo(EpicStrip);
+import { isBuiltinLayout } from "@tomradex/domain";
 import { useReadSelectedId, useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
 import { askPanel, onStartPalette } from "~/lib/panelRequests";
@@ -415,7 +417,7 @@ export function Workspace() {
               <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
             </Surface>
           ) : (
-            <Surface feature={ws.layout === "graph" ? "backlog.graph" : ws.layout === "table" ? "backlog.table" : "backlog.board"}>
+            <Surface feature={ws.layout === "graph" ? "backlog.graph" : ws.layout === "table" ? "backlog.table" : ws.layout === "board" ? "backlog.board" : "backlog.plugin"}>
             <section className="board-region" data-layout={ws.layout}>
               <ViewHeadRegion onOpenViewSettings={openViewSettings} onOpenFields={openFieldsList} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
@@ -429,6 +431,8 @@ export function Workspace() {
                     {t("common.tryAgain")}
                   </button>
                 </div>
+              ) : !isBuiltinLayout(ws.layout) ? (
+                <PluginLayoutRegion layout={ws.layout} />
               ) : ws.layout === "graph" ? (
                 <GraphRegion />
               ) : ws.layout === "table" ? (

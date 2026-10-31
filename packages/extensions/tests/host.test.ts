@@ -606,6 +606,35 @@ describe("the extension host", () => {
     expect(opened[0]).toMatch(/face\.html$/);
   });
 
+  it("registers a layout only from a module inside the package, native only with permissions.renderer, and names it with its file", async () => {
+    fs.writeFileSync(path.join(dir, "layout.js"), "export default { mount() { return { unmount() {} }; } };");
+    let seen: PluginContext | null = null;
+    let granted: PluginContext | null = null;
+    const w = await fresh({ plugins: [Contributions] });
+    w.ctx.plugin(ext(definePlugin({ inject: ["contributions"], apply: (p) => void (seen = p) })));
+    w.ctx.plugin(sdk(definePlugin({ inject: ["contributions"], apply: (p) => void (granted = p) }), { id: "someone/native", namespace: "native", origin: "extension", root: dir, dataDir: dir, renderer: true }));
+    await settle();
+    const p = seen as unknown as PluginContext;
+    await expect(p.contributions.layout({ id: "demo.l", title: "L", module: "../layout.js" })).rejects.toThrow(/outside the plugin/);
+    await expect(p.contributions.layout({ id: "demo.l", title: "L", module: "nope.js" })).rejects.toThrow(/does not exist/);
+    await expect(p.contributions.layout({ id: "demo.l", title: "L", module: "layout.js", render: "native" })).rejects.toThrow(/permissions\.renderer/);
+    await expect(p.contributions.layout({ id: "other.l", title: "L", module: "layout.js" })).rejects.toThrow(/must be named/);
+    const off = await p.contributions.layout({ id: "demo.l", title: "L", icon: "i-grid", module: "./layout.js" });
+    const offNative = await (granted as unknown as PluginContext).contributions.layout({ id: "native.l", title: "N", module: "layout.js", render: "native" });
+    expect(w.ctx.contributions.layouts()).toEqual([
+      { id: "demo.l", title: "L", icon: "i-grid", module: "layout.js", render: "sandbox", pluginId: "someone/demo" },
+      { id: "native.l", title: "N", module: "layout.js", render: "native", pluginId: "someone/native" }
+    ]);
+    expect(w.ctx.contributions.layoutFile("someone/demo", "layout.js")).toBe(path.join(dir, "layout.js"));
+    expect(w.ctx.contributions.layoutFile("someone/demo", "../secret.txt")).toBeNull();
+    expect(w.ctx.contributions.layoutFile("someone/demo", "/etc/passwd")).toBeNull();
+    expect(w.ctx.contributions.layoutFile("someone/else", "layout.js")).toBeNull();
+    off();
+    offNative();
+    expect(w.ctx.contributions.layouts()).toEqual([]);
+    expect(w.ctx.contributions.layoutFile("someone/demo", "layout.js")).toBeNull();
+  });
+
   it("opens a working window only for a plugin whose manifest grants it, titled with the plugin's name, and posts to it", async () => {
     fs.writeFileSync(path.join(dir, "face.html"), "<p>hi</p>");
     const specs: { id: string; title: string; kind?: string; minWidth?: number; minHeight?: number }[] = [];

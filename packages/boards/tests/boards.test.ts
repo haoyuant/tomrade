@@ -113,6 +113,13 @@ describe("views", () => {
     expect(views.listForProject(project.id).at(-1)?.id).toBe(v.id);
   });
 
+  it("keeps a plugin's layout as stored, so the view survives its plugin being off", async () => {
+    const { views, project } = await fresh();
+    const v = views.create({ projectId: project.id, name: "Timeline", icon: "i-board", layout: "plugin:demo.timeline", query: {} });
+    expect(views.get(project.id, v.id)?.layout).toBe("plugin:demo.timeline");
+    expect(views.update(project.id, v.id, { layout: "table" }).layout).toBe("table");
+  });
+
   it("update rewrites layout, query and name; the change is undoable", async () => {
     const { oplog, views, project } = await fresh();
     const v = views.listForProject(project.id)[0];

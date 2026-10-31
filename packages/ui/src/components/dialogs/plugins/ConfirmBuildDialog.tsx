@@ -8,7 +8,8 @@ import { readableError, useToast } from "~/lib/toast";
 import { isLeadWindow } from "~/lib/window-chrome";
 import { Findings, Reach, TrustTags } from "./parts";
 
-const wider = (before: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] } | null, after: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] }) => {
+type Grants = { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean; renderer?: boolean }; inject: string[] };
+const wider = (before: Grants | null, after: Grants) => {
   if (!before) return [];
   const FS = ["none", "plugin", "project", "any"];
   return [
@@ -16,7 +17,8 @@ const wider = (before: { permissions: { network: string[]; fs: string; exec: boo
     ...after.permissions.network.filter((h) => !before.permissions.network.includes(h)),
     ...(FS.indexOf(after.permissions.fs) > FS.indexOf(before.permissions.fs) ? [`fs: ${after.permissions.fs}`] : []),
     ...(after.permissions.exec && !before.permissions.exec ? ["exec"] : []),
-    ...(after.permissions.window && !before.permissions.window ? ["window"] : [])
+    ...(after.permissions.window && !before.permissions.window ? ["window"] : []),
+    ...(after.permissions.renderer && !before.permissions.renderer ? ["renderer"] : [])
   ];
 };
 

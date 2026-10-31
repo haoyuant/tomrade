@@ -2,10 +2,10 @@ import { useDeferredValue, useRef, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
-import { LAYOUTS } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
-import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
+import { isTicket, viewIcon } from "~/lib/domain";
+import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { requestStart } from "~/lib/codeLink";
 import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
@@ -67,6 +67,7 @@ export function CommandPalette(props: PaletteProps) {
 
 function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps) {
   const ws = useWorkspace();
+  const layouts = useLayoutOptions();
   const selectedId = useSelectedId();
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -134,7 +135,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     { label: t("commandPalette.undoLastWrite"), kb: keyLabel("undo"), run: actions.undo },
     { label: t("commandPalette.redoLastUndo"), kb: keyLabel("redo"), run: actions.redo },
     { label: t("commandPalette.history"), kb: undefined, run: actions.openHistory },
-    ...LAYOUTS.map((l) => ({ label: t("commandPalette.layoutAction", { layout: LAYOUT_LABEL[l].label }), kb: undefined, run: () => ws.setLayout(l) })),
+    ...layouts.map((l) => ({ label: t("commandPalette.layoutAction", { layout: l.label }), kb: undefined, run: () => ws.setLayout(l.id) })),
     ...(ws.filePath === null && !ws.routines ? [{ label: t("commandPalette.searchTickets"), kb: keyLabel("searchTickets"), run: actions.searchTickets }] : []),
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
@@ -175,10 +176,10 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     <>
       <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
         {ws.views.map((view) => (
-          <Command.Item key={view.id} value={`${view.name} ${LAYOUT_LABEL[view.layout].label}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
+          <Command.Item key={view.id} value={`${view.name} ${layoutLabel(view.layout, layouts)}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
             <Icon name={viewIcon(view.icon)} size={14} style={{ color: "var(--meta)" }} />
             <span className="p-label">
-              {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
+              {view.name} <span className="meta-txt">· {layoutLabel(view.layout, layouts)}</span>
             </span>
             <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
           </Command.Item>

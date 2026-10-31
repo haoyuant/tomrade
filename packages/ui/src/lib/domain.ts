@@ -1,4 +1,4 @@
-import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance, WorkType } from "@tomradex/domain";
+import { isBuiltinLayout, type BuiltinFieldId, type BuiltinLayout, type FieldDef, type FieldType, type FilterOp, type Item, type ItemStatus, type Layout, type OplogEntry, type Priority, type Provenance, type WorkType } from "@tomradex/domain";
 import { ICON_IDS, type IconId } from "~/components/icons";
 import { say, type Locale, type MessageKey } from "./dicts";
 
@@ -64,8 +64,8 @@ export const viewIcon = (name: string): IconId => ((ICON_IDS as readonly string[
 /** A custom field is named by its owner; a built-in by the active locale. */
 export const fieldLabel = (def: FieldDef): string => (def.builtin ? (FIELD_LABEL[def.id as BuiltinFieldId] ?? def.name) : def.name);
 
-/** The three ways a view draws the backlog. */
-export const LAYOUT_LABEL: Record<Layout, { label: string; icon: IconId }> = {
+/** The three built-in ways a view draws the backlog; a plugin's layouts carry their own title and icon. */
+export const LAYOUT_LABEL: Record<BuiltinLayout, { label: string; icon: IconId }> = {
   board: { label: "", icon: "i-board" },
   table: { label: "", icon: "i-bars" },
   graph: { label: "", icon: "i-graph" }
@@ -105,18 +105,23 @@ const FIELD_TYPE_KEY: Record<FieldType, MessageKey> = {
   labels: "domain.fieldType_labels",
   item: "domain.fieldType_item"
 };
-const LAYOUT_KEY: Record<Layout, MessageKey> = { board: "domain.layout_board", table: "domain.layout_table", graph: "domain.layout_graph" };
+const LAYOUT_KEY: Record<BuiltinLayout, MessageKey> = { board: "domain.layout_board", table: "domain.layout_table", graph: "domain.layout_graph" };
 const FILTER_OP_KEY = { in: "domain.filterOp_in", "not-in": "domain.filterOp_notIn", contains: "domain.filterOp_contains", gte: "domain.filterOp_gte", lte: "domain.filterOp_lte" } as const satisfies Record<FilterOp, MessageKey>;
 
 /**
  * What the layouts draw when a view has not chosen its fields. The view
  * settings sheet edits against the same list, so both agree on "default".
  */
-export const DEFAULT_SHOWN_FIELDS: Record<Layout, string[]> = {
+export const DEFAULT_SHOWN_FIELDS: Record<BuiltinLayout, string[]> = {
   board: ["status", "priority", "epic", "labels", "board"],
   table: ["status", "priority", "epic", "labels", "board", "updated"],
   graph: ["status", "priority", "labels"]
 };
+/** A plugin's layout reads the table's list: the widest default, for a page that decides its own columns. */
+export const defaultShownFields = (layout: Layout): string[] => DEFAULT_SHOWN_FIELDS[isBuiltinLayout(layout) ? layout : "table"];
+
+/** A plugin names its layout's icon by sprite id; one this build lacks shows the plug. */
+export const layoutIcon = (name: string | undefined): IconId => (name && (ICON_IDS as readonly string[]).includes(name) ? (name as IconId) : "i-plug");
 
 /** The name of a field's empty group: "No epic", "Unchecked", "No Due"… */
 export function emptyGroupLabel(def: FieldDef): string {
@@ -138,7 +143,7 @@ export function setDomainLocale(locale: Locale): void {
   GLYPHS.forEach(([, key], i) => (BOARD_GLYPHS[i][1] = word(key)));
   for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = word(FIELD_KEY[f]);
   for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = word(FIELD_TYPE_KEY[ty]);
-  for (const l of Object.keys(LAYOUT_LABEL) as Layout[]) LAYOUT_LABEL[l].label = word(LAYOUT_KEY[l]);
+  for (const l of Object.keys(LAYOUT_LABEL) as BuiltinLayout[]) LAYOUT_LABEL[l].label = word(LAYOUT_KEY[l]);
   for (const op of Object.keys(FILTER_OP_LABEL) as FilterOp[]) FILTER_OP_LABEL[op] = word(FILTER_OP_KEY[op]);
 }
 // English until the provider names the language showing.

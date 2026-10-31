@@ -51,7 +51,8 @@ const REASON_KEY: Partial<Record<string, MessageKey>> = {
   "dynamic-code": "plugins.risk_dynamic-code",
   env: "plugins.risk_env",
   fs: "plugins.risk_fs",
-  window: "plugins.risk_window"
+  window: "plugins.risk_window",
+  renderer: "plugins.risk_renderer"
 };
 
 /** What a plugin can reach, in plain words: the risk reasons first, then the services and hosts it names. */

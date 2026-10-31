@@ -68,7 +68,7 @@ describe("feature registry", () => {
       expect(feature.actions.length).toBeGreaterThan(0);
       for (const action of feature.actions) expect(action.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
-    expect(featureIds()).toHaveLength(26);
+    expect(featureIds()).toHaveLength(27);
     expect(isCounted("backlog.create", "create")).toBe(true);
     expect(isCounted("backlog.board", "open")).toBe(true);
     expect(dimAllowed(featureById("backlog.create")!, "quick")).toBe(true);
@@ -79,7 +79,7 @@ describe("feature registry", () => {
   });
 
   it("adds registry 2's activation steps where they belong, never as a use", () => {
-    expect(FEATURE_REGISTRY_VERSION).toBe(2);
+    expect(FEATURE_REGISTRY_VERSION).toBe(3);
     const added = FEATURES.flatMap((feature) => feature.actions.filter((action) => action.sinceRegistry === 2).map((action) => `${feature.id}/${action.name}`));
     expect(added.sort()).toEqual(
       ["agent.chat/plan_applied", "agent.chat/run_reverted", "code.link/claim_external", "code.link/project_repo_linked", "onboarding/setup_done"].sort()
@@ -91,8 +91,9 @@ describe("feature registry", () => {
     }
     // Only the first run's milestone is held to once.
     expect(added.filter((entry) => isOnce(...(entry.split("/") as [string, string])))).toEqual(["onboarding/setup_done"]);
-    // No feature was added: the 26 ids stay.
-    expect(featureIds()).toHaveLength(26);
+    // Registry 2 added no feature; registry 3 added the plugin layout surface alone.
+    expect(FEATURES.filter((feature) => feature.sinceRegistry === 3).map((feature) => feature.id)).toEqual(["backlog.plugin"]);
+    expect(featureIds()).toHaveLength(27);
   });
 });
 
@@ -567,11 +568,11 @@ describe("the service's switch", () => {
     fromRenderer("onboarding", "setup_done");
     h.analytics.activate("onboarding", "setup_done");
     expect(queued()).toEqual([
-      "2 agent.chat/plan_applied",
-      "2 agent.chat/run_reverted",
-      "2 code.link/project_repo_linked",
-      "2 code.link/claim_external",
-      "2 onboarding/setup_done"
+      "3 agent.chat/plan_applied",
+      "3 agent.chat/run_reverted",
+      "3 code.link/project_repo_linked",
+      "3 code.link/claim_external",
+      "3 onboarding/setup_done"
     ]);
     // Every step but the milestone repeats.
     h.analytics.activate("agent.chat", "plan_applied");
@@ -593,7 +594,7 @@ describe("the service's switch", () => {
     setEnabled(true);
     await new Promise((resolve) => setTimeout(resolve, 5));
     h.analytics.activate("onboarding", "setup_done");
-    expect(queued()).toEqual(["2 onboarding/setup_done"]);
+    expect(queued()).toEqual(["3 onboarding/setup_done"]);
     fs.rmSync(h.root, { recursive: true, force: true });
   });
 });
