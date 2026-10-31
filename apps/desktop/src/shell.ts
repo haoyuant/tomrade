@@ -33,6 +33,8 @@ declare module "@tomradex/ipc" {
     "shell.about": () => AboutInfo;
     /** Native save dialog, then the text written there — an exported settings file. The chosen path, or null when cancelled. */
     "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
+    /** Native save dialog, then a PNG data URL written there as an image. The chosen path, or null when cancelled. */
+    "shell.saveImageFile": (opts: { title?: string; defaultName: string; dataUrl: string }) => string | null;
     /** Native open dialog for one text file, read back — a settings file to import. Null when cancelled. */
     "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
     /** Quit through the usual questions and start again — once without the person's own plugins when `safe`. */
@@ -124,7 +126,7 @@ export const shell = {
     // After the reply, so the renderer is not torn down mid-call.
     ctx.ipc.handle("shell.restart", (opts) => void setTimeout(() => restart({ safe: opts?.safe === true }), 100));
 
-    ctx.ipc.handle("shell.saveTextFile", async ({ title, defaultName, text }) => {
+    const askSavePath = async (title: string | undefined, defaultName: string) => {
       const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const ext = path.extname(defaultName).slice(1);
       const options = {
@@ -133,9 +135,21 @@ export const shell = {
         ...(ext ? { filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : {})
       };
       const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      await fs.writeFile(result.filePath, text, "utf8");
-      return result.filePath;
+      return result.canceled || !result.filePath ? null : result.filePath;
+    };
+
+    ctx.ipc.handle("shell.saveTextFile", async ({ title, defaultName, text }) => {
+      const file = await askSavePath(title, defaultName);
+      if (file) await fs.writeFile(file, text, "utf8");
+      return file;
+    });
+
+    ctx.ipc.handle("shell.saveImageFile", async ({ title, defaultName, dataUrl }) => {
+      const prefix = "data:image/png;base64,";
+      if (!dataUrl.startsWith(prefix)) throw new Error("Only a PNG image can be saved.");
+      const file = await askSavePath(title, defaultName);
+      if (file) await fs.writeFile(file, Buffer.from(dataUrl.slice(prefix.length), "base64"));
+      return file;
     });
 
     ctx.ipc.handle("shell.openTextFile", async ({ title, extensions }) => {

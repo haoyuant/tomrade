@@ -1277,20 +1277,24 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .card-foot { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
 .card-date { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--meta); }
-/* Epic is structural context, not an attribute — it appears on almost every
- * card, so it earns quiet text rather than a tinted chip. Draining it frees
- * the accent budget for the provenance tick, the only mark that must be seen. */
+/* The workstream is quiet text: it rarely tells cards in one view apart. */
 .card-board {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
   color: var(--meta); max-width: 96px; overflow: hidden; white-space: nowrap;
 }
 .card-board svg { color: var(--meta); flex-shrink: 0; }
-.card-epic {
-  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
-  color: var(--meta); min-width: 0; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* An epic's tag wears the epic's own hue, so a glance groups its cards (in the graph
+ * above all). Soft tints, mixed into the theme's own text and surface: legible in
+ * every theme, and quieter than the accent the provenance tick and the focus use. */
+.tag.card-epic {
+  --epic: oklch(0.62 0.13 var(--epic-hue, 250));
+  gap: 3px; min-width: 0; max-width: 100%;
+  color: color-mix(in oklch, var(--epic) 50%, var(--fg));
+  background: color-mix(in oklch, var(--epic) 14%, var(--surface));
 }
+.tag.card-epic > svg { flex: none; }
+.card-epic-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── status dot — shape-coded, not colour-coded ─────────────────────── */
 .sdot { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
@@ -3231,6 +3235,32 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__handle:hover { border-color: var(--accent); }
 .graph-region .react-flow__edge { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
+.graph-region .react-flow__edge.selected .edge-arrow { fill: var(--accent) !important; }
+/* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back.
+   Rings, lines, arrowheads and the dimming all fade: quickly into a focus, so it answers the pointer,
+   and slowly out of one, so letting go reads as one soft shift. A state's own duration is the way into it. */
+.graph-region { --graph-fade: 280ms; }
+.graph-region :is(.react-flow__node, .react-flow__edge):is(.is-focus, .is-up, .is-down, .is-dim) { --graph-fade: 120ms; }
+.graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity var(--graph-fade) var(--ease-standard); }
+.graph-region .react-flow__node .card {
+  transition: box-shadow var(--graph-fade) var(--ease-standard), border-color var(--graph-fade) var(--ease-standard);
+}
+.graph-region .react-flow__edge-path {
+  transition: stroke var(--graph-fade) var(--ease-standard), stroke-width var(--graph-fade) var(--ease-standard);
+}
+.graph-region .edge-arrow { pointer-events: none; transition: fill var(--graph-fade) var(--ease-standard); }
+.graph-region .react-flow__node.is-dim { opacity: 0.32; }
+.graph-region .react-flow__edge.is-dim { opacity: 0.22; }
+.graph-region .react-flow__node.is-focus .card { box-shadow: var(--focus-ring); }
+.graph-region .react-flow__node.is-up .card, .graph-region .react-flow__node.is-down .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
+/* an open dependency carries a dot from the blocker to what it blocks; it fades in rather than popping */
+.graph-region .edge-flow { pointer-events: none; animation: graph-fade-in var(--graph-fade) var(--ease-standard) both; }
+@keyframes graph-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .graph-region .edge-flow { display: none; }
+  .graph-region .react-flow__node, .graph-region .react-flow__edge, .graph-region .react-flow__node .card,
+  .graph-region .react-flow__edge-path, .graph-region .edge-arrow { transition: none; }
+}
 .graph-region .react-flow__connectionline { stroke: var(--accent); }
 .graph-empty { position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none; }
 .graph-foot {
@@ -3239,6 +3269,9 @@ button.kref { cursor: pointer; }
   pointer-events: none;
 }
 .graph-foot > * { pointer-events: auto; }
+.graph-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-actions { display: flex; flex: none; gap: var(--space-1); }
+.graph-actions .btn { padding: 4px 8px; white-space: nowrap; background: var(--surface); }
 
 /* dependency chips in the field strips: a label chip that opens an issue */
 .lab.dep { padding-left: 5px; }
