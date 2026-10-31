@@ -10,9 +10,10 @@ const leadListeners = new Set<() => void>();
  * The same word says whether this window leads.
  */
 export function watchWindowChrome(): void {
-  window.tomrade?.on?.("window.chrome", ({ trafficLights, lead: next, frosted }) => {
+  window.tomrade?.on?.("window.chrome", ({ trafficLights, lead: next, frosted, softwareCompositing }) => {
     document.documentElement.dataset.trafficLights = trafficLights ? "on" : "off";
     document.documentElement.toggleAttribute("data-frosted", !!frosted);
+    document.documentElement.toggleAttribute("data-software-compositing", !!softwareCompositing);
     if (typeof next === "boolean" && next !== lead) {
       lead = next;
       for (const listener of leadListeners) listener();

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { useParams } from "@tanstack/react-router";
 import { THEME_TYPOGRAPHY_NAMES, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
-import { SectionHead } from "~/components/ui/atoms";
+import { SectionHead, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -363,6 +363,7 @@ const TOKENS: [MessageKey, ThemeTokenName, MessageKey][] = [
 
 export function ThemePane({
   scope,
+  performanceScope,
   settings,
   save,
   editor: { editingTheme, setEditingTheme, themeDraft, setThemeDraft, openThemeEditor },
@@ -370,6 +371,7 @@ export function ThemePane({
   onLeave
 }: {
   scope: "machine" | "user" | undefined;
+  performanceScope: "machine" | "user" | undefined;
   settings: ReturnType<typeof useSettings>;
   save: ReturnType<typeof useSaveSettings>;
   editor: ReturnType<typeof useThemeEditor>;
@@ -422,6 +424,14 @@ export function ThemePane({
       <hr className="rule" />
       <AppearanceGroupHead title={t("settingsDialog.themeSwitchMode")} />
       <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
+      <hr className="rule" />
+      <AppearanceGroupHead title={t("settingsDialog.performanceModeTitle")} aside={<ScopeTag scope={performanceScope} />}>{t("settingsDialog.performanceModeLede")}</AppearanceGroupHead>
+      <div className="row">
+        <span className="cfg-name">{t("settingsDialog.performanceModeSwitch")}</span>
+        <Spacer />
+        <button type="button" className="switch" role="switch" aria-checked={settings.data?.performanceMode === true} aria-label={t("settingsDialog.performanceModeSwitch")}
+          disabled={!settings.data} onClick={() => settings.data && save.mutate({ ...settings.data, performanceMode: settings.data.performanceMode !== true })} />
+      </div>
 
       {/* Built-in themes are read-only, so their tokens are nothing to edit: the tables come with a custom theme. */}
       {selectedCustom && (

@@ -1,4 +1,4 @@
-import { BrowserWindow, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
@@ -12,6 +12,8 @@ interface WindowChrome {
   lead: boolean;
   /** The window wears the system's frosted material: the page leaves its own background off. */
   frosted: boolean;
+  /** Chromium composites without the GPU, so every animated frame is drawn on the CPU: the page keeps its lights still. */
+  softwareCompositing: boolean;
 }
 
 declare module "@tomradex/ipc" {
@@ -41,10 +43,16 @@ export interface WindowOptions {
   lead: (win: BrowserWindow) => boolean;
 }
 
+// Reads as software until the GPU process first reports; the window is told again on gpu-info-update.
+function softwareCompositing(): boolean {
+  const status = app.getGPUFeatureStatus().gpu_compositing;
+  return !!status && !status.startsWith("enabled");
+}
+
 /** Tells a window how its chrome stands now. */
 export function sayChrome(win: BrowserWindow, lead: boolean): void {
   if (win.isDestroyed()) return;
-  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted(win) } satisfies WindowChrome);
+  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted(win), softwareCompositing: softwareCompositing() } satisfies WindowChrome);
 }
 
 export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
@@ -73,11 +81,14 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
   win.webContents.on("render-process-gone", (_event, details) => log.error(`renderer gone: ${details.reason} (exit ${details.exitCode})`));
   win.on("enter-full-screen", sendChrome);
   win.on("leave-full-screen", sendChrome);
+  // The status settles when the GPU process first reports, and turns to software if that process gives up.
+  app.on("gpu-info-update", sendChrome);
   const wake = () => sendToWindow(win, "window.wake");
   powerMonitor.on("resume", wake);
   powerMonitor.on("unlock-screen", wake);
   win.on("restore", wake);
   win.on("closed", () => {
+    app.off("gpu-info-update", sendChrome);
     powerMonitor.off("resume", wake);
     powerMonitor.off("unlock-screen", wake);
   });

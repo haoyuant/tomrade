@@ -1,26 +1,59 @@
 /* Sunrise and Daybreak's lights: the sky and horizon behind the workspace, the
    sun's line under the bar, vermilion running into gold on what you press.
-   Everything is static paint: no animation, filter or backdrop-filter, and the
-   one full-window layer is fixed behind a page that never scrolls, so it is
-   rastered once. Colours come from the --sun-* tokens in app.css. */
+   The sky, the sun and a glint on the horizon move by opacity and transform
+   alone: each is painted once and the compositor runs the rest, with no
+   repaint, no filter and no backdrop-filter. A hidden window draws no frames. The
+   motion stays still for reduced motion, performance mode, or when Chromium
+   composites without the GPU, where every frame would cost the CPU.
+   Colours come from the --sun-* tokens in app.css. */
 @layer components {
+/* Every light falls off along an eased curve rather than a straight line, so the wide glows stay smooth to their edge.
+   Positions are in each layer's own box, which reaches past the window. */
+:is(.sunrise, .daybreak) {
+  --sun-light-sky: radial-gradient(ellipse 72vw 56vh at 16vw 0, var(--sun-sky-haze),
+    color-mix(in srgb, var(--sun-sky-haze) 74%, transparent) 20%, color-mix(in srgb, var(--sun-sky-haze) 46%, transparent) 42%,
+    color-mix(in srgb, var(--sun-sky-haze) 22%, transparent) 64%, color-mix(in srgb, var(--sun-sky-haze) 7%, transparent) 84%, transparent);
+  --sun-light-haze: radial-gradient(ellipse 104vw 82vh at 104vw 128vh, var(--sun-haze),
+    color-mix(in srgb, var(--sun-haze) 74%, transparent) 20%, color-mix(in srgb, var(--sun-haze) 46%, transparent) 42%,
+    color-mix(in srgb, var(--sun-haze) 22%, transparent) 64%, color-mix(in srgb, var(--sun-haze) 7%, transparent) 84%, transparent);
+  --sun-light-glow: radial-gradient(ellipse 56vw 44vh at 98vw 120vh, var(--sun-glow),
+    color-mix(in srgb, var(--sun-glow) 74%, transparent) 20%, color-mix(in srgb, var(--sun-glow) 46%, transparent) 42%,
+    color-mix(in srgb, var(--sun-glow) 22%, transparent) 64%, color-mix(in srgb, var(--sun-glow) 7%, transparent) 84%, transparent);
+}
+:is(.sunrise, .daybreak) body::before,
+:is(.sunrise, .daybreak) body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
+/* The sky, reaching past the top and left edges so its drift never shows one. */
 :is(.sunrise, .daybreak) body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(ellipse 70% 55% at 88% 112%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 34% 26% at 82% 104%, var(--sun-glow), transparent 72%),
-    radial-gradient(ellipse 55% 40% at 8% -8%, var(--sun-sky-haze), transparent 70%);
+  inset: -8vh 0 0 -8vw;
+  background: var(--sun-light-sky);
+  animation: sun-sky-drift 23s ease-in-out infinite alternate;
 }
 /* A few stars before the sun is up, only along the top of the sky. */
 .daybreak body::before {
   background:
-    radial-gradient(1px 1px at 22px 34px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 141px 92px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1.5px 1.5px at 236px 18px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 90px 171px, var(--sun-star), transparent) 0 0 / 280px 210px repeat-x,
-    radial-gradient(ellipse 70% 55% at 88% 112%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 34% 26% at 82% 104%, var(--sun-glow), transparent 72%),
-    radial-gradient(ellipse 55% 40% at 8% -8%, var(--sun-sky-haze), transparent 70%);
+    radial-gradient(1px 1px at 22px 34px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
+    radial-gradient(1px 1px at 141px 92px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
+    radial-gradient(1.5px 1.5px at 236px 18px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
+    radial-gradient(1px 1px at 90px 171px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
+    var(--sun-light-sky);
+}
+/* The sun below the bottom right corner. It starts risen, so a theme shows its light the moment it is picked,
+   then sets and rises again. Its layer reaches well past every edge, so no edge shows as it moves. */
+:is(.sunrise, .daybreak) body::after {
+  inset: -16vh -16vw;
+  background:
+    var(--sun-light-haze),
+    var(--sun-light-glow);
+  transform-origin: 76% 93%;
+  animation: sun-arc 19s ease-in-out infinite alternate;
+}
+@keyframes sun-sky-drift {
+  from { opacity: 1; transform: translate3d(3vw, 2vh, 0); }
+  to { opacity: 0.5; transform: translate3d(0, 0, 0); }
+}
+@keyframes sun-arc {
+  from { opacity: 1; transform: translate3d(0, -1vh, 0) scale(1.06); }
+  to { opacity: 0.45; transform: translate3d(0, 6vh, 0) scale(0.88); }
 }
 
 /* The horizon: one hairline from the sky's lilac through the sun's red to gold. */
@@ -31,6 +64,20 @@
     linear-gradient(90deg, var(--sun-sky-haze), transparent 35%, transparent 65%, var(--sun-haze)),
     var(--surface);
 }
+/* Now and then a glint runs along the horizon: a short light that travels inside the bar, so it needs no
+   clipping and adds no overflow. With the motion still, it is not drawn. */
+:is(.sunrise, .daybreak) .titlebar { position: relative; }
+:is(.sunrise, .daybreak) .titlebar::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; width: 16%; height: 2px; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--sun-sheen) 30%, var(--sun-gold) 50%, var(--sun-sheen) 70%, transparent);
+  animation: sun-horizon 16s ease-in-out infinite;
+}
+/* 525% of its own width carries it from the bar's left end to its right end. */
+@keyframes sun-horizon {
+  0% { opacity: 0; transform: translate3d(0, 0, 0); }
+  4%, 50% { opacity: 1; }
+  56%, 100% { opacity: 0; transform: translate3d(525%, 0, 0); }
+}
 :is(.sunrise, .daybreak) .statusbar {
   border-top-color: transparent;
   background:
@@ -38,13 +85,10 @@
     var(--surface);
 }
 
-/* The assistant's open floor is where the sun comes up. */
-:is(.sunrise, .daybreak) .ai {
-  background:
-    radial-gradient(ellipse 95% 38% at 72% 108%, var(--sun-haze), transparent 70%),
-    radial-gradient(ellipse 48% 20% at 66% 103%, var(--sun-glow), transparent 72%),
-    var(--surface);
-}
+/* The assistant's open floor is where the sun comes up: its surface is a layer under the sun, not a background over
+   it, and the panel is no stacking context, so its tooltips and resize handle still stack as before. */
+:is(.sunrise, .daybreak) .ai { background: transparent; }
+:is(.sunrise, .daybreak) .ai::before { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; background: var(--surface); }
 
 /* The sidebar lets the sky through instead of covering it. */
 :is(.sunrise, .daybreak) .sidebar { background: linear-gradient(180deg, var(--sun-sky-haze), transparent 40%); }
@@ -54,16 +98,30 @@
   box-shadow: -3px 0 10px -4px var(--sun-glow);
 }
 
-/* What you press is lit: the sun's gradient, a sheen along the top edge, a glow beneath. */
-:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]) {
-  background: linear-gradient(135deg, var(--sun-btn-from), var(--sun-btn-to));
+/* What you press is lit: the sun's gradient, a sheen along the top edge, a glow beneath. A gradient cannot be
+   transitioned, so the lit face and its deeper hover face are layers under the label that fade in. */
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg) { position: relative; isolation: isolate; }
+:is(.sunrise, .daybreak) .theme-seg { transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard); }
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg)::before,
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg)::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg)::before { background: linear-gradient(135deg, var(--sun-btn-from), var(--sun-btn-to)); }
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg)::after { background: linear-gradient(135deg, var(--accent-active), var(--sun-btn-to)); }
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"])::before { opacity: 1; }
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover:not(:disabled)::after { opacity: 1; }
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]),
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover {
+  background: transparent;
   box-shadow: inset 0 1px 0 var(--sun-sheen), 0 4px 14px -6px var(--sun-glow);
 }
-:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover {
-  background: linear-gradient(135deg, var(--accent-active), var(--sun-btn-to));
-  box-shadow: inset 0 1px 0 var(--sun-sheen), 0 6px 18px -6px var(--sun-glow);
-}
+:is(.sunrise, .daybreak) :is(.btn-primary, .theme-seg[aria-pressed="true"]):hover:not(:disabled) { box-shadow: inset 0 1px 0 var(--sun-sheen), 0 6px 18px -6px var(--sun-glow); }
 :is(.sunrise, .daybreak) .btn-primary:disabled { box-shadow: none; }
+/* While an overlay is up, the bar's call to action goes plain, as it does in every theme. */
+html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary::before,
+html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary::after { opacity: 0; }
+html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: var(--surface-warm); box-shadow: var(--elev-ring); }
 
 /* Columns: the number in the sun's colours, the rule beneath it starting red. */
 :is(.sunrise, .daybreak) .col-num {
@@ -91,4 +149,17 @@
 
 :is(.sunrise, .daybreak) .live-dot { box-shadow: 0 0 6px var(--success); }
 :is(.sunrise, .daybreak) ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* Every moving light stays still together; last, so these win. */
+[data-software-compositing]:is(.sunrise, .daybreak) body::before,
+[data-software-compositing]:is(.sunrise, .daybreak) body::after,
+[data-software-compositing]:is(.sunrise, .daybreak) .titlebar::after,
+[data-performance]:is(.sunrise, .daybreak) body::before,
+[data-performance]:is(.sunrise, .daybreak) body::after,
+[data-performance]:is(.sunrise, .daybreak) .titlebar::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.sunrise, .daybreak) body::before,
+  :is(.sunrise, .daybreak) body::after,
+  :is(.sunrise, .daybreak) .titlebar::after { animation: none; }
+}
 }

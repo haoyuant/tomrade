@@ -76,7 +76,7 @@ describe("settings", () => {
 
     await fiber.dispose();
     // closedWindow is the items service's, which fresh() boots
-    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "language", "closedWindow"]);
+    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "performanceMode", "language", "closedWindow"]);
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 
