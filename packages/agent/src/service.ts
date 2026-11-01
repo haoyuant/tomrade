@@ -1003,14 +1003,15 @@ export class Agent extends Service implements AgentReader {
 
   /**
    * The first engine that can take over from `limited` right now, in the order `Starter.pickEngine` tries
-   * them. `capability`: what the work needs. `terminal`: the work runs in a terminal rather than the panel.
+   * them; several when the work has stopped on more than one. `capability`: what the work needs. `terminal`:
+   * the work runs in a terminal rather than the panel.
    */
-  async nextEngine(limited: string, need: { capability?: EngineCapability; terminal?: boolean } = {}): Promise<Engine | null> {
+  async nextEngine(limited: string | readonly string[], need: { capability?: EngineCapability; terminal?: boolean } = {}): Promise<Engine | null> {
     const { capability = "backlog", terminal = false } = need;
-    const stopped = this.answering(limited);
+    const stopped = new Set([limited].flat().map((id) => this.answering(id)));
     for (const engine of this.allEngines()) {
       // A literal engine only follows its script: it cannot carry on someone else's work.
-      if (engine.id === stopped || engine.literal || !(engine.capabilities ?? ["backlog"]).includes(capability)) continue;
+      if (stopped.has(engine.id) || engine.literal || !(engine.capabilities ?? ["backlog"]).includes(capability)) continue;
       if (engine.terminal?.mode === (terminal ? "none" : "only")) continue;
       const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: errorMessage(err) }));
       if (state.ok && (!state.capabilities || state.capabilities.includes(capability))) return engine;
@@ -2222,6 +2223,7 @@ export class Agent extends Service implements AgentReader {
   private async offerSwitch(thread: ThreadSummary, rc: RunCtx, cause: LimitCause, park: ParkView | null): Promise<void> {
     const { projectId, id: threadId } = thread;
     if (this.store.switchDeclined(projectId, threadId) === rc.engine.id) return;
+    if (this.ctx.bail("agent/before-switch-offer", thread)) return;
     const capability: EngineCapability = thread.execution ? "general" : thread.itemId || thread.parentId ? "code" : "backlog";
     const next = await this.nextEngine(rc.engine.id, { capability });
     if (!next || !this.ctx.db.has(projectId)) return;

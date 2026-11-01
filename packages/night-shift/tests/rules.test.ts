@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, settingsFor, stepsBetween, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
+import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
 
 const T0 = 1_000_000;
 const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...over });
@@ -7,8 +7,8 @@ const shiftOf = (tickets: ShiftTicket[], settings: Partial<ShiftSettings> = {}, 
   id: "s", projectId: "p", tickets, status: "running", halt: null, startedAt: T0, deadlineAt: T0 + 3_600_000, endedAt: null, failStreak: 0, spentUsd: 0, briefPath: null,
   settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, keepAwake: true, judge: true, ...settings }, ...over
 });
-const facts = (over: Partial<TicketFacts> = {}): TicketFacts => ({ status: "todo", blockers: [], session: null, parkedUntil: null, interrupted: false, ...over });
-const session = (state: SessionFacts["state"], over: Partial<SessionFacts> = {}): SessionFacts => ({ state, headless: true, blocked: false, asks: false, summary: null, lastEventAt: null, ...over });
+const facts = (over: Partial<TicketFacts> = {}): TicketFacts => ({ status: "todo", blockers: [], session: null, parkedUntil: null, interrupted: false, outOfBalance: false, ...over });
+const session = (state: SessionFacts["state"], over: Partial<SessionFacts> = {}): SessionFacts => ({ state, engine: "a", headless: true, blocked: false, asks: false, summary: null, lastEventAt: null, ...over });
 const world = (map: Record<string, Partial<TicketFacts>>) => (id: string) => facts(map[id]);
 const started = (key: string, over: Partial<ShiftTicket> = {}) => ticket(key, { state: "running", startedAt: T0, nudgedAt: T0, ...over });
 
@@ -304,5 +304,108 @@ describe("the steps of a run", () => {
   it("carries the reason with the step", () => {
     const why = { kind: "stalled" as const };
     expect(stepsBetween(shiftOf([started("A")]), shiftOf([started("A", { state: "needs-you", why })]), T0)[0]).toMatchObject({ at: T0, why });
+  });
+});
+
+describe("when quota runs out", () => {
+  const onLimit = (until = T0 + 60_000) => ({ status: "doing" as const, parkedUntil: until, session: session("idle") });
+  const spent = { status: "doing" as const, outOfBalance: true, session: session("error", { summary: "stopped: credit balance too low" }) };
+  const later = T0 + 120_000;
+
+  it("configured to switch, a ticket that hit a limit goes to the next agent instead of holding the run", () => {
+    const { shift, actions } = advance(shiftOf([started("A")], { whenLimited: "switch" }), world({ A: onLimit() }), T0 + 1000);
+    expect(actions).toEqual([{ kind: "switch", itemId: "A" }]);
+    expect(shift.tickets[0]).toMatchObject({ state: "limited", limit: { cause: "limit" } });
+  });
+
+  it("configured to switch, an empty account is no failure while another agent may take the ticket", () => {
+    const { shift, actions } = advance(shiftOf([started("A")], { whenLimited: "switch" }), world({ A: spent }), later);
+    expect(actions).toEqual([{ kind: "switch", itemId: "A" }]);
+    expect(shift.failStreak).toBe(0);
+    expect(shift.tickets[0]).toMatchObject({ state: "limited", limitedUntil: null, limit: { cause: "balance" } });
+  });
+
+  it("set to wait, or on a run from before there was a choice, it goes as it always did", () => {
+    for (const settings of [{ whenLimited: "wait" as const }, {}]) {
+      const waited = advance(shiftOf([started("A")], settings), world({ A: onLimit() }), T0 + 1000);
+      expect(waited.actions).toEqual([]);
+      expect(waited.shift.tickets[0]).toMatchObject({ state: "limited", limitedUntil: T0 + 60_000 });
+      const failed = advance(shiftOf([started("A")], settings), world({ A: spent }), later);
+      expect(failed.actions).toEqual([]);
+      expect(failed.shift.tickets[0]).toMatchObject({ state: "failed", why: { kind: "error" } });
+      expect(failed.shift.failStreak).toBe(1);
+    }
+  });
+
+  it("a node's own word beats the run's, both ways", () => {
+    const wait = started("A", { config: { whenLimited: "wait" } });
+    expect(advance(shiftOf([wait], { whenLimited: "switch" }), world({ A: onLimit() }), T0 + 1000).actions).toEqual([]);
+    const move = started("A", { config: { whenLimited: "switch" } });
+    expect(advance(shiftOf([move], { whenLimited: "wait" }), world({ A: onLimit() }), T0 + 1000).actions).toEqual([{ kind: "switch", itemId: "A" }]);
+  });
+
+  it("with no agent left, a limit is waited out, once asked, and goes on as before", () => {
+    const limited = advance(shiftOf([started("A")], { whenLimited: "switch" }), world({ A: onLimit() }), T0 + 1000).shift.tickets[0]!;
+    const waiting = outOfEngines(limited, "a");
+    expect(waiting).toMatchObject({ state: "limited", limit: { cause: "limit", noEngine: true } });
+    const asked = advance(shiftOf([waiting], { whenLimited: "switch" }), world({ A: onLimit() }), T0 + 2000);
+    expect(asked.actions).toEqual([]);
+    expect(asked.shift.tickets[0]).toMatchObject({ limit: { noEngine: true } });
+    const lifted = advance(shiftOf([waiting], { whenLimited: "switch", mode: "terminal" }), world({ A: { status: "doing", session: session("error", { headless: false }) } }), T0 + 61_000);
+    expect(lifted.actions).toEqual([{ kind: "continue", itemId: "A" }]);
+    expect(lifted.shift.tickets[0]!.limit).toBeUndefined();
+  });
+
+  it("with no agent left, an empty account stops the ticket for the person, says why, and stays stopped", () => {
+    const limited = advance(shiftOf([started("A")], { whenLimited: "switch" }), world({ A: spent }), later).shift.tickets[0]!;
+    const stuck = outOfEngines(limited, "a");
+    expect(stuck).toMatchObject({ state: "needs-you", why: { kind: "no-engine", engine: "a" }, limitedUntil: null });
+    const { shift, actions } = advance(shiftOf([stuck], { whenLimited: "switch" }, { failStreak: 1 }), world({ A: spent }), later + 1000);
+    expect(actions).toEqual([]);
+    expect(shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "no-engine" } });
+    expect(shift.failStreak).toBe(1);
+  });
+
+  it("counts what stopped for good against the run, so a dry machine does not burn through the plan", () => {
+    const { shift } = advance(shiftOf([started("A", { why: { kind: "no-engine", engine: "a" }, state: "needs-you" }), ticket("B")], { whenLimited: "switch", maxFailures: 1 }, { failStreak: 1 }), world({ A: spent }), later);
+    expect(shift.halt).toBe("failures");
+  });
+
+  it("past the spending limit no other agent is brought in: a limit waits, an empty account stops", () => {
+    const over = { whenLimited: "switch" as const, maxUsd: 5 };
+    const waiting = advance(shiftOf([started("A")], over, { spentUsd: 6 }), world({ A: onLimit() }), T0 + 1000);
+    expect(waiting.shift.halt).toBe("budget");
+    expect(waiting.actions).toEqual([]);
+    expect(waiting.shift.tickets[0]).toMatchObject({ state: "limited" });
+    const stopped = advance(shiftOf([started("A")], over, { spentUsd: 6 }), world({ A: spent }), later);
+    expect(stopped.actions).toEqual([]);
+    expect(stopped.shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "no-engine", engine: "a" } });
+  });
+
+  it("never goes back to an agent the ticket already stopped on", () => {
+    const moved = { switches: [{ from: "a", to: "b", cause: "limit" as const, at: T0 }] };
+    expect(triedEngines({}, "a")).toEqual(["a"]);
+    expect(triedEngines(moved, "b")).toEqual(["a", "b"]);
+  });
+
+  it("the agent it moved to goes without the options and permissions of the one it left", () => {
+    const settings = shiftOf([]).settings;
+    const run = { ...settings, engine: "a", options: { model: "big" }, permissionMode: "full" };
+    const left = { config: { engine: "c", options: { effort: "high" }, permissionMode: "ask", autoMerge: true }, switches: [{ from: "c", to: "b", cause: "balance" as const, at: T0 }] };
+    expect(settingsFor(run, left)).toEqual({ mode: "run", engine: "b", autoMerge: true });
+  });
+
+  it("records the move once, with where from, where to and why", () => {
+    const before = shiftOf([started("A", { state: "limited" })]);
+    const moved = started("A", { switches: [{ from: "a", to: "b", cause: "balance", at: T0 }] });
+    expect(stepsBetween(before, { ...before, tickets: [moved] }, T0)).toEqual([expect.objectContaining({ kind: "switched", why: { kind: "switched", from: "a", to: "b", cause: "balance" } })]);
+    expect(stepsBetween({ ...before, tickets: [moved] }, { ...before, tickets: [moved] }, T0)).toEqual([]);
+  });
+
+  it("keeps the agent's last word through the stop that overwrites it, for whoever takes over", () => {
+    const working = advance(shiftOf([started("A")]), world({ A: { status: "doing", session: session("running", { summary: "tests green" }) } }), T0 + 1000);
+    expect(working.shift.tickets[0]!.said).toBe("tests green");
+    expect(takeOverLine("Claude Code", "balance", "tests green")).toMatch(/Claude Code stopped.*no balance left[\s\S]*tests green[\s\S]*git log/);
+    expect(takeOverLine("Codex", "limit", undefined)).toMatch(/usage limit/);
   });
 });

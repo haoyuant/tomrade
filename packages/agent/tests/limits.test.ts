@@ -18,7 +18,8 @@ describe("limitCause", () => {
       "LLM request failed 402: no money",
       "API error 402",
       "账户余额不足，请充值",
-      "您的账户已欠费"
+      "您的账户已欠费",
+      "stopped: billing_error"
     ]) {
       expect(looksOutOfBalance(error), error).toBe(true);
       expect(limitCause({ error }), error).toEqual({ kind: "balance" });

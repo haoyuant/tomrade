@@ -32,6 +32,9 @@ class FakeCodeLink extends Service {
   startDefaults() {
     return this.defaults;
   }
+  async nextEngine() {
+    return null;
+  }
   async start(_projectId: string, itemId: string, opts: Record<string, unknown>) {
     this.starts.push({ itemId, opts });
     if (this.refuse) return { ok: false, ...this.refuse };

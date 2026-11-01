@@ -16,7 +16,7 @@ const NOT_A_WAIT = /\b(insufficient (?:balance|credits?|funds)|billing|payment r
 export const looksRateLimited = (text: string | null | undefined): boolean => !!text && LIMITED.test(text) && !NOT_A_WAIT.test(text);
 
 // Narrower than NOT_A_WAIT: any failure may mention "billing", and only saying the money ran out counts here.
-const OUT_OF_BALANCE = /\b(insufficient[ _](?:balance|credits?|funds|quota)|payment required|credit balance|out of credits|exceeded your current quota)\b|(?:^|\b(?:status|code|http|error|failed)\b\W*)402\b|余额不足|欠费/i;
+const OUT_OF_BALANCE = /\b(insufficient[ _](?:balance|credits?|funds|quota)|payment required|credit balance|out of credits|exceeded your current quota|billing_error)\b|(?:^|\b(?:status|code|http|error|failed)\b\W*)402\b|余额不足|欠费/i;
 
 /** The engine stopped because the account is out of money, as far as its words say. */
 export const looksOutOfBalance = (text: string | null | undefined): boolean => !!text && OUT_OF_BALANCE.test(text);
