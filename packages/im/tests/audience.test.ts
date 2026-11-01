@@ -233,3 +233,46 @@ describe("who sees what in IM", () => {
     expect(w.to("dm-owner").at(-1)).toMatch(/^Tomrade is going offline/);
   });
 });
+
+describe("a yes only the person can give", () => {
+  const asked = (answers: boolean[], result = "Started") => ({ key: "night-shift:p1", title: "An agent asks", body: "2 tickets", yes: "Start it", no: "Don't", answer: (yes: boolean) => (answers.push(yes), result) });
+
+  it("goes to the paired person's direct chat with buttons, and their press is the answer", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    await w.receive(group("g1", "hi all"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hi all");
+    const heardInGroup = w.delivered.filter(d => d.address.conversationId === "room").length;
+    const answers: boolean[] = [];
+    expect(w.ctx.im.confirm(asked(answers))).toBe(true);
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**An agent asks**")), { timeout: 5000 }).toBeTruthy();
+    const card = w.delivered.find(d => d.content.text.startsWith("**An agent asks**"))!;
+    expect(card.address.conversationId).toBe("dm-owner");
+    expect(w.delivered.filter(d => d.address.conversationId === "room")).toHaveLength(heardInGroup);
+    expect(answers).toEqual([]);
+    await w.receive(press("p1", card.content.actions![0]!.token, "dm-owner"));
+    await expect.poll(() => answers, { timeout: 5000 }).toEqual([true]);
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Started");
+  });
+
+  it("takes No as no, and a second press answers nothing", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    const answers: boolean[] = [];
+    w.ctx.im.confirm(asked(answers, "Not started"));
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**An agent asks**")), { timeout: 5000 }).toBeTruthy();
+    const card = w.delivered.find(d => d.content.text.startsWith("**An agent asks**"))!;
+    await w.receive(press("p1", card.content.actions![1]!.token, "dm-owner"));
+    await expect.poll(() => answers, { timeout: 5000 }).toEqual([false]);
+    await w.receive(press("p2", card.content.actions![0]!.token, "dm-owner"));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(answers).toEqual([false]);
+  });
+
+  it("reaches nobody when nobody is paired", async () => {
+    const nobody = await boot({ identities: [] });
+    expect(nobody.ctx.im.confirm(asked([]))).toBe(false);
+  });
+});

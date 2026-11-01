@@ -23,6 +23,12 @@ export function useShiftOffered(projectId: string): boolean {
   return !going.isError && (!!going.data || !!repos.data?.length);
 }
 
+/** A run an agent asked for, waiting on the person. */
+export function useShiftProposal(projectId: string) {
+  useLive(projectId);
+  return useQuery({ queryKey: keys.nightShift.proposal(projectId), queryFn: () => invoke("nightShift.proposal", projectId), retry: false });
+}
+
 export const useLastNightShift = (projectId: string) =>
   useQuery({ queryKey: keys.nightShift.last(projectId), queryFn: async () => (await invoke("nightShift.list", projectId, 1))[0] ?? null, retry: false });
 
@@ -65,6 +71,7 @@ export function useNightShiftActions(projectId: string) {
   return {
     start: useMutation({ mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input), onSuccess: done }),
     stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done }),
+    decide: useMutation({ mutationFn: ({ id, yes }: { id: string; yes: boolean }) => invoke("nightShift.decide", projectId, id, yes), onSuccess: done }),
     edit: useMutation({ mutationFn: ({ id, change }: { id: string; change: NightShiftEdit }) => invoke("nightShift.edit", projectId, id, change), onSuccess: done })
   };
 }

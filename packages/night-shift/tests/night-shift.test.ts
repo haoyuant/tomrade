@@ -452,9 +452,11 @@ it("the tools start, read and stop a shift", async () => {
   try {
     const a = t.make("A");
     const by = "ai:test" as const;
-    const started = (await t.ctx.tools.execute("start_night_shift", { keys: [a.key], where: "terminal", maxHours: 2 }, { by, projectId: t.project.id })) as { started: boolean; shift: { id: string; settings: { mode: string; maxMinutes: number } } };
-    expect(started).toMatchObject({ started: true, shift: { settings: { mode: "terminal", maxMinutes: 120 } } });
-    expect(await t.ctx.tools.execute("night_shift_status", {}, { by, projectId: t.project.id })).toMatchObject({ id: started.shift.id, status: "running" });
+    const asked = await t.ctx.tools.execute("start_night_shift", { keys: [a.key], where: "terminal", maxHours: 2 }, { by, projectId: t.project.id });
+    expect(asked).toMatchObject({ started: false, awaiting: "the person" });
+    const shift = t.s.decide(t.project.id, t.s.proposal(t.project.id)!.id, true)!;
+    expect(shift).toMatchObject({ settings: { mode: "terminal", maxMinutes: 120 } });
+    expect(await t.ctx.tools.execute("night_shift_status", {}, { by, projectId: t.project.id })).toMatchObject({ id: shift.id, status: "running" });
     expect(await t.ctx.tools.execute("stop_night_shift", {}, { by, projectId: t.project.id })).toMatchObject({ halt: "stopped" });
   } finally {
     await t.ctx.fiber.dispose();
@@ -696,6 +698,128 @@ describe("telling the person", () => {
       const last = t.s.list(t.project.id, 1)[0]!;
       expect(last.steps.map((s) => s.kind)).toContain("skipped");
       expect(told.flatMap((x) => x.notices).some((n) => n.body.startsWith("Not started"))).toBe(false);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("a run an agent asks for", () => {
+  const by = "ai:test" as const;
+  const ask = (t: Awaited<ReturnType<typeof boot>>, keys: string[], more: Record<string, unknown> = {}) => t.ctx.tools.execute("start_night_shift", { keys, ...more }, { by, projectId: t.project.id });
+
+  it("starts nothing, and shows the person every ticket and setting", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      await ask(t, [a.key], { where: "terminal", maxUsd: 5, autoMerge: true, concurrency: 3 });
+      expect(t.s.current(t.project.id)).toBeNull();
+      expect(t.code.starts).toEqual([]);
+      const proposal = t.s.proposal(t.project.id)!;
+      expect(proposal.tickets).toMatchObject([{ key: a.key, title: "A" }]);
+      expect(proposal.text).toContain(a.key);
+      expect(proposal.config.join(" | ")).toMatch(/terminal panes.*up to 3 at a time.*merges each one.*\$5/);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("leaves no tool that answers for the person", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      await ask(t, [a.key]);
+      const names = t.ctx.tools.list().map((tool) => tool.name).filter((name) => /night_shift/.test(name));
+      expect(names.sort()).toEqual(["night_shift_status", "plan_night_shift", "start_night_shift", "stop_night_shift"]);
+      // asking again is only asking
+      await ask(t, [a.key]);
+      expect(t.s.current(t.project.id)).toBeNull();
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("takes the person's yes to what they were shown, and starts nothing on their no", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      await ask(t, [a.key]);
+      expect(t.s.decide(t.project.id, t.s.proposal(t.project.id)!.id, false)).toBeNull();
+      expect(t.s.proposal(t.project.id)).toBeNull();
+      expect(t.s.current(t.project.id)).toBeNull();
+      await ask(t, [a.key]);
+      expect(t.s.decide(t.project.id, t.s.proposal(t.project.id)!.id, true)).toMatchObject({ status: "running" });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("does not let a yes to an earlier ask start a changed one", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      await ask(t, [a.key]);
+      const earlier = t.s.proposal(t.project.id)!.id;
+      await ask(t, [a.key, b.key], { autoMerge: true });
+      expect(() => t.s.decide(t.project.id, earlier, true)).toThrow(/lapsed or been replaced/);
+      expect(t.s.current(t.project.id)).toBeNull();
+      expect(t.s.proposal(t.project.id)?.tickets).toHaveLength(2);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("lapses unanswered, and a late yes starts nothing", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      await ask(t, [a.key]);
+      const proposal = t.s.proposal(t.project.id)!;
+      expect(() => t.s.decide(t.project.id, proposal.id, true, proposal.expiresAt)).toThrow(/lapsed/);
+      expect(t.s.current(t.project.id)).toBeNull();
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("refuses at once what could not run, and checks again on the yes", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      t.items.update(t.project.id, a.id, { status: "done" }, "human");
+      await expect(ask(t, [a.key])).rejects.toThrow(/is done/);
+      const b = t.make("B");
+      await ask(t, [b.key]);
+      t.items.update(t.project.id, b.id, { status: "done" }, "human");
+      expect(() => t.s.decide(t.project.id, t.s.proposal(t.project.id)!.id, true)).toThrow(/is done/);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("puts it to the person in the conversation where a run can ask, and starts only on their word", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      const questions: string[] = [];
+      const inRun = (said: string | null) => ({ by, projectId: t.project.id, ask: async (text: string) => (questions.push(text), said) });
+      expect(await t.ctx.tools.execute("start_night_shift", { keys: [a.key] }, inRun("Don't"))).toMatchObject({ started: false });
+      expect(await t.ctx.tools.execute("start_night_shift", { keys: [a.key] }, inRun(null))).toMatchObject({ started: false });
+      expect(t.s.current(t.project.id)).toBeNull();
+      expect(t.s.proposal(t.project.id)).toBeNull();
+      expect(questions[0]).toContain(a.key);
+      expect(await t.ctx.tools.execute("start_night_shift", { keys: [a.key] }, inRun("Start it"))).toMatchObject({ started: true });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("offers the plan as a tool, read-only", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      expect(await t.ctx.tools.execute("plan_night_shift", {}, { by, projectId: t.project.id })).toMatchObject({ suggested: [a.key], concurrency: null });
+      expect(t.ctx.tools.get("plan_night_shift")?.readOnly).toBe(true);
     } finally {
       await t.ctx.fiber.dispose();
     }

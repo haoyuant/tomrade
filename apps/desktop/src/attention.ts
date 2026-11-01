@@ -7,7 +7,7 @@ import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/night-shift";
-import type { ImReminder } from "@tomradex/im";
+import type { ImConfirm, ImReminder } from "@tomradex/im";
 import type {} from "@tomradex/pr-feedback";
 import type {} from "@tomradex/watchdog";
 import { showMainWindow, whenLoaded } from "./main-window.js";
@@ -491,6 +491,15 @@ export const attention = {
         ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
       }
       if (away.away === "push" && pushTargets(away).length) void phone.send(pushTargets(away), notice).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
+    });
+
+    // An agent's request for a run reaches the person wherever they are; their press there is the only answer it takes.
+    ctx.on("nightShift/proposed", (proposal, ask) => {
+      try {
+        (ctx.get("im") as { confirm(n: ImConfirm): boolean } | undefined)?.confirm({ ...ask, key: `night-shift:${proposal.id}`, body: proposal.text });
+      } catch (e) {
+        ctx.logger.warn(`couldn't ask over IM: ${(e as Error).message}`);
+      }
     });
 
     ctx.on("nightShift/step", (_shift, notices, stuck) => {

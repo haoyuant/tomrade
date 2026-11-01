@@ -88,6 +88,12 @@ export interface ImAnnouncement {
   title: string;
   body: string;
 }
+/** A yes or no only the person can give: `answer` runs on their press, and says what came of it. */
+export interface ImConfirm extends ImAnnouncement {
+  yes: string;
+  no: string;
+  answer(yes: boolean): string;
+}
 export interface ImAllowRequest {
   /** An ignored message's id. */
   ignoredId: string;
@@ -237,6 +243,7 @@ export class Im extends Service {
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
   private stopped = false;
+  private readonly confirms = new Map<string, ImConfirm>();
   private settings: ImSettings = { connections: [], identities: [], routes: [], notify: { tickets: true, code: true, presence: false, routines: false, attention: true } };
   /** Connections that have said "online" since this start. */
   private readonly announced = new Set<string>();
@@ -1384,6 +1391,20 @@ export class Im extends Service {
     return reached;
   }
 
+  /** Puts a yes or no to each paired person in their direct chat, never in a group; nothing but their press answers it. True when it reached someone. */
+  confirm(n: ImConfirm): boolean {
+    let reached = false;
+    this.confirms.set(n.key, n);
+    for (const { connectionId, actorId } of this.settings.identities) {
+      const dm = this.directChat(connectionId, actorId);
+      if (!dm || !this.notifies(dm, "attention")) continue;
+      const button = (label: string, value: string) => ({ label, token: this.offerValue(dm, `confirm:${n.key}`, actorId, value) });
+      this.enqueue(dm, `confirm:${dm.id}:${n.key}`, { text: `**${n.title}**\n${n.body}`, actions: [{ ...button(n.yes, "yes"), style: "primary" as const }, button(n.no, "no")] }, { anchor: null });
+      reached = true;
+    }
+    return reached;
+  }
+
   /** Tells each paired person in their direct chat, never in a group; a chat that turned reminders off hears nothing. True when it reached someone. */
   announce(n: ImAnnouncement): boolean {
     let reached = false;
@@ -1700,6 +1721,18 @@ export class Im extends Service {
     const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
     const when = running ? this.w("appliesNextTurn") : "";
     const done = (text: string, on = b) => { this.enqueue(on, `${kind}:${row.id}`, { text }, reply); this.accept(row); };
+    if (kind.startsWith("confirm:")) {
+      const key = kind.slice("confirm:".length);
+      const asked = this.confirms.get(key);
+      if (!asked) this.refuse(this.w("choiceExpired"));
+      this.confirms.delete(key);
+      try {
+        done(asked.answer(value === "yes"));
+      } catch (e) {
+        done(errorMessage(e));
+      }
+      return;
+    }
     if (kind === "proposal") {
       const [, verdict, projectId, proposalId] = /^(accept|reject):([^:]+):(.+)$/.exec(value) ?? [];
       const code = this.code();

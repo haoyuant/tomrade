@@ -220,6 +220,7 @@ export const keys = {
     current: (projectId: string) => ["nightShift", projectId, "current"] as const,
     last: (projectId: string) => ["nightShift", projectId, "last"] as const,
     plan: (projectId: string) => ["nightShift", projectId, "plan"] as const,
+    proposal: (projectId: string) => ["nightShift", projectId, "proposal"] as const,
     rules: (projectId: string) => ["nightShift", projectId, "rules"] as const,
     ruleMatches: (projectId: string) => ["nightShift", projectId, "ruleMatches"] as const
   },
