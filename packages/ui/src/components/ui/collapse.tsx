@@ -8,7 +8,8 @@ type Phase = "enter" | "exit" | null;
  * What a fold shows while it is open. Opening, it grows from nothing to its height and fades in; closing, it folds
  * back and fades out before it leaves the page. `fade` keeps the height and only fades, for a list long enough that
  * laying it out on every frame would cost. Only a change after the first render moves: content open from the start
- * just shows. Without motion (motion.ts) it appears and goes at once. Styles in motion.css.
+ * just shows. Without motion (motion.ts) it appears and goes at once. Styles in motion.css, under `fold-box`: never
+ * `collapse`, Tailwind's visibility utility of that name would blank the fold.
  */
 export function Collapse({ open, as: Tag = "div", fade, className, children, ...rest }: {
   open: boolean;
@@ -43,7 +44,7 @@ export function Collapse({ open, as: Tag = "div", fade, className, children, ...
   if (!present) return null;
   return (
     // Folding away, it is already gone for the keyboard and the pointer.
-    <Tag {...rest} className={cn("collapse", fade && "is-fade", className)} data-phase={phase ?? undefined} inert={phase === "exit" || undefined}
+    <Tag {...rest} className={cn("fold-box", fade && "is-fade", className)} data-phase={phase ?? undefined} inert={phase === "exit" || undefined}
       onTransitionEnd={(event: TransitionEvent<HTMLElement>) => { if (event.target === event.currentTarget && phase) settle(); }}>
       {children}
     </Tag>

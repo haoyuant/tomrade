@@ -1834,7 +1834,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
    rows always render, so following the bottom lands on real heights. */
 .ai-scroll > :is(.turn, .trace-fold):not(:nth-last-child(-n + 12)) { content-visibility: auto; contain-intrinsic-size: auto 4em; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
-.ai-foot > .collapse { --collapse-gap: var(--space-2); }
+.ai-foot > .fold-box { --collapse-gap: var(--space-2); }
 /* A conversation read back from an agent's record: the Terminal window's ended cells and the assistant panel's terminal sessions draw its rows alike. */
 .cs-convo-top { margin: 0; align-self: center; color: var(--meta); font-size: var(--text-xs); }
 /* Lines off screen are neither laid out nor painted until scrolled to: a long record stays quick. */
