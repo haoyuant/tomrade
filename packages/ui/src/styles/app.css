@@ -374,7 +374,7 @@ html[data-traffic-lights="on"] {
   --sun-btn-from: #ff7a59;
   --sun-btn-to: #ffb347;
   --sun-sheen: rgba(255, 240, 210, 0.55);
-  --sun-star: rgba(255, 244, 230, 0.55);
+  --sun-star: rgba(255, 244, 230, 0.72);
 }
 
 /* Glass — smoked glass over a room seen out of focus. The tokens stay opaque
