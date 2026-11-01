@@ -58,12 +58,20 @@ const run = async () => {
     $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
   const text = (sel) => $(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`);
   const shot = async (name) => fs.writeFileSync(path.join(shots, `${name}.png`), (await win.webContents.capturePage()).toPNG());
+  /** A fold leaves once its motion ends, or by Collapse's own timer where a hidden window never runs one. */
+  const until = async (js, ms = 2000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if ((await $(js)) === true) return true;
+    return (await $(js)) === true;
+  };
   await sleep(3000);
 
   // ── one Backlog module ────────────────────────────────────────────────
   const modules = () => $(`[...document.querySelectorAll('.side-scroll > .side-module')].map((g) => g.dataset.module)`);
   const order = await modules();
-  check("the sidebar is modules: files, routines, backlog, then a plugin's", JSON.stringify(order) === JSON.stringify(["files", "routines", "backlog", "plugin:demo.links"]), order);
+  // The plugins this app ships come from it, so a new one does not break the order this check is about.
+  const plugins = order.filter((id) => id.startsWith("plugin:"));
+  const standard = ["files", "routines", "backlog", ...plugins];
+  check("the sidebar is modules: files, routines, backlog, then a plugin's", JSON.stringify(order) === JSON.stringify(standard) && plugins.at(-1) === "plugin:demo.links", order);
   check("a module with something under it folds from a button on the left", (await $(`['files', 'backlog', 'plugin:demo.links'].every((id) => document.querySelector(\`[data-module="\${id}"] .side-module-head\`)?.firstElementChild?.classList.contains('side-module-fold'))`)) === true);
   check("one without keeps that room, so every title starts at the same x", (await $(`(() => { if (document.querySelector('[data-module="routines"] .side-module-fold')) return false; return new Set([...document.querySelectorAll('.side-module-title')].map((n) => Math.round(n.getBoundingClientRect().left))).size === 1; })()`)) === true);
   check("the gap between any two modules is the same", (await $(`(() => { const ms = [...document.querySelectorAll('.side-scroll > .side-module')]; const gaps = ms.slice(1).map((m, i) => Math.round(m.getBoundingClientRect().top - ms[i].getBoundingClientRect().bottom)); return new Set(gaps).size === 1 ? gaps[0] : gaps; })()`)) === 20);
@@ -81,7 +89,7 @@ const run = async () => {
   check("every workstream is listed", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === boards.length);
   check("the sidebar never scrolls sideways", (await $(`(() => { const sc = document.querySelector('.side-scroll'); return sc.scrollWidth <= sc.clientWidth; })()`)) === true);
   check("the views and the workstreams start the same distance under their labels", (await $(`(() => { const gap = (sel) => { const g = document.querySelector(sel); return Math.round(g.querySelector('.side-row .ico').getBoundingClientRect().top - g.querySelector('.side-sub-label').getBoundingClientRect().bottom); }; return gap('.side-views') === gap('.side-workstreams'); })()`)) === true);
-  check("files, routines and backlog share one module head style", (await $(`new Set([...document.querySelectorAll('.side-module-title')].map((n) => { const c = getComputedStyle(n); return c.fontSize + c.fontWeight; })).size === 1 && document.querySelectorAll('.side-module-title').length === 4`)) === true);
+  check("files, routines and backlog share one module head style", (await $(`new Set([...document.querySelectorAll('.side-module-title')].map((n) => { const c = getComputedStyle(n); return c.fontSize + c.fontWeight; })).size === 1 && document.querySelectorAll('.side-module-title').length === ${order.length}`)) === true);
   check("a workstream row is two short lines, not a tall block", (await $(`document.querySelector('.side-ws-container')?.getBoundingClientRect().height`)) < 56);
   await shot("backlog-sidebar-01");
 
@@ -174,7 +182,7 @@ const run = async () => {
   await click('.side-backlog-home');
   await sleep(500);
   await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
-  await sleep(200);
+  await until(`!document.querySelector('[data-module="files"] .side-module-body')`);
   {
     const from = await centre('[data-module="routines"] .side-module-head');
     const to = await centre('[data-module="files"] .side-module-head');
@@ -197,11 +205,9 @@ const run = async () => {
 
   // ── folding and order, kept on this machine ───────────────────────────
   await press(`document.querySelector('[data-module="backlog"] .side-module-fold')`);
-  await sleep(200);
-  check("the backlog folds away", (await $(`!document.querySelector('.side-backlog .side-views')`)) === true);
+  check("the backlog folds away", await until(`!document.querySelector('.side-backlog .side-views')`));
   await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
-  await sleep(200);
-  check("so do files", (await $(`!document.querySelector('[data-module="files"] .side-module-body')`)) === true);
+  check("so do files", await until(`!document.querySelector('[data-module="files"] .side-module-body')`));
   const menuPick = async (moduleId, nth) => {
     await $(`(() => { const h = document.querySelector('[data-module="${moduleId}"] .side-module-head'); const r = h.getBoundingClientRect(); h.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.top + 8, button: 2 })); return true; })()`);
     await sleep(300);
@@ -210,16 +216,16 @@ const run = async () => {
   };
   await menuPick("backlog", 0);
   await menuPick("backlog", 0);
-  check("a module moves up from its menu", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", "plugin:demo.links"]), await modules());
+  check("a module moves up from its menu", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", ...plugins]), await modules());
   await shot("backlog-sidebar-07-moved");
   await win.webContents.reload();
   await sleep(3000);
-  check("the order and the folds survive a reload", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", "plugin:demo.links"]) && (await $(`!document.querySelector('.side-backlog .side-views') && !document.querySelector('[data-module="files"] .side-module-body')`)) === true, await modules());
+  check("the order and the folds survive a reload", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", ...plugins]) &&(await $(`!document.querySelector('.side-backlog .side-views') && !document.querySelector('[data-module="files"] .side-module-body')`)) === true, await modules());
   await menuPick("backlog", 2);
   await press(`document.querySelector('[data-module="backlog"] .side-module-fold')`);
   await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
   await sleep(300);
-  check("resetting puts the default order back", JSON.stringify(await modules()) === JSON.stringify(["files", "routines", "backlog", "plugin:demo.links"]), await modules());
+  check("resetting puts the default order back", JSON.stringify(await modules()) === JSON.stringify(standard), await modules());
   check("and unfolding brings the backlog back", (await $(`!!document.querySelector('.side-backlog .side-views')`)) === true);
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(700);
