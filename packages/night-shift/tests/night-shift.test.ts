@@ -8,7 +8,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent } from "@tomradex/agent";
 import { Contributions } from "@tomradex/contributions";
-import { NightShifts } from "@tomradex/night-shift";
+import { NightShifts, PlanReply } from "@tomradex/night-shift";
 
 interface FakeSession { itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
 
@@ -366,7 +366,7 @@ class FakeLlm extends Service {
     }
     if (opts.system.startsWith("You plan")) {
       if (!this.planReply) throw new Error(this.refusal);
-      return this.planReply;
+      return PlanReply.parse(this.planReply);
     }
     return { criteria: [{ text: "It works", met: "yes", evidence: "a.ts" }], outOfScope: [], unverified: [], risk: "low" };
   }

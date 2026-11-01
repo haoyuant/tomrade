@@ -51,7 +51,7 @@ const run = async () => {
     if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
     await planHeld;
     if (planRefusal) throw new Error(planRefusal);
-    return { summary: "Ship the export.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
+    return { summary: "Ship the export.", concurrency: 3, concurrencyWhy: "They touch different code.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
   };
   let suggesting = [first.key, second.key];
   let planHeld = Promise.resolve();
@@ -241,11 +241,13 @@ const run = async () => {
   // ── going ─────────────────────────────────────────────────────────────
   // finding the agents on this machine takes a moment, and the button waits for them
   await $(`(() => { const s = ${test("night-shift-notify")}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'stuck'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  check("it says how many the agent will run at once, and why", await waitFor(`${text("plan-concurrency")}.includes('takes 3 at a time: They touch different code')`), await $(text("plan-concurrency")));
   check("the start button waits for an agent", await waitFor(`${test("night-shift-start")}?.disabled === false`, 30000));
   await press(test("night-shift-start"));
   check("it starts in the place chosen, upstream first", await waitFor(`!!${test("night-shift-going")}`) && (await (async () => { for (let i = 0; i < 50 && !starts.length; i++) await sleep(100); return starts[0]?.itemId === first.id && starts[0]?.mode === "terminal"; })()), starts);
   check("its dependant waits", starts.length === 1, starts);
   check("the dependency the person took is on the tickets", ctx.items.get(project.id, second.id).blocks.includes(later.id), ctx.items.get(project.id, second.id).blocks);
+  check("that number reached the run", ctx.nightShift.current(project.id)?.settings.concurrency === 3, ctx.nightShift.current(project.id)?.settings.concurrency);
   check("until done runs for three days at most", ctx.nightShift.current(project.id)?.settings.maxMinutes === 72 * 60);
   check("what was set on the node reached the shift", ctx.nightShift.current(project.id)?.tickets.find((x) => x.itemId === second.id)?.config?.mode === "terminal");
   check("how to be told is kept on the run", ctx.nightShift.current(project.id)?.settings.notify === "stuck");
