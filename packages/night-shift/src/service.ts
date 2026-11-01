@@ -16,8 +16,12 @@ import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
+import { PlanReply, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
 import { MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, type Action, type NightShift, type SessionFacts, type ShiftTicket, type TicketFacts, type TicketState, type Why } from "./rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
+
+/** "Until it is done" still ends: a run nothing can finish must not stay open for good. */
+export const MAX_HOURS = 72;
 
 export const NightShiftInput = z.object({
   itemIds: z.array(z.string().min(1)).min(1).max(50),
@@ -27,12 +31,14 @@ export const NightShiftInput = z.object({
   options: z.record(z.string(), z.unknown()).optional(),
   permissionMode: z.string().min(1).optional(),
   concurrency: z.number().int().min(1).max(8).default(2),
-  maxMinutes: z.number().int().min(5).max(24 * 60).default(8 * 60),
+  maxMinutes: z.number().int().min(5).max(MAX_HOURS * 60).default(8 * 60),
   maxUsd: z.number().positive().nullable().default(null),
   maxFailures: z.number().int().min(1).max(20).default(3),
   autoMerge: z.boolean().default(false),
   keepAwake: z.boolean().default(true),
-  judge: z.boolean().default(true)
+  judge: z.boolean().default(true),
+  /** Dependencies from the plan the person took: written to the tickets as the run starts. */
+  dependencies: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).max(50).default([])
 });
 export type NightShiftInput = z.input<typeof NightShiftInput>;
 
@@ -64,6 +70,7 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "nightShift.current": (projectId: string) => NightShiftView | null;
     "nightShift.list": (projectId: string, limit?: number) => NightShiftView[];
+    "nightShift.plan": (projectId: string) => ShiftPlan;
     "nightShift.start": (projectId: string, input: NightShiftInput) => NightShiftView;
     "nightShift.stop": (projectId: string, id: string) => NightShiftView;
   }
@@ -147,6 +154,7 @@ export class NightShifts extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("nightShift.current", (projectId) => ctx.nightShift.current(projectId));
       ctx.ipc.handle("nightShift.list", (projectId, limit) => ctx.nightShift.list(projectId, limit));
+      ctx.ipc.handle("nightShift.plan", (projectId) => ctx.nightShift.plan(projectId));
       ctx.ipc.handle("nightShift.start", (projectId, input) => ctx.nightShift.start(projectId, input));
       ctx.ipc.handle("nightShift.stop", (projectId, id) => ctx.nightShift.stop(projectId, id));
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
@@ -234,6 +242,23 @@ export class NightShifts extends Service {
     return this.rows(projectId, "ORDER BY started_at DESC LIMIT ?", limit).map((s) => this.view(s));
   }
 
+  /** The person's starting point for a run. It always answers: with no model, or a model that fails, it is the backlog's own facts. */
+  async plan(projectId: string): Promise<ShiftPlan> {
+    if (!this.home.db.has(projectId)) throw new Error("That project is not open on this machine");
+    const items = this.home.items.listAll(projectId);
+    const notCoding = NIGHT_SHIFT_WORDS(this.locale())("notCoding");
+    const llm = this.home.get("llm");
+    const worker = llm ? await llm.worker().catch(() => null) : null;
+    if (!llm || !worker?.ok) return readPlan(items, null, notCoding);
+    const reply = await llm
+      .completeJson(PlanReply, { system: planSystem(languageName(this.locale())), user: planUser(items, this.home.agent.brief(projectId)), maxTokens: 4000, timeoutMs: 120_000, purpose: "night-shift" })
+      .catch((err: unknown) => {
+        this.home.logger.warn(`auto run plan: ${errorMessage(err)}`);
+        return null;
+      });
+    return readPlan(items, reply, notCoding);
+  }
+
   start(projectId: string, input: NightShiftInput, now = Date.now()): NightShiftView {
     if (!this.home.db.has(projectId)) throw new Error("That project is not open on this machine");
     if (this.running(projectId)) throw new Error("A night shift is already going in this project: stop it, or wait for it to end");
@@ -251,6 +276,11 @@ export class NightShifts extends Service {
       else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false });
     }
     if (problems.length) throw new Error(`A night shift cannot take these: ${problems.join("; ")}`);
+    // The person took these on the plan, so they are the person's writes, and undo takes them back.
+    for (const { from, to } of parsed.dependencies) {
+      const item = this.home.items.get(projectId, from);
+      if (item && !item.blocks.includes(to)) this.home.items.update(projectId, from, { blocks: [...item.blocks, to] }, "human");
+    }
     const mode = parsed.mode ?? remembered?.mode ?? "run";
     const engine = parsed.engine ?? remembered?.engine;
     const options = parsed.options ?? (parsed.engine ? undefined : remembered?.options);

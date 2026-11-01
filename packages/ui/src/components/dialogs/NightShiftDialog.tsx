@@ -9,9 +9,10 @@ import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { shiftCandidates, shiftNote, shiftOrder, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery } from "~/lib/nightShift";
+import { factsChosen, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useShiftPlan, withTaken } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { PlanGraph } from "./PlanGraph";
 
 const HALT_WORD: Record<string, MessageKey> = { stopped: "nightShift.lastStopped", deadline: "nightShift.lastDeadline", budget: "nightShift.lastBudget", failures: "nightShift.lastFailures" };
 const usd = (amount: number) => `$${amount.toFixed(2)}`;
@@ -22,7 +23,7 @@ export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectI
   const { t } = useI18n();
   const current = useNightShift(projectId);
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-md">
+    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-plan">
       <DialogHead title={t("nightShift.title")} />
       {current.data ? <Going projectId={projectId} shift={current.data} onClose={onClose} onOpenIssue={onOpenIssue} /> : current.isLoading ? null : <SetUp projectId={projectId} onClose={onClose} />}
     </Dialog>
@@ -56,7 +57,7 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
     t("nightShift.going", { done: delivered(shift), total: shift.tickets.length }),
     ...(shift.counts["needs-you"] ? [t("nightShift.needsYou", { n: shift.counts["needs-you"] })] : []),
     ...(shift.spentUsd > 0 ? [t(shift.costKnown ? "nightShift.spent" : "nightShift.spentPartly", { amount: usd(shift.spentUsd) })] : []),
-    shift.halt ? t("nightShift.stopping") : t("nightShift.until", { at: until })
+    ...(shift.halt ? [t("nightShift.stopping")] : shift.settings.maxMinutes <= 24 * 60 ? [t("nightShift.until", { at: until })] : [])
   ];
   return (
     <>
@@ -92,11 +93,21 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const last = useLastNightShift(projectId);
   const { start } = useNightShiftActions(projectId);
   const navigate = useNavigate();
+  const plan = useShiftPlan(projectId);
 
-  const candidates = useMemo(() => shiftCandidates(items.data ?? []), [items.data]);
-  const open = useMemo(() => new Map((items.data ?? []).filter((i) => i.status !== "done" && i.status !== "cancelled").map((i) => [i.id, i] as [string, Item])), [items.data]);
+  const [takenKeys, setTaken] = useState<ReadonlySet<string>>(new Set());
+  const proposed = useMemo(() => plan.data?.proposed ?? [], [plan.data]);
+  const taken = useMemo(() => proposed.filter((e) => takenKeys.has(`${e.from}>${e.to}`)), [proposed, takenKeys]);
+  // Everything below reads the tickets as they will stand once what was taken is written.
+  const planned = useMemo(() => withTaken(items.data ?? [], taken), [items.data, taken]);
+  const candidates = useMemo(() => shiftCandidates(planned), [planned]);
+  const open = useMemo(() => new Map(planned.filter((i) => i.status !== "done" && i.status !== "cancelled").map((i) => [i.id, i] as [string, Item])), [planned]);
   const [picked, setPicked] = useState<Set<string> | null>(null);
-  const chosen = useMemo(() => picked ?? new Set(candidates.filter((i) => i.status === "todo").map((i) => i.id)), [picked, candidates]);
+  const suggested = useMemo(() => (plan.data ? new Set(plan.data.nodes.filter((n) => n.suggested).map((n) => n.itemId)) : factsChosen(candidates)), [plan.data, candidates]);
+  const chosen = picked ?? suggested;
+  const whyLeft = useMemo(() => new Map((plan.data?.nodes ?? []).flatMap((n) => (n.why ? [[n.itemId, n.why] as [string, string]] : []))), [plan.data]);
+  const [view, setView] = useState<"graph" | "list">("graph");
+  const [kind, setKind] = useState<"done" | "night">("done");
   const [chosenMode, setMode] = useState<"terminal" | "run" | null>(null);
   const [chosenEngine, setEngine] = useState<string | null>(null);
   const [chosenPermission, setPermission] = useState<string | null>(null);
@@ -121,6 +132,21 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
     if (!next.delete(id)) next.add(id);
     setPicked(next);
   };
+  const add = (ids: string[]) => setPicked(new Set([...chosen, ...ids]));
+  const take = (key: string) => {
+    const next = new Set(takenKeys);
+    if (!next.delete(key)) next.add(key);
+    setTaken(next);
+  };
+  const noteOf = (item: Item) => {
+    const note = chosen.has(item.id) ? shiftNote(item, chosen, open, autoMerge) : null;
+    return note ? t(note.kind === "outside" ? "nightShift.outside" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") }) : null;
+  };
+  const shownIds = new Set(candidates.map((i) => i.id));
+  const links = [
+    ...candidates.flatMap((i) => i.blocks.filter((to) => shownIds.has(to) && !taken.some((e) => e.from === i.id && e.to === to)).map((to) => ({ from: i.id, to, firm: true }))),
+    ...proposed.filter((e) => shownIds.has(e.from) && shownIds.has(e.to)).map((e) => ({ from: e.from, to: e.to, firm: takenKeys.has(`${e.from}>${e.to}`) }))
+  ];
   const go = () =>
     start.mutate(
       {
@@ -129,11 +155,12 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         ...(engine ? { engine: engine.id } : {}),
         ...(permissionMode ? { permissionMode } : {}),
         concurrency,
-        maxMinutes: Math.round(maxHours * 60),
+        maxMinutes: Math.round((kind === "done" ? UNTIL_DONE_HOURS : maxHours) * 60),
         ...(spendLimit > 0 ? { maxUsd: spendLimit } : {}),
         autoMerge,
         keepAwake,
-        judge
+        judge,
+        dependencies: taken.map(({ from, to }) => ({ from, to }))
       },
       { onError: (err) => toast(errorSpec(err)) }
     );
@@ -154,20 +181,66 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
             {last.data?.briefPath && <> · <button type="button" className="tlink" data-testid="night-shift-brief" onClick={() => openBrief(last.data!.briefPath!)}>{t("nightShift.openBrief")}</button></>}
           </p>
         )}
+        <div data-testid="plan-summary">
+          {plan.isFetching ? (
+            <p className="meta-txt">{t("nightShift.planning")}</p>
+          ) : plan.data?.summary ? (
+            <p>{plan.data.summary}</p>
+          ) : (
+            plan.data && !plan.data.analyzed && <p className="meta-txt">{t("nightShift.noPlanModel")}</p>
+          )}
+          {!plan.isFetching && <button type="button" className="tlink" data-testid="plan-again" onClick={() => void plan.refetch()}>{t("nightShift.planAgain")}</button>}
+        </div>
         <Field label={`${t("nightShift.tickets")} · ${t("nightShift.chosen", { n: chosen.size })}`}>
           {!candidates.length && !items.isLoading && <p className="meta-txt">{t("nightShift.noTickets")}</p>}
-          <div className="inbox-list night-shift-pick" data-testid="night-shift-pick">
-            {candidates.map((item) => {
-              const note = chosen.has(item.id) ? shiftNote(item, chosen, open, autoMerge) : null;
-              return (
-                <label className="cfg-row" key={item.id} style={{ cursor: "pointer" }} data-testid="night-shift-candidate">
-                  <input type="checkbox" checked={chosen.has(item.id)} onChange={() => toggle(item.id)} />
-                  <span className="cfg-name"><span className="num">{item.key}</span> {item.title}</span>
-                  {note && <span className="meta-txt" data-testid="night-shift-note">{t(note.kind === "outside" ? "nightShift.outside" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") })}</span>}
-                </label>
-              );
-            })}
+          <div className="plan-tools">
+            <div className="seg" role="group" aria-label={t("nightShift.tickets")} data-testid="plan-view">
+              <button type="button" aria-pressed={view === "graph"} data-view="graph" onClick={() => setView("graph")}><Icon name="i-graph" size={13} /> {t("nightShift.viewGraph")}</button>
+              <button type="button" aria-pressed={view === "list"} data-view="list" onClick={() => setView("list")}><Icon name="i-bars" size={13} /> {t("nightShift.viewList")}</button>
+            </div>
+            <button type="button" className="btn btn-ghost" data-testid="plan-pick-suggested" onClick={() => setPicked(new Set(suggested))}>{t("nightShift.pickSuggested")}</button>
+            <button type="button" className="btn btn-ghost" data-testid="plan-pick-none" onClick={() => setPicked(new Set())}>{t("nightShift.pickNone")}</button>
           </div>
+          {view === "graph" ? (
+            candidates.length > 0 && <PlanGraph items={candidates} links={links} chosen={chosen} subOf={(item) => noteOf(item) ?? whyLeft.get(item.id) ?? null} onToggle={toggle} onAdd={add} />
+          ) : (
+            <div className="inbox-list night-shift-pick" data-testid="night-shift-pick">
+              {candidates.map((item) => {
+                const note = noteOf(item) ?? whyLeft.get(item.id);
+                return (
+                  <label className="cfg-row" key={item.id} style={{ cursor: "pointer" }} data-testid="night-shift-candidate">
+                    <input type="checkbox" checked={chosen.has(item.id)} onChange={() => toggle(item.id)} />
+                    <span className="cfg-name"><span className="num">{item.key}</span> {item.title}</span>
+                    {note && <span className="meta-txt" data-testid="night-shift-note">{note}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </Field>
+        {proposed.length > 0 && (
+          <Field label={t("nightShift.proposed")}>
+            <p className="meta-txt">{t("nightShift.proposedHint")}</p>
+            <div className="inbox-list" data-testid="plan-proposed">
+              {proposed.map((edge) => {
+                const key = `${edge.from}>${edge.to}`;
+                return (
+                  <label className="cfg-row" key={key} style={{ cursor: "pointer" }} data-testid="plan-proposed-edge">
+                    <input type="checkbox" checked={takenKeys.has(key)} onChange={() => take(key)} />
+                    <span className="cfg-name"><span className="num">{edge.fromKey}</span> → <span className="num">{edge.toKey}</span></span>
+                    {edge.why && <span className="meta-txt">{edge.why}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        )}
+        <Field label={t("nightShift.kind")}>
+          <div className="seg night-shift-mode" role="group" aria-label={t("nightShift.kind")} data-testid="night-shift-kind">
+            <button type="button" aria-pressed={kind === "done"} data-kind="done" onClick={() => setKind("done")}>{t("nightShift.kindDone")}</button>
+            <button type="button" aria-pressed={kind === "night"} data-kind="night" onClick={() => setKind("night")}><Icon name="i-moon" size={13} /> {t("nightShift.kindNight")}</button>
+          </div>
+          <p className="meta-txt">{kind === "done" ? t("nightShift.kindDoneHint", { hours: UNTIL_DONE_HOURS }) : t("nightShift.kindNightHint")}</p>
         </Field>
         <Field label={t("nightShift.where")}>
           <div className="seg night-shift-mode" role="group" aria-label={t("nightShift.where")} data-testid="night-shift-mode">
@@ -204,9 +277,11 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <Field label={t("nightShift.concurrency")} htmlFor="nsConcurrency">
             <input id="nsConcurrency" className="input" type="number" min={1} max={8} value={concurrency} onChange={(event) => setConcurrency(Math.min(8, Math.max(1, Number(event.target.value) || 1)))} />
           </Field>
-          <Field label={t("nightShift.maxHours")} htmlFor="nsHours">
-            <input id="nsHours" className="input" type="number" min={1} max={24} value={maxHours} onChange={(event) => setMaxHours(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} />
-          </Field>
+          {kind === "night" && (
+            <Field label={t("nightShift.maxHours")} htmlFor="nsHours">
+              <input id="nsHours" className="input" type="number" min={1} max={24} value={maxHours} onChange={(event) => setMaxHours(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} />
+            </Field>
+          )}
           <Field label={t("nightShift.maxUsd")} htmlFor="nsUsd">
             <input id="nsUsd" className="input" type="number" min={0} step={1} placeholder={t("nightShift.maxUsdPlaceholder")} value={maxUsd} onChange={(event) => setMaxUsd(event.target.value)} />
           </Field>

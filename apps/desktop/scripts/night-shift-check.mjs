@@ -43,6 +43,13 @@ const run = async () => {
   const first = make("Add the export button");
   const second = make("Write the export docs");
   const later = make("A long one for a later night, whose title runs on well past the width of the dialog so that it has to wrap", "backlog");
+  const general = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Sign the lease", status: "todo", workType: "general", by: "human" });
+  const keyOf = (item) => item.key;
+  ctx.llm.worker = async () => ({ ok: true });
+  ctx.llm.completeJson = async (_schema, opts) => {
+    if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
+    return { summary: "Ship the export.", suggested: [first.key, second.key], excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
+  };
   ctx.items.update(project.id, first.id, { blocks: [second.id] }, "human");
   const starts = [];
   ctx.codeLink.start = async (_projectId, itemId, opts) => {
@@ -84,16 +91,50 @@ const run = async () => {
   check("with a repository, the title bar offers a night shift", await waitFor(`!!${test("titlebar-night-shift")}`));
   await shot("night-shift-entry");
   await press(test("titlebar-night-shift"));
-  check("the title bar opens the dialog", await waitFor(`!!${test("night-shift-pick")}`));
+  check("the title bar opens the dialog", await waitFor(`!!${test("plan-view")}`));
   await press(closeDialog);
-  await waitFor(`!${test("night-shift-pick")}`);
+  await waitFor(`!${test("plan-view")}`);
 
   // ── from the palette ──────────────────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));true`);
-  check("the palette offers a night shift", await waitFor(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent.includes('Start a night shift'))`));
-  await press(`[...document.querySelectorAll('.palette-row')].find((r) => r.textContent.includes('Start a night shift'))`);
-  check("which opens the dialog", await waitFor(`!!${test("night-shift-pick")}`));
-  await waitFor(`!!${candidate("Add the export button")}`);
+  check("the palette offers a night shift", await waitFor(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent.includes('Start an auto run'))`));
+  await press(`[...document.querySelectorAll('.palette-row')].find((r) => r.textContent.includes('Start an auto run'))`);
+  check("which opens the dialog", await waitFor(`!!${test("plan-view")}`));
+
+  // ── the plan ──────────────────────────────────────────────────────────
+  const nodeNamed = (key) => `document.querySelector('[data-testid="plan-node"][data-key="${key}"]')`;
+  const nodeChosen = (key) => `${nodeNamed(key)}?.classList.contains('is-chosen')`;
+  check("the dialog opens on the graph, with every open ticket", await waitFor(`document.querySelectorAll('[data-testid="plan-node"]').length === 4`), await $(`document.querySelectorAll('[data-testid="plan-node"]').length`));
+  check("the plan says the agent ran", await waitFor(`${text("plan-summary")}.includes('Ship the export')`), await $(text("plan-summary")));
+  check("the suggested ticket is chosen, the excluded one is not, and it says why", await $(`${nodeChosen(keyOf(first))} && ${nodeChosen(keyOf(second))} && !${nodeChosen(keyOf(later))} && !${nodeChosen(keyOf(general))} && ${nodeNamed(keyOf(general))}.textContent.includes('Not coding work')`));
+  await sleep(800);
+  await shot("plan-graph");
+  await press(`document.querySelector('[data-testid="plan-pick-none"]')`);
+  check("None clears the choice", await waitFor(`!document.querySelector('.plan-node.is-chosen')`));
+  await press(`document.querySelector('[data-testid="plan-pick-suggested"]')`);
+  check("Suggested brings it back", await waitFor(`document.querySelectorAll('.plan-node.is-chosen').length === 2`));
+  await press(nodeNamed(keyOf(later)));
+  check("a click takes a ticket", await waitFor(nodeChosen(keyOf(later))));
+  await press(nodeNamed(keyOf(later)));
+  check("and leaves it", await waitFor(`!${nodeChosen(keyOf(later))}`));
+  const box = await $(`(() => { const r = document.querySelector('.plan-graph .react-flow__pane').getBoundingClientRect(); return { left: r.left + 4, top: r.top + 4, right: r.right - 4, bottom: r.bottom - 4 }; })()`);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: box.left, y: box.top });
+  win.webContents.sendInputEvent({ type: "mouseDown", x: box.left, y: box.top, button: "left", clickCount: 1 });
+  for (let i = 1; i <= 8; i++) win.webContents.sendInputEvent({ type: "mouseMove", x: box.left + ((box.right - box.left) * i) / 8, y: box.top + ((box.bottom - box.top) * i) / 8, button: "left" });
+  win.webContents.sendInputEvent({ type: "mouseUp", x: box.right, y: box.bottom, button: "left", clickCount: 1 });
+  check("a drag across the canvas takes everything it touches", await waitFor(`document.querySelectorAll('.plan-node.is-chosen').length === 4`), await $(`document.querySelectorAll('.plan-node.is-chosen').length`));
+  await press(`document.querySelector('[data-testid="plan-pick-suggested"]')`);
+  await waitFor(`document.querySelectorAll('.plan-node.is-chosen').length === 2`);
+  check("the agent's dependency is drawn dashed and offered", await waitFor(`!!${test("plan-proposed")} && !!document.querySelector('.plan-graph path[style*="dasharray"]')`));
+  check("nothing is written while it is only offered", !ctx.items.get(project.id, later.id).blockedBy.length);
+  await press(`document.querySelector('[data-testid="plan-proposed-edge"] input')`);
+  check("taken, it is drawn solid", await waitFor(`!document.querySelector('.plan-graph path[style*="dasharray"]')`));
+  await press(`document.querySelector('[data-testid="plan-view"] [data-view="list"]')`);
+  check("the list is a click away", await waitFor(`!!${test("night-shift-pick")} && !${test("plan-graph")}`));
+  check("how long: until done has no hours to set, a night shift does", !(await $(`!!document.querySelector('#nsHours')`)));
+  await press(`document.querySelector('[data-testid="night-shift-kind"] [data-kind="night"]')`);
+  check("a night shift asks for its hours", await waitFor(`!!document.querySelector('#nsHours')`));
+  await press(`document.querySelector('[data-testid="night-shift-kind"] [data-kind="done"]')`);
 
   // ── choosing ──────────────────────────────────────────────────────────
   check("To Do is chosen, Backlog is not", await $(`${candidate("Add the export button")}.querySelector('input').checked && ${candidate("Write the export docs")}.querySelector('input').checked && !${candidate("A long one")}.querySelector('input').checked`));
@@ -130,14 +171,16 @@ const run = async () => {
   await press(test("night-shift-start"));
   check("it starts in the place chosen, upstream first", await waitFor(`!!${test("night-shift-going")}`) && (await (async () => { for (let i = 0; i < 50 && !starts.length; i++) await sleep(100); return starts[0]?.itemId === first.id && starts[0]?.mode === "terminal"; })()), starts);
   check("its dependant waits", starts.length === 1, starts);
+  check("the dependency the person took is on the tickets", ctx.items.get(project.id, second.id).blocks.includes(later.id), ctx.items.get(project.id, second.id).blocks);
+  check("until done runs for three days at most", ctx.nightShift.current(project.id)?.settings.maxMinutes === 72 * 60);
   check("the setting is kept on the shift", ctx.nightShift.current(project.id)?.settings.mode === "terminal" && ctx.nightShift.current(project.id)?.settings.autoMerge === true);
   check("the dialog says where it runs", await waitFor(`${text("night-shift-going")}.includes('In terminal panes')`));
-  check("the status bar shows it", await waitFor(`(${status()}).includes('Night shift 0/2')`), await $(status()));
+  check("the status bar shows it", await waitFor(`(${status()}).includes('Auto run 0/2')`), await $(status()));
   check("the title bar says how far along it is", await waitFor(`${text("titlebar-night-shift")}.includes('0/2')`), await $(text("titlebar-night-shift")));
 
   ctx.items.update(project.id, first.id, { status: "verifying" }, "human");
   await ctx.nightShift.tick();
-  check("a delivery moves the count, in the dialog and on the status bar", (await waitFor(`${text("night-shift-going")}.includes('1 of 2 delivered')`)) && (await waitFor(`(${status()}).includes('Night shift 1/2')`)), await $(text("night-shift-going")));
+  check("a delivery moves the count, in the dialog and on the status bar", (await waitFor(`${text("night-shift-going")}.includes('1 of 2 delivered')`)) && (await waitFor(`(${status()}).includes('Auto run 1/2')`)), await $(text("night-shift-going")));
   await shot("night-shift-going");
   const current = ctx.nightShift.current.bind(ctx.nightShift);
   ctx.nightShift.current = (id) => { const shift = current(id); return shift && { ...shift, counts: { ...shift.counts, "needs-you": 1 } }; };
@@ -164,12 +207,12 @@ const run = async () => {
 
   // ── stopping ──────────────────────────────────────────────────────────
   await press(test("night-shift-stop"));
-  check("Stop halts it", await waitFor(`${text("night-shift-going")}.includes('Stopping') || !!${test("night-shift-pick")}`));
+  check("Stop halts it", await waitFor(`${text("night-shift-going")}.includes('Stopping') || !!${test("plan-view")}`));
   await ctx.nightShift.tick();
   await sleep(200);
   check("no new ticket started", starts.length === 1, starts);
-  check("the status bar lets go once it ends", await waitFor(`!(${status()}).includes('Night shift')`), await $(status()));
-  check("the title bar goes back to offering one", await waitFor(`${test("titlebar-night-shift")}.title === 'Start the night shift'`), await $(`${test("titlebar-night-shift")}.title`));
+  check("the status bar lets go once it ends", await waitFor(`!(${status()}).includes('Auto run')`), await $(status()));
+  check("the title bar goes back to offering one", await waitFor(`${test("titlebar-night-shift")}.title === 'Start the auto run'`), await $(`${test("titlebar-night-shift")}.title`));
   check("the dialog says how the last one went", await waitFor(`${text("night-shift-last")}.includes('Stopped: 1 of 2 delivered')`), await $(text("night-shift-last")));
   check("the morning report lands in Files, with a way to it from the dialog", await waitFor(`!!${test("night-shift-brief")}`), ctx.nightShift.list(project.id, 1)[0]?.briefPath);
   const brief = ctx.nightShift.list(project.id, 1)[0]?.briefPath;

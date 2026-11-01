@@ -18,6 +18,13 @@ export function useNightShift(projectId: string) {
 export const useLastNightShift = (projectId: string) =>
   useQuery({ queryKey: keys.nightShift.last(projectId), queryFn: async () => (await invoke("nightShift.list", projectId, 1))[0] ?? null, retry: false });
 
+/** "Until it is done" still ends; the service holds the same limit. */
+export const UNTIL_DONE_HOURS = 72;
+
+/** One model call: kept while the dialog comes and goes, and asked again only by hand. */
+export const useShiftPlan = (projectId: string) =>
+  useQuery({ queryKey: keys.nightShift.plan(projectId), queryFn: () => invoke("nightShift.plan", projectId), retry: false, staleTime: 10 * 60_000 });
+
 export function useNightShiftActions(projectId: string) {
   const qc = useQueryClient();
   const done = () => void qc.invalidateQueries({ queryKey: keys.nightShift.all(projectId) });
@@ -55,6 +62,19 @@ const OPEN_FOR_SHIFT = new Set<Item["status"]>(["todo", "backlog"]);
 export function shiftCandidates(items: Item[]): Item[] {
   const rank = (item: Item) => (item.status === "todo" ? 0 : 1);
   return items.filter((item) => item.kind === "ticket" && OPEN_FOR_SHIFT.has(item.status)).sort((a, b) => rank(a) - rank(b) || b.priority - a.priority || a.rank - b.rank);
+}
+
+/** What the plan chooses before anyone has answered it: To Do's coding work, as the backlog says. */
+export const factsChosen = (candidates: Item[]): Set<string> => new Set(candidates.filter((i) => i.status === "todo" && i.workType === "coding").map((i) => i.id));
+
+/** The tickets as they will stand once the dependencies the person took are written. */
+export function withTaken(items: Item[], taken: readonly { from: string; to: string }[]): Item[] {
+  if (!taken.length) return items;
+  return items.map((item) => {
+    const blocks = taken.filter((e) => e.from === item.id).map((e) => e.to);
+    const blockedBy = taken.filter((e) => e.to === item.id).map((e) => e.from);
+    return blocks.length || blockedBy.length ? { ...item, blocks: [...item.blocks, ...blocks], blockedBy: [...item.blockedBy, ...blockedBy] } : item;
+  });
 }
 
 /** The chosen tickets with each after what it waits on, as the shift will try them; a cycle keeps the order it came in. */

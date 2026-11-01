@@ -214,7 +214,8 @@ export const keys = {
   nightShift: {
     all: (projectId: string) => ["nightShift", projectId] as const,
     current: (projectId: string) => ["nightShift", projectId, "current"] as const,
-    last: (projectId: string) => ["nightShift", projectId, "last"] as const
+    last: (projectId: string) => ["nightShift", projectId, "last"] as const,
+    plan: (projectId: string) => ["nightShift", projectId, "plan"] as const
   },
 
   community: {

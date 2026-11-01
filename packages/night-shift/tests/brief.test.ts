@@ -24,7 +24,7 @@ it("reports a mixed shift: what to review first, what needs the person, what fai
     w,
     "2026-11-02"
   );
-  expect(body).toContain("# Night shift, 2026-11-02");
+  expect(body).toContain("# Auto run, 2026-11-02");
   expect(body).toContain("2 to review · 1 merged · 1 need you · 1 failed · 1 not started · 60 min · $2.50 spent");
   // riskier first, however small
   expect(body.indexOf("1. B Do B: https://x/2")).toBeGreaterThan(-1);

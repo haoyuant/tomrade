@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "A night shift: a batch of tickets worked through by dependency, in terminal panes or background sessions, within limits the person set",
+  "description": "Auto run: the agent plans a batch of tickets on the dependency graph, then works through it in terminal panes or background sessions, within limits the person set",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
