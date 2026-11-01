@@ -8,9 +8,9 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent } from "@tomradex/agent";
 import { Contributions } from "@tomradex/contributions";
-import { NightShifts, PlanReply } from "@tomradex/night-shift";
+import { NightShifts, PlanReply, applyEdit, insertGate } from "@tomradex/night-shift";
 
-interface FakeSession { itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
+interface FakeSession { id?: string; itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
 
 /** Stands for code link: the night shift reads sessions and asks it to start and merge, and these tests play the agents. */
 class FakeCodeLink extends Service {
@@ -38,8 +38,15 @@ class FakeCodeLink extends Service {
   async start(_projectId: string, itemId: string, opts: Record<string, unknown>) {
     this.starts.push({ itemId, opts });
     if (this.refuse) return { ok: false, ...this.refuse };
-    this.sessionsList.push({ itemIds: [itemId], state: "running", mode: opts.mode === "terminal" ? "terminal" : "headless", startedAt: Date.now() + 1, threadId: `th-${itemId}`, blocked: null, ask: null, summary: null });
+    this.sessionsList.push({ id: `s-${itemId}`, itemIds: [itemId], state: "running", mode: opts.mode === "terminal" ? "terminal" : "headless", startedAt: Date.now() + 1, threadId: `th-${itemId}`, blocked: null, ask: null, summary: null });
     return { ok: true, threadId: `th-${itemId}`, branch: `b/${itemId}` };
+  }
+  stopped: string[] = [];
+  async stopSession(_projectId: string, id: string) {
+    this.stopped.push(id);
+    const session = this.sessionsList.find((s) => s.id === id);
+    if (session) session.state = "ended";
+    return true;
   }
   async prChecks() {
     return this.checks;
@@ -689,6 +696,181 @@ describe("telling the person", () => {
       const last = t.s.list(t.project.id, 1)[0]!;
       expect(last.steps.map((s) => s.kind)).toContain("skipped");
       expect(told.flatMap((x) => x.notices).some((n) => n.body.startsWith("Not started"))).toBe(false);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("changing a run while it goes", () => {
+  const keys = (t: Awaited<ReturnType<typeof boot>>) => t.s.current(t.project.id)?.tickets.map((x) => x.key) ?? [];
+  const stepsOf = (t: Awaited<ReturnType<typeof boot>>, kind: string) => (t.s.current(t.project.id)?.steps ?? []).filter((step) => step.kind === kind);
+
+  it("takes a ticket in and leaves one out at the next pass, and starts what fits", async () => {
+    const t = await boot();
+    try {
+      const [a, b, c] = [t.make("A"), t.make("B"), t.make("C")];
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      t.s.edit(t.project.id, shift.id, { add: [c.id], remove: [{ itemId: b.id }] });
+      expect(keys(t)).toEqual([a.key, b.key]);
+      await t.s.tick();
+      expect(keys(t)).toEqual([a.key, c.key]);
+      expect(t.s.current(t.project.id)?.tickets[1]?.joinedAt).toBeGreaterThan(0);
+      expect(stepsOf(t, "joined").map((step) => step.key)).toEqual([c.key]);
+      expect(stepsOf(t, "removed").map((step) => step.key)).toEqual([b.key]);
+      expect(t.code.starts.map((x) => x.itemId)).toEqual([a.id]);
+      expect(t.s.current(t.project.id)?.counts).toMatchObject({ running: 1, queued: 1 });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("refuses all of a change when any of it cannot be, and says why", async () => {
+    const t = await boot();
+    try {
+      const [a, b, done, busy] = [t.make("A"), t.make("B"), t.make("Done"), t.make("Busy")];
+      t.items.update(t.project.id, done.id, { status: "done" }, "human");
+      t.code.sessionsList.push({ id: "other", itemIds: [busy.id], state: "running", mode: "terminal", startedAt: 0, threadId: null, blocked: null, ask: null, summary: null } as never);
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      expect(() => t.s.edit(t.project.id, shift.id, { add: [done.id], remove: [{ itemId: b.id }] })).toThrow(/is done/);
+      expect(() => t.s.edit(t.project.id, shift.id, { add: [busy.id] })).toThrow(/has an agent on it/);
+      expect(() => t.s.edit(t.project.id, shift.id, { add: [a.id] })).toThrow(/already in this run/);
+      expect(() => t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id }] })).toThrow(/has an agent at work/);
+      await t.s.tick();
+      expect(keys(t)).toEqual([a.key, b.key]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("stops an agent only on the word, keeps the ticket as history, and lets the next one start", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id, stop: true }] });
+      await t.s.tick();
+      await settle();
+      expect(t.code.stopped).toEqual([`s-${a.id}`]);
+      const ticket = t.s.current(t.project.id)?.tickets.find((x) => x.itemId === a.id);
+      expect(ticket).toMatchObject({ state: "skipped", why: { kind: "removed" } });
+      expect(ticket?.note).toMatch(/stays on its branch/);
+      expect(t.code.starts.map((x) => x.itemId)).toEqual([a.id, b.id]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("does not let a stopped ticket go on by itself when its limit lifts", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      const shift = t.s.start(t.project.id, { itemIds: [a.id], concurrency: 1 });
+      await t.s.tick();
+      const unpark = vi.spyOn(t.ctx.agent, "unpark");
+      t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id, stop: true }] });
+      await t.s.tick();
+      expect(unpark).toHaveBeenCalledWith(t.project.id, `th-${a.id}`);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("will not stop a ticket that started after the change was asked for", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      // the scheduler reached it first, in the moment between the check and the pass
+      const stored = t.s.current(t.project.id)!;
+      const moved = { ...stored, tickets: stored.tickets.map((x) => (x.itemId === b.id ? { ...x, state: "running" as const } : x)) };
+      const applied = applyEdit(moved, { add: [], remove: [{ itemId: b.id, stop: false }], nodes: {} }, 5);
+      expect(applied.stopping).toEqual([]);
+      expect(applied.shift.tickets.map((x) => x.key)).toEqual([a.key, b.key]);
+      expect(applied.steps).toMatchObject([{ kind: "edit-refused", why: { kind: "edit-late" } }]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("leaves a ticket waiting, not failed, when what it waits on is taken off", async () => {
+    const t = await boot();
+    try {
+      const b = t.make("B");
+      const a = t.make("A", [b.id]);
+      const c = t.make("C");
+      const shift = t.s.start(t.project.id, { itemIds: [c.id, a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id }] });
+      await t.s.tick();
+      expect(t.s.current(t.project.id)?.tickets.find((x) => x.itemId === b.id)).toMatchObject({ state: "queued", why: { kind: "waits-outside", keys: [a.key] } });
+      expect(t.s.current(t.project.id)?.failStreak).toBe(0);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("changes a node not begun, and refuses one at work", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      expect(() => t.s.edit(t.project.id, shift.id, { nodes: { [a.id]: { mode: "terminal" } } })).toThrow(/already started/);
+      t.s.edit(t.project.id, shift.id, { nodes: { [b.id]: { mode: "terminal" } } });
+      await t.s.tick();
+      expect(t.s.current(t.project.id)?.tickets[1]).toMatchObject({ config: { mode: "terminal" }, configFrom: { kind: "manual" } });
+      t.s.edit(t.project.id, shift.id, { nodes: { [b.id]: null } });
+      await t.s.tick();
+      expect(t.s.current(t.project.id)?.tickets[1]?.config).toBeUndefined();
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("takes no change once it is stopping, and none once it has ended", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      t.s.stop(t.project.id, shift.id);
+      expect(() => t.s.edit(t.project.id, shift.id, { remove: [{ itemId: b.id }] })).toThrow(/finishing/);
+      expect(() => t.s.edit(t.project.id, "another", { remove: [{ itemId: b.id }] })).toThrow(/has ended/);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("ends the run as usual when every ticket is taken off", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      const shift = t.s.start(t.project.id, { itemIds: [a.id], concurrency: 1 });
+      t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id }] });
+      await t.s.tick();
+      expect(t.s.current(t.project.id)).toBeNull();
+      expect(t.code.starts).toEqual([]);
+      expect(t.s.list(t.project.id, 1)[0]).toMatchObject({ status: "ended", halt: null, tickets: [] });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("does not count what the person added against the agent's inserts", async () => {
+    const t = await boot();
+    try {
+      const [a, b] = [t.make("A"), t.make("B")];
+      const shift = t.s.start(t.project.id, { itemIds: [a.id], concurrency: 1, maxInserts: 1 });
+      await t.s.tick();
+      t.s.edit(t.project.id, shift.id, { add: [b.id] });
+      await t.s.tick();
+      const stored = t.s.current(t.project.id)!;
+      expect(insertGate(stored, {}, "coding", 0)).toBeNull();
     } finally {
       await t.ctx.fiber.dispose();
     }

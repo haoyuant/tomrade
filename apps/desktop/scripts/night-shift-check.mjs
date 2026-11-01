@@ -308,9 +308,48 @@ const run = async () => {
   ctx.nightShift.current = current;
   ctx.ipc.send("nightShift.changed", project.id);
 
+  // ── changing the plan while it goes ───────────────────────────────────
+  const inRun = (id) => ctx.nightShift.current(project.id).tickets.some((x) => x.itemId === id);
+  const draft = (key) => `${nodeNamed(key)}?.dataset.draft`;
+  await press(test("plan-edit"));
+  check("editing stands what could join around the plan, faded", await waitFor(`${draft(keyOf(later))} === 'ghost'`), await $(draft(keyOf(later))));
+  await sleep(500);
+  await shot("plan-edit");
+  await press(nodeNamed(keyOf(later)));
+  check("a click drafts it in", await waitFor(`${draft(keyOf(later))} === 'add' && ${text("plan-diff-added")} === '+1'`), await $(text("plan-diff")));
+  check("nothing reaches the run until it is applied", !inRun(later.id));
+  await press(nodeNamed(keyOf(first)));
+  check("what is finished stays, and says why", await waitFor(`${text("plan-diff-note")}.includes('history')`), await $(text("plan-diff")));
+  await press(nodeNamed(keyOf(second)));
+  check("a ticket not begun drafts out", await waitFor(`${draft(keyOf(second))} === 'remove' && ${text("plan-diff-removed")} === '−1'`), await $(text("plan-diff")));
+  check("what that leaves waiting is said before it happens", await waitFor(`[...document.querySelectorAll('[data-testid="plan-impact"]')].some((p) => p.dataset.kind === 'orphaned' && p.textContent.includes(${JSON.stringify(keyOf(later))}))`), await $(text("plan-diff")));
+  await sleep(300);
+  await shot("plan-edit-draft");
+  await press(test("plan-diff-discard"));
+  check("Discard leaves the run as it was", (await waitFor(`!${test("plan-diff")} && !${nodeNamed(keyOf(later))}`)) && inRun(second.id) && !inRun(later.id));
+  await press(test("plan-edit"));
+  await waitFor(`${draft(keyOf(later))} === 'ghost'`);
+  await press(nodeNamed(keyOf(later)));
+  await waitFor(`!${test("plan-diff-apply")}.disabled`);
+  await press(test("plan-diff-apply"));
+  check("applied, it joins the run", await (async () => { for (let i = 0; i < 40 && !inRun(later.id); i++) await sleep(50); return inRun(later.id); })());
+  check("it arrives marked as yours, with a flourish", await waitFor(`!!${nodeNamed(keyOf(later))}?.dataset.fresh && !!${nodeNamed(keyOf(later))}.dataset.added`), await $(`${nodeNamed(keyOf(later))}?.outerHTML.slice(0, 200)`));
+  await sleep(250);
+  await shot("plan-joined");
+  check("the timeline says you did it", await waitFor(`[...document.querySelectorAll('[data-testid="plan-step"]')].some((s) => s.dataset.kind === 'joined')`));
+  await press(test("plan-edit"));
+  await waitFor(`!!${test("plan-diff")}`);
+  await press(nodeNamed(keyOf(later)));
+  await waitFor(`!${test("plan-diff-apply")}.disabled`);
+  await press(test("plan-diff-apply"));
+  check("taken off again, it fades out", await waitFor(`${draft(keyOf(later))} === 'leaving'`, 2000), await $(draft(keyOf(later))));
+  check("and is gone", await waitFor(`!${nodeNamed(keyOf(later))}`));
+  check("off the run too, with nothing else started", !inRun(later.id) && starts.length === 2, starts);
+
   // ── stopping ──────────────────────────────────────────────────────────
   await press(test("night-shift-stop"));
   check("Stop halts it", await waitFor(`${text("night-shift-going")}.includes('Stopping') || !!${test("plan-view")}`));
+  check("a run that is finishing takes no change", await waitFor(`!${test("night-shift-going")} || ${test("plan-edit")}?.disabled === true`));
   await ctx.nightShift.tick();
   await sleep(200);
   check("no new ticket started", starts.length === 2, starts);

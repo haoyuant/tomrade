@@ -26,17 +26,22 @@ interface PlanNodeData extends Record<string, unknown> {
   state: string | undefined;
   /** It joined the run along the way, off the plan. */
   added: boolean;
+  /** What an unapplied change would do to it. */
+  draft: PlanDraft | undefined;
+  /** It joined a moment ago, and arrives with a flourish. */
+  fresh: boolean;
   onToggle: (id: string) => void;
   onConfigure: ((id: string) => void) | undefined;
 }
 type PlanFlowNode = Node<PlanNodeData, "plan">;
+export type PlanDraft = "ghost" | "add" | "remove" | "leaving";
 
 /** The board's own card, with what a plan adds around it. */
 function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
-  const { item, chosen, sub, state, added, onToggle, onConfigure } = data;
+  const { item, chosen, sub, state, added, draft, fresh, onToggle, onConfigure } = data;
   const { t } = useI18n();
   return (
-    <div className={`gnode plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W }} data-testid="plan-node" data-key={item.key} data-state={state} data-added={added || undefined} aria-pressed={state ? undefined : chosen} title={sub ?? undefined}>
+    <div className={`gnode plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W }} data-testid="plan-node" data-key={item.key} data-state={state} data-added={added || undefined} data-draft={draft} data-fresh={fresh || undefined} aria-pressed={state ? undefined : chosen} title={sub ?? undefined}>
       <Handle type="target" position={Position.Left} />
       {!state && <span className="plan-node-check" aria-hidden>{chosen && <Icon name="i-check" size={11} />}</span>}
       <Card item={item} onOpen={() => onToggle(item.id)} onNudge={() => {}} />
@@ -79,9 +84,15 @@ interface PlanGraphProps {
   onConfigure?: (id: string) => void;
   stateOf?: (id: string) => string | undefined;
   addedOf?: (id: string) => boolean;
+  draftOf?: (id: string) => PlanDraft | undefined;
+  freshOf?: (id: string) => boolean;
+  /** Absent, every node opens its settings. */
+  configurableOf?: (id: string) => boolean;
+  hint?: string;
+  editing?: boolean;
 }
 
-function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf, addedOf }: PlanGraphProps) {
+function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf, addedOf, draftOf, freshOf, configurableOf, hint }: PlanGraphProps) {
   const { t } = useI18n();
   const flow = useReactFlow();
   const region = useRef<HTMLDivElement>(null);
@@ -114,7 +125,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
         position: placed.pos.get(item.id) ?? { x: 0, y: 0 },
         selected: false,
         measured: measured.get(item.id),
-        data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), added: addedOf?.(item.id) ?? false, onToggle: (id: string) => toggle.current(id), onConfigure },
+        data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), added: addedOf?.(item.id) ?? false, draft: draftOf?.(item.id), fresh: freshOf?.(item.id) ?? false, onToggle: (id: string) => toggle.current(id), onConfigure: (configurableOf?.(item.id) ?? true) ? onConfigure : undefined },
         ...nodeLook(focus, item.id)
       }));
     });
@@ -176,7 +187,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--border-soft)" />
       </ReactFlow>
       <div className="graph-foot">
-        <span className="meta-txt dense graph-hint">{t(onAdd ? "nightShift.graphHintChoose" : "nightShift.graphHintWatch")}</span>
+        <span className="meta-txt dense graph-hint">{hint ?? t(onAdd ? "nightShift.graphHintChoose" : "nightShift.graphHintWatch")}</span>
         <div className="graph-actions">
           <button type="button" className="btn btn-ghost" data-testid="plan-fit" onClick={() => fit(250)}>
             <Icon name="i-shrink" size={13} /> {t("graphView.fit")}
@@ -190,7 +201,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
 /** The plan on the board's graph: a click takes a ticket or leaves it, a drag across the canvas takes everything it touches. */
 export function PlanGraph(props: PlanGraphProps) {
   return (
-    <div className="graph-region plan-graph" data-testid="plan-graph">
+    <div className={`graph-region plan-graph${props.editing ? " is-editing" : ""}`} data-testid="plan-graph">
       <ReactFlowProvider>
         <Canvas {...props} />
       </ReactFlowProvider>

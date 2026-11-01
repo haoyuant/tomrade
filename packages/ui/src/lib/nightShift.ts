@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
-import type { NightShiftInput, WorkRule } from "@tomradex/night-shift";
+import type { NightShiftEdit, NightShiftInput, TicketState, WorkRule } from "@tomradex/night-shift";
 import { invoke, subscribe } from "./api";
 import { useRepos } from "./queries";
 import { keys } from "./queries/keys";
@@ -64,7 +64,8 @@ export function useNightShiftActions(projectId: string) {
   const done = () => void qc.invalidateQueries({ queryKey: keys.nightShift.all(projectId) });
   return {
     start: useMutation({ mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input), onSuccess: done }),
-    stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done })
+    stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done }),
+    edit: useMutation({ mutationFn: ({ id, change }: { id: string; change: NightShiftEdit }) => invoke("nightShift.edit", projectId, id, change), onSuccess: done })
   };
 }
 
@@ -99,6 +100,42 @@ export function shiftCandidates(items: Item[]): Item[] {
 }
 
 export type NodeOverride = NonNullable<NightShiftInput["nodes"]>[string];
+
+const AT_WORK = new Set<TicketState>(["running", "limited", "needs-you"]);
+/** Taking this ticket off ends an agent at work. */
+export const stopsAnAgent = (state: TicketState): boolean => AT_WORK.has(state);
+/** What is finished stays, as the run's history. */
+export const canLeave = (state: TicketState): boolean => state === "queued" || AT_WORK.has(state);
+
+export type EditImpact =
+  /** It waits on a ticket this change takes off the run. */
+  | { kind: "orphaned"; key: string; keys: string[] }
+  /** It joins the run, and waits on open tickets the run does not hold; they can join with it. */
+  | { kind: "outside"; key: string; keys: string[]; ids: string[] };
+
+/** What a draft does to the tickets it leaves behind, in plain view before it is applied. */
+export function editImpact(items: readonly Item[], run: readonly { itemId: string; state: TicketState }[], adds: ReadonlySet<string>, removes: ReadonlySet<string>): EditImpact[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const inRun = new Set(run.map((t) => t.itemId));
+  const stays = new Set([...inRun, ...adds].filter((id) => !removes.has(id)));
+  const open = (id: string) => {
+    const item = byId.get(id);
+    return !!item && item.status !== "done" && item.status !== "cancelled";
+  };
+  const waiting = [...run.filter((t) => t.state === "queued").map((t) => t.itemId), ...adds].filter((id) => stays.has(id));
+  return waiting.flatMap((id): EditImpact[] => {
+    const item = byId.get(id);
+    if (!item) return [];
+    const missing = item.blockedBy.filter((b) => open(b) && !stays.has(b));
+    const keysOf = (ids: string[]) => ids.map((b) => byId.get(b)!.key);
+    const removed = missing.filter((b) => removes.has(b));
+    const outside = missing.filter((b) => !removes.has(b));
+    return [
+      ...(removed.length ? [{ kind: "orphaned" as const, key: item.key, keys: keysOf(removed) }] : []),
+      ...(outside.length && adds.has(id) ? [{ kind: "outside" as const, key: item.key, keys: keysOf(outside), ids: outside }] : [])
+    ];
+  });
+}
 
 /** One field of a node, and who set it: what the person did by hand beats a rule, and a rule beats the run. */
 export function nodeConfig(override: NodeOverride | undefined, rule: WorkRule | undefined): { config: NodeOverride; from: "manual" | "rule" | "run" } {

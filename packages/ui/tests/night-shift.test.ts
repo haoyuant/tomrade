@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "@tomradex/domain";
-import { factsChosen, runConcurrency, shiftCandidates, shiftNote, shiftOrder, withTaken } from "../src/lib/nightShift";
+import { canLeave, editImpact, factsChosen, runConcurrency, shiftCandidates, stopsAnAgent, shiftNote, shiftOrder, withTaken } from "../src/lib/nightShift";
 
 const item = (key: string, over: Partial<Item> = {}): Item => ({ id: key, key, title: key, kind: "ticket", status: "todo", priority: 0, rank: 0, blockedBy: [], blocks: [], ...over }) as Item;
+
+describe("what a change to a running plan does", () => {
+  const run = (...ids: string[]) => ids.map((itemId) => ({ itemId, state: "queued" as const }));
+
+  it("says what is left waiting on a ticket taken off", () => {
+    const items = [item("A"), item("B", { blockedBy: ["A"] })];
+    expect(editImpact(items, run("A", "B"), new Set(), new Set(["A"]))).toEqual([{ kind: "orphaned", key: "B", keys: ["A"] }]);
+  });
+
+  it("offers to bring along what a new ticket waits on, and only what is open", () => {
+    const items = [item("A"), item("Done", { status: "done" }), item("B", { blockedBy: ["A", "Done"] })];
+    expect(editImpact(items, [], new Set(["B"]), new Set())).toEqual([{ kind: "outside", key: "B", keys: ["A"], ids: ["A"] }]);
+    expect(editImpact(items, [], new Set(["A", "B"]), new Set())).toEqual([]);
+  });
+
+  it("has nothing to say about a ticket that is leaving, or one already running", () => {
+    const items = [item("A"), item("B", { blockedBy: ["A"] })];
+    expect(editImpact(items, run("A", "B"), new Set(), new Set(["A", "B"]))).toEqual([]);
+    expect(editImpact(items, [{ itemId: "B", state: "running" }], new Set(), new Set())).toEqual([]);
+  });
+
+  it("lets only what is not finished leave, and knows which of those has an agent to stop", () => {
+    expect(["queued", "running", "limited", "needs-you"].every((s) => canLeave(s as never))).toBe(true);
+    expect(["delivered", "done", "failed", "skipped"].some((s) => canLeave(s as never))).toBe(false);
+    expect(stopsAnAgent("queued")).toBe(false);
+    expect(stopsAnAgent("running")).toBe(true);
+  });
+});
 
 describe("how many run at once", () => {
   it("is the agent's call, within the person's limit", () => {

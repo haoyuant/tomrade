@@ -65,7 +65,7 @@ export type Why =
   | { kind: "found"; fromKey: string; text: string }
   | { kind: "switched"; from: string; to: string; cause: LimitCause }
   | { kind: "no-engine"; engine: string }
-  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" | "conflict-unresolved" };
+  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" | "conflict-unresolved" | "removed" | "edit-late" };
 
 export interface ShiftTicket {
   itemId: string;
@@ -92,6 +92,8 @@ export interface ShiftTicket {
   engineLost?: string;
   /** It was not on the plan: an agent found it, and the worker model said to do it now. */
   origin?: { fromId: string; fromKey: string; why: string };
+  /** The person added it to a run already going, at this moment. */
+  joinedAt?: number;
   /** What stopped it, while it is limited. `noEngine`: no other agent could take it, so it waits this one out. */
   limit?: { cause: LimitCause; noEngine?: boolean };
   /** Oldest first; the last `to` is the agent it goes on with. */
@@ -121,7 +123,7 @@ export interface ShiftStep {
   why: Why | null;
 }
 
-export type StepKind = "started" | "limited" | "delivered" | "merged" | "refused" | "needs-you" | "failed" | "skipped" | "inserted" | "found" | "duplicate" | "switched";
+export type StepKind = "started" | "limited" | "delivered" | "merged" | "refused" | "needs-you" | "failed" | "skipped" | "inserted" | "found" | "duplicate" | "joined" | "removed" | "reconfigured" | "edit-refused" | "switched";
 
 export interface NightShift {
   id: string;
