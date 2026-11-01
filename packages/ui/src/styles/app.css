@@ -647,11 +647,13 @@ strong { font-weight: var(--font-weight-medium); }
   padding-left: var(--traffic-inset); padding-right: var(--space-3);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  /* its width depends on the assistant beside it, so what it shows follows the bar, not the window */
+  container: titlebar / inline-size;
 }
 .no-drag { -webkit-app-region: no-drag; }
 .crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .crumb-sep { color: var(--meta); font-size: var(--text-sm); }
-.crumb-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); white-space: nowrap; }
+.crumb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); white-space: nowrap; }
 /* home sits before the breadcrumb, so a hairline — not a slash — separates
    "leave this project" from "which project" */
 .title-sep { width: 1px; height: 17px; flex-shrink: 0; background: var(--border); margin: 0 -3px; }
@@ -667,9 +669,15 @@ strong { font-weight: var(--font-weight-medium); }
 /* the wrap spans the full titlebar height so the menu drops from the header
    edge, not from the middle of the button */
 #projWrap { display: flex; align-items: center; align-self: stretch; }
-/* the Terminal window's door names itself and its key while the bar has room, an icon alone when narrow */
-@media (max-width: 1100px) {
-  .titlebar-terminal .lbl, .titlebar-terminal .kbd { display: none; }
+/* the bar gives up room in steps: the keys, a running shift's name (its moon and progress say it), the Terminal window's name, then a night shift's */
+@container titlebar (max-width: 960px) { .titlebar .kbd { display: none; } }
+@container titlebar (max-width: 830px) { .titlebar-night-shift.is-going .lbl { display: none; } }
+@container titlebar (max-width: 775px) { .titlebar-terminal .lbl { display: none; } }
+@container titlebar (max-width: 700px) { .titlebar-night-shift .lbl { display: none; } }
+.titlebar-night-shift.is-going { color: var(--accent); }
+.titlebar-night-shift-waiting {
+  min-width: 16px; padding: 0 4px; border-radius: 8px; text-align: center;
+  font-size: var(--text-xs); line-height: 16px; color: var(--bg); background: var(--warn);
 }
 #projMenu { top: calc(100% + 6px); z-index: 55; }
 

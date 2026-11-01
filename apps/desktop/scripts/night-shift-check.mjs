@@ -1,7 +1,7 @@
 /**
- * Night shift regression: the palette opens the dialog, To Do tickets are chosen
+ * Night shift regression: the title bar and the palette open the dialog, To Do tickets are chosen
  * and a dependency is explained, terminal panes or sessions are picked, the shift
- * starts where it was told, progress shows in the dialog and on the status bar,
+ * starts where it was told, progress shows in the dialog, the title bar and the status bar,
  * and Stop ends it. Start itself is a stand-in: real starts are covered by
  * packages/night-shift/tests/real-start.test.ts.
  *
@@ -70,7 +70,23 @@ const run = async () => {
   const text = (id) => `(${test(id)}?.textContent ?? '')`;
   const candidate = (title) => `[...document.querySelectorAll('[data-testid="night-shift-candidate"]')].find((r) => r.textContent.includes(${JSON.stringify(title)}))`;
   const status = () => `[...document.querySelectorAll('.statusbar .status-item')].map((n) => n.textContent).join(' | ')`;
+  const closeDialog = `[...document.querySelectorAll('.dlg-foot .btn-secondary')].find((b) => /^(Cancel|Close)$/.test(b.textContent.trim()))`;
   await waitFor(`!!document.querySelector('.statusbar')`, 20000);
+
+  // ── from the title bar ────────────────────────────────────────────────
+  await sleep(600);
+  check("a project with no repository has no door to a shift it could not run", !(await $(`!!${test("titlebar-night-shift")}`)));
+  ctx.repos.create({ projectId: project.id, name: "alpha", remote: "https://example.com/alpha.git" });
+  const reloaded = new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  win.webContents.reload();
+  await reloaded;
+  await waitFor(`!!document.querySelector('.statusbar')`, 20000);
+  check("with a repository, the title bar offers a night shift", await waitFor(`!!${test("titlebar-night-shift")}`));
+  await shot("night-shift-entry");
+  await press(test("titlebar-night-shift"));
+  check("the title bar opens the dialog", await waitFor(`!!${test("night-shift-pick")}`));
+  await press(closeDialog);
+  await waitFor(`!${test("night-shift-pick")}`);
 
   // ── from the palette ──────────────────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));true`);
@@ -117,11 +133,34 @@ const run = async () => {
   check("the setting is kept on the shift", ctx.nightShift.current(project.id)?.settings.mode === "terminal" && ctx.nightShift.current(project.id)?.settings.autoMerge === true);
   check("the dialog says where it runs", await waitFor(`${text("night-shift-going")}.includes('In terminal panes')`));
   check("the status bar shows it", await waitFor(`(${status()}).includes('Night shift 0/2')`), await $(status()));
+  check("the title bar says how far along it is", await waitFor(`${text("titlebar-night-shift")}.includes('0/2')`), await $(text("titlebar-night-shift")));
 
   ctx.items.update(project.id, first.id, { status: "verifying" }, "human");
   await ctx.nightShift.tick();
   check("a delivery moves the count, in the dialog and on the status bar", (await waitFor(`${text("night-shift-going")}.includes('1 of 2 delivered')`)) && (await waitFor(`(${status()}).includes('Night shift 1/2')`)), await $(text("night-shift-going")));
   await shot("night-shift-going");
+  const current = ctx.nightShift.current.bind(ctx.nightShift);
+  ctx.nightShift.current = (id) => { const shift = current(id); return shift && { ...shift, counts: { ...shift.counts, "needs-you": 1 } }; };
+  ctx.ipc.send("nightShift.changed", project.id);
+  check("the title bar shows a ticket waiting for you", await waitFor(`${test("titlebar-night-shift")}.title.includes('1 need you') && !!${test("titlebar-night-shift")}.querySelector('.titlebar-night-shift-waiting')`), await $(`${test("titlebar-night-shift")}.title`));
+  await press(closeDialog);
+  check("the dialog closes", await waitFor(`!${test("night-shift-going")}`));
+  await sleep(300);
+  await shot("night-shift-entry-waiting");
+  const barFits = () => $(`(() => { const bar = document.querySelector('.titlebar').getBoundingClientRect(); const last = document.querySelector('.titlebar > :last-child').getBoundingClientRect(); return last.right <= bar.right; })()`);
+  for (const width of [1500, 1280, 1100]) {
+    win.setSize(width, 900);
+    await sleep(300);
+    check(`at ${width} wide, with a shift going, settings stay on the bar`, await barFits(), await $(`document.querySelector('.titlebar').clientWidth`));
+    check(`and the waiting count shows`, await $(`${test("titlebar-night-shift")}.querySelector('.titlebar-night-shift-waiting').getBoundingClientRect().width > 0`));
+  }
+  await shot("night-shift-entry-tight");
+  win.setSize(1500, 900);
+  await sleep(300);
+  await press(test("titlebar-night-shift"));
+  await waitFor(`!!${test("night-shift-going")}`);
+  ctx.nightShift.current = current;
+  ctx.ipc.send("nightShift.changed", project.id);
 
   // ── stopping ──────────────────────────────────────────────────────────
   await press(test("night-shift-stop"));
@@ -130,6 +169,7 @@ const run = async () => {
   await sleep(200);
   check("no new ticket started", starts.length === 1, starts);
   check("the status bar lets go once it ends", await waitFor(`!(${status()}).includes('Night shift')`), await $(status()));
+  check("the title bar goes back to offering one", await waitFor(`${test("titlebar-night-shift")}.title === 'Start the night shift'`), await $(`${test("titlebar-night-shift")}.title`));
   check("the dialog says how the last one went", await waitFor(`${text("night-shift-last")}.includes('Stopped: 1 of 2 delivered')`), await $(text("night-shift-last")));
   check("the morning report lands in Files, with a way to it from the dialog", await waitFor(`!!${test("night-shift-brief")}`), ctx.nightShift.list(project.id, 1)[0]?.briefPath);
   const brief = ctx.nightShift.list(project.id, 1)[0]?.briefPath;

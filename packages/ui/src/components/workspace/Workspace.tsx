@@ -403,6 +403,7 @@ export function Workspace() {
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
         onOpenUsage={() => setSettings("usage")}
+        onOpenNightShift={() => setNightShift(true)}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
