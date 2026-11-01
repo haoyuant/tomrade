@@ -82,6 +82,12 @@ export interface ImReminder {
   projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck";
   title: string; body: string;
 }
+/** News for the people paired with this desktop that belongs to no conversation: words only, once per `key`. */
+export interface ImAnnouncement {
+  key: string;
+  title: string;
+  body: string;
+}
 export interface ImAllowRequest {
   /** An ignored message's id. */
   ignoredId: string;
@@ -1373,6 +1379,18 @@ export class Im extends Service {
       const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}`;
       const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
       this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
+      reached = true;
+    }
+    return reached;
+  }
+
+  /** Tells each paired person in their direct chat, never in a group; a chat that turned reminders off hears nothing. True when it reached someone. */
+  announce(n: ImAnnouncement): boolean {
+    let reached = false;
+    for (const { connectionId, actorId } of this.settings.identities) {
+      const dm = this.directChat(connectionId, actorId);
+      if (!dm || !this.notifies(dm, "attention")) continue;
+      this.enqueue(dm, `announce:${dm.id}:${n.key}`, { text: `**${n.title}**${n.body ? `\n${n.body}` : ""}` }, { anchor: null });
       reached = true;
     }
     return reached;

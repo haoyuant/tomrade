@@ -136,6 +136,33 @@ describe("who sees what in IM", () => {
     expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "permission", title: "Test needs your approval", body: "" })).toBe(false);
   });
 
+  it("announces in the paired person's direct chat, once, and never in a group they are in", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    await w.receive(group("g1", "hi all"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hi all");
+    const heardInGroup = w.delivered.filter(d => d.address.conversationId === "room").length;
+    const notice = { key: "night-shift:s1", title: "Your night shift is done", body: "2 to review, 1 merged, 0 need you" };
+    expect(w.ctx.im.announce(notice)).toBe(true);
+    expect(w.ctx.im.announce(notice)).toBe(true);
+    await expect.poll(() => w.delivered.filter(d => d.content.text.startsWith("**Your night shift is done**")).length, { timeout: 5000 }).toBe(1);
+    const said = w.delivered.find(d => d.content.text.startsWith("**Your night shift is done**"))!;
+    expect(said.address.conversationId).toBe("dm-owner");
+    expect(said.content.text).toBe("**Your night shift is done**\n2 to review, 1 merged, 0 need you");
+    expect(said.content.actions ?? []).toEqual([]);
+    expect(w.delivered.filter(d => d.address.conversationId === "room")).toHaveLength(heardInGroup);
+  });
+
+  it("announces nothing to a chat that turned reminders off, or to nobody paired", async () => {
+    const off = await boot({}, { notify: { attention: false } });
+    await off.receive(dm("d1", "hello"));
+    await expect.poll(() => off.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    expect(off.ctx.im.announce({ key: "k", title: "t", body: "" })).toBe(false);
+    const nobody = await boot({ identities: [] });
+    expect(nobody.ctx.im.announce({ key: "k", title: "t", body: "" })).toBe(false);
+  });
+
   it("follows what every conversation hears unless the conversation chose for itself", async () => {
     const w = await boot({ notify: { routines: true } }, { notify: { routines: false } });
     await w.receive(dm("d1", "hello"));

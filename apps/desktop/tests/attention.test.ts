@@ -14,7 +14,7 @@ vi.mock("electron", () => ({
   }
 }));
 vi.mock("../src/main-window.js", () => ({ showMainWindow: () => null, whenLoaded: () => {} }));
-import { allowOf, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { allowOf, announceAway, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -189,6 +189,19 @@ it("reminds in IM only when that is where the person chose to be reminded", () =
   expect(reminded).toHaveLength(1);
   // No IM running: nothing to do, and nothing breaks.
   expect(() => remindAway({ ...NOTIFICATIONS_SECTION.defaults }, note, undefined)).not.toThrow();
+});
+
+it("sends news that belongs to no conversation to IM only for someone who chose IM", () => {
+  const told: unknown[] = [];
+  const im = { announce: (n: unknown) => (told.push(n), true) };
+  const notice = { title: "Your night shift is done", body: "2 to review, 1 merged, 0 need you" };
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, "night-shift:s1", notice, im);
+  expect(told).toEqual([{ key: "night-shift:s1", ...notice }]);
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "push" }, "night-shift:s2", notice, im);
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "none" }, "night-shift:s3", notice, im);
+  expect(told).toHaveLength(1);
+  // No IM running: nothing to do, and nothing breaks.
+  expect(() => announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, "night-shift:s4", notice, undefined)).not.toThrow();
 });
 
 describe("the attention row", () => {
