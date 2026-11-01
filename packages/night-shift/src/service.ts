@@ -215,6 +215,7 @@ export class NightShifts extends Service {
       case "resumes-spent": return w("resumesSpent");
       case "stalled": return w("stalled");
       case "overtime": return w("overtime");
+      case "conflict-unresolved": return w("conflictUnresolved");
     }
   }
 
@@ -247,7 +248,7 @@ export class NightShifts extends Service {
       else if (!OPEN_TO_START.has(item.status)) problems.push(`${item.key} is ${item.status}`);
       // Start would put a second prompt into the session already on it.
       else if (this.home.codeLink.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running" || s.state === "waiting")) problems.push(`${item.key} has an agent on it already`);
-      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0 });
+      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false });
     }
     if (problems.length) throw new Error(`A night shift cannot take these: ${problems.join("; ")}`);
     const mode = parsed.mode ?? remembered?.mode ?? "run";
@@ -446,10 +447,24 @@ export class NightShifts extends Service {
       if (checks === "pending") return ticket.mergeWaits >= MERGE_WAITS ? refuse({ kind: "checks-timeout" }) : patch({ merge: "waiting", mergeAt: now + MERGE_WAIT_MS, mergeWaits: ticket.mergeWaits + 1 });
       const merged = await this.home.codeLink.merge(shift.projectId, ticket.itemId);
       if (merged.merged) return patch({ merge: "merged", mergeAt: null, why: null });
-      return refuse({ kind: merged.cause === "conflict" ? "merge-conflict" : "merge-refused", text: merged.message });
+      if (merged.cause === "conflict") return await this.resolveConflict(shift, ticket, merged.message, now);
+      return refuse({ kind: "merge-refused", text: merged.message });
     } catch (err) {
       return refuse({ kind: "merge-refused", text: errorMessage(err) });
     }
+  }
+
+  /** One trip back to its agent, in the place the shift runs; what depends on the ticket keeps waiting meanwhile. */
+  private async resolveConflict(shift: NightShift, ticket: ShiftTicket, message: string, now: number): Promise<NightShift> {
+    const patch = (fields: Partial<ShiftTicket>): ShiftTicket[] => shift.tickets.map((t) => (t.itemId === ticket.itemId ? { ...t, ...fields } : t));
+    const unresolved = (): NightShift => ({ ...shift, failStreak: shift.failStreak + 1, tickets: patch({ state: "needs-you", merge: "refused", mergeAt: null, conflictRetried: true, why: { kind: "conflict-unresolved" } }) });
+    if (ticket.conflictRetried) return unresolved();
+    // A shift past its limits spends nothing more on it.
+    if (shift.halt) return { ...shift, tickets: patch({ merge: "refused", mergeAt: null, why: { kind: "merge-conflict", text: message } }) };
+    const { mode, engine, options, permissionMode } = shift.settings;
+    const entry = await this.home.codeLink.resolveMerge(shift.projectId, ticket.itemId, null, { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}) }).catch(() => null);
+    if (!entry?.ok) return unresolved();
+    return { ...shift, tickets: patch({ state: "running", why: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: true, nudgedAt: now, threadId: entry.threadId ?? ticket.threadId }) };
   }
 
   private registerTools(ctx: Context): void {
@@ -465,7 +480,7 @@ export class NightShifts extends Service {
         kit: "night-shift",
         title: "Start a night shift",
         description:
-          "Only on the user's word: works through these tickets unattended, each with its own coding agent on its own branch, in dependency order, within the limits given, and returns at once. A ticket starts only when nothing it waits on is open. Upstream tickets must merge before what depends on them can start, so a chain runs only with autoMerge; without it the dependants are left waiting, not failed. autoMerge merges a delivery only once its pull request's checks pass.",
+          "Only on the user's word: works through these tickets unattended, each with its own coding agent on its own branch, in dependency order, within the limits given, and returns at once. A ticket starts only when nothing it waits on is open. Upstream tickets must merge before what depends on them can start, so a chain runs only with autoMerge; without it the dependants are left waiting, not failed. autoMerge merges a delivery only once its pull request's checks pass; on a conflict its agent is sent back once to resolve it.",
         input: z.object({
           keys: z.array(z.string().min(1)).min(1).max(50).describe('Ticket keys in the order to try them, e.g. ["TOM-42", "TOM-43"]'),
           where: z.enum(["terminal", "session"]).optional().describe("terminal: each agent in a pane of the Terminal window. session: background sessions in the assistant panel. Absent goes as Start last went. Ask the user when you do not know which they want."),

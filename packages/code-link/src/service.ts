@@ -41,7 +41,7 @@ import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primar
 import { Sessions, END_AFTER_MS, type SessionChange, type SessionMoment } from "./sessions.js";
 import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
-import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
+import { Starter, type StartGate, type StartOptions, type StartResult, type StartMode } from "./start.js";
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionFilter, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
@@ -131,7 +131,9 @@ export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone"
 export interface StartBatchRequest {
   itemIds: string[];
   /** The conversation that asked: where each ticket's delivery is reported back. */
-  requestedBy: string;
+  requestedBy?: string;
+  /** Where the sessions run; background sessions unless said. */
+  mode?: StartMode;
   engine?: string;
   options?: Record<string, unknown>;
   permissionMode?: string;
@@ -1818,8 +1820,9 @@ export class CodeLink extends Service implements CodeLinkReader {
    * A merge that a conflict stood in the way of: the ticket's own session is sent back, from the conversation,
    * to bring its branch up to date and hand over again — the card then offers the merge once more. Sent with
    * the merge wish the session had, so a merge the person asked for up front still happens by itself.
+   * `how` says how it runs, for a caller whose tickets do not run in the background: a terminal agent goes on in its pane.
    */
-  async resolveMerge(projectId: string, itemId: string, requestedBy: string): Promise<StartBatchEntry> {
+  async resolveMerge(projectId: string, itemId: string, requestedBy: string | null, how: Pick<StartBatchRequest, "mode" | "engine" | "options" | "permissionMode"> = {}): Promise<StartBatchEntry> {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
     const link = primaryOf(this.currentLinks(projectId, itemId).filter((l) => l.branch));
@@ -1837,7 +1840,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     const talked = this.mergeThreadsOf(projectId, itemId);
     const resolving = talked && this.mergeCard(projectId, item, "resolving");
     if (talked && resolving) this.placeMergeCard(projectId, item, talked, resolving, true);
-    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], requestedBy, task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}) });
+    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], ...(requestedBy ? { requestedBy } : {}), task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}), ...how });
     if (!entry!.ok) {
       const refused = talked && this.mergeCard(projectId, item, "refused", entry!.message ?? `${item.key} could not be started`, "refused");
       if (talked && refused) this.placeMergeCard(projectId, item, talked, refused, true);
@@ -1868,7 +1871,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     return { choose: true, reason: reasons.filter((r, at, all) => all.indexOf(r) === at).join(" · ") || "no coding agent is ready" };
   }
 
-  /** Start each ticket headless with the one configuration, one after another, and show each outcome on the asking card, when there is one, as it comes. */
+  /** Start each ticket with the one configuration, headless unless the request says, one after another, and show each outcome on the asking card, when there is one, as it comes. */
   async startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]> {
     const results: StartBatchEntry[] = [];
     const seen = new Set<string>();
@@ -1886,14 +1889,14 @@ export class CodeLink extends Service implements CodeLinkReader {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) return { itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` };
     const opts: StartOptions = {
-      mode: "run",
+      mode: request.mode ?? "run",
       ...(request.engine ? { engine: request.engine } : {}),
       ...(request.options ? { options: request.options } : {}),
       ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
       ...(request.allowBlocked ? { allowBlocked: true } : {}),
       ...(request.task?.trim() ? { message: request.task.trim() } : {}),
       ...(request.autoMerge ? { autoMerge: true } : {}),
-      requestedBy: request.requestedBy
+      ...(request.requestedBy ? { requestedBy: request.requestedBy } : {})
     };
     try {
       const started = await this.start(projectId, item.id, opts);
@@ -1908,7 +1911,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   private showStarted(projectId: string, request: StartBatchRequest, results: StartBatchEntry[]): void {
     const agent = this.ctx.get("agent");
-    if (agent && request.cardId) {
+    if (agent && request.cardId && request.requestedBy) {
       const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
       const data = (before?.data ?? {}) as Partial<StartBatchCard>;
       const tickets = [...(data.tickets ?? []), ...results.filter((r) => !data.tickets?.some((t) => t.itemId === r.itemId)).map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }))];
