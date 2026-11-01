@@ -787,6 +787,11 @@ export class CodeLinkStore {
     return rows.map(toLink);
   }
 
+  /** Links with a pull request not known to have ended, said in the query: most of the table settled long ago. */
+  openPulls(projectId: string): CodeLinkView[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND merged_sha IS NULL AND (pr_state IS NULL OR pr_state = 'open') AND (pr_url IS NOT NULL OR pr_number IS NOT NULL)").all(projectId) as LinkRow[]).map(toLink);
+  }
+
   linksForRepo(projectId: string, repoId: string): CodeLinkView[] {
     return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND repo_id = ? ORDER BY delivery ASC, created_at ASC").all(projectId, repoId) as LinkRow[]).map(toLink);
   }

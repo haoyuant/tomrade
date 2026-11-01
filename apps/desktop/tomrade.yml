@@ -79,6 +79,8 @@ modules:
     title: Routines
   - id: nightShift
     title: Night shift
+  - id: prFeedback
+    title: PR feedback
   - id: pet
     title: Pet
   - id: alerts
@@ -455,6 +457,10 @@ plugins:
   # panes or background sessions, within limits. Runs on this machine only.
   - id: night-shift
     name: "@tomradex/night-shift"
+  # Failed CI, reviews and people's comments on a ticket's open pull request go
+  # back to the agent working it. Off until Settings says so; runs on this machine.
+  - id: pr-feedback
+    name: "@tomradex/pr-feedback"
   # The project's files: a folder tree beside the backlog, every save a
   # version, shared through a remote the project names. Optional — tickets keep
   # only versioned references, which read as unavailable without it.

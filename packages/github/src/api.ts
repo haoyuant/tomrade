@@ -26,20 +26,28 @@ export class GitHub {
     private readonly base = BASE
   ) {}
 
-  private async call<T>(method: string, route: string, body?: unknown): Promise<T> {
+  private async send(method: string, route: string, body?: unknown, headers?: Record<string, string>): Promise<Response> {
     const token = await this.token();
     if (!token) throw new GitHubError(401, "No GitHub token configured — add one in Settings → GitHub.");
-    const res = await fetch(`${this.base}${route}`, {
+    return fetch(`${this.base}${route}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "tomrade",
-        ...(body ? { "Content-Type": "application/json" } : {})
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...headers
       },
       body: body ? JSON.stringify(body) : undefined
     });
+  }
+
+  private async call<T>(method: string, route: string, body?: unknown): Promise<T> {
+    return this.answer<T>(await this.send(method, route, body), route);
+  }
+
+  private async answer<T>(res: Response, route: string): Promise<T> {
     if (res.status === 404) throw new GitHubError(404, `${route} not found`);
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -62,6 +70,13 @@ export class GitHub {
   /** Any other REST call, for the plugins that talk to GitHub through this account. */
   request<T>(method: string, route: string, body?: unknown): Promise<T> {
     return this.call<T>(method, route, body);
+  }
+
+  /** A GET that spends no rate limit when nothing changed: null when GitHub says the `etag` of the last answer still holds. */
+  async conditional<T>(route: string, etag: string | null): Promise<{ etag: string | null; body: T } | null> {
+    const res = await this.send("GET", route, undefined, etag ? { "If-None-Match": etag } : undefined);
+    if (res.status === 304) return null;
+    return { etag: res.headers.get("etag"), body: await this.answer<T>(res, route) };
   }
 
   login(): Promise<{ login: string }> {

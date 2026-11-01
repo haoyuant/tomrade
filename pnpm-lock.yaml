@@ -212,6 +212,9 @@ importers:
       '@tomradex/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
+      '@tomradex/pr-feedback':
+        specifier: workspace:*
+        version: link:../../packages/pr-feedback
       '@tomradex/projects':
         specifier: workspace:*
         version: link:../../packages/projects
@@ -2280,6 +2283,55 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/pr-feedback:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
