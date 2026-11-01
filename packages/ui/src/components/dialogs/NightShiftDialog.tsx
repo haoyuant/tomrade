@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { NightShiftView } from "@tomradex/night-shift";
+import type { NightShiftView, ShiftProposal } from "@tomradex/night-shift";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Spacer, Tag } from "~/components/ui/atoms";
@@ -9,7 +9,7 @@ import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { DEFAULT_MAX_CONCURRENCY, canLeave, editImpact, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, stopsAnAgent, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type EditImpact, type NodeOverride } from "~/lib/nightShift";
+import { DEFAULT_MAX_CONCURRENCY, canLeave, editImpact, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, stopsAnAgent, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useShiftProposal, useWorkRules, withTaken, type EditImpact, type NodeOverride } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
@@ -23,11 +23,48 @@ const delivered = (shift: NightShiftView) => shift.counts.delivered + shift.coun
 export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectId: string; onClose: () => void; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
   const current = useNightShift(projectId);
+  const proposal = useShiftProposal(projectId);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-plan">
       <DialogHead title={t("nightShift.title")} />
-      {current.data ? <Going projectId={projectId} shift={current.data} onClose={onClose} onOpenIssue={onOpenIssue} /> : current.isLoading ? null : <SetUp projectId={projectId} onClose={onClose} />}
+      {current.data ? <Going projectId={projectId} shift={current.data} onClose={onClose} onOpenIssue={onOpenIssue} /> : current.isLoading ? null : proposal.data ? <Asked projectId={projectId} proposal={proposal.data} onOpenIssue={onOpenIssue} /> : <SetUp projectId={projectId} onClose={onClose} />}
     </Dialog>
+  );
+}
+
+/** A run an agent asked for: all of what it would do, and the person's word on it, which nothing else can give. */
+function Asked({ projectId, proposal, onOpenIssue }: { projectId: string; proposal: ShiftProposal; onOpenIssue: (id: string) => void }) {
+  const { t, locale } = useI18n();
+  const toast = useToast();
+  const { decide } = useNightShiftActions(projectId);
+  const answer = (yes: boolean) => decide.mutate({ id: proposal.id, yes }, { onError: (err) => toast(errorSpec(err)) });
+  const until = new Date(proposal.expiresAt).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  return (
+    <>
+      <DialogBody>
+        <div className="stack-4" data-testid="plan-asked">
+          <p className="start-warning" role="note"><Icon name="i-warn" size={13} /><span><strong>{t("nightShift.askedTitle")}</strong> {t("nightShift.askedHint", { at: until })}</span></p>
+          <Field label={t("nightShift.askedTickets", { n: proposal.tickets.length })}>
+            <div className="inbox-list">
+              {proposal.tickets.map((ticket) => (
+                <div className="inbox-row" key={ticket.itemId} data-testid="plan-asked-ticket">
+                  <div><button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}</div>
+                </div>
+              ))}
+            </div>
+          </Field>
+          <Field label={t("nightShift.askedConfig")}>
+            <ul className="plan-asked-config" data-testid="plan-asked-config">
+              {proposal.config.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          </Field>
+        </div>
+      </DialogBody>
+      <DialogFoot>
+        <button type="button" className="btn btn-secondary" data-testid="plan-asked-decline" disabled={decide.isPending} onClick={() => answer(false)}>{t("nightShift.askedDecline")}</button>
+        <button type="button" className="btn btn-primary" data-testid="plan-asked-start" disabled={decide.isPending} onClick={() => answer(true)}>{t("nightShift.askedStart")}</button>
+      </DialogFoot>
+    </>
   );
 }
 

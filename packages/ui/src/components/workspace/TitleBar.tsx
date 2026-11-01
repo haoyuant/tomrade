@@ -8,7 +8,7 @@ import { FIELD_LABEL, viewIcon } from "~/lib/domain";
 import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { subscribe } from "~/lib/api";
 import { useRepoStates } from "~/lib/codeLink";
-import { useNightShift, useShiftOffered } from "~/lib/nightShift";
+import { useNightShift, useShiftOffered, useShiftProposal } from "~/lib/nightShift";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
@@ -24,8 +24,12 @@ function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: ()
   const { t } = useI18n();
   const offered = useShiftOffered(projectId);
   const going = useNightShift(projectId);
+  const asked = useShiftProposal(projectId).data;
   const shift = going.data;
   const toast = useToast();
+  useEffect(() => subscribe("nightShift.proposed", (id) => {
+    if (id === projectId) toast({ body: t("nightShift.askedToast"), actions: [{ label: t("nightShift.askedReview"), run: onOpen }] });
+  }), [projectId, toast, t, onOpen]);
   useEffect(() => subscribe("nightShift.step", (id, notices) => {
     const last = notices.at(-1);
     if (id === projectId && last) toast({ body: `${last.title}: ${last.body}` });
@@ -33,13 +37,13 @@ function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: ()
   if (!offered) return null;
   const delivered = shift ? shift.counts.delivered + shift.counts.done : 0;
   const waiting = shift?.counts["needs-you"] ?? 0;
-  const label = !shift ? t("nightShift.start") : [t("nightShift.going", { done: delivered, total: shift.tickets.length }), ...(waiting ? [t("nightShift.needsYou", { n: waiting })] : [])].join(" · ");
+  const label = asked ? t("nightShift.askedToast") : !shift ? t("nightShift.start") : [t("nightShift.going", { done: delivered, total: shift.tickets.length }), ...(waiting ? [t("nightShift.needsYou", { n: waiting })] : [])].join(" · ");
   return (
     <button type="button" className={`btn btn-ghost no-drag titlebar-night-shift${shift ? " is-going" : ""}`} aria-haspopup="dialog" onClick={onOpen} title={label} aria-label={label} data-testid="titlebar-night-shift">
       <Icon name="i-moon" size={15} />
       <span className="lbl">{t("nightShift.title")}</span>
       {shift && <span className="num">{delivered}/{shift.tickets.length}</span>}
-      {waiting > 0 && <span className="titlebar-night-shift-waiting num">{waiting}</span>}
+      {(waiting > 0 || asked) && <span className="titlebar-night-shift-waiting num" data-testid="titlebar-night-shift-waiting">{waiting || 1}</span>}
     </button>
   );
 }

@@ -363,6 +363,25 @@ const run = async () => {
   await shot("night-shift-stopped");
   await press(test("night-shift-brief"));
   check("the link opens the report", await waitFor(`location.hash.includes('/f/')`), await $(`location.hash`));
+
+  // ── an agent asks ─────────────────────────────────────────────────────
+  const wanted = make("Polish the export");
+  const agentAsks = () => ctx.tools.execute("start_night_shift", { keys: [keyOf(wanted)], where: "terminal", autoMerge: true }, { by: "ai:mcp", projectId: project.id });
+  const asked = await agentAsks();
+  check("an agent's call starts nothing", asked.started === false && !ctx.nightShift.current(project.id), asked);
+  check("the person is told, in the title bar and with a way to it", await waitFor(`!!${test("titlebar-night-shift-waiting")} && [...document.querySelectorAll('.toast')].some((n) => n.textContent.includes('An agent asks'))`));
+  await press(test("sidebar-auto-run"));
+  check("the dialog shows every ticket and setting", await waitFor(`${text("plan-asked")}.includes(${JSON.stringify(keyOf(wanted))}) && ${text("plan-asked-config")}.includes('terminal panes') && ${text("plan-asked-config")}.includes('merges each one')`), await $(text("plan-asked")));
+  await sleep(300);
+  await shot("plan-asked");
+  await press(test("plan-asked-decline"));
+  check("Don't start starts nothing, and goes back to planning", (await waitFor(`!${test("plan-asked")} && !!${test("plan-view")}`)) && !ctx.nightShift.current(project.id) && !ctx.nightShift.proposal(project.id));
+  await agentAsks();
+  check("asked again, it is back", await waitFor(`!!${test("plan-asked")}`));
+  await press(test("plan-asked-start"));
+  check("Start starts exactly what was shown", await (async () => { for (let i = 0; i < 40 && !ctx.nightShift.current(project.id); i++) await sleep(50); return ctx.nightShift.current(project.id)?.tickets[0]?.itemId === wanted.id && ctx.nightShift.current(project.id)?.settings.autoMerge === true; })());
+  check("and the dialog follows it", await waitFor(`!!${test("night-shift-going")}`));
+  ctx.nightShift.stop(project.id, ctx.nightShift.current(project.id).id);
   check("harness reached the end", true);
 };
 
