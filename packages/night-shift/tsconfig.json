@@ -11,6 +11,9 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../agent" },
+    { "path": "../alerts" },
+    { "path": "../files" },
+    { "path": "../llm" },
     { "path": "../code-link" },
     { "path": "../contributions" },
     { "path": "../db" },

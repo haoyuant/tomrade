@@ -1879,6 +1879,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../alerts
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
@@ -1894,12 +1897,18 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/files':
+        specifier: workspace:*
+        version: link:../files
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

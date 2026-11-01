@@ -255,6 +255,22 @@ export class Landing {
     }
   }
 
+  /** What the ticket's delivery changed, read from git; null when git no longer has it to show. `patch` stops at `maxBytes`. */
+  async deliveryDiff(projectId: string, itemId: string, maxBytes = 30_000): Promise<{ stat: string; patch: string; lines: number } | null> {
+    const link = primaryOf(this.currentLinks(projectId, itemId).filter((l) => l.branch));
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (!link || !repo) return null;
+    const cwd = this.worktreeOf(projectId, itemId) ?? this.ctx.repos.checkout(repo.remote).checkout;
+    if (!cwd || !fs.existsSync(cwd)) return null;
+    const local = this.store.repoState(projectId, repo.id)?.remote === "none";
+    const range = link.mergedSha ? [`${link.mergedSha}^1`, link.mergedSha] : [`${local ? "" : "origin/"}${repo.defaultBranch}...${link.branch}`];
+    const stat = await this.git(["diff", "--stat", ...range], { cwd, ok: true });
+    if (stat.code !== 0) return null;
+    const patch = await this.git(["diff", ...range], { cwd, ok: true });
+    const lines = patch.stdout.split("\n").filter((line) => /^[+-](?![+-]{2})/.test(line)).length;
+    return { stat: stat.stdout.trim(), patch: patch.stdout.slice(0, maxBytes), lines };
+  }
+
   /** Merge the ticket's open pull request with gh, by the first method the repository allows: squash, then merge commit, then rebase. */
   async mergePr(projectId: string, itemId: string): Promise<MergeResult> {
     const w = this.words();

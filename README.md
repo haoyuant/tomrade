@@ -45,6 +45,8 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 
 **🗣️ From a sentence to a pull request.** Talk, plan, apply, build. Describe what you want in plain words and the assistant asks what it needs to know. It drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch, reading and updating the ticket as it works. *Approval queue: none. Vibes: immaculate.*
 
+**🌙 Night shift. Go to bed.** Pick the tickets, say whether they run in terminal panes you can watch or in background sessions, and set the limits: how many at once, how long, how much money, how many failures in a row. Tomrade works through them by dependency. A failure stays with its ticket, a usage limit is waited out, and a delivery merges by itself only if you said so and its checks pass. In the morning a report says what to review first, how each delivery measures up against its ticket, and what needs you.
+
 **⏪ No approval queue. Just undo.** *Approval queues? In this economy?* Agents write straight to the backlog, so nothing waits on you. Every run is grouped and attributed, and when one gets creative (renames "Fix login" to "Rewrite auth from scratch", marks all 14 tickets Urgent), a single click puts all of it back. It never happened. History shows who changed what, run by run.
 
 **🖥️ The terminal, right next to the board.** *Alt-Tab cardio: cancelled.* Run Claude Code, Codex or a plain shell in Tomrade's own Terminal window, one click from the backlog.
