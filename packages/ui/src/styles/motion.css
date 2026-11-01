@@ -5,13 +5,13 @@
 @layer components {
 
 /* ─── a fold that React shows and hides (components/ui/collapse.tsx) ─── */
-.collapse { interpolate-size: allow-keywords; }
-.collapse[data-phase] { transition: opacity var(--motion-base) var(--ease-standard); }
-.collapse[data-phase="exit"] { opacity: 0; }
-@starting-style { .collapse[data-phase="enter"] { opacity: 0; } }
+.fold-box { interpolate-size: allow-keywords; }
+.fold-box[data-phase] { transition: opacity var(--motion-base) var(--ease-standard); }
+.fold-box[data-phase="exit"] { opacity: 0; }
+@starting-style { .fold-box[data-phase="enter"] { opacity: 0; } }
 /* It grows and folds too, unless it is a long list that only fades: then its height arrives at once, and nothing
    below it is laid out again on every frame. It clips only while it moves. */
-.collapse:not(.is-fade)[data-phase] {
+.fold-box:not(.is-fade)[data-phase] {
   overflow: clip;
   /* a flex item would not shrink below its content otherwise: clip, unlike hidden, leaves its automatic minimum */
   min-block-size: 0;
@@ -23,9 +23,9 @@
 }
 /* In a flex or grid parent with a gap, the site names that gap as --collapse-gap: folded, the fold's margin takes it
    back, so the gap closes with the fold instead of jumping when it comes and goes. */
-.collapse:not(.is-fade)[data-phase="exit"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
+.fold-box:not(.is-fade)[data-phase="exit"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
 @starting-style {
-  .collapse:not(.is-fade)[data-phase="enter"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
+  .fold-box:not(.is-fade)[data-phase="enter"] { block-size: 0; padding-block: 0; margin-block: 0 calc(-1 * var(--collapse-gap, 0px)); }
 }
 
 /* A fold's arrow turns rather than jumps. */
@@ -74,10 +74,10 @@ details[open]::details-content {
 }
 
 /* ─── still ─── */
-:root:is([data-performance], [data-software-compositing]) :is(.collapse[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
+:root:is([data-performance], [data-software-compositing]) :is(.fold-box[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
 :root:is([data-performance], [data-software-compositing]) :is(details, details[open])::details-content { transition: none; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.collapse[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
+  :is(.fold-box[data-phase], :is(summary, [aria-expanded], .fold-chev) svg),
   :is(details, details[open])::details-content { transition: none; }
 }
 }

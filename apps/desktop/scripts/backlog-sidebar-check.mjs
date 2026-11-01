@@ -74,6 +74,8 @@ const run = async () => {
   check("and a row runs the command it names", ran.length === 1);
   check("the backlog module is headed Backlog", (await text(".side-backlog-home .side-label")) === say.backlog);
   check("views and workstreams sit inside it", (await $(`['.side-views', '.side-workstreams'].every((s) => document.querySelector(s)?.closest('.side-backlog'))`)) === true);
+  // Present and sized is not drawn: an open fold once took its space and painted nothing.
+  check("and an open fold actually draws them", (await $(`['.side-views', '.side-workstreams'].every((s) => document.querySelector(s)?.checkVisibility({ visibilityProperty: true }))`)) === true);
   check("fields left the sidebar for the view head, right of View", (await $(`!document.querySelector('.sidebar .side-fields') && document.querySelector('.view-settings-btn')?.nextElementSibling?.classList.contains('view-fields-btn')`)) === true);
   check("its head reads as current on a view", (await $(`document.querySelector('.side-backlog-home')?.getAttribute('aria-current')`)) === "true");
   check("every workstream is listed", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === boards.length);
