@@ -22,6 +22,15 @@ export interface ShiftSettings {
   judge: boolean;
 }
 
+/** What one node of the plan does differently from the run; a field left out goes as the run goes. */
+export interface NodeConfig {
+  mode?: ShiftMode;
+  engine?: string;
+  options?: Record<string, unknown>;
+  permissionMode?: string;
+  autoMerge?: boolean;
+}
+
 export type TicketState = "queued" | "running" | "limited" | "needs-you" | "delivered" | "done" | "failed" | "skipped";
 export type Halt = "stopped" | "deadline" | "budget" | "failures";
 
@@ -49,6 +58,11 @@ export interface ShiftTicket {
   mergeWaits: number;
   /** Its agent has been sent back once to resolve a conflict with the default branch. */
   conflictRetried: boolean;
+  config?: NodeConfig;
+  /** Where `config` came from: the person's hand on this node, or a work rule by name. */
+  configFrom?: { kind: "manual" } | { kind: "rule"; name: string };
+  /** The agent its config named could not run, so it went as the run goes. */
+  engineLost?: string;
 }
 
 export interface NightShift {
@@ -87,6 +101,19 @@ export interface TicketFacts {
 }
 
 export type Action = { kind: "start" | "continue" | "merge"; itemId: string };
+
+export type TicketSettings = Pick<ShiftSettings, "mode" | "engine" | "options" | "permissionMode" | "autoMerge">;
+
+/** How one ticket goes: its own config over the run's. Options and permissions belong to an engine, so another engine does not inherit them. */
+export function settingsFor(settings: ShiftSettings, ticket: Pick<ShiftTicket, "config">): TicketSettings {
+  const own = ticket.config ?? {};
+  const mode = own.mode ?? settings.mode;
+  const engine = own.engine ?? settings.engine;
+  const sameEngine = engine === settings.engine;
+  const options = own.options ?? (sameEngine ? settings.options : undefined);
+  const permissionMode = mode === "run" ? (own.permissionMode ?? (sameEngine ? settings.permissionMode : undefined)) : undefined;
+  return { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), autoMerge: own.autoMerge ?? settings.autoMerge };
+}
 
 export const MAX_RESUMES = 5;
 /** Two minutes between looks at a pull request's checks, for an hour and a half. */
@@ -155,14 +182,14 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
   if (!halt && settings.maxUsd !== null && shift.spentUsd >= settings.maxUsd) halt = "budget";
 
   const actions: Action[] = [];
-  const merging = settings.autoMerge && halt !== "stopped";
+  const merging = (t: ShiftTicket) => settingsFor(settings, t).autoMerge && halt !== "stopped";
   tickets = tickets.map((t) => {
     const f = factsOf(t.itemId);
-    if (t.state === "delivered" && merging && (t.merge === "none" || t.merge === "waiting") && (t.mergeAt ?? 0) <= now && f.session?.state !== "running") {
+    if (t.state === "delivered" && merging(t) && (t.merge === "none" || t.merge === "waiting") && (t.mergeAt ?? 0) <= now && f.session?.state !== "running") {
       actions.push({ kind: "merge", itemId: t.itemId });
       return t;
     }
-    const due = t.state === "limited" ? settings.mode === "terminal" && (t.limitedUntil ?? 0) <= now : t.state === "running" && f.interrupted && now - (t.nudgedAt ?? 0) > START_GRACE_MS;
+    const due = t.state === "limited" ? settingsFor(settings, t).mode === "terminal" && (t.limitedUntil ?? 0) <= now : t.state === "running" && f.interrupted && now - (t.nudgedAt ?? 0) > START_GRACE_MS;
     if (!due || halt === "stopped") return t;
     if (t.resumes >= MAX_RESUMES) {
       failStreak += 1;
@@ -177,7 +204,7 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
     if (seen.has(t.itemId)) return false;
     const on = new Set(seen).add(t.itemId);
     if (WORKING.has(t.state)) return true;
-    if (t.state === "delivered") return merging ? t.merge !== "refused" && (t.merge !== "merged" || !halt) : factsOf(t.itemId).session?.state === "running";
+    if (t.state === "delivered") return merging(t) ? t.merge !== "refused" && (t.merge !== "merged" || !halt) : factsOf(t.itemId).session?.state === "running";
     return t.state === "queued" && canStart(t, on);
   };
   const canStart = (t: ShiftTicket, seen: Set<string>): boolean =>
@@ -191,7 +218,7 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
     const keys = (test: (upstream: ShiftTicket | undefined) => boolean) => blockers.filter((b) => test(byId.get(b.itemId))).map((b) => b.key);
     const outside = keys((u) => !u);
     if (outside.length) return { kind: "waits-outside", keys: outside };
-    const unmerged = keys((u) => u?.state === "delivered" && !merging);
+    const unmerged = keys((u) => u?.state === "delivered" && !merging(u));
     if (unmerged.length) return { kind: "waits-merge", keys: unmerged };
     const stuck = keys((u) => !!u && (u.state === "failed" || u.state === "needs-you" || u.state === "skipped" || (u.state === "delivered" && u.merge === "refused")));
     if (stuck.length) return { kind: "upstream-stuck", keys: stuck };

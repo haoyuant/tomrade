@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
-import type { NightShiftInput } from "@tomradex/night-shift";
+import type { NightShiftInput, WorkRule } from "@tomradex/night-shift";
 import { invoke, subscribe } from "./api";
 import { keys } from "./queries/keys";
 
@@ -24,6 +24,24 @@ export const UNTIL_DONE_HOURS = 72;
 /** One model call: kept while the dialog comes and goes, and asked again only by hand. */
 export const useShiftPlan = (projectId: string) =>
   useQuery({ queryKey: keys.nightShift.plan(projectId), queryFn: () => invoke("nightShift.plan", projectId), retry: false, staleTime: 10 * 60_000 });
+
+export const useWorkRules = (projectId: string) =>
+  useQuery({ queryKey: keys.nightShift.rules(projectId), queryFn: () => invoke("nightShift.rules", projectId), retry: false });
+
+export const useRuleMatches = (projectId: string) =>
+  useQuery({ queryKey: keys.nightShift.ruleMatches(projectId), queryFn: () => invoke("nightShift.ruleMatches", projectId), retry: false });
+
+/** Rules change what the plan left out, so a save reads both again, and the plan with them. */
+export function useSetWorkRules(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rules: WorkRule[]) => invoke("nightShift.setRules", projectId, rules),
+    onSuccess: (rules) => {
+      qc.setQueryData(keys.nightShift.rules(projectId), rules);
+      void qc.invalidateQueries({ queryKey: keys.nightShift.ruleMatches(projectId) });
+    }
+  });
+}
 
 export function useNightShiftActions(projectId: string) {
   const qc = useQueryClient();
@@ -62,6 +80,15 @@ const OPEN_FOR_SHIFT = new Set<Item["status"]>(["todo", "backlog"]);
 export function shiftCandidates(items: Item[]): Item[] {
   const rank = (item: Item) => (item.status === "todo" ? 0 : 1);
   return items.filter((item) => item.kind === "ticket" && OPEN_FOR_SHIFT.has(item.status)).sort((a, b) => rank(a) - rank(b) || b.priority - a.priority || a.rank - b.rank);
+}
+
+export type NodeOverride = NonNullable<NightShiftInput["nodes"]>[string];
+
+/** One field of a node, and who set it: what the person did by hand beats a rule, and a rule beats the run. */
+export function nodeConfig(override: NodeOverride | undefined, rule: WorkRule | undefined): { config: NodeOverride; from: "manual" | "rule" | "run" } {
+  const { skip: _skip, ...ruled } = rule?.then ?? {};
+  const config = { ...ruled, ...override };
+  return { config, from: override && Object.keys(override).length ? "manual" : Object.keys(ruled).length ? "rule" : "run" };
 }
 
 /** What the plan chooses before anyone has answered it: To Do's coding work, as the backlog says. */

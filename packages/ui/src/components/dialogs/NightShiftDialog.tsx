@@ -9,9 +9,10 @@ import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { factsChosen, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useShiftPlan, withTaken } from "~/lib/nightShift";
+import { factsChosen, nodeConfig, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type NodeOverride } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
 import { PlanGraph } from "./PlanGraph";
 
 const HALT_WORD: Record<string, MessageKey> = { stopped: "nightShift.lastStopped", deadline: "nightShift.lastDeadline", budget: "nightShift.lastBudget", failures: "nightShift.lastFailures" };
@@ -107,6 +108,11 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const chosen = picked ?? suggested;
   const whyLeft = useMemo(() => new Map((plan.data?.nodes ?? []).flatMap((n) => (n.why ? [[n.itemId, n.why] as [string, string]] : []))), [plan.data]);
   const [view, setView] = useState<"graph" | "list">("graph");
+  const workRules = useWorkRules(projectId);
+  const ruleMatches = useRuleMatches(projectId);
+  const [overrides, setOverrides] = useState<Record<string, NodeOverride>>({});
+  const [focus, setFocus] = useState<string | null>(null);
+  const ruleOf = (id: string) => (workRules.data ?? []).find((r) => r.id === ruleMatches.data?.[id]);
   const [kind, setKind] = useState<"done" | "night">("done");
   const [chosenMode, setMode] = useState<"terminal" | "run" | null>(null);
   const [chosenEngine, setEngine] = useState<string | null>(null);
@@ -138,10 +144,21 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
     if (!next.delete(key)) next.add(key);
     setTaken(next);
   };
+  const setOverride = (id: string, next: NodeOverride | null) => setOverrides(({ [id]: _gone, ...rest }) => (next && Object.keys(next).length ? { ...rest, [id]: next } : rest));
+  const sourceOf = (item: Item): string | null => {
+    const rule = ruleOf(item.id);
+    const { config, from } = nodeConfig(overrides[item.id], rule);
+    const gone = config.engine && engines.data && !engines.data.find((e) => e.id === config.engine)?.ok;
+    if (gone) return t("nightShift.engineGone", { engine: config.engine! });
+    return from === "manual" ? t("nightShift.fromManual") : from === "rule" ? t("nightShift.fromRule", { name: rule!.name }) : null;
+  };
   const noteOf = (item: Item) => {
-    const note = chosen.has(item.id) ? shiftNote(item, chosen, open, autoMerge) : null;
+    const merging = nodeConfig(overrides[item.id], ruleOf(item.id)).config.autoMerge ?? autoMerge;
+    const note = chosen.has(item.id) ? shiftNote(item, chosen, open, merging) : null;
     return note ? t(note.kind === "outside" ? "nightShift.outside" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") }) : null;
   };
+  const subOf = (item: Item) => [noteOf(item) ?? whyLeft.get(item.id), sourceOf(item)].filter(Boolean).join(" · ") || null;
+  const focusItem = focus ? candidates.find((i) => i.id === focus) : undefined;
   const shownIds = new Set(candidates.map((i) => i.id));
   const links = [
     ...candidates.flatMap((i) => i.blocks.filter((to) => shownIds.has(to) && !taken.some((e) => e.from === i.id && e.to === to)).map((to) => ({ from: i.id, to, firm: true }))),
@@ -160,7 +177,8 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         autoMerge,
         keepAwake,
         judge,
-        dependencies: taken.map(({ from, to }) => ({ from, to }))
+        dependencies: taken.map(({ from, to }) => ({ from, to })),
+        nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id)))
       },
       { onError: (err) => toast(errorSpec(err)) }
     );
@@ -202,22 +220,36 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
             <button type="button" className="btn btn-ghost" data-testid="plan-pick-none" onClick={() => setPicked(new Set())}>{t("nightShift.pickNone")}</button>
           </div>
           {view === "graph" ? (
-            candidates.length > 0 && <PlanGraph items={candidates} links={links} chosen={chosen} subOf={(item) => noteOf(item) ?? whyLeft.get(item.id) ?? null} onToggle={toggle} onAdd={add} />
+            candidates.length > 0 && <PlanGraph items={candidates} links={links} chosen={chosen} subOf={subOf} subs={candidates.map(subOf).join("|")} onToggle={toggle} onAdd={add} onConfigure={setFocus} />
           ) : (
             <div className="inbox-list night-shift-pick" data-testid="night-shift-pick">
               {candidates.map((item) => {
-                const note = noteOf(item) ?? whyLeft.get(item.id);
+                const note = subOf(item);
                 return (
                   <label className="cfg-row" key={item.id} style={{ cursor: "pointer" }} data-testid="night-shift-candidate">
                     <input type="checkbox" checked={chosen.has(item.id)} onChange={() => toggle(item.id)} />
                     <span className="cfg-name"><span className="num">{item.key}</span> {item.title}</span>
                     {note && <span className="meta-txt" data-testid="night-shift-note">{note}</span>}
+                    <button type="button" className="btn btn-icon" aria-label={t("nightShift.configure", { key: item.key })} title={t("nightShift.configure", { key: item.key })} onClick={(event) => { event.preventDefault(); setFocus(item.id); }}>
+                      <Icon name="i-sliders" size={13} />
+                    </button>
                   </label>
                 );
               })}
             </div>
           )}
         </Field>
+        {focusItem && (
+          <NodeConfigPanel
+            item={focusItem}
+            rule={ruleOf(focusItem.id)}
+            override={overrides[focusItem.id]}
+            engines={ready}
+            allEngines={engines.data ?? []}
+            onChange={(next) => setOverride(focusItem.id, next)}
+            onClose={() => setFocus(null)}
+          />
+        )}
         {proposed.length > 0 && (
           <Field label={t("nightShift.proposed")}>
             <p className="meta-txt">{t("nightShift.proposedHint")}</p>
@@ -235,6 +267,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
             </div>
           </Field>
         )}
+        <WorkRulesPanel projectId={projectId} rules={workRules.data ?? []} engines={ready} />
         <Field label={t("nightShift.kind")}>
           <div className="seg night-shift-mode" role="group" aria-label={t("nightShift.kind")} data-testid="night-shift-kind">
             <button type="button" aria-pressed={kind === "done"} data-kind="done" onClick={() => setKind("done")}>{t("nightShift.kindDone")}</button>
