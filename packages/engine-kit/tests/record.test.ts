@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { claudeRecord, claudeTranscriptTitle, findClaudeTranscript, promptTitle } from "@tomradex/engine-kit";
+import { claudeRecord, claudeTranscriptTitle, findClaudeTranscript, promptTitle, claudeSessions } from "@tomradex/engine-kit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "record-"));
 const line = (o: unknown) => `${JSON.stringify(o)}\n`;
@@ -257,4 +257,26 @@ it("counts a record larger than one step of reading, a line across the steps' ed
   const reply = (id: string, output: number) => line({ type: "assistant", message: { id, content: [{ type: "text", text: "x".repeat(3 * 1024 * 1024) }], usage: { input_tokens: 1, output_tokens: output } } });
   fs.writeFileSync(file, line({ type: "user", message: { content: "go" } }) + reply("a", 5) + line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t", content: "y".repeat(5 * 1024 * 1024) }] } }) + reply("b", 7));
   expect(claude.usage!(file)?.total.outputTokens).toBe(12);
+});
+
+it("finds the transcripts of sessions that ran in a folder, under every account, with the branch they ended on", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "claude-sessions-"));
+  const folders = { variable: "CLAUDE_CONFIG_DIR", dir: ".claude" };
+  const write = (root: string, slug: string, name: string, lines: unknown[]) => {
+    const dir = path.join(home, root, "projects", slug);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n"));
+    return file;
+  };
+  const first = write(".claude", "-repo-my-app", "one.jsonl", [{ gitBranch: "main" }, { gitBranch: "feature/a" }]);
+  const second = write(".claude-work", "-repo-my-app", "two.jsonl", [{ gitBranch: "HEAD" }]);
+  write(".claude", "-repo-other", "three.jsonl", [{ gitBranch: "x" }]);
+  const stale = write(".claude", "-repo-my-app", "old.jsonl", []);
+  fs.utimesSync(stale, new Date(1000), new Date(1000));
+  const found = claudeSessions(folders, ["/repo/my.app"], { since: 2000, limit: 5 }, home, {});
+  expect(found.map((s) => s.file).sort()).toEqual([first, second].sort());
+  expect(found.find((s) => s.file === first)).toMatchObject({ cwd: "/repo/my.app", branch: "feature/a" });
+  expect(found.find((s) => s.file === second)?.branch).toBeNull();
+  fs.rmSync(home, { recursive: true, force: true });
 });

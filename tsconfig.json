@@ -158,6 +158,9 @@
       "path": "./packages/schedules"
     },
     {
+      "path": "./packages/takeover"
+    },
+    {
       "path": "./packages/night-shift"
     },
     {

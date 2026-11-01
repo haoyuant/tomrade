@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, it } from "vitest";
-import { codexRecord, codexRolloutTitle, findCodexRollout } from "@tomradex/engine-codex";
+import { describe, expect, it } from "vitest";
+import { codexRecord, codexRolloutTitle, codexSessions, findCodexRollout } from "@tomradex/engine-codex";
 
 it("reads a conversation read-only from Codex's rollout, names it by the first prompt, and finds it by its id", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-record-"));
@@ -79,4 +79,24 @@ it("counts a Codex session's tokens from its running totals, and the turn as wha
   // a resumed session whose totals start from nothing again adds on
   fs.appendFileSync(rollout, totals(20, 100, 0, 10));
   expect(codexRecord.usage!(rollout, second)?.total.outputTokens).toBe(140);
+});
+
+describe("sessions by folder", () => {
+  const rollout = (home: string, day: string, id: string, cwd: string, extra = "") => {
+    const dir = path.join(home, "sessions", ...day.split("-"));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `rollout-${day}T00-00-00-${id}.jsonl`);
+    fs.writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { id, cwd } }).replace("}}", `${extra}}}`)}\n`);
+    return file;
+  };
+
+  it("finds the rollouts that ran in a folder, reading only their heads, and stops at old days", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-sessions-"));
+    const mine = rollout(home, "2026-10-30", "a", "/repo/a", ',"git":{"commit_hash":"x","branch":"feature/a"}');
+    rollout(home, "2026-10-30", "b", "/repo/other");
+    const old = rollout(home, "2026-01-01", "c", "/repo/a");
+    fs.utimesSync(old, new Date("2026-01-01"), new Date("2026-01-01"));
+    expect(codexSessions(["/repo/a"], { since: Date.parse("2026-10-01"), limit: 5 }, home)).toMatchObject([{ file: mine, cwd: "/repo/a", branch: "feature/a" }]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
 });

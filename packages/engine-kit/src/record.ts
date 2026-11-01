@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { addTokens, NO_TOKENS, type EngineRecord, type RecordLine, type RecordRead, type RecordUsageCount, type TokenBreakdown } from "@tomradex/agent";
+import { addTokens, NO_TOKENS, type EngineRecord, type RecordLine, type RecordRead, type RecordSession, type RecordUsageCount, type TokenBreakdown } from "@tomradex/agent";
 
 /** How much of a transcript is read from each end for its title: titles repeat through it, so the tail nearly always has one. */
 const TITLE_CHUNK = 256 * 1024;
@@ -469,12 +469,8 @@ export interface ClaudeFolders {
   dir: string;
 }
 
-/**
- * Where a session's transcript is, found by its id under the accounts' project folders: the variable's folder,
- * `~/<dir>`, and `~/<dir>-*`.
- */
-export function findClaudeTranscript(sessionId: string, folders: ClaudeFolders, home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
-  if (!sessionIdShape.test(sessionId)) return null;
+/** The accounts' folders: the variable's, `~/<dir>`, and `~/<dir>-*`. */
+export function claudeRoots(folders: ClaudeFolders, home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
   const roots = new Set<string>();
   if (env[folders.variable]) roots.add(env[folders.variable]!);
   roots.add(path.join(home, folders.dir));
@@ -483,7 +479,63 @@ export function findClaudeTranscript(sessionId: string, folders: ClaudeFolders, 
   } catch {
     // no home to look in
   }
-  for (const root of roots) {
+  return [...roots];
+}
+
+/** Claude Code files a session under its folder with everything but letters and digits as dashes. */
+const claudeProjectDir = (folder: string) => folder.replace(/[^a-zA-Z0-9]/g, "-");
+
+/** How much of a transcript's end is read for the branch it was on. */
+const BRANCH_TAIL = 64 * 1024;
+
+function transcriptBranch(file: string, size: number): string | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const length = Math.min(size, BRANCH_TAIL);
+    const chunk = Buffer.alloc(length);
+    fs.readSync(fd, chunk, 0, length, size - length);
+    const named = [...chunk.toString("utf8").matchAll(/"gitBranch":"([^"]+)"/g)].at(-1)?.[1];
+    return named && named !== "HEAD" ? named : null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** The transcripts of sessions that ran in these folders, under every account. */
+export function claudeSessions(folders: ClaudeFolders, cwds: string[], opts: { since: number; limit: number }, home = os.homedir(), env: NodeJS.ProcessEnv = process.env): RecordSession[] {
+  const found: (RecordSession & { size: number })[] = [];
+  for (const root of claudeRoots(folders, home, env)) {
+    for (const cwd of cwds) {
+      const dir = path.join(root, "projects", claudeProjectDir(cwd));
+      let names: string[];
+      try {
+        names = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (!name.endsWith(".jsonl")) continue;
+        const file = path.join(dir, name);
+        const stat = fs.statSync(file, { throwIfNoEntry: false });
+        if (stat && stat.mtimeMs >= opts.since) found.push({ file, at: stat.mtimeMs, cwd, branch: null, size: stat.size });
+      }
+    }
+  }
+  return found
+    .sort((a, b) => b.at - a.at)
+    .slice(0, opts.limit)
+    .map(({ size, ...session }) => ({ ...session, branch: transcriptBranch(session.file, size) }));
+}
+
+/** Where a session's transcript is, found by its id under the accounts' project folders. */
+export function findClaudeTranscript(sessionId: string, folders: ClaudeFolders, home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!sessionIdShape.test(sessionId)) return null;
+  for (const root of claudeRoots(folders, home, env)) {
     let projects: string[];
     try {
       projects = fs.readdirSync(path.join(root, "projects"));
@@ -504,6 +556,8 @@ export function claudeRecord(folders: ClaudeFolders): EngineRecord {
     find: (sessionId) => findClaudeTranscript(sessionId, folders),
     read: (file, opts) => readJsonlRecord(file, CLAUDE_TRANSCRIPT, opts),
     title: claudeTranscriptTitle,
+    roots: () => claudeRoots(folders).filter((root) => fs.existsSync(path.join(root, "projects"))).map((root) => path.join(root, "projects")),
+    sessions: (cwds, opts) => claudeSessions(folders, cwds, opts),
     usage: claudeSessionUsage
   };
 }

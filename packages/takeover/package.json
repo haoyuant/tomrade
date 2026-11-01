@@ -1,0 +1,48 @@
+{
+  "name": "@tomradex/takeover",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Take over unfinished work: read a repository's unmerged branches, idle worktrees, GitHub issues and, with leave, local agent sessions into a draft backlog a person ticks",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/agent-backlog": "workspace:*",
+    "@tomradex/boards": "workspace:*",
+    "@tomradex/code-link": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/git": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/inbox": "workspace:*",
+    "@tomradex/inbox-github": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "@tomradex/storage": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

@@ -365,6 +365,16 @@ export interface RecordRead {
   held?: number;
 }
 
+/** A session's record found by the folder it ran in. */
+export interface RecordSession {
+  file: string;
+  /** When the record last changed. */
+  at: number;
+  cwd: string;
+  /** The branch the record says it worked on, when it says. */
+  branch: string | null;
+}
+
 /**
  * The agent's own record of its sessions, read as asked and never written:
  * where one session's is, what it said, and what it calls the conversation.
@@ -380,6 +390,10 @@ export interface EngineRecord {
   read(file: string, opts?: { before?: number; after?: number }): RecordRead | null;
   /** What the record calls the conversation; null without a name. */
   title?(file: string): string | null;
+  /** The folders that hold its records on this machine, to name before any is read. */
+  roots?(): string[];
+  /** The sessions that ran in these folders, changed since `since`, newest first. Only a record's head or tail is read. */
+  sessions?(folders: string[], opts: { since: number; limit: number }): RecordSession[];
   /**
    * The tokens the record counts, going on `from` an earlier count as this returned it over only what was written
    * since; null when it cannot be read.
