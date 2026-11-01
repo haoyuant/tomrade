@@ -1,0 +1,39 @@
+{
+  "name": "@tomradex/pr-feedback",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "PR feedback: failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/code-link": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomradex/testkit": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

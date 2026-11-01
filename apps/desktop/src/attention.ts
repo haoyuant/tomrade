@@ -8,6 +8,7 @@ import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/night-shift";
 import type { ImReminder } from "@tomradex/im";
+import type {} from "@tomradex/pr-feedback";
 import { showMainWindow, whenLoaded } from "./main-window.js";
 import { PhonePush, type FetchLike, type PushFailure, type PushRequest, type PushTarget } from "./push.js";
 import { DESKTOP_WORDS, type DesktopWords } from "./words.js";
@@ -399,6 +400,14 @@ export const attention = {
           });
         }
       }
+      // pull request feedback that could not, or may not, go to the agent by itself
+      for (const notice of ctx.get("prFeedback")?.notices() ?? []) {
+        const key = `pr:${notice.key}`;
+        out.set(key, {
+          key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "waiting",
+          who: engineTitle(notice.agent), text: clip(notice.text), sessionId: notice.sessionId
+        });
+      }
       return [...out.values()].sort((x, y) => x.key.localeCompare(y.key));
     };
 
@@ -498,6 +507,7 @@ export const attention = {
       teller.lifted({ key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null });
     });
     ctx.on("codeLink/changed", schedule);
+    ctx.on("prFeedback/changed", schedule);
     ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);
     ctx.on("attention/open", (target) => void open(target));

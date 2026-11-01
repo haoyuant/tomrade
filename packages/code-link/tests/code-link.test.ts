@@ -342,6 +342,21 @@ describe("code link", () => {
         expect(branches(codeLink, project.id, item.id)).toEqual([`${other.id}:${branch}`]);
       } finally { await ctx.fiber.dispose(); }
     });
+    it("lists a pull request until it is known to have ended", async () => {
+      const { codeLink, ctx, project, repo, item, branch } = await claimed("Has a pull request");
+      try {
+        const open = () => codeLink.store.openPulls(project.id).map((l) => l.itemId);
+        expect(open()).toEqual([]);
+        const link = codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch }, { prNumber: 1, prUrl: "https://github.com/o/r/pull/1" });
+        expect(open()).toEqual([item.id]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "open" });
+        expect(open()).toEqual([item.id]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "closed" });
+        expect(open()).toEqual([]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "open", mergedSha: "abc" });
+        expect(open()).toEqual([]);
+      } finally { await ctx.fiber.dispose(); }
+    });
     it("stays once its branch exists here too", async () => {
       const { codeLink, ctx, project, repo, checkout, second, other, item, branch } = await claimed("Lands in both");
       for (const cwd of [checkout, second.checkout]) {

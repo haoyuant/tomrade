@@ -149,6 +149,9 @@
       "path": "./packages/shell"
     },
     {
+      "path": "./packages/pr-feedback"
+    },
+    {
       "path": "./packages/schedules"
     },
     {
