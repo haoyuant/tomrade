@@ -131,6 +131,16 @@ const run = async () => {
   check("Suggested says how many", (await $(text("plan-pick-suggested"))).endsWith("2"), await $(text("plan-pick-suggested")));
   await press(test("plan-pick-suggested"));
   check("pressing it with nothing to change still answers", await waitFor(`${text("plan-pick-note")}.includes('2 suggested')`), await $(text("plan-pick-note")));
+  check("the plan draws the board's own cards", await $(`${nodeNamed(keyOf(first))}.querySelector('.card') !== null`));
+  check("and the board's flowing arrows", await waitFor(`!!document.querySelector('.plan-graph .edge-flow')`));
+  const hoverAt = await $(`(() => { const r = ${nodeNamed(keyOf(first))}.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: hoverAt.x, y: hoverAt.y });
+  const flowNode = (key) => `${nodeNamed(key)}.closest('.react-flow__node')`;
+  check("pointing at a card lights what waits on it and dims the rest", await waitFor(`${flowNode(keyOf(first))}.classList.contains('is-focus') && ${flowNode(keyOf(second))}.classList.contains('is-down') && ${flowNode(keyOf(general))}.classList.contains('is-dim')`), await $(`${flowNode(keyOf(second))}.className`));
+  await sleep(400);
+  await shot("plan-graph-hover");
+  win.webContents.sendInputEvent({ type: "mouseMove", x: 4, y: 4 });
+  check("moving away brings them all back", await waitFor(`!document.querySelector('.plan-graph .react-flow__node.is-dim')`));
   await press(`document.querySelector('[data-testid="plan-pick-none"]')`);
   check("None clears the choice", await waitFor(`!document.querySelector('.plan-node.is-chosen')`));
   check("and the answer goes with it", !(await $(text("plan-pick-note"))));

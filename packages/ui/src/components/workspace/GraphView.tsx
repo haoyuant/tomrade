@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
   BaseEdge,
   getBezierPath,
   getNodesBounds,
-  getViewportForBounds,
   Handle,
   Position,
   ReactFlow,
@@ -22,7 +21,7 @@ import {
 import dagre from "@dagrejs/dagre";
 import { toPng } from "html-to-image";
 import "@xyflow/react/dist/style.css";
-import type { Item, ItemStatus } from "@tomradex/domain";
+import type { Item } from "@tomradex/domain";
 import type { GraphEdge } from "@tomradex/contributions";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { Icon } from "~/components/icons";
@@ -34,6 +33,7 @@ import { useGraphEdges, useGraphs } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useSelectedId, useWorkspace } from "./context";
+import { edgeLook, FIT, fitGraph as fitGraphTo, nodeLook, settledStatus, useGraphFocus } from "./graphLook";
 
 export const NODE_W = 260;
 const NODE_H = 92;
@@ -180,14 +180,6 @@ function RoutedEdgeView({ sourceX, sourceY, targetX, targetY, sourcePosition, ta
 
 export const edgeTypes = { routed: RoutedEdgeView };
 
-/** Below this a card's title is too small to read. */
-const FIT_MIN_ZOOM = 0.65;
-// fitting a wide graph never shrinks the cards past reading; the rest is a pan away
-const FIT = { padding: 0.15, maxZoom: 1, minZoom: FIT_MIN_ZOOM };
-const HOVER_ENTER_MS = 50;
-const HOVER_LEAVE_MS = 120;
-/** How far from the canvas edge a graph too big to fit starts. */
-const FIT_INSET = 24;
 const EXPORT_PAD = 32;
 /** Past this many pixels a side, a browser canvas comes back blank. */
 const EXPORT_MAX_SIDE = 16000;
@@ -200,22 +192,6 @@ function backdropOf(el: Element | null): string {
   }
   return "#fff";
 }
-
-// The blocker's status colours its arrows: a satisfied dependency reads quieter, and
-// dashed, rather than vanishing; one being worked on reads in the accent.
-const STATUS_STROKE: Record<ItemStatus, string> = {
-  backlog: "var(--meta)",
-  todo: "var(--meta)",
-  doing: "var(--accent-light)",
-  verifying: "var(--accent-light)",
-  done: "var(--border)",
-  cancelled: "var(--border)"
-};
-const settledStatus = (status: ItemStatus | undefined) => status === "done" || status === "cancelled";
-// Around the card in focus, direction speaks louder than status: what it waits on
-// is amber (upstream), what waits on it is blue (downstream); dashes still say settled.
-const UPSTREAM = "var(--warn)";
-const DOWNSTREAM = "var(--accent-light)";
 
 function Canvas() {
   const { t } = useI18n();
@@ -282,27 +258,7 @@ function Canvas() {
   const edgeShape = edges.map((e) => `${e.from}>${e.to}`).join();
   // dagre runs when the nodes or the edges change, not when a card is selected
   const placed = useMemo(() => layout(shown, edges, heights), [shown, edgeShape, heights]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The card under the pointer, else the selected one, lights up what it waits on and what waits on it; the rest steps back.
-  const [hoverId, setHoverId] = useState<string | null>(null);
-  // Hover intent: a pointer sweeping across cards, or crossing the gap between two, does not strobe the graph.
-  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hoverSoon = (id: string | null) => {
-    clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHoverId(id), id ? HOVER_ENTER_MS : HOVER_LEAVE_MS);
-  };
-  useEffect(() => () => clearTimeout(hoverTimer.current), []);
-  const focusId = hoverId && shownIds.has(hoverId) ? hoverId : selectedId && shownIds.has(selectedId) ? selectedId : null;
-  const focus = useMemo(() => {
-    if (!focusId) return null;
-    const up = new Set<string>();
-    const down = new Set<string>();
-    for (const e of edges) {
-      if (e.from === focusId) down.add(e.to);
-      if (e.to === focusId) up.add(e.from);
-    }
-    return { id: focusId, up, down };
-  }, [focusId, edges]);
-  const nodeClass = (id: string) => (!focus ? undefined : id === focus.id ? "is-focus" : focus.up.has(id) ? "is-up" : focus.down.has(id) ? "is-down" : "is-dim");
+  const { focus, hoverSoon } = useGraphFocus(edges, shownIds, selectedId);
 
   useEffect(() => {
     // A node handed back without its measured size is hidden until React Flow measures it again:
@@ -318,21 +274,12 @@ function Canvas() {
         deletable: false,
         connectable: editable,
         selected: item.id === selectedId,
-        className: nodeClass(item.id),
-        style: focus?.up.has(item.id) ? ({ "--ring": UPSTREAM } as CSSProperties) : focus?.down.has(item.id) ? ({ "--ring": DOWNSTREAM } as CSSProperties) : undefined
+        ...nodeLook(focus, item.id)
       }));
     });
-  }, [shown, placed, editable, selectedId, focus, setNodes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown, placed, editable, selectedId, focus, setNodes]);
 
-  /** Fits the graph; one too big to fit at a readable size starts at its first column and top row rather than mid-graph. */
-  const fitGraph = (duration?: number) => {
-    const el = region.current;
-    const all = getNodes();
-    if (!el || !all.length) return void fitView({ ...FIT, duration });
-    const bounds = getNodesBounds(all);
-    const v = getViewportForBounds(bounds, el.clientWidth, el.clientHeight, FIT.minZoom, FIT.maxZoom, FIT.padding);
-    void setViewport({ zoom: v.zoom, x: Math.max(v.x, FIT_INSET - bounds.x * v.zoom), y: Math.max(v.y, FIT_INSET - bounds.y * v.zoom) }, { duration });
-  };
+  const fitGraph = (duration?: number) => fitGraphTo(region.current, { fitView, getNodes, setViewport }, FIT, duration);
   const fitGraphRef = useRef(fitGraph);
   fitGraphRef.current = fitGraph;
 
@@ -348,23 +295,17 @@ function Canvas() {
   const flowEdges = useMemo<RoutedEdge[]>(
     () =>
       edges.map((e) => {
-        const status = statusOf.get(e.from);
-        // a loop is the plugin's to call; otherwise the blocker's status speaks
-        const direction = !focus ? null : e.to === focus.id ? "up" : e.from === focus.id ? "down" : null;
-        const stroke = e.tone === "danger" ? "var(--danger)" : direction === "up" ? UPSTREAM : direction === "down" ? DOWNSTREAM : status ? STATUS_STROKE[status] : e.tone === "faint" ? "var(--border)" : "var(--meta)";
-        const settled = e.tone === "faint" || settledStatus(status);
-        const lit = direction !== null;
+        const { flow, ...look } = edgeLook(e, statusOf.get(e.from), focus, { quiet: e.tone === "faint", danger: e.tone === "danger" });
         return {
           id: `${e.from}>${e.to}`,
           type: "routed" as const,
           source: e.from,
           target: e.to,
-          data: { route: placed.routes.get(`${e.from}>${e.to}`), flow: settled || e.tone === "danger" || (focus && !lit) ? undefined : stroke },
+          data: { route: placed.routes.get(`${e.from}>${e.to}`), flow },
           title: e.title,
-          className: !focus ? undefined : direction === "up" ? "is-up" : direction === "down" ? "is-down" : "is-dim",
           selectable: editable,
           deletable: editable,
-          style: { stroke, strokeWidth: lit ? 2.5 : e.tone === "danger" ? 2 : 1.5, ...(settled ? { strokeDasharray: "4 3" } : {}) },
+          ...look
         };
       }),
     [edges, editable, placed, statusOf, focus]
