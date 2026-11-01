@@ -296,3 +296,74 @@ html[data-frosted] :is(.cs-row, .cs-big) { background: color-mix(in srgb, var(--
 /* The grid reads on its cell's pane: the veil was chosen for text there. */
 .cs-backdrop :is(.cs-term, .cs-row-tail, .cs-big-tail) { background: transparent; }
 .cs-backdrop .xterm .xterm-viewport { background-color: transparent; }
+
+/* Sunrise and Daybreak: their sky, stars and light (styles/sunrise.css) stand behind this window, with what only this
+   window has: the lights of Motes.tsx. All of it is one window-wide sky behind the panes, so splitting a pane repeats
+   nothing. The panes and the grid let it through as they do on glass, and the focused cell's bar carries the horizon
+   of the window's own. */
+.sunrise { --cs-veil: 40%; }
+.daybreak { --cs-veil: 62%; }
+/* Sunrise's tiled motes give way to the dust below. */
+.sunrise body::before { background: var(--sun-light-sky); }
+
+/* Each light turns in the sun at its own pace, flaring and fading twice before it comes round again. */
+.cs-motes { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.cs-mote {
+  position: absolute; left: var(--x); top: var(--y); width: var(--size); height: var(--size); border-radius: 50%;
+  opacity: calc(var(--peak) * 0.5);
+  animation: cs-mote-blink var(--blink) ease-in-out var(--blink-from) infinite;
+}
+.sunrise .cs-mote {
+  background: radial-gradient(circle, rgba(226, 136, 28, 0.95) 0 22%, rgba(242, 164, 58, 0.5) 45%, transparent 72%);
+}
+.daybreak .cs-mote {
+  background:
+    radial-gradient(ellipse 50% 3.5% at center, var(--sun-star), transparent),
+    radial-gradient(ellipse 3.5% 50% at center, var(--sun-star), transparent),
+    radial-gradient(circle, rgba(200, 188, 255, 0.5) 0 6%, transparent 30%);
+}
+@keyframes cs-mote-blink {
+  0%, 100% { opacity: calc(var(--peak) * 0.12); }
+  32% { opacity: var(--peak); }
+  48% { opacity: calc(var(--peak) * 0.4); }
+  68% { opacity: calc(var(--peak) * 0.85); }
+}
+[data-performance] .cs-mote { animation: none; }
+@media (prefers-reduced-motion: reduce) { .cs-mote { animation: none; } }
+
+:is(.sunrise, .daybreak) .cs-topbar { border-bottom-color: transparent; }
+:is(.sunrise, .daybreak) .cs-keys {
+  border-top-color: transparent;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sun-red) 45%, transparent) 50%, transparent) top / 100% 1px no-repeat border-box;
+}
+:is(.sunrise, .daybreak) .cs-side { border-left-color: color-mix(in srgb, var(--border) 45%, transparent); background: linear-gradient(180deg, var(--sun-sky-haze), transparent 40%); }
+:is(.sunrise, .daybreak) .cs-cell {
+  border-color: color-mix(in srgb, var(--accent) 14%, var(--border-soft));
+  background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), color-mix(in srgb, var(--surface) var(--cs-veil), transparent);
+}
+:is(.sunrise, .daybreak) .cs-cell[data-focused] { border-color: var(--accent); box-shadow: 0 6px 20px -8px var(--sun-glow); }
+:is(.sunrise, .daybreak) .cs-cell[data-wait] { border-color: var(--warn); }
+:is(.sunrise, .daybreak) .cs-cell-bar { background: linear-gradient(90deg, var(--sun-sky-haze), transparent 60%); }
+:is(.sunrise, .daybreak) .cs-cell[data-focused] .cs-cell-bar {
+  border-bottom-color: transparent;
+  background:
+    linear-gradient(90deg, transparent, var(--sun-sky) 18%, var(--sun-red) 55%, var(--sun-gold) 80%, transparent) bottom / 100% 1px no-repeat border-box,
+    linear-gradient(90deg, var(--sun-sky-haze), transparent 60%);
+}
+/* A cell's number in the sun's colours, as a board column's is. */
+:is(.sunrise, .daybreak) .cs-cell-no {
+  background: linear-gradient(90deg, var(--sun-btn-from), var(--sun-btn-to));
+  -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 600;
+}
+:is(.sunrise, .daybreak) .cs-term { background: transparent; }
+:is(.sunrise, .daybreak) .xterm .xterm-viewport { background-color: transparent; }
+:is(.sunrise, .daybreak) .cs-scrollbar-thumb { background: linear-gradient(180deg, var(--sun-sky), var(--sun-red) 60%, var(--sun-gold)); }
+/* The session bar's cards and the overview's catch the light as the board's do; the overview covers the cells, so its sky is its own. */
+:is(.sunrise, .daybreak) :is(.cs-row, .cs-big) { background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), color-mix(in srgb, var(--surface) 72%, transparent); }
+:is(.sunrise, .daybreak) .cs-row[aria-current="true"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: inset 2px 0 0 var(--sun-red), 0 6px 18px -8px var(--sun-glow);
+}
+:is(.sunrise, .daybreak) .cs-overview { background: linear-gradient(180deg, var(--sun-sky-haze), transparent 45%), linear-gradient(0deg, var(--sun-haze), transparent 40%), var(--bg); }
+:is(.sunrise, .daybreak) .cs-big-tail { background: color-mix(in srgb, var(--bg) 60%, transparent); }
+:is(.sunrise, .daybreak) .cs-dot[data-status="run"] .cs-dot-face { box-shadow: 0 0 8px -1px var(--sun-glow); }

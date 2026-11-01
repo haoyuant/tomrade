@@ -44,7 +44,7 @@ export interface WindowOptions {
 }
 
 // Reads as software until the GPU process first reports; the window is told again on gpu-info-update.
-function softwareCompositing(): boolean {
+export function softwareCompositing(): boolean {
   const status = app.getGPUFeatureStatus().gpu_compositing;
   return !!status && !status.startsWith("enabled");
 }

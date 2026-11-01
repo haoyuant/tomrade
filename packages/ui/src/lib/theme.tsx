@@ -101,8 +101,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [preference, customThemes, automation, active, picture]);
   // Plugin windows match the app: told after each paint, and when the language changes.
   const backdrop = resolved.custom?.backdrop;
-  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass", backdrop && { veil: backdrop.veil, frost: backdrop.frost ?? 0, terminalVeil: backdrop.terminalVeil }),
-    [active, customThemes, locale, theme, backdrop]);
+  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass", backdrop && { veil: backdrop.veil, frost: backdrop.frost ?? 0, terminalVeil: backdrop.terminalVeil }, theme, performanceMode),
+    [active, customThemes, locale, theme, backdrop, performanceMode]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);
