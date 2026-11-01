@@ -205,6 +205,16 @@ const run = async () => {
   check("in a terminal it says the agent's own permissions apply", await waitFor(`!!${test("night-shift-terminal-permissions")}`));
   await shot("night-shift-setup");
 
+  // ── the number stepper ────────────────────────────────────────────────
+  await $(`(() => { const n = document.querySelector('#nsInserts'); n.scrollIntoView({ block: 'center' }); n.focus(); return true; })()`);
+  await sleep(200);
+  const before = Number(await $(`document.querySelector('#nsInserts').value`));
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Up" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Up" });
+  await sleep(150);
+  check("the arrow keys still step", Number(await $(`document.querySelector('#nsInserts').value`)) === before + 1, await $(`document.querySelector('#nsInserts').value`));
+  await shot("number-stepper");
+
   // ── a narrow window, Glass ────────────────────────────────────────────
   const fits = () => $(`(() => { const s = document.querySelector('.palette'); return !!s && s.scrollWidth <= s.clientWidth + 1 && s.getBoundingClientRect().right <= innerWidth; })()`);
   win.setSize(760, 620);
