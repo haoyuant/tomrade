@@ -4,6 +4,7 @@ import { z } from "zod";
 import { languageTag, type LanguageTag } from "@tomradex/domain";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/code-link";
+import type {} from "@tomradex/contributions";
 import type { StartOptions } from "@tomradex/code-link";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
@@ -142,6 +143,23 @@ export class NightShifts extends Service {
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
     });
     this.home.inject(["tools"], (ctx) => this.registerTools(ctx));
+    this.home.inject(["contributions"], (ctx) => {
+      const w = () => NIGHT_SHIFT_WORDS(this.locale());
+      ctx.contributions.command({ id: "nightShift.open", title: () => w()("commandTitle"), group: () => w()("commandGroup"), run: () => ({ opens: "night-shift" }) });
+      ctx.contributions.statusItem({
+        id: "night-shift",
+        opens: "night-shift",
+        icon: "i-terminal",
+        title: () => w()("statusTitle"),
+        text: ({ projectId }) => {
+          const shift = projectId ? this.current(projectId) : null;
+          if (!shift) return null;
+          const progress = w()("statusText", { done: shift.counts.delivered + shift.counts.done, total: shift.tickets.length });
+          return shift.counts["needs-you"] ? `${progress} · ${w()("statusNeedsYou", { n: shift.counts["needs-you"] })}` : progress;
+        }
+      });
+      ctx.on("nightShift/changed", () => ctx.contributions.changed());
+    });
   }
 
   private locale(): LanguageTag {

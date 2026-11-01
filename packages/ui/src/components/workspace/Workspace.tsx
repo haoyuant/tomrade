@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
+import { NightShiftDialog } from "~/components/dialogs/NightShiftDialog";
 import { FeedbackDialog } from "~/components/dialogs/FeedbackDialog";
 import { AnnouncementsDialog } from "~/components/dialogs/AnnouncementNotice";
 import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
@@ -205,12 +206,14 @@ export function Workspace() {
   const [inbox, setInbox] = useState(false);
   const [feedback, setFeedback] = useState(false);
   const [announcements, setAnnouncements] = useState(false);
+  const [nightShift, setNightShift] = useState(false);
   /** A renderer surface a plugin names: a status item's, a sidebar module's, a command's result. */
   const openSurface = useCallback((surface: string) => {
     if (surface === "code-inbox") setCodeInbox(true);
     else if (surface === "inbox") setInbox(true);
     else if (surface === "feedback") setFeedback(true);
     else if (surface === "announcements") setAnnouncements(true);
+    else if (surface === "night-shift") setNightShift(true);
     else if (surface.startsWith("settings:")) setSettings(surface.slice("settings:".length));
   }, []);
   const runCommand = useRunCommand(ws.project.id);
@@ -284,7 +287,7 @@ export function Workspace() {
   const openViewSettings = useCallback(() => setViewSettings(true), []);
   const runRedo = useCallback(() => runStep("redo"), [runStep]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || nightShift || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -527,6 +530,16 @@ export function Workspace() {
         }}
       />
       <AnnouncementsDialog open={announcements} onOpenChange={setAnnouncements} />
+      {nightShift && (
+        <NightShiftDialog
+          projectId={ws.project.id}
+          onClose={() => setNightShift(false)}
+          onOpenIssue={(id) => {
+            setNightShift(false);
+            ws.select(id);
+          }}
+        />
+      )}
       <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog

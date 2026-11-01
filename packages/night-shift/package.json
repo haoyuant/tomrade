@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/code-link": "workspace:*",
     "@tomradex/contracts": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
@@ -31,7 +32,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tomradex/contributions": "workspace:*",
     "@tomradex/github": "workspace:*",
     "@tomradex/herdr": "workspace:*",
     "@tomradex/mcp": "workspace:*",
