@@ -49,8 +49,11 @@ const run = async () => {
   ctx.llm.completeJson = async (_schema, opts) => {
     if (opts.system.startsWith("You decide")) return { decision: "now", why: "It stops the export working" };
     if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
-    return { summary: "Ship the export.", suggested: [first.key, second.key], excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
+    await planHeld;
+    return { summary: "Ship the export.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
   };
+  let suggesting = [first.key, second.key];
+  let planHeld = Promise.resolve();
   ctx.items.update(project.id, first.id, { blocks: [second.id] }, "human");
   const starts = [];
   ctx.codeLink.start = async (_projectId, itemId, opts) => {
@@ -97,6 +100,13 @@ const run = async () => {
   await press(closeDialog);
   await waitFor(`!${test("plan-view")}`);
 
+  // ── from the sidebar ──────────────────────────────────────────────────
+  check("the backlog's sidebar module ends with the way in", await waitFor(`document.querySelector('.side-backlog .side-module-body')?.lastElementChild === ${test("sidebar-auto-run")} && ${test("sidebar-auto-run")} !== null`));
+  await press(test("sidebar-auto-run"));
+  check("which opens the dialog", await waitFor(`!!${test("plan-view")}`));
+  await press(closeDialog);
+  await waitFor(`!${test("plan-view")}`);
+
   // ── from the palette ──────────────────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));true`);
   check("the palette offers a night shift", await waitFor(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent.includes('Start an auto run'))`));
@@ -111,10 +121,36 @@ const run = async () => {
   check("the suggested ticket is chosen, the excluded one is not, and it says why", await $(`${nodeChosen(keyOf(first))} && ${nodeChosen(keyOf(second))} && !${nodeChosen(keyOf(later))} && !${nodeChosen(keyOf(general))} && ${nodeNamed(keyOf(general))}.textContent.includes('Not coding work')`));
   await sleep(800);
   await shot("plan-graph");
+  const size = await $(`(() => { const s = document.querySelector('.palette').getBoundingClientRect(); const g = ${test("plan-graph")}.getBoundingClientRect(); return { sheet: s.width, graph: g.height, bottom: g.bottom, foot: document.querySelector('.dlg-foot').getBoundingClientRect().top }; })()`);
+  check("the sheet opens wide, with a tall graph", size.sheet >= 1200 && size.graph >= 400, size);
+  check("and the graph ends above the buttons, unscrolled", size.bottom <= size.foot, size);
+  const zoom = `Number(/scale\\(([\\d.]+)\\)/.exec(document.querySelector('.plan-graph .react-flow__viewport').style.transform)?.[1] ?? 0)`;
+  check("the cards are drawn large enough to read", (await $(zoom)) >= 0.8, await $(zoom));
+  check("Suggested says how many", (await $(text("plan-pick-suggested"))).endsWith("2"), await $(text("plan-pick-suggested")));
+  await press(test("plan-pick-suggested"));
+  check("pressing it with nothing to change still answers", await waitFor(`${text("plan-pick-note")}.includes('2 suggested')`), await $(text("plan-pick-note")));
   await press(`document.querySelector('[data-testid="plan-pick-none"]')`);
   check("None clears the choice", await waitFor(`!document.querySelector('.plan-node.is-chosen')`));
+  check("and the answer goes with it", !(await $(text("plan-pick-note"))));
   await press(`document.querySelector('[data-testid="plan-pick-suggested"]')`);
   check("Suggested brings it back", await waitFor(`document.querySelectorAll('.plan-node.is-chosen').length === 2`));
+  suggesting = [];
+  await press(test("plan-again"));
+  check("a plan that suggests nothing says so, and the button is off", await waitFor(`${text("plan-pick-note")}.includes('suggests no tickets') && ${test("plan-pick-suggested")}.disabled`), await $(text("plan-pick-note")));
+  await sleep(200);
+  await shot("plan-none-suggested");
+  suggesting = [first.key, second.key];
+  let letPlanGo;
+  planHeld = new Promise((resolve) => { letPlanGo = resolve; });
+  await press(test("plan-again"));
+  check("while it plans, Suggested waits", await waitFor(`${test("plan-pick-suggested")}.disabled && ${text("plan-summary")}.length > 0 && !${test("plan-again")}`));
+  await press(nodeNamed(keyOf(later)));
+  await waitFor(nodeChosen(keyOf(later)));
+  letPlanGo();
+  planHeld = Promise.resolve();
+  check("a plan that lands after a click still ticks what it suggests", await waitFor(`${nodeChosen(keyOf(first))} && ${nodeChosen(keyOf(second))} && ${nodeChosen(keyOf(later))}`), await $(`document.querySelectorAll('.plan-node.is-chosen').length`));
+  await press(nodeNamed(keyOf(later)));
+  await waitFor(`!${nodeChosen(keyOf(later))}`);
   await press(nodeNamed(keyOf(later)));
   check("a click takes a ticket", await waitFor(nodeChosen(keyOf(later))));
   await press(nodeNamed(keyOf(later)));
@@ -174,6 +210,7 @@ const run = async () => {
   win.setSize(760, 620);
   await sleep(400);
   check("nothing spills out of a narrow window", await fits());
+  check("and its buttons stay on screen", await $(`document.querySelector('.dlg-foot').getBoundingClientRect().bottom <= innerHeight`));
   await shot("night-shift-narrow");
   await $(`document.documentElement.classList.add('glass');true`);
   await sleep(300);

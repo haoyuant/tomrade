@@ -8,7 +8,7 @@ import { FIELD_LABEL, viewIcon } from "~/lib/domain";
 import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { subscribe } from "~/lib/api";
 import { useRepoStates } from "~/lib/codeLink";
-import { useNightShift } from "~/lib/nightShift";
+import { useNightShift, useShiftOffered } from "~/lib/nightShift";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
@@ -22,7 +22,7 @@ import { isCancelKey, isCommitKey } from "~/lib/keys";
 /** The door to a night shift, in a project with a repository to work in. While one runs it says how far along it is, and who it is waiting for. */
 function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: () => void }) {
   const { t } = useI18n();
-  const repos = useRepos(projectId);
+  const offered = useShiftOffered(projectId);
   const going = useNightShift(projectId);
   const shift = going.data;
   const toast = useToast();
@@ -30,8 +30,7 @@ function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: ()
     const last = notices.at(-1);
     if (id === projectId && last) toast({ body: `${last.title}: ${last.body}` });
   }), [projectId, toast]);
-  // an error here means the night shift plugin is off
-  if (going.isError || (!shift && !repos.data?.length)) return null;
+  if (!offered) return null;
   const delivered = shift ? shift.counts.delivered + shift.counts.done : 0;
   const waiting = shift?.counts["needs-you"] ?? 0;
   const label = !shift ? t("nightShift.start") : [t("nightShift.going", { done: delivered, total: shift.tickets.length }), ...(waiting ? [t("nightShift.needsYou", { n: waiting })] : [])].join(" · ");

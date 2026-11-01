@@ -7,7 +7,9 @@ import { layout, NODE_W, edgeTypes } from "~/components/workspace/GraphView";
 
 /** Tall enough for a key, two lines of title and a line of why. */
 const PLAN_NODE_H = 84;
-const FIT = { padding: 0.12, maxZoom: 1, minZoom: 0.45 };
+/** Past this a card's words stop being readable, so a plan too big to fit is scrolled instead of shrunk. */
+const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.8 };
+const CORNER_GAP = 16;
 
 export interface PlanLink {
   from: string;
@@ -75,7 +77,7 @@ interface PlanGraphProps {
 }
 
 function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf, addedOf }: PlanGraphProps) {
-  const { fitView } = useReactFlow();
+  const { fitView, getNodes, getNodesBounds, getViewport, setViewport } = useReactFlow();
   const shape = links.map((l) => `${l.from}>${l.to}`).join();
   const ids = items.map((i) => i.id).join();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the shape is what moves a card, not a new array of the same tickets
@@ -87,9 +89,17 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, placed, chosen, subs, setNodes]);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => void fitView(FIT));
+    const frame = requestAnimationFrame(() => {
+      void fitView(FIT).then(() => {
+        const { zoom } = getViewport();
+        if (zoom > FIT.minZoom) return;
+        // too big to fit: the graph would sit centred with its first cards cut off
+        const box = getNodesBounds(getNodes());
+        void setViewport({ x: CORNER_GAP - box.x * zoom, y: CORNER_GAP - box.y * zoom, zoom });
+      });
+    });
     return () => cancelAnimationFrame(frame);
-  }, [ids, shape, fitView]);
+  }, [ids, shape, fitView, getNodes, getNodesBounds, getViewport, setViewport]);
   const edges = useMemo(
     (): Edge[] =>
       links.map((l) => ({
