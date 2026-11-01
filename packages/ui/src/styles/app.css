@@ -3681,41 +3681,40 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .plan-tools .btn .num { margin-left: 6px; color: var(--meta); }
 /* the sheet's own height less what stands above the graph, so it opens filling the view */
-.plan-graph { height: clamp(340px, calc(var(--overlay-max-h) - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.plan-graph { flex: none; height: clamp(340px, calc(var(--overlay-max-h) - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
-.plan-node {
-  display: flex; align-items: flex-start; gap: var(--space-2); box-sizing: border-box; padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--muted); cursor: pointer;
-}
-.plan-node.is-chosen { border-color: var(--accent); color: var(--fg); }
+/* the plan draws the board's graph: what it adds is a tick, a settings button, a note under the card, and where a run stands */
+.plan-canvas { position: absolute; inset: 0; }
+.plan-graph .react-flow__node, .plan-graph .gnode .card { cursor: pointer; }
+.plan-node .card { border-color: var(--border); }
+.plan-node:not(.is-chosen):not([data-state]) .card { opacity: 0.72; }
+.plan-node.is-chosen .card { border-color: var(--accent); }
 .plan-node-check {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-top: 2px;
-  border: 1px solid var(--border); border-radius: 4px; color: var(--bg);
+  position: absolute; top: -7px; left: -7px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px;
+  border: 1px solid var(--border); border-radius: 5px; color: var(--bg); background: var(--surface);
 }
 .plan-node.is-chosen .plan-node-check { border-color: var(--accent); background: var(--accent); }
-.plan-node[data-state] { color: var(--fg); }
-.plan-node[data-state="queued"], .plan-node[data-state="skipped"] { border-color: var(--border); color: var(--muted); }
-.plan-node[data-state="running"], .plan-node[data-state="limited"] { border-color: var(--accent); }
-.plan-node[data-state="delivered"], .plan-node[data-state="done"] { border-color: var(--success); }
-.plan-node[data-state="needs-you"] { border-color: var(--warn); }
-.plan-node[data-state="failed"] { border-color: var(--danger); }
+.plan-node[data-state="queued"] .card, .plan-node[data-state="skipped"] .card { border-color: var(--border); }
+.plan-node[data-state="running"] .card, .plan-node[data-state="limited"] .card { border-color: var(--accent); }
+.plan-node[data-state="delivered"] .card, .plan-node[data-state="done"] .card { border-color: var(--success); }
+.plan-node[data-state="needs-you"] .card { border-color: var(--warn); }
+.plan-node[data-state="failed"] .card { border-color: var(--danger); }
 .plan-timeline { display: flex; flex-direction: column; gap: var(--space-1); max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .plan-timeline li { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
 .plan-timeline time { flex-shrink: 0; }
 .plan-view { align-self: flex-start; }
 .plan-view button { display: inline-flex; align-items: center; gap: 6px; }
-.plan-node[data-added] { border-style: dashed; border-width: 2px; }
-.plan-node-added { margin-right: 2px; padding: 0 5px; border-radius: 4px; font-size: var(--text-xs); color: var(--bg); background: var(--accent); }
-.plan-node-cfg { flex-shrink: 0; width: 22px; height: 22px; margin-left: auto; color: var(--meta); }
+.plan-node[data-added] .card { border-style: dashed; border-width: 2px; }
+.plan-node-added { margin-right: 4px; padding: 0 5px; border-radius: 4px; font-size: var(--text-xs); color: var(--bg); background: var(--accent); }
+.plan-node-cfg { position: absolute; top: -9px; right: -9px; z-index: 1; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; color: var(--meta); background: var(--surface); }
 .plan-config, .plan-rule { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .plan-config-head, .plan-rule-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .plan-config-head > .cfg-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .plan-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); align-items: end; }
 .plan-rule-head .input { flex: 1; min-width: 0; }
 .plan-rules { display: flex; flex-direction: column; gap: var(--space-2); }
-.plan-node-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); line-height: 1.35; }
-.plan-node-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.plan-node-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--meta); }
+.plan-node-sub { display: block; margin-top: 4px; padding: 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--meta); }
 .night-shift-mode { align-self: flex-start; }
 .night-shift-mode button { display: inline-flex; align-items: center; gap: 6px; }
 .night-shift-pick .cfg-row { flex-wrap: wrap; }

@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Background, BackgroundVariant, Handle, Position, ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Background, BackgroundVariant, Handle, Position, ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useReactFlow, type Edge, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
+import { Card } from "~/components/workspace/Card";
 import { layout, NODE_W, edgeTypes } from "~/components/workspace/GraphView";
+import { edgeLook, FIT, fitGraph, nodeLook, useGraphFocus, type GraphFit } from "~/components/workspace/graphLook";
 
-/** Tall enough for a key, two lines of title and a line of why. */
-const PLAN_NODE_H = 84;
-/** Past this a card's words stop being readable, so a plan too big to fit is scrolled instead of shrunk. */
-const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.8 };
-const CORNER_GAP = 16;
+/** The sheet is roomy, and a plan is read card by card: it scrolls sooner than the board's graph. */
+const PLAN_FIT: GraphFit = { ...FIT, padding: 0.06, minZoom: 0.8 };
+const AGENT_LINE = { stroke: "var(--accent)", dash: "6 4" };
 
 export interface PlanLink {
   from: string;
@@ -26,21 +26,26 @@ interface PlanNodeData extends Record<string, unknown> {
   state: string | undefined;
   /** It joined the run along the way, off the plan. */
   added: boolean;
+  onToggle: (id: string) => void;
   onConfigure: ((id: string) => void) | undefined;
 }
 type PlanFlowNode = Node<PlanNodeData, "plan">;
 
+/** The board's own card, with what a plan adds around it. */
 function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
-  const { item, chosen, sub, state, added, onConfigure } = data;
+  const { item, chosen, sub, state, added, onToggle, onConfigure } = data;
   const { t } = useI18n();
   return (
-    <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} data-state={state} data-added={added || undefined} aria-pressed={state ? undefined : chosen} title={sub ?? item.title}>
+    <div className={`gnode plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W }} data-testid="plan-node" data-key={item.key} data-state={state} data-added={added || undefined} aria-pressed={state ? undefined : chosen} title={sub ?? undefined}>
       <Handle type="target" position={Position.Left} />
       {!state && <span className="plan-node-check" aria-hidden>{chosen && <Icon name="i-check" size={11} />}</span>}
-      <span className="plan-node-text">
-        <span className="plan-node-title">{added && <span className="plan-node-added">{t("nightShift.added")}</span>} <span className="num">{item.key}</span> {item.title}</span>
-        {sub && <span className="plan-node-sub">{sub}</span>}
-      </span>
+      <Card item={item} onOpen={() => onToggle(item.id)} onNudge={() => {}} />
+      {(added || sub) && (
+        <span className="plan-node-sub">
+          {added && <span className="plan-node-added">{t("nightShift.added")}</span>}
+          {sub}
+        </span>
+      )}
       {onConfigure && <button
         type="button"
         className="btn btn-icon plan-node-cfg nopan"
@@ -77,78 +82,115 @@ interface PlanGraphProps {
 }
 
 function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf, addedOf }: PlanGraphProps) {
-  const { fitView, getNodes, getNodesBounds, getViewport, setViewport } = useReactFlow();
+  const { t } = useI18n();
+  const flow = useReactFlow();
+  const region = useRef<HTMLDivElement>(null);
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  /** Whether the person has panned or zoomed: from then on the viewport is theirs. */
+  const touched = useRef(false);
   const shape = links.map((l) => `${l.from}>${l.to}`).join();
   const ids = items.map((i) => i.id).join();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the shape is what moves a card, not a new array of the same tickets
-  const placed = useMemo(() => layout(items, links, Object.fromEntries(items.map((i) => [i.id, PLAN_NODE_H]))), [ids, shape]);
-  const [nodes, setNodes, onNodesChange] = useNodesState<PlanFlowNode>([]);
+  const placed = useMemo(() => layout(items, links, heights), [ids, shape, heights]);
+  const shownIds = useMemo(() => new Set(items.map((i) => i.id)), [items]);
+  const statusOf = useMemo(() => new Map(items.map((i) => [i.id, i.status])), [items]);
+  const { focus, hoverSoon } = useGraphFocus(links, shownIds, null);
+  const toggle = useRef(onToggle);
+  toggle.current = onToggle;
+  const [nodes, setNodes, onNodesChangeInternal] = useNodesState<PlanFlowNode>([]);
+  const onNodesChange = (changes: NodeChange<PlanFlowNode>[]) => {
+    const measured: Record<string, number> = {};
+    for (const c of changes) if (c.type === "dimensions" && c.dimensions && Math.abs((heights[c.id] ?? 0) - c.dimensions.height) > 1) measured[c.id] = c.dimensions.height;
+    if (Object.keys(measured).length) setHeights((h) => ({ ...h, ...measured }));
+    onNodesChangeInternal(changes);
+  };
   useEffect(() => {
-    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), added: addedOf?.(item.id) ?? false, onConfigure } })));
+    // a node handed back without its measured size is hidden until it is measured again, which ends a hover
+    setNodes((previous) => {
+      const measured = new Map(previous.map((n) => [n.id, n.measured]));
+      return items.map((item) => ({
+        id: item.id,
+        type: "plan" as const,
+        position: placed.pos.get(item.id) ?? { x: 0, y: 0 },
+        selected: false,
+        measured: measured.get(item.id),
+        data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), added: addedOf?.(item.id) ?? false, onToggle: (id: string) => toggle.current(id), onConfigure },
+        ...nodeLook(focus, item.id)
+      }));
+    });
     // `subs` says when `subOf` changed; the function itself is new on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, placed, chosen, subs, setNodes]);
+  }, [items, placed, chosen, subs, focus, setNodes]);
+
+  const fit = (duration?: number) => fitGraph(region.current, flow, PLAN_FIT, duration);
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+  const settled = items.length > 0 && items.every((i) => heights[i.id] !== undefined);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      void fitView(FIT).then(() => {
-        const { zoom } = getViewport();
-        if (zoom > FIT.minZoom) return;
-        // too big to fit: the graph would sit centred with its first cards cut off
-        const box = getNodesBounds(getNodes());
-        void setViewport({ x: CORNER_GAP - box.x * zoom, y: CORNER_GAP - box.y * zoom, zoom });
-      });
-    });
+    if (!settled || touched.current) return;
+    const frame = requestAnimationFrame(() => fitRef.current());
     return () => cancelAnimationFrame(frame);
-  }, [ids, shape, fitView, getNodes, getNodesBounds, getViewport, setViewport]);
+  }, [settled, placed]);
+
   const edges = useMemo(
     (): Edge[] =>
-      links.map((l) => ({
-        id: `${l.from}>${l.to}`,
-        source: l.from,
-        target: l.to,
-        type: "routed",
-        selectable: false,
-        data: { route: placed.routes.get(`${l.from}>${l.to}`) },
-        style: l.firm ? { stroke: "var(--meta)" } : { stroke: "var(--accent)", strokeDasharray: "6 4" }
-      })),
-    [links, placed]
+      links.map((l) => {
+        const { flow: dot, ...look } = edgeLook(l, statusOf.get(l.from), focus, l.firm ? {} : AGENT_LINE);
+        return { id: `${l.from}>${l.to}`, source: l.from, target: l.to, type: "routed", selectable: false, data: { route: placed.routes.get(`${l.from}>${l.to}`), flow: dot }, ...look };
+      }),
+    [links, placed, statusOf, focus]
   );
   // The box only ever adds: taking a ticket off is a click on it.
   const boxed = useRef<string[]>([]);
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onNodesChange={onNodesChange}
-      onNodeClick={(_, node) => onToggle(node.id)}
-      onSelectionChange={({ nodes: selected }) => { boxed.current = selected.map((n) => n.id); }}
-      onSelectionEnd={() => {
-        if (boxed.current.length) onAdd?.(boxed.current);
-        boxed.current = [];
-      }}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      selectionOnDrag={!!onAdd}
-      selectionMode={SelectionMode.Partial}
-      panOnDrag={onAdd ? [1, 2] : true}
-      panOnScroll
-      zoomOnDoubleClick={false}
-      minZoom={0.3}
-      fitView
-      fitViewOptions={FIT}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
-    </ReactFlow>
+    <div className="plan-canvas" ref={region}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        // a click on the card reaches it first, and Enter only reaches it
+        onNodeClick={(event, node) => void (!(event.target as Element).closest(".card") && onToggle(node.id))}
+        onNodeMouseEnter={(_, node) => hoverSoon(node.id)}
+        onNodeMouseLeave={() => hoverSoon(null)}
+        onMoveStart={(event) => void (event && (touched.current = true))}
+        onSelectionChange={({ nodes: selected }) => { boxed.current = selected.map((n) => n.id); }}
+        onSelectionEnd={() => {
+          if (boxed.current.length) onAdd?.(boxed.current);
+          boxed.current = [];
+        }}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        selectionOnDrag={!!onAdd}
+        selectionMode={SelectionMode.Partial}
+        panOnDrag={onAdd ? [1, 2] : true}
+        panOnScroll
+        zoomOnDoubleClick={false}
+        minZoom={0.2}
+        maxZoom={1.6}
+        fitView
+        fitViewOptions={PLAN_FIT}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--border-soft)" />
+      </ReactFlow>
+      <div className="graph-foot">
+        <span className="meta-txt dense graph-hint">{t(onAdd ? "nightShift.graphHintChoose" : "nightShift.graphHintWatch")}</span>
+        <div className="graph-actions">
+          <button type="button" className="btn btn-ghost" data-testid="plan-fit" onClick={() => fit(250)}>
+            <Icon name="i-shrink" size={13} /> {t("graphView.fit")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
-/** The plan as a graph: a click takes a ticket or leaves it, a drag across the canvas takes everything it touches. */
+/** The plan on the board's graph: a click takes a ticket or leaves it, a drag across the canvas takes everything it touches. */
 export function PlanGraph(props: PlanGraphProps) {
   return (
-    <div className="plan-graph" data-testid="plan-graph">
+    <div className="graph-region plan-graph" data-testid="plan-graph">
       <ReactFlowProvider>
         <Canvas {...props} />
       </ReactFlowProvider>
