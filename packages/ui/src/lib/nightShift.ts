@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
 import type { NightShiftInput, WorkRule } from "@tomradex/night-shift";
 import { invoke, subscribe } from "./api";
+import { useRepos } from "./queries";
 import { keys } from "./queries/keys";
 
 function useLive(projectId: string) {
@@ -13,6 +14,13 @@ function useLive(projectId: string) {
 export function useNightShift(projectId: string) {
   useLive(projectId);
   return useQuery({ queryKey: keys.nightShift.current(projectId), queryFn: () => invoke("nightShift.current", projectId), retry: false });
+}
+
+/** Whether to show a way in: an error means the plugin is off, and a project with no repository has nothing to run. */
+export function useShiftOffered(projectId: string): boolean {
+  const repos = useRepos(projectId);
+  const going = useNightShift(projectId);
+  return !going.isError && (!!going.data || !!repos.data?.length);
 }
 
 export const useLastNightShift = (projectId: string) =>

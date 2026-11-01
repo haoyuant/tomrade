@@ -13,6 +13,7 @@ import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, use
 import { viewIcon } from "~/lib/domain";
 import { GROUPED_TABLE_PRESETS, groupedTableQuery } from "~/lib/viewPresets";
 import { useI18n } from "~/lib/i18n";
+import { useShiftOffered } from "~/lib/nightShift";
 import { normalizeRemote } from "~/lib/remotes";
 import { useCreateBoard, useCreateView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -306,8 +307,20 @@ function BacklogHead() {
   );
 }
 
-/** The backlog's saved views and the workstreams it is split into (its fields open from the view head). */
-function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
+function AutoRunRow({ onOpen }: { onOpen: () => void }) {
+  const { t } = useI18n();
+  const { project } = useWorkspace();
+  if (!useShiftOffered(project.id)) return null;
+  return (
+    <button type="button" className="side-row side-auto-run" aria-haspopup="dialog" data-testid="sidebar-auto-run" onClick={onOpen}>
+      <Icon className="ico" name="i-moon" size={15} />
+      <span className="side-name">{t("nightShift.title")}</span>
+    </button>
+  );
+}
+
+/** The backlog's saved views, the workstreams it is split into (its fields open from the view head), and the way to run it. */
+function BacklogBody({ onOpenFields, onOpenSurface }: { onOpenFields: (fieldId?: string, boardId?: string) => void; onOpenSurface: (surface: string) => void }) {
   const { t } = useI18n();
   const { project, boards } = useWorkspace();
   const repos = useRepos(project.id);
@@ -351,6 +364,7 @@ function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardI
         <NewWorkstreamRow onEdit={editWorkstream} />
         {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
       </div>
+      <AutoRunRow onOpen={() => onOpenSurface("night-shift")} />
     </>
   );
 }
@@ -414,7 +428,7 @@ function ModuleList({ onOpenFields, onOpenTemplates, onOpenSurface }: { onOpenFi
         undefined,
         "side-routines"
       );
-    if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} />, "side-backlog");
+    if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} onOpenSurface={onOpenSurface} />, "side-backlog");
     const module = contributed.find((m) => `plugin:${m.id}` === id);
     if (!module) return null;
     return shell(id, index, module.title, <PluginModuleHead module={module} projectId={project.id} onOpen={onOpenSurface} />, module.rows ? <PluginModuleBody module={module} projectId={project.id} /> : undefined, "side-plugin");

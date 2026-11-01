@@ -164,9 +164,13 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const planned = useMemo(() => withTaken(items.data ?? [], taken), [items.data, taken]);
   const candidates = useMemo(() => shiftCandidates(planned), [planned]);
   const open = useMemo(() => new Map(planned.filter((i) => i.status !== "done" && i.status !== "cancelled").map((i) => [i.id, i] as [string, Item])), [planned]);
-  const [picked, setPicked] = useState<Set<string> | null>(null);
   const suggested = useMemo(() => (plan.data ? new Set(plan.data.nodes.filter((n) => n.suggested).map((n) => n.itemId)) : factsChosen(candidates)), [plan.data, candidates]);
-  const chosen = picked ?? suggested;
+  // Kept apart from the suggestion, so a plan that lands after a click still ticks what it suggests.
+  const [took, setTook] = useState<ReadonlySet<string>>(new Set());
+  const [left, setLeft] = useState<ReadonlySet<string>>(new Set());
+  const chosen = useMemo(() => new Set([...suggested, ...took].filter((id) => !left.has(id))), [suggested, took, left]);
+  const [askedSuggested, setAskedSuggested] = useState(false);
+  const isSuggestion = chosen.size === suggested.size && [...suggested].every((id) => chosen.has(id));
   const whyLeft = useMemo(() => new Map((plan.data?.nodes ?? []).flatMap((n) => (n.why ? [[n.itemId, n.why] as [string, string]] : []))), [plan.data]);
   const [view, setView] = useState<"graph" | "list">("graph");
   const workRules = useWorkRules(projectId);
@@ -196,12 +200,24 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const rememberedPermission = remembered === engine?.id ? defaults.data?.permissionMode : undefined;
   const permissionMode = permissionModes ? (chosenPermission ?? rememberedPermission ?? permissionModes.default) : undefined;
   const spendLimit = Number(maxUsd);
-  const toggle = (id: string) => {
-    const next = new Set(chosen);
-    if (!next.delete(id)) next.add(id);
-    setPicked(next);
+  const add = (ids: string[]) => {
+    setTook((now) => new Set([...now, ...ids]));
+    setLeft((now) => new Set([...now].filter((id) => !ids.includes(id))));
   };
-  const add = (ids: string[]) => setPicked(new Set([...chosen, ...ids]));
+  const toggle = (id: string) => {
+    if (!chosen.has(id)) return add([id]);
+    setTook((now) => new Set([...now].filter((other) => other !== id)));
+    setLeft((now) => new Set([...now, id]));
+  };
+  const pickSuggested = () => {
+    setTook(new Set());
+    setLeft(new Set());
+    setAskedSuggested(true);
+  };
+  const pickNone = () => {
+    setTook(new Set());
+    setLeft(new Set(candidates.map((i) => i.id)));
+  };
   const take = (key: string) => {
     const next = new Set(takenKeys);
     if (!next.delete(key)) next.add(key);
@@ -252,6 +268,12 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
     void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: file } });
   };
   const lastWords = last.data && t(last.data.halt ? HALT_WORD[last.data.halt]! : "nightShift.lastFinished", { done: delivered(last.data), total: last.data.tickets.length });
+  // The choice starts as the suggestion, so the button often changes nothing: this line is what answers it.
+  const pickNote =
+    plan.isFetching || !candidates.length ? null
+    : !suggested.size ? t(plan.data?.analyzed ? "nightShift.noneSuggested" : "nightShift.noneSuggestedFacts")
+    : askedSuggested && isSuggestion ? t("nightShift.pickedSuggested", { n: suggested.size })
+    : null;
 
   return (
     <>
@@ -278,8 +300,18 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           {!candidates.length && !items.isLoading && <p className="meta-txt">{t("nightShift.noTickets")}</p>}
           <div className="plan-tools">
             <PlanViewSwitch view={view} onChange={setView} />
-            <button type="button" className="btn btn-ghost" data-testid="plan-pick-suggested" onClick={() => setPicked(new Set(suggested))}>{t("nightShift.pickSuggested")}</button>
-            <button type="button" className="btn btn-ghost" data-testid="plan-pick-none" onClick={() => setPicked(new Set())}>{t("nightShift.pickNone")}</button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              data-testid="plan-pick-suggested"
+              disabled={plan.isFetching || !suggested.size}
+              onClick={pickSuggested}
+            >
+              {t("nightShift.pickSuggested")}
+              {!plan.isFetching && <span className="num">{suggested.size}</span>}
+            </button>
+            <button type="button" className="btn btn-ghost" data-testid="plan-pick-none" onClick={pickNone}>{t("nightShift.pickNone")}</button>
+            <span className="meta-txt" role="status" data-testid="plan-pick-note">{pickNote}</span>
           </div>
           {view === "graph" ? (
             candidates.length > 0 && <PlanGraph items={candidates} links={links} chosen={chosen} subOf={subOf} subs={candidates.map(subOf).join("|")} onToggle={toggle} onAdd={add} onConfigure={setFocus} />

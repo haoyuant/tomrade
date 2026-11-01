@@ -3667,10 +3667,12 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }
 
 /* Night shift */
-.palette.sheet-plan { width: min(920px, calc(100vw - 64px)); }
+.palette.modal.sheet-plan { width: min(1280px, calc(100vw - 64px)); height: var(--overlay-max-h); max-height: var(--overlay-max-h); }
 .night-shift-pick { max-height: 240px; overflow-y: auto; }
 .plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
-.plan-graph { height: 340px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.plan-tools .btn .num { margin-left: 6px; color: var(--meta); }
+/* the sheet's own height less what stands above the graph, so it opens filling the view */
+.plan-graph { height: clamp(340px, calc(var(--overlay-max-h) - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
 .plan-node {
   display: flex; align-items: flex-start; gap: var(--space-2); box-sizing: border-box; padding: var(--space-2) var(--space-3);
