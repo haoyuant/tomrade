@@ -19,25 +19,31 @@
   --sun-light-glow: radial-gradient(ellipse 56vw 44vh at 98vw 120vh, var(--sun-glow),
     color-mix(in srgb, var(--sun-glow) 74%, transparent) 20%, color-mix(in srgb, var(--sun-glow) 46%, transparent) 42%,
     color-mix(in srgb, var(--sun-glow) 22%, transparent) 64%, color-mix(in srgb, var(--sun-glow) 7%, transparent) 84%, transparent);
+  /* Daybreak's last stars and Sunrise's gold motes, from under the title bar down past the board's middle.
+     Three tile widths keep them from lining up in a grid. */
+  --sun-stars-top: calc(8vh + var(--titlebar-h));
+  --sun-stars:
+    radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 760px repeat-x,
+    radial-gradient(circle at 37px 252px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 760px repeat-x,
+    radial-gradient(circle at 150px 470px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 760px repeat-x,
+    radial-gradient(circle at 90px 640px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
+    radial-gradient(circle at 128px 58px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 331px 760px repeat-x,
+    radial-gradient(circle at 271px 318px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 331px 760px repeat-x,
+    radial-gradient(circle at 40px 520px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 331px 760px repeat-x,
+    radial-gradient(circle at 230px 700px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 331px 760px repeat-x,
+    radial-gradient(circle at 84px 16px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
+    radial-gradient(circle at 340px 214px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
+    radial-gradient(circle at 190px 396px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
+    radial-gradient(circle at 370px 590px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
+    radial-gradient(circle at 120px 730px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x;
 }
 :is(.sunrise, .daybreak) body::before,
 :is(.sunrise, .daybreak) body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
-/* The sky, reaching past the top and left edges so its drift never shows one. It carries Daybreak's last stars and
-   Sunrise's gold motes, from under the title bar down, where the panes let the sky through: the sidebar, the board's
-   head and its empty columns. Three tile widths keep them from lining up in a grid. */
+/* The sky, reaching past the top and left edges so its drift never shows one. */
 :is(.sunrise, .daybreak) body::before {
-  --sun-stars-top: calc(8vh + var(--titlebar-h));
   inset: -8vh 0 0 -8vw;
   animation: sun-sky-drift 23s ease-in-out infinite alternate;
-  background:
-    radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
-    radial-gradient(circle at 37px 252px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
-    radial-gradient(circle at 128px 58px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 331px 420px repeat-x,
-    radial-gradient(circle at 271px 318px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 331px 420px repeat-x,
-    radial-gradient(circle at 84px 16px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
-    radial-gradient(circle at 340px 214px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
-    radial-gradient(circle at 190px 396px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
-    var(--sun-light-sky);
+  background: var(--sun-stars), var(--sun-light-sky);
 }
 /* The sun below the bottom right corner. It starts risen, so a theme shows its light the moment it is picked,
    then sets and rises again. Its layer reaches well past every edge, so no edge shows as it moves. */
@@ -91,6 +97,16 @@
    it, and the panel is no stacking context, so its tooltips and resize handle still stack as before. */
 :is(.sunrise, .daybreak) .ai { background: transparent; }
 :is(.sunrise, .daybreak) .ai::before { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; background: var(--surface); }
+/* That surface covers the sky, so the panel has stars of its own. They breathe with the sky but stay put: drifting, they would cross the panel's edge. */
+:is(.sunrise, .daybreak) .ai::after {
+  content: ""; position: absolute; inset: -8vh 0 0 0; z-index: -1; pointer-events: none;
+  background: var(--sun-stars);
+  animation: sun-stars-breathe 23s ease-in-out infinite alternate;
+}
+@keyframes sun-stars-breathe {
+  from { opacity: 1; }
+  to { opacity: 0.5; }
+}
 
 /* The sidebar lets the sky through instead of covering it. */
 :is(.sunrise, .daybreak) .sidebar { background: linear-gradient(180deg, var(--sun-sky-haze), transparent 40%); }
@@ -156,12 +172,15 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 [data-software-compositing]:is(.sunrise, .daybreak) body::before,
 [data-software-compositing]:is(.sunrise, .daybreak) body::after,
 [data-software-compositing]:is(.sunrise, .daybreak) .titlebar::after,
+[data-software-compositing]:is(.sunrise, .daybreak) .ai::after,
 [data-performance]:is(.sunrise, .daybreak) body::before,
 [data-performance]:is(.sunrise, .daybreak) body::after,
-[data-performance]:is(.sunrise, .daybreak) .titlebar::after { animation: none; }
+[data-performance]:is(.sunrise, .daybreak) .titlebar::after,
+[data-performance]:is(.sunrise, .daybreak) .ai::after { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   :is(.sunrise, .daybreak) body::before,
   :is(.sunrise, .daybreak) body::after,
-  :is(.sunrise, .daybreak) .titlebar::after { animation: none; }
+  :is(.sunrise, .daybreak) .titlebar::after,
+  :is(.sunrise, .daybreak) .ai::after { animation: none; }
 }
 }

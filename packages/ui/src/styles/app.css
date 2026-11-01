@@ -324,8 +324,8 @@ html[data-traffic-lights="on"] {
   --sun-btn-from: #bf2e28;
   --sun-btn-to: #d2511d;
   --sun-sheen: rgba(255, 226, 170, 0.45);
-  --sun-star: rgba(224, 148, 48, 0.7);
-  --sun-card-light: rgba(242, 164, 58, 0.07);
+  --sun-star: rgba(224, 148, 48, 0.85);
+  --sun-card-light: rgba(242, 164, 58, 0.03);
 }
 .daybreak {
   --bg: #120f24;
@@ -375,7 +375,7 @@ html[data-traffic-lights="on"] {
   --sun-btn-from: #ff7a59;
   --sun-btn-to: #ffb347;
   --sun-sheen: rgba(255, 240, 210, 0.55);
-  --sun-star: rgba(255, 244, 230, 0.72);
+  --sun-star: rgba(255, 244, 230, 0.82);
   --sun-card-light: rgba(255, 255, 255, 0.035);
 }
 
