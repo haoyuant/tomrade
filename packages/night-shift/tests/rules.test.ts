@@ -4,8 +4,8 @@ import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, adva
 const T0 = 1_000_000;
 const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, ...over });
 const shiftOf = (tickets: ShiftTicket[], settings: Partial<ShiftSettings> = {}, over: Partial<NightShift> = {}): NightShift => ({
-  id: "s", projectId: "p", tickets, status: "running", halt: null, startedAt: T0, deadlineAt: T0 + 3_600_000, endedAt: null, failStreak: 0, spentUsd: 0,
-  settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, ...settings }, ...over
+  id: "s", projectId: "p", tickets, status: "running", halt: null, startedAt: T0, deadlineAt: T0 + 3_600_000, endedAt: null, failStreak: 0, spentUsd: 0, briefPath: null,
+  settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, keepAwake: true, judge: true, ...settings }, ...over
 });
 const facts = (over: Partial<TicketFacts> = {}): TicketFacts => ({ status: "todo", blockers: [], session: null, parkedUntil: null, interrupted: false, ...over });
 const session = (state: SessionFacts["state"], over: Partial<SessionFacts> = {}): SessionFacts => ({ state, headless: true, blocked: false, asks: false, summary: null, lastEventAt: null, ...over });

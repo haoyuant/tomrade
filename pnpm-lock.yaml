@@ -1882,24 +1882,36 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../alerts
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/files':
+        specifier: workspace:*
+        version: link:../files
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1913,9 +1925,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@tomradex/contributions':
-        specifier: workspace:*
-        version: link:../contributions
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github

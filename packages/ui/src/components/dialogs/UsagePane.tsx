@@ -252,6 +252,7 @@ const PURPOSES: Record<string, MessageKey> = {
   dependencies: "usage.purposeDependencies",
   inbox: "usage.purposeInbox",
   playbook: "usage.purposePlaybook",
+  "night-shift": "usage.purposeNightShift",
   branch: "usage.purposeBranch"
 };
 

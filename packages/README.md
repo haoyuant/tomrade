@@ -51,7 +51,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `inbox-tomrade` | Feedback sent from the app as an inbox source, for Tomrade's maintainers. | — | contributions, inbox |
 | `inbox-triage` | The worker model proposes a kind, duplicate and reply for each new inbox entry. | — | agent-backlog, inbox, items, llm |
 | `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
-| `night-shift` | A night shift: a batch of tickets worked through by dependency, in terminal panes or background sessions, within limits on concurrency, time, spend and failures. | `nightShift` | agent, code-link, items, tools |
+| `night-shift` | A night shift: a batch of tickets worked through by dependency, in terminal panes or background sessions, within limits on concurrency, time, spend and failures. | `nightShift` | agent, code-link, contributions, items, tools |
 | `pr-feedback` | Failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket. | `prFeedback` | agent, code-link, github, hub, items, repos |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |
 | `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |

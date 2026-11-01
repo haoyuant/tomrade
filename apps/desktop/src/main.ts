@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { APP_ICON_FILE, appIconHasBackground, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
+import { keepAwake } from "./keep-awake.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
 import { commandOnPath, openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
 import { hasTerminalWindow, installGlobalHotkey, launchAsk, openStartWindows, openTerminal } from "./terminal-entries.js";
@@ -222,6 +223,7 @@ app.whenReady().then(async () => {
   ctx.settings.register(SESSIONS_SECTION);
   installGlobalHotkey(ctx);
   watchSeen(ctx);
+  keepAwake(ctx);
   // A window shown at the `tomrade` command's word comes in front of the terminal it was typed in.
   ctx.on("desktop/activate", () => {
     if (process.platform === "darwin") app.focus({ steal: true });

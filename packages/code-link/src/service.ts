@@ -1736,6 +1736,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.landing.prChecks(projectId, itemId);
   }
 
+  /** What the ticket's delivery changed, for a report on it. */
+  deliveryDiff(projectId: string, itemId: string, maxBytes?: number): Promise<{ stat: string; patch: string; lines: number } | null> {
+    return this.landing.deliveryDiff(projectId, itemId, maxBytes);
+  }
+
   /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */
   private mergeCardId(itemId: string, delivery: number): string {
     return `merge-${itemId}-${delivery}`;

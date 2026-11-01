@@ -19,19 +19,22 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/alerts": "workspace:*",
     "@tomradex/code-link": "workspace:*",
     "@tomradex/contracts": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/files": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tomradex/contributions": "workspace:*",
     "@tomradex/github": "workspace:*",
     "@tomradex/herdr": "workspace:*",
     "@tomradex/mcp": "workspace:*",

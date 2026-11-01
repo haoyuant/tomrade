@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { languageTag, type LanguageTag } from "@tomradex/domain";
+import { languageName, languageTag, type LanguageTag } from "@tomradex/domain";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/alerts";
 import type {} from "@tomradex/code-link";
+import type {} from "@tomradex/contributions";
 import type { StartOptions } from "@tomradex/code-link";
 import type {} from "@tomradex/db";
+import type {} from "@tomradex/files";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
+import type {} from "@tomradex/llm";
 import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
+import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
 import { MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, type Action, type NightShift, type SessionFacts, type ShiftTicket, type TicketFacts, type TicketState, type Why } from "./rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
@@ -25,7 +30,9 @@ export const NightShiftInput = z.object({
   maxMinutes: z.number().int().min(5).max(24 * 60).default(8 * 60),
   maxUsd: z.number().positive().nullable().default(null),
   maxFailures: z.number().int().min(1).max(20).default(3),
-  autoMerge: z.boolean().default(false)
+  autoMerge: z.boolean().default(false),
+  keepAwake: z.boolean().default(true),
+  judge: z.boolean().default(true)
 });
 export type NightShiftInput = z.input<typeof NightShiftInput>;
 
@@ -48,6 +55,8 @@ declare module "cordis" {
   interface Events {
     "nightShift/changed"(projectId: string): void;
     "nightShift/ended"(shift: NightShiftView): void;
+    /** The morning report is written: words for a phone or a chat, which carry no code. */
+    "nightShift/briefed"(shift: NightShiftView, notice: { title: string; body: string }): void;
   }
 }
 
@@ -126,6 +135,7 @@ export class NightShifts extends Service {
     const resume = (projectId: string) => {
       if (this.running(projectId)) {
         this.going.add(projectId);
+        this.home.emit("nightShift/changed", projectId);
         this.kick();
       }
     };
@@ -142,6 +152,23 @@ export class NightShifts extends Service {
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
     });
     this.home.inject(["tools"], (ctx) => this.registerTools(ctx));
+    this.home.inject(["contributions"], (ctx) => {
+      const w = () => NIGHT_SHIFT_WORDS(this.locale());
+      ctx.contributions.command({ id: "nightShift.open", title: () => w()("commandTitle"), group: () => w()("commandGroup"), run: () => ({ opens: "night-shift" }) });
+      ctx.contributions.statusItem({
+        id: "night-shift",
+        opens: "night-shift",
+        icon: "i-terminal",
+        title: () => w()("statusTitle"),
+        text: ({ projectId }) => {
+          const shift = projectId ? this.current(projectId) : null;
+          if (!shift) return null;
+          const progress = w()("statusText", { done: shift.counts.delivered + shift.counts.done, total: shift.tickets.length });
+          return shift.counts["needs-you"] ? `${progress} · ${w()("statusNeedsYou", { n: shift.counts["needs-you"] })}` : progress;
+        }
+      });
+      ctx.on("nightShift/changed", () => ctx.contributions.changed());
+    });
   }
 
   private locale(): LanguageTag {
@@ -230,7 +257,7 @@ export class NightShifts extends Service {
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
-      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge },
+      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake, judge: parsed.judge },
       tickets,
       status: "running",
       halt: null,
@@ -238,12 +265,18 @@ export class NightShifts extends Service {
       deadlineAt: now + parsed.maxMinutes * 60_000,
       endedAt: null,
       failStreak: 0,
-      spentUsd: 0
+      spentUsd: 0,
+      briefPath: null
     };
     this.save(shift);
     this.going.add(projectId);
     this.kick(0);
     return this.view(shift);
+  }
+
+  /** Whether a shift going anywhere wants the computer kept awake. */
+  wantsAwake(): boolean {
+    return [...this.going].some((projectId) => this.running(projectId)?.settings.keepAwake);
   }
 
   /** No new ticket starts; what is at work finishes. */
@@ -332,8 +365,58 @@ export class NightShifts extends Service {
     if (current !== next) this.save(current);
     if (current.status === "ended") {
       this.going.delete(projectId);
+      this.home.emit("nightShift/changed", projectId);
       this.home.emit("nightShift/ended", this.view(current));
+      void this.brief(current).catch((err) => this.home.logger.warn(`night shift report in ${projectId}: ${errorMessage(err)}`));
     } else if (current !== next) this.kick(0);
+  }
+
+  /** One model call per delivery, and a report that stands without any of them. */
+  private async deliveries(shift: NightShiftView): Promise<Map<string, Delivery>> {
+    const { codeLink, items } = this.home;
+    const llm = shift.settings.judge ? this.home.get("llm") : null;
+    const worker = llm ? await llm.worker().catch(() => null) : null;
+    const out = new Map<string, Delivery>();
+    for (const ticket of shift.tickets) {
+      if (ticket.state !== "delivered" && ticket.state !== "done") continue;
+      const prUrl = codeLink.store.links(shift.projectId, ticket.itemId).find((l) => l.prUrl)?.prUrl ?? null;
+      const diff = await codeLink.deliveryDiff(shift.projectId, ticket.itemId).catch(() => null);
+      let judgement: Judgement | null = null;
+      if (llm && worker?.ok && diff) {
+        const item = items.get(shift.projectId, ticket.itemId);
+        const said = codeLink.store.sessions(shift.projectId, { itemId: ticket.itemId }).sort((a, b) => b.startedAt - a.startedAt)[0]?.summary ?? null;
+        judgement = await llm
+          .completeJson(Judgement, { system: judgeSystem(languageName(this.locale())), user: judgeUser({ key: ticket.key, title: ticket.title, body: item?.body ?? null }, said, diff), maxTokens: 2000, timeoutMs: 120_000, purpose: "night-shift" })
+          .catch((err: unknown) => {
+            this.home.logger.warn(`night shift report on ${ticket.key}: ${errorMessage(err)}`);
+            return null;
+          });
+      }
+      out.set(ticket.itemId, { prUrl, stat: diff?.stat ?? null, lines: diff?.lines ?? null, judgement });
+    }
+    return out;
+  }
+
+  /** Writes the morning report into the project's Files and tells the person; returns where it went. */
+  async brief(shift: NightShift): Promise<string | null> {
+    const view = this.view(shift);
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const ended = new Date(shift.endedAt ?? Date.now());
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const day = `${ended.getFullYear()}-${pad(ended.getMonth() + 1)}-${pad(ended.getDate())}`;
+    const stamp = `${day} ${pad(ended.getHours())}-${pad(ended.getMinutes())}`;
+    const body = renderBrief(view, await this.deliveries(view), w, day);
+    const files = this.home.get("files");
+    let briefPath: string | null = null;
+    if (files) {
+      briefPath = `${w("folder")}/${stamp}.md`;
+      await files.write(shift.projectId, briefPath, body, { message: w("title", { date: day }) });
+      this.save({ ...shift, briefPath });
+    }
+    const notice = { title: w("notifyTitle"), body: w("notifyBody", { review: view.counts.delivered, merged: view.counts.done, attention: view.counts["needs-you"] + view.counts.failed }) };
+    this.home.get("alerts")?.notify(notice);
+    this.home.emit("nightShift/briefed", { ...view, briefPath }, notice);
+    return briefPath;
   }
 
   private async act(shift: NightShift, action: Action, now: number): Promise<NightShift> {

@@ -211,6 +211,12 @@ export const keys = {
     suggestions: (locale: string) => ["schedules", "suggestions", locale] as const
   },
 
+  nightShift: {
+    all: (projectId: string) => ["nightShift", projectId] as const,
+    current: (projectId: string) => ["nightShift", projectId, "current"] as const,
+    last: (projectId: string) => ["nightShift", projectId, "last"] as const
+  },
+
   community: {
     root: ["community"] as const,
     browse: (text: string, sort: string, officialOnly: boolean) => ["community", "browse", text, sort, officialOnly] as const,

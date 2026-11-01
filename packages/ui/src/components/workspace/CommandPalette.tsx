@@ -111,17 +111,18 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     const group = c.group ?? t("commandPalette.pluginsGroupFallback");
     pluginGroups.set(group, [...(pluginGroups.get(group) ?? []), c]);
   }
+  // The palette unmounts as it closes, and mutate's own callbacks do not outlive it: the promise does.
   const runPlugin = (id: string) =>
-    runCommand.mutate(
-      { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } },
-      { onSuccess: (r) => {
+    void runCommand.mutateAsync({ id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } }).then(
+      (r) => {
         if (r.startDialog && selectedId && requestStart(selectedId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
         if (r.review) { dock?.setAiOpen(true); askPanel({ kind: "review", sessionId: r.review.sessionId, itemId: r.review.itemId ?? selectedId ?? undefined }); }
         if (r.settingsPane) openSettingsPane(r.settingsPane);
         if (r.opens) actions.openSurface(r.opens);
-      }, onError: (e) => toast(errorSpec(e)) }
+      },
+      (e) => toast(errorSpec(e))
     );
 
   const actionRows = [

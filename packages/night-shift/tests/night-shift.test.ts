@@ -7,6 +7,7 @@ import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent } from "@tomradex/agent";
+import { Contributions } from "@tomradex/contributions";
 import { NightShifts } from "@tomradex/night-shift";
 
 interface FakeSession { itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
@@ -21,7 +22,7 @@ class FakeCodeLink extends Service {
   checks = "passed";
   refuse: { gate: string; message: string } | null = null;
   defaults: Record<string, unknown> | null = null;
-  store = { sessions: (_: string, q: { itemId: string }) => this.sessionsList.filter((s) => s.itemIds.includes(q.itemId)) };
+  store = { sessions: (_: string, q: { itemId: string }) => this.sessionsList.filter((s) => s.itemIds.includes(q.itemId)), links: () => [{ prUrl: "https://example.com/pr/1" }] };
   constructor(ctx: Context) {
     super(ctx, "codeLink");
   }
@@ -36,6 +37,9 @@ class FakeCodeLink extends Service {
   }
   async prChecks() {
     return this.checks;
+  }
+  async deliveryDiff() {
+    return { stat: " a.ts | 2 +-", patch: "+code", lines: 2 };
   }
   async merge(projectId: string, itemId: string) {
     this.merges.push(itemId);
@@ -196,6 +200,127 @@ it("a restart picks the shift up from what was saved, and starts nothing twice",
     expect(t.s.current(t.project.id)?.counts).toMatchObject({ running: 1, queued: 1 });
   } finally {
     await t.ctx.fiber.dispose();
+  }
+});
+
+it("offers itself in the palette and shows on the status bar while it goes", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-night-shift-"));
+  const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Contributions, Agent, FakeCodeLink, [NightShifts, { tickMs: 3_600_000, settleMs: 3_600_000 }]] });
+  await settle();
+  try {
+    const shiftOf = (title: string) => f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title, status: "todo", workType: "coding", by: "human" });
+    expect(await f.ctx.contributions.run("nightShift.open", {})).toEqual({ opens: "night-shift" });
+    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toBeUndefined();
+    const a = shiftOf("A");
+    f.ctx.nightShift.start(f.project.id, { itemIds: [a.id, shiftOf("B").id], concurrency: 1 });
+    await f.ctx.nightShift.tick();
+    f.items.update(f.project.id, a.id, { status: "verifying" }, "human");
+    await f.ctx.nightShift.tick();
+    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toMatchObject({ text: "Night shift 1/2", opens: "night-shift" });
+  } finally {
+    await f.ctx.fiber.dispose();
+  }
+});
+
+it("wants the computer awake only while a shift goes, and only if asked", async () => {
+  const t = await boot();
+  try {
+    expect(t.s.wantsAwake()).toBe(false);
+    const a = t.make("A");
+    t.s.start(t.project.id, { itemIds: [a.id] });
+    expect(t.s.wantsAwake()).toBe(true);
+    const heard: boolean[] = [];
+    t.ctx.on("nightShift/changed", () => heard.push(t.s.wantsAwake()));
+    t.s.stop(t.project.id, t.s.current(t.project.id)!.id);
+    await t.s.tick();
+    expect(t.s.current(t.project.id)).toBeNull();
+    expect(heard.at(-1)).toBe(false);
+    t.s.start(t.project.id, { itemIds: [t.make("B").id], keepAwake: false });
+    expect(t.s.wantsAwake()).toBe(false);
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
+/** Stands for the model and for Files, so a report can be read back and its model calls counted. */
+class FakeLlm extends Service {
+  static provide = "llm";
+  calls = 0;
+  working = true;
+  constructor(ctx: Context) {
+    super(ctx, "llm");
+  }
+  async worker() {
+    return this.working ? { ok: true } : { ok: false, reason: "no model" };
+  }
+  async completeJson() {
+    this.calls += 1;
+    return { criteria: [{ text: "It works", met: "yes", evidence: "a.ts" }], outOfScope: [], unverified: [], risk: "low" };
+  }
+}
+class FakeFiles extends Service {
+  static provide = "files";
+  written = new Map<string, string>();
+  constructor(ctx: Context) {
+    super(ctx, "files");
+  }
+  async write(_projectId: string, file: string, body: string) {
+    this.written.set(file, body);
+  }
+}
+
+async function bootWithReport(judge = true) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-night-shift-"));
+  const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, FakeCodeLink, FakeLlm, FakeFiles, [NightShifts, { tickMs: 3_600_000, settleMs: 3_600_000 }]] });
+  await settle();
+  const llm = f.ctx.llm as unknown as FakeLlm;
+  const files = f.ctx.files as unknown as FakeFiles;
+  const run = async () => {
+    const item = f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "A", status: "todo", workType: "coding", by: "human" });
+    f.ctx.nightShift.start(f.project.id, { itemIds: [item.id], judge });
+    await f.ctx.nightShift.tick();
+    f.items.update(f.project.id, item.id, { status: "verifying" }, "human");
+    (f.ctx.codeLink as unknown as FakeCodeLink).sessionsList.at(-1)!.state = "idle";
+    await vi.waitFor(async () => {
+      await f.ctx.nightShift.tick();
+      expect(f.ctx.nightShift.list(f.project.id, 1)[0]?.briefPath).toBeTruthy();
+    });
+    return [...files.written.values()][0]!;
+  };
+  return { f, llm, run };
+}
+
+it("writes the report into Files when the shift ends, and the shift remembers where", async () => {
+  const { f, llm, run } = await bootWithReport();
+  try {
+    const body = await run();
+    expect(llm.calls).toBe(1);
+    expect(body).toContain("https://example.com/pr/1");
+    expect(body).toContain("✓ It works: a.ts");
+    expect(f.ctx.nightShift.list(f.project.id, 1)[0]!.briefPath).toMatch(/^Night shifts\/\d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
+  } finally {
+    await f.ctx.fiber.dispose();
+  }
+});
+
+it("switched off, the report asks no model", async () => {
+  const { f, llm, run } = await bootWithReport(false);
+  try {
+    expect(await run()).toContain("Not judged");
+    expect(llm.calls).toBe(0);
+  } finally {
+    await f.ctx.fiber.dispose();
+  }
+});
+
+it("with no model to ask, the report still comes, with the facts", async () => {
+  const { f, llm, run } = await bootWithReport();
+  try {
+    llm.working = false;
+    expect(await run()).toContain("Not judged");
+    expect(llm.calls).toBe(0);
+  } finally {
+    await f.ctx.fiber.dispose();
   }
 });
 
