@@ -4,7 +4,7 @@ import type { NightShiftTicketView, NightShiftView } from "../src/service.js";
 import { NIGHT_SHIFT_WORDS } from "../src/words.js";
 
 const w = NIGHT_SHIFT_WORDS("en");
-const ticket = (key: string, state: NightShiftTicketView["state"], note: string | null = null): NightShiftTicketView => ({ itemId: key, key, title: `Do ${key}`, state, why: null, note, threadId: null, branch: null, startedAt: 0, nudgedAt: 0, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0 });
+const ticket = (key: string, state: NightShiftTicketView["state"], note: string | null = null): NightShiftTicketView => ({ itemId: key, key, title: `Do ${key}`, state, why: null, note, threadId: null, branch: null, startedAt: 0, nudgedAt: 0, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false });
 const shift = (tickets: NightShiftTicketView[], over: Partial<NightShiftView> = {}): NightShiftView => ({
   id: "s", projectId: "p", tickets, status: "ended", halt: null, startedAt: 0, deadlineAt: 0, endedAt: 3_600_000, failStreak: 0, spentUsd: 0, briefPath: null, costKnown: false,
   settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, keepAwake: true, judge: true },

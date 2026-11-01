@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Service, type Context } from "cordis";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
@@ -21,6 +21,9 @@ class FakeCodeLink extends Service {
   merges: string[] = [];
   checks = "passed";
   refuse: { gate: string; message: string } | null = null;
+  conflicts = 0;
+  resolves: { itemId: string; how: Record<string, unknown> }[] = [];
+  resolveFails = false;
   defaults: Record<string, unknown> | null = null;
   store = { sessions: (_: string, q: { itemId: string }) => this.sessionsList.filter((s) => s.itemIds.includes(q.itemId)), links: () => [{ prUrl: "https://example.com/pr/1" }] };
   constructor(ctx: Context) {
@@ -41,7 +44,17 @@ class FakeCodeLink extends Service {
   async deliveryDiff() {
     return { stat: " a.ts | 2 +-", patch: "+code", lines: 2 };
   }
+  async resolveMerge(projectId: string, itemId: string, _requestedBy: string | null, how: Record<string, unknown>) {
+    this.resolves.push({ itemId, how });
+    if (this.resolveFails) return { itemId, ok: false, message: "no agent" };
+    (this.ctx as Context).items.update(projectId, itemId, { status: "doing" }, "human");
+    return { itemId, ok: true, threadId: `th-${itemId}` };
+  }
   async merge(projectId: string, itemId: string) {
+    if (this.conflicts > 0) {
+      this.conflicts -= 1;
+      return { merged: false, sha: null, message: "not mergeable", cause: "conflict" };
+    }
     this.merges.push(itemId);
     (this.ctx as Context).items.update(projectId, itemId, { status: "done" }, "human");
     return { merged: true, sha: null, message: "merged" };
@@ -183,6 +196,91 @@ it("red checks are never merged", async () => {
   } finally {
     await t.ctx.fiber.dispose();
   }
+});
+
+describe("a conflict at the merge", () => {
+  const delivered = async (t: Awaited<ReturnType<typeof boot>>, id: string) => {
+    t.items.update(t.project.id, id, { status: "verifying" }, "human");
+    t.code.sessionsList.at(-1)!.state = "idle";
+    await t.s.tick(Date.now() + 3 * 60_000);
+  };
+
+  it("goes back to its agent once, in the place the shift runs, and the merge is tried again", async () => {
+    const t = await boot();
+    try {
+      const b = t.make("B");
+      const a = t.make("A", [b.id]);
+      t.s.start(t.project.id, { itemIds: [a.id, b.id], mode: "terminal", engine: "claude-code", autoMerge: true });
+      await t.s.tick();
+      t.code.conflicts = 1;
+      await delivered(t, a.id);
+      expect(t.code.resolves).toEqual([{ itemId: a.id, how: { mode: "terminal", engine: "claude-code" } }]);
+      expect(t.s.current(t.project.id)?.tickets[0]).toMatchObject({ state: "running", merge: "none", conflictRetried: true });
+      expect(t.code.starts.map((s) => s.itemId)).toEqual([a.id]);
+      await delivered(t, a.id);
+      expect(t.code.merges).toEqual([a.id]);
+      await vi.waitFor(async () => {
+        await t.s.tick(Date.now() + 3 * 60_000);
+        expect(t.code.starts.map((s) => s.itemId)).toEqual([a.id, b.id]);
+      });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("a second conflict is the person's: no third try, a failure counted, and the dependant does not start", async () => {
+    const t = await boot();
+    try {
+      const b = t.make("B");
+      const a = t.make("A", [b.id]);
+      t.s.start(t.project.id, { itemIds: [a.id, b.id], autoMerge: true });
+      await t.s.tick();
+      t.code.conflicts = 2;
+      await delivered(t, a.id);
+      await delivered(t, a.id);
+      await vi.waitFor(async () => {
+        await t.s.tick(Date.now() + 3 * 60_000);
+        expect(t.s.current(t.project.id)).toBeNull();
+      });
+      expect(t.code.resolves).toHaveLength(1);
+      expect(t.s.list(t.project.id, 1)[0]).toMatchObject({ failStreak: 1, tickets: [{ state: "needs-you", note: "Its agent could not resolve the conflict" }, { state: "skipped" }] });
+      expect(t.code.starts.map((s) => s.itemId)).toEqual([a.id]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("an agent that cannot be sent back leaves it with the person", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      t.s.start(t.project.id, { itemIds: [a.id], autoMerge: true });
+      await t.s.tick();
+      t.code.conflicts = 1;
+      t.code.resolveFails = true;
+      await delivered(t, a.id);
+      expect(t.s.list(t.project.id, 1)[0]?.tickets[0]).toMatchObject({ state: "needs-you", merge: "refused", why: { kind: "conflict-unresolved" } });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("a shift past its limits spends nothing more on it", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      t.s.start(t.project.id, { itemIds: [a.id], autoMerge: true, maxMinutes: 5 });
+      await t.s.tick();
+      t.code.conflicts = 1;
+      t.items.update(t.project.id, a.id, { status: "verifying" }, "human");
+      t.code.sessionsList.at(-1)!.state = "idle";
+      await t.s.tick(Date.now() + 6 * 60_000);
+      expect(t.code.resolves).toEqual([]);
+      expect(t.s.list(t.project.id, 1)[0]?.tickets[0]).toMatchObject({ state: "delivered", merge: "refused", why: { kind: "merge-conflict" } });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
 });
 
 it("a restart picks the shift up from what was saved, and starts nothing twice", async () => {

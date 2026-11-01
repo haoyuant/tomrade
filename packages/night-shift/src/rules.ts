@@ -29,7 +29,7 @@ export type Why =
   | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-outside"; keys: string[] }
   | { kind: "halted"; halt: Halt }
   | { kind: "asked" | "error" | "gate" | "merge-refused" | "merge-conflict" | "blocked"; text: string }
-  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" };
+  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" | "conflict-unresolved" };
 
 export interface ShiftTicket {
   itemId: string;
@@ -47,6 +47,8 @@ export interface ShiftTicket {
   merge: "none" | "waiting" | "merged" | "refused";
   mergeAt: number | null;
   mergeWaits: number;
+  /** Its agent has been sent back once to resolve a conflict with the default branch. */
+  conflictRetried: boolean;
 }
 
 export interface NightShift {
@@ -99,10 +101,11 @@ export const OVERTIME_MS = 60 * 60_000;
 
 const WORKING = new Set<TicketState>(["running", "limited"]);
 
-function settle(t: ShiftTicket, f: TicketFacts, now: number): ShiftTicket {
+function read(t: ShiftTicket, f: TicketFacts, now: number): ShiftTicket {
   if (t.state === "skipped" || t.state === "done") return t;
   if (f.status === null || f.status === "cancelled") return { ...t, state: "skipped", why: null };
   if (f.status === "done") return { ...t, state: "done", why: null, limitedUntil: null };
+  if (f.status === "verifying" && t.state === "needs-you" && t.merge === "refused") return t;
   if (f.status === "verifying") return { ...t, state: "delivered", why: t.state === "delivered" ? t.why : null, limitedUntil: null };
   if (t.state === "queued") return t;
 
@@ -126,13 +129,21 @@ function settle(t: ShiftTicket, f: TicketFacts, now: number): ShiftTicket {
   return { ...t, state: "running", why: null };
 }
 
+/** A conflict its agent could not get past is the person's, however the agent stopped. */
+function settle(t: ShiftTicket, f: TicketFacts, now: number): ShiftTicket {
+  const next = read(t, f, now);
+  return t.conflictRetried && next.state === "failed" ? { ...next, state: "needs-you", why: { kind: "conflict-unresolved" } } : next;
+}
+
+const isFailure = (t: ShiftTicket) => t.state === "failed" || t.why?.kind === "conflict-unresolved";
+
 /** The whole of a shift's judgement: what the world now says of each ticket, and what to do next. */
 export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFacts, now: number): { shift: NightShift; actions: Action[] } {
   if (shift.status === "ended") return { shift, actions: [] };
   let failStreak = shift.failStreak;
   let tickets = shift.tickets.map((t) => {
     const next = settle(t, factsOf(t.itemId), now);
-    if (next.state === "failed" && t.state !== "failed") failStreak += 1;
+    if (isFailure(next) && !isFailure(t)) failStreak += 1;
     else if ((next.state === "delivered" || next.state === "done") && t.state !== "delivered" && t.state !== "done") failStreak = 0;
     return next;
   });

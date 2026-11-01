@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
 
 const T0 = 1_000_000;
-const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, ...over });
+const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...over });
 const shiftOf = (tickets: ShiftTicket[], settings: Partial<ShiftSettings> = {}, over: Partial<NightShift> = {}): NightShift => ({
   id: "s", projectId: "p", tickets, status: "running", halt: null, startedAt: T0, deadlineAt: T0 + 3_600_000, endedAt: null, failStreak: 0, spentUsd: 0, briefPath: null,
   settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, keepAwake: true, judge: true, ...settings }, ...over
@@ -200,6 +200,28 @@ describe("merging", () => {
     expect(early.actions).toEqual([]);
     expect(early.shift.status).toBe("running");
     expect(advance(shiftOf([waiting], { autoMerge: true }), world({ A: { status: "verifying" } }), T0 + MERGE_WAIT_MS).actions).toEqual([{ kind: "merge", itemId: "A" }]);
+  });
+
+  it("a conflict its agent could not resolve is the person's, counts as a failure, and holds what depends on it", () => {
+    const back = started("A", { conflictRetried: true });
+    const { shift } = advance(shiftOf([back, ticket("B")], { autoMerge: true }), world({ A: { status: "doing", session: session("ended") }, B: { blockers: [{ itemId: "A", key: "A" }] } }), T0 + 1000);
+    expect(shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "conflict-unresolved" } });
+    expect(shift.failStreak).toBe(1);
+    expect(shift.tickets[1]).toMatchObject({ state: "skipped", why: { kind: "upstream-stuck", keys: ["A"] } });
+  });
+
+  it("a ticket sent back delivers again and goes round to the merge", () => {
+    const { actions, shift } = advance(shiftOf([started("A", { conflictRetried: true })], { autoMerge: true }), world({ A: { status: "verifying", session: session("idle") } }), T0 + 1000);
+    expect(shift.tickets[0]!.state).toBe("delivered");
+    expect(actions).toEqual([{ kind: "merge", itemId: "A" }]);
+  });
+
+  it("a conflict left with the person stays with them while the ticket sits in Verifying", () => {
+    const left = started("A", { state: "needs-you", merge: "refused", conflictRetried: true, why: { kind: "conflict-unresolved" } });
+    const { shift, actions } = advance(shiftOf([left], { autoMerge: true }), world({ A: { status: "verifying" } }), T0 + 1000);
+    expect(shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "conflict-unresolved" } });
+    expect(actions).toEqual([]);
+    expect(shift.failStreak).toBe(0);
   });
 
   it("a refused merge ends the wait and stops what depends on it", () => {

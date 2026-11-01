@@ -46,6 +46,14 @@ const work = (cwd: string, key: string) => {
   git(["commit", "-q", "-m", `${key}: work`], cwd);
 };
 
+/** Two tickets editing one file: the second to land conflicts with the first. */
+const workOnShared = (cwd: string, key: string) => {
+  fs.writeFileSync(path.join(cwd, "shared.ts"), `export const by = "${key}";\n`);
+  git(["add", "-A"], cwd);
+  git(["commit", "-q", "-m", `${key}: the shared file`], cwd);
+};
+const resolveConflict = (cwd: string) => git(["merge", "-q", "-X", "ours", "-m", "merge main", "main"], cwd);
+
 /** Does the ticket and hands it over, as a coding agent's brief tells it to. */
 const deliveringEngine = (): Engine => ({
   id: "fake-code",
@@ -55,7 +63,10 @@ const deliveringEngine = (): Engine => ({
   available: async () => ({ ok: true }),
   async turn(input, io) {
     if (input.cwd && input.purpose === "code" && input.ticket) {
-      work(input.cwd, input.ticket.key);
+      const asked = input.input.kind === "text" ? input.input.text : "";
+      if (asked.includes("no longer merges")) resolveConflict(input.cwd);
+      else if (input.ticket.title.startsWith("Shared")) workOnShared(input.cwd, input.ticket.key);
+      else work(input.cwd, input.ticket.key);
       await io.tools.execute("link_code", { scopeChecked: true });
     }
     return { stop: "end", resume: "fake-session" };
@@ -115,6 +126,78 @@ it("in background sessions: a chain delivers, merges and starts its dependant, a
   expect([t.status(up.id), t.status(down.id)]).toEqual(["done", "done"]);
   expect(git(["log", "--format=%s", "main"], t.checkout)).toContain(up.key);
   expect(git(["log", "--format=%s", "main"], t.checkout)).toContain(down.key);
+  await t.ctx.fiber.dispose();
+});
+
+it("in background sessions: two tickets on one file both land, the second after its agent resolves the conflict", { timeout: 60_000 }, async () => {
+  const t = await machine();
+  const first = t.ticket("Shared one");
+  const second = t.ticket("Shared two");
+  t.s.start(t.project.id, { itemIds: [first.id, second.id], mode: "run", engine: "fake-code", autoMerge: true, concurrency: 2 });
+  await until(async () => {
+    await t.s.tick(Date.now() + 120_000);
+    return t.s.current(t.project.id) === null;
+  }, 40_000);
+  const shift = t.s.list(t.project.id, 1)[0]!;
+  expect(shift).toMatchObject({ halt: null, failStreak: 0, counts: { done: 2 } });
+  expect(shift.tickets.filter((ticket) => ticket.conflictRetried)).toHaveLength(1);
+  expect([t.status(first.id), t.status(second.id)]).toEqual(["done", "done"]);
+  const log = git(["log", "--format=%s", "main"], t.checkout);
+  expect(log).toContain(first.key);
+  expect(log).toContain(second.key);
+  await t.ctx.fiber.dispose();
+});
+
+it("in terminal panes: a conflict goes back to the agent in its own pane, not to a background session", { timeout: 60_000 }, async () => {
+  const t = await machine();
+  const { ctx, project } = t;
+  await ctx.plugin(Mcp, { port: 0 });
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await settle();
+  vi.spyOn(ctx.herdr, "installed").mockResolvedValue("0.9.5");
+  await until(async () => (await ctx.codeLink.herdrStatus()) === "running");
+
+  const first = t.ticket("Shared one");
+  const second = t.ticket("Shared two");
+  t.s.start(project.id, { itemIds: [first.id, second.id], mode: "terminal", engine: "fake-code", concurrency: 2, autoMerge: true });
+  await t.s.tick();
+  await until(() => t.s.current(project.id)?.tickets.every((ticket) => ticket.threadId !== null) === true);
+  const later = Date.now() + 120_000;
+  const sessionOf = (itemId: string) => ctx.codeLink.store.sessions(project.id, { itemId })[0]!;
+  const hand = async (itemId: string, key: string) => {
+    const session = sessionOf(itemId);
+    await sessionContext.run({ projectId: project.id, sessionId: session.id }, () => ctx.tools.execute("link_code", { key, scopeChecked: true }, { by: "ai:fake-code", projectId: project.id }));
+    const token = ctx.codeLink.sessions.token(session.id)!;
+    await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "Stop", session_id: `cli-${key}` }) });
+  };
+  workOnShared(ctx.codeLink.worktreeOf(project.id, first.id)!, first.key);
+  await hand(first.id, first.key);
+  await until(async () => {
+    await t.s.tick(later);
+    return t.status(first.id) === "done";
+  });
+
+  const folder = ctx.codeLink.worktreeOf(project.id, second.id)!;
+  workOnShared(folder, second.key);
+  const pane = sessionOf(second.id).herdrPane!;
+  await hand(second.id, second.key);
+  await until(async () => {
+    await t.s.tick(later);
+    return fake.of("agent.prompt").length === 1;
+  });
+  expect(fake.of("agent.prompt")).toEqual([expect.objectContaining({ target: pane })]);
+  expect(fs.readFileSync(path.join(ctx.codeLink.sessionDir(sessionOf(second.id).id), "prompt.md"), "utf8")).toContain("no longer merges");
+  expect(ctx.codeLink.store.sessions(project.id, { itemId: second.id }).filter((s) => s.mode === "headless")).toEqual([]);
+  expect(t.status(second.id)).toBe("doing");
+
+  resolveConflict(folder);
+  await hand(second.id, second.key);
+  await until(async () => {
+    await t.s.tick(later);
+    return t.status(second.id) === "done";
+  });
+  expect(git(["log", "--format=%s", "main"], t.checkout)).toContain(second.key);
   await t.ctx.fiber.dispose();
 });
 
