@@ -74,11 +74,25 @@ const deliveringEngine = (): Engine => ({
   }
 });
 
-async function machine() {
+/** Commits something, then stops on what `stop` says, as an agent does when its quota goes mid-ticket. */
+const stoppingEngine = (id: string, stop: Awaited<ReturnType<Engine["turn"]>>): Engine => ({
+  id,
+  title: id,
+  author: `ai:${id}`,
+  capabilities: ["backlog", "code", "general"],
+  permissionModes: { default: "ask", choices: [{ value: "ask", label: "Ask" }, { value: "full", label: "Full" }] },
+  available: async () => ({ ok: true }),
+  async turn(input) {
+    if (input.cwd) work(input.cwd, `${input.ticket?.key}-${id}`);
+    return stop;
+  }
+});
+
+async function machine(engines: Engine[] = []) {
   const checkout = localRepo();
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
-  const enginePlugin = { name: "fake-code-engine", inject: ["agent"], apply: (ctx: Context) => void ctx.agent.engine(deliveringEngine()) };
+  const enginePlugin = { name: "fake-code-engine", inject: ["agent"], apply: (ctx: Context) => { for (const engine of [deliveringEngine(), ...engines]) ctx.agent.engine(engine); } };
   const bag = await fresh({
     hubDir,
     plugins: [
@@ -270,5 +284,123 @@ it("in terminal panes: each ticket gets a pane, and a usage limit is waited out 
   expect(t.status(first.id)).toBe("done");
   expect(sessionOf(second.id)).toMatchObject({ mode: "terminal" });
   expect(sessionOf(second.id).herdrPane).not.toBe("w1:p1");
+  await t.ctx.fiber.dispose();
+});
+
+it("in background sessions: an empty account hands the ticket to the next agent, on the same branch and with its commits", { timeout: 60_000 }, async () => {
+  const t = await machine([stoppingEngine("broke", { stop: "error", error: "Credit balance is too low" })]);
+  const a = t.ticket("First");
+  t.s.start(t.project.id, { itemIds: [a.id], mode: "run", engine: "broke", permissionMode: "full", autoMerge: true });
+  await until(async () => {
+    await t.s.tick(Date.now() + 120_000);
+    return t.s.current(t.project.id) === null;
+  }, 40_000);
+  const shift = t.s.list(t.project.id, 1)[0]!;
+  expect(shift).toMatchObject({ counts: { done: 1, failed: 0 }, failStreak: 0 });
+  expect(shift.tickets[0]!.switches).toMatchObject([{ from: "broke", to: "fake-code", cause: "balance" }]);
+  expect(shift.tickets[0]!.note).toContain("broke");
+  expect(shift.steps.find((step) => step.kind === "switched")).toMatchObject({ key: a.key, why: { kind: "switched", from: "broke", to: "fake-code" } });
+  const log = git(["log", "--format=%s", "main"], t.checkout);
+  expect(log).toContain(`${a.key}-broke`);
+  expect(log).toContain(`${a.key}: work`);
+  const thread = t.ctx.agent.store.thread(t.project.id, shift.tickets[0]!.threadId!)!;
+  expect(thread).toMatchObject({ engine: "fake-code", permissionMode: null, options: null });
+  const sessions = t.ctx.codeLink.store.sessions(t.project.id, { itemId: a.id });
+  expect(sessions.map((s) => s.agent)).toEqual(["fake-code", "broke"]);
+  expect(await t.ctx.codeLink.nextEngine(["broke", "fake-code"], { capability: "code", terminal: false })).toBeNull();
+  await t.ctx.fiber.dispose();
+});
+
+it("in background sessions: a question left open on the stopped thread does not hold the switch back", { timeout: 60_000 }, async () => {
+  const t = await machine([stoppingEngine("broke", { stop: "error", error: "Credit balance is too low" })]);
+  const question = { id: "q", text: "Move on?", options: ["Yes", "No"] };
+  t.ctx.on("agent/run-ended", (run, thread) => {
+    if (run.engine === "broke") t.ctx.agent.store.setPending(thread.projectId, thread.id, { kind: "ask", workflow: null, step: null, state: null, question, accepts: "options", waiveRule: null, waiveOn: [] });
+  });
+  const a = t.ticket("First");
+  t.s.start(t.project.id, { itemIds: [a.id], mode: "run", engine: "broke", autoMerge: true });
+  await until(async () => {
+    await t.s.tick(Date.now() + 120_000);
+    return t.s.current(t.project.id) === null;
+  }, 40_000);
+  expect(t.s.list(t.project.id, 1)[0]).toMatchObject({ counts: { done: 1 } });
+  await t.ctx.fiber.dispose();
+});
+
+it("in background sessions: with every agent out of balance the ticket stops for the person, after one try at each", { timeout: 60_000 }, async () => {
+  const t = await machine([stoppingEngine("broke", { stop: "error", error: "Credit balance is too low" }), stoppingEngine("broke-too", { stop: "error", error: "insufficient balance" })]);
+  vi.spyOn(t.ctx.codeLink, "nextEngine").mockImplementation(async (except) => ["broke", "broke-too"].find((id) => !except.includes(id)) ?? null);
+  const a = t.ticket("First");
+  t.s.start(t.project.id, { itemIds: [a.id], mode: "run", engine: "broke" });
+  await until(async () => {
+    await t.s.tick(Date.now() + 120_000);
+    return t.s.current(t.project.id) === null;
+  }, 40_000);
+  const shift = t.s.list(t.project.id, 1)[0]!;
+  expect(shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "no-engine", engine: "broke-too" } });
+  expect(shift.tickets[0]!.switches).toHaveLength(1);
+  expect(shift.steps.map((step) => step.kind)).toEqual(["started", "switched", "needs-you"]);
+  await t.ctx.fiber.dispose();
+});
+
+it("in terminal panes: a limit closes the agent's pane and a new session takes the ticket up, told where it stood", { timeout: 60_000 }, async () => {
+  const t = await machine([stoppingEngine("spare", { stop: "end" })]);
+  const { ctx, project } = t;
+  await ctx.plugin(Mcp, { port: 0 });
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await settle();
+  vi.spyOn(ctx.herdr, "installed").mockResolvedValue("0.9.5");
+  await until(async () => (await ctx.codeLink.herdrStatus()) === "running");
+
+  const a = t.ticket("First");
+  t.s.start(project.id, { itemIds: [a.id], mode: "terminal", engine: "fake-code", concurrency: 1 });
+  await t.s.tick();
+  await until(() => t.s.current(project.id)?.tickets[0]?.threadId != null);
+  const sessionOf = () => ctx.codeLink.store.sessions(project.id, { itemId: a.id })[0]!;
+  const first = sessionOf();
+  const folder = ctx.codeLink.worktreeOf(project.id, a.id)!;
+  work(folder, a.key);
+  const hook = async (body: Record<string, unknown>) => {
+    await fetch(ctx.mcp.eventUrlFor(ctx.codeLink.sessions.token(first.id)!)!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  };
+  await sessionContext.run({ projectId: project.id, sessionId: first.id }, () => ctx.tools.execute("note_progress", { key: a.key, text: "half the tests pass" }, { by: "ai:fake-code", projectId: project.id }));
+  await t.s.tick(Date.now() + 1000);
+  await hook({ hook_event_name: "StopFailure", session_id: "cli-1", error: "rate_limit", error_details: "usage limit reached" });
+  await until(() => sessionOf().state === "error");
+  await until(async () => {
+    await t.s.tick(Date.now() + 1000);
+    return sessionOf().id !== first.id;
+  });
+
+  expect(ctx.codeLink.store.session(project.id, first.id)).toMatchObject({ state: "ended" });
+  const second = sessionOf();
+  expect(second).toMatchObject({ mode: "terminal", agent: "spare" });
+  expect(second.herdrPane).not.toBe(first.herdrPane);
+  expect(ctx.codeLink.worktreeOf(project.id, a.id)).toBe(folder);
+  expect(git(["log", "--format=%s"], folder)).toContain(`${a.key}: work`);
+  const told = fs.readFileSync(path.join(ctx.codeLink.sessionDir(second.id), "prompt.md"), "utf8");
+  expect(told).toContain("Fake coding agent stopped on this ticket");
+  expect(told).toContain("half the tests pass");
+  expect(told).toContain("git log");
+  expect(ctx.agent.parked(project.id, second.threadId!)).toBeNull();
+  await t.ctx.fiber.dispose();
+});
+
+it("set to wait, a limit keeps the ticket on its agent though another could take it", { timeout: 60_000 }, async () => {
+  const t = await machine([stoppingEngine("limited", { stop: "error", error: "usage limit reached" })]);
+  const a = t.ticket("First");
+  t.s.start(t.project.id, { itemIds: [a.id], mode: "run", engine: "limited", whenLimited: "wait" });
+  await until(async () => {
+    await t.s.tick();
+    return t.s.current(t.project.id)?.tickets[0]?.state === "limited";
+  });
+  await t.s.tick();
+  await settle();
+  const ticket = t.s.current(t.project.id)!.tickets[0]!;
+  expect(ticket.switches).toBeUndefined();
+  expect(t.ctx.agent.store.thread(t.project.id, ticket.threadId!)).toMatchObject({ engine: "limited" });
+  // the run's settings answered already, so its thread asks nobody
+  expect(t.ctx.agent.store.pending(t.project.id, ticket.threadId!)).toBeNull();
   await t.ctx.fiber.dispose();
 });

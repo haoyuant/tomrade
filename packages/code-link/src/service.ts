@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { Engine, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
+import type { Engine, EngineCapability, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -37,7 +37,7 @@ import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./syn
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
-import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
 import { Sessions, END_AFTER_MS, type SessionChange, type SessionMoment } from "./sessions.js";
 import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
@@ -53,7 +53,7 @@ import { registerTools } from "./tools.js";
 import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
 import { ghRow, probeGh, type GhStatus } from "./gh.js";
 
-export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, rollupChecks, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult, type PrChecks } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
@@ -916,6 +916,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.scans.unlinkedByProject.get(projectId) ?? [];
   }
 
+  /** What the last scan found ahead of the default branch with no ticket holding it. */
+  unmerged(projectId: string): UnmergedBranch[] {
+    return this.scans.unmergedByProject.get(projectId) ?? [];
+  }
+
   repoStates(projectId: string): RepoStateView[] {
     return this.store.repoStates(projectId);
   }
@@ -1448,6 +1453,12 @@ export class CodeLink extends Service implements CodeLinkReader {
     return true;
   }
 
+  /** The engine a ticket can go on with now, past those it stopped on; null when none can. */
+  async nextEngine(stopped: readonly string[], need: { capability: EngineCapability; terminal: boolean }): Promise<string | null> {
+    const agent = this.ctx.get("agent");
+    return agent ? ((await this.starter.takeOver(agent, stopped, need))?.id ?? null) : null;
+  }
+
   /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */
   private withinStartTimeout(projectId: string, itemId: string, started: Promise<StartResult>): Promise<StartResult> {
     const ms = this.config.startTimeoutMs;
@@ -1606,8 +1617,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.connections.letGo(projectId, connection, sessionId, itemId);
   }
 
-  /** A branch that names no ticket becomes one, linked from the start. */
-  adoptBranch(projectId: string, repoId: string, branch: string): Item {
+  /** A branch that names no ticket becomes one, linked from the start. `rescan: false` leaves the scan to a caller adopting several. */
+  adoptBranch(projectId: string, repoId: string, branch: string, opts: { title?: string; body?: string; rescan?: boolean } = {}): Item {
     const repo = this.ctx.repos.get(projectId, repoId);
     if (!repo) throw new Error(`unknown repository ${repoId}`);
     const name = branch.trim().replace(/^origin\//, "");
@@ -1621,14 +1632,18 @@ export class CodeLink extends Service implements CodeLinkReader {
         .join(" ")
         .replace(/[-_]+/g, " ")
         .trim() || name;
-    const item = this.ctx.items.create({ projectId, boardId: board.id, title: words.charAt(0).toUpperCase() + words.slice(1), status: "todo", by: "human" });
+    const item = this.ctx.items.create({ projectId, boardId: board.id, title: opts.title?.trim() || words.charAt(0).toUpperCase() + words.slice(1), ...(opts.body ? { body: opts.body } : {}), status: "todo", by: "human" });
     this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: name }, { source: "manual", lastSeenAt: Date.now() });
     this.scans.unlinkedByProject.set(
       projectId,
       this.unlinked(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
     );
+    this.scans.unmergedByProject.set(
+      projectId,
+      this.unmerged(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
+    );
     this.notify(projectId);
-    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${errorMessage(err)}`));
+    if (opts.rescan !== false) void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${errorMessage(err)}`));
     return item;
   }
 

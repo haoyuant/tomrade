@@ -242,6 +242,9 @@ importers:
       '@tomradex/storage-github':
         specifier: workspace:*
         version: link:../../packages/storage-github
+      '@tomradex/takeover':
+        specifier: workspace:*
+        version: link:../../packages/takeover
       '@tomradex/theme-image':
         specifier: workspace:*
         version: link:../../packages/theme-image
@@ -2672,6 +2675,82 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/takeover:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/agent-backlog':
+        specifier: workspace:*
+        version: link:../agent-backlog
+      '@tomradex/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/inbox-github':
+        specifier: workspace:*
+        version: link:../inbox-github
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/testkit:
     dependencies:
       '@tomradex/boards':
@@ -3017,6 +3096,9 @@ importers:
       '@tomradex/schedules':
         specifier: workspace:*
         version: link:../schedules
+      '@tomradex/takeover':
+        specifier: workspace:*
+        version: link:../takeover
       '@tomradex/web-search':
         specifier: workspace:*
         version: link:../web-search

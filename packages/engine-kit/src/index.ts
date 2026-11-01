@@ -15,6 +15,6 @@ export { JsonLinePeer, jsonRpc, RpcError, STDERR_CAP, type PeerOptions, type Rpc
 export { pooledEngine, runTurn, type TurnFrame, type TurnSpec } from "./turn.js";
 export { engineLocale, KIT_WORDS } from "./words.js";
 export {
-  blocksText, claudeRecord, claudeTranscriptTitle, clipDetail, clipLine, countJsonlUsage, findClaudeTranscript, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine,
+  blocksText, claudeRecord, claudeSessions, claudeTranscriptTitle, clipDetail, clipLine, countJsonlUsage, findClaudeTranscript, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine,
   type ClaudeFolders, type JsonlReader, type RecordCallLine, type UsageEntry
 } from "./record.js";

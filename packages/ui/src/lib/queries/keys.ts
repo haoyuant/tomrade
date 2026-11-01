@@ -211,6 +211,10 @@ export const keys = {
     suggestions: (locale: string) => ["schedules", "suggestions", locale] as const
   },
 
+  takeover: {
+    offer: (projectId: string) => ["takeover", projectId, "offer"] as const
+  },
+
   nightShift: {
     all: (projectId: string) => ["nightShift", projectId] as const,
     current: (projectId: string) => ["nightShift", projectId, "current"] as const,

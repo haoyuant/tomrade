@@ -32,6 +32,9 @@ class FakeCodeLink extends Service {
   startDefaults() {
     return this.defaults;
   }
+  async nextEngine() {
+    return null;
+  }
   async start(_projectId: string, itemId: string, opts: Record<string, unknown>) {
     this.starts.push({ itemId, opts });
     if (this.refuse) return { ok: false, ...this.refuse };
@@ -756,6 +759,21 @@ describe("changing a run while it goes", () => {
       expect(ticket).toMatchObject({ state: "skipped", why: { kind: "removed" } });
       expect(ticket?.note).toMatch(/stays on its branch/);
       expect(t.code.starts.map((x) => x.itemId)).toEqual([a.id, b.id]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("does not let a stopped ticket go on by itself when its limit lifts", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      const shift = t.s.start(t.project.id, { itemIds: [a.id], concurrency: 1 });
+      await t.s.tick();
+      const unpark = vi.spyOn(t.ctx.agent, "unpark");
+      t.s.edit(t.project.id, shift.id, { remove: [{ itemId: a.id, stop: true }] });
+      await t.s.tick();
+      expect(unpark).toHaveBeenCalledWith(t.project.id, `th-${a.id}`);
     } finally {
       await t.ctx.fiber.dispose();
     }

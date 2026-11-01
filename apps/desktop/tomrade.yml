@@ -457,6 +457,10 @@ plugins:
   # panes or background sessions, within limits. Runs on this machine only.
   - id: night-shift
     name: "@tomradex/night-shift"
+  # Reads what a repository already holds (unmerged branches, idle worktrees,
+  # issues and, with leave, local agent sessions) into a draft a person ticks.
+  - id: takeover
+    name: "@tomradex/takeover"
   # Failed CI, reviews and people's comments on a ticket's open pull request go
   # back to the agent working it. Off until Settings says so; runs on this machine.
   - id: pr-feedback

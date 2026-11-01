@@ -52,6 +52,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `inbox-triage` | The worker model proposes a kind, duplicate and reply for each new inbox entry. | — | agent-backlog, inbox, items, llm |
 | `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
 | `night-shift` | Auto run: the agent plans a batch of tickets on the dependency graph, then works through it by dependency, in terminal panes or background sessions, within limits on concurrency, time, spend and failures. A night shift is its time-limited kind. | `nightShift` | agent, code-link, contributions, items, tools |
+| `takeover` | Reads a repository's unmerged branches, idle worktrees, GitHub issues and, with leave, local agent sessions into a draft backlog; only what a person ticks is written. | `takeover` | agent, agent-backlog, boards, code-link, git, github, inbox, inbox-github, items, llm, repos, settings |
 | `pr-feedback` | Failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket. | `prFeedback` | agent, code-link, github, hub, items, repos |
 | `watchdog` | Tells the person when a run seems stuck, repeats itself or goes nowhere; it never touches the run. | `watchdog` | agent, items, llm |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |

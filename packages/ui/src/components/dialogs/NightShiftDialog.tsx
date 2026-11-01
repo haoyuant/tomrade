@@ -340,6 +340,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [keepAwake, setKeepAwake] = useState(true);
   const [notify, setNotify] = useState<"steps" | "stuck">("steps");
   const [maxInserts, setMaxInserts] = useState(3);
+  const [whenLimited, setWhenLimited] = useState<"switch" | "wait">("switch");
   const [judge, setJudge] = useState(true);
   const onBattery = useOnBattery();
 
@@ -411,6 +412,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         judge,
         notify,
         maxInserts,
+        whenLimited,
         dependencies: taken.map(({ from, to }) => ({ from, to })),
         nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id)))
       },
@@ -572,6 +574,13 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         <p className="meta-txt" data-testid="plan-concurrency">{concurrencyWhy ? t("nightShift.concurrencyDecidedWhy", { n: concurrency, why: concurrencyWhy }) : t("nightShift.concurrencyDecided", { n: concurrency })}</p>
         <p className="meta-txt" data-testid="night-shift-inserts-hint">{t(maxInserts ? "nightShift.maxInsertsHint" : "nightShift.maxInsertsOff")}</p>
         {spendLimit > 0 && <p className="meta-txt" data-testid="night-shift-cost-note">{t(mode === "terminal" ? "nightShift.costTerminal" : "nightShift.costSession")}</p>}
+        <Field label={t("nightShift.whenLimited")} htmlFor="nsWhenLimited">
+          <select id="nsWhenLimited" className="select" data-testid="night-shift-when-limited" value={whenLimited} onChange={(event) => setWhenLimited(event.target.value as "switch" | "wait")}>
+            <option value="switch">{t("nightShift.whenLimitedSwitch")}</option>
+            <option value="wait">{t("nightShift.whenLimitedWait")}</option>
+          </select>
+          <p className="meta-txt">{t("nightShift.whenLimitedHint")}</p>
+        </Field>
         <label className="cfg-row" style={{ cursor: "pointer" }}>
           <input type="checkbox" data-testid="night-shift-auto-merge" checked={autoMerge} onChange={(event) => setAutoMerge(event.target.checked)} />
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
-import type { Agent, Engine, EngineAvailability, ThreadSummary } from "@tomradex/agent";
+import type { Agent, Engine, EngineAvailability, EngineCapability, ThreadSummary } from "@tomradex/agent";
 import { rulesSection } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
@@ -759,9 +759,10 @@ export class Starter {
       store.createSession(projectId, { repoId: "", delivery: delivery.sequence, branch: "", itemIds: [item.id], mode, agent: engineId, threadId: thread.id, device: ctx.hub.deviceId, externalId });
     if (prepared.continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     const base = { ok: true as const, continued: prepared.continued, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: prepared.cwd, mode: opts.mode, engine: engineId };
+    const added = opts.message?.trim() ? `\n\n${opts.message.trim()}` : "";
 
     if (opts.mode === "run") {
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: `${prepared.opener}\n${languageLine(locale)}` }, sourced(opts)).runId;
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: `${prepared.opener}\n${languageLine(locale)}${added}` }, sourced(opts)).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
       return { ...base, command: null, launched: true, runId };
@@ -771,7 +772,7 @@ export class Starter {
     const chosen = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
     const inside = insideOnly(agent, engineId) ?? (chosen ? await linkFirst(chosen, locale) : null);
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
-    const generalPrompt = withClaimFirst(agent, engineId, item.key, `${prepared.prompt}\n\n${languageLine(locale)}`);
+    const generalPrompt = withClaimFirst(agent, engineId, item.key, `${prepared.prompt}\n\n${languageLine(locale)}${added}`);
     if (live?.herdrPane && (await this.continueInPane(live, engineId, generalPrompt))) {
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, activity: null });
       this.host.notify(projectId);
@@ -820,6 +821,16 @@ export class Starter {
       return { ok: true, engine };
     }
     return { ok: false, reason: reasons.join(" · ") };
+  }
+
+  /** Who can take a ticket over from the engines it stopped on: the agent's pick, past any a terminal Start would refuse until it is linked. */
+  async takeOver(agent: Agent, stopped: readonly string[], need: { capability: EngineCapability; terminal: boolean }): Promise<Engine | null> {
+    const passed = [...stopped];
+    for (;;) {
+      const engine = await agent.nextEngine(passed, need);
+      if (!engine || !need.terminal || !(await linkFirst(engine, this.host.ctx.settings.locale?.()))) return engine;
+      passed.push(engine.id);
+    }
   }
 
   private openBlockers(projectId: string, item: Item): Item[] {

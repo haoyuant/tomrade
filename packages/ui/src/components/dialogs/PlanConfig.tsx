@@ -88,6 +88,13 @@ export function NodeConfigPanel({ item, rule, override, engines, allEngines, onC
         <Field label={t("nightShift.merge")} htmlFor={`${id}-merge`}>
           <MergeSelect id={`${id}-merge`} value={own.autoMerge} onChange={(next) => onChange(without(own, "autoMerge", next))} />
         </Field>
+        <Field label={t("nightShift.whenLimited")} htmlFor={`${id}-limited`}>
+          <select id={`${id}-limited`} className="select" data-testid="plan-config-when-limited" value={own.whenLimited ?? ""} onChange={(event) => onChange(without(own, "whenLimited", (event.target.value || undefined) as "switch" | "wait" | undefined))}>
+            <option value="">{t("nightShift.asRun")}</option>
+            <option value="switch">{t("nightShift.whenLimitedSwitch")}</option>
+            <option value="wait">{t("nightShift.whenLimitedWait")}</option>
+          </select>
+        </Field>
       </div>
       {override && <button type="button" className="tlink" data-testid="plan-config-reset" onClick={() => onChange(null)}>{t("nightShift.resetNode")}</button>}
     </section>

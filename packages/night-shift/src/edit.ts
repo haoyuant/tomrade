@@ -37,7 +37,8 @@ export function applyEdit(shift: NightShift, edit: ShiftEdit, now: number): { sh
       say("removed", t);
       if (t.state === "queued") return [];
       stopping.push(t);
-      return [{ ...t, state: "skipped", why: { kind: "removed" }, limitedUntil: null }];
+      const { limit: _limit, ...rest } = t;
+      return [{ ...rest, state: "skipped", why: { kind: "removed" }, limitedUntil: null }];
     }
     if (!(t.itemId in edit.nodes)) return [t];
     if (t.state !== "queued") {
