@@ -313,6 +313,12 @@ export function announceAway(prefs: NotificationPrefs, key: string, notice: { ti
   if (prefs.away === "im") im?.announce({ key, ...notice });
 }
 
+/** A run's steps while the person is away: each to the IM they chose, and only what stopped a ticket to a phone. */
+export function tellShiftSteps(prefs: NotificationPrefs, notices: { key: string; title: string; body: string }[], stuck: { title: string; body: string } | null, im: ImAnnounceable | undefined): { title: string; body: string } | null {
+  for (const { key, ...notice } of notices) announceAway(prefs, `night-shift:${key}`, notice, im);
+  return stuck && prefs.away === "push" && pushTargets(prefs).length ? stuck : null;
+}
+
 /**
  * What a phone gets: the ticket key and the event on the first line, the ticket's
  * own title and how long it waited under it. The agent's words only when asked —
@@ -485,6 +491,16 @@ export const attention = {
         ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
       }
       if (away.away === "push" && pushTargets(away).length) void phone.send(pushTargets(away), notice).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
+    });
+
+    ctx.on("nightShift/step", (_shift, notices, stuck) => {
+      const away = prefsOf();
+      try {
+        const toPhone = tellShiftSteps(away, notices, stuck, ctx.get("im") as ImAnnounceable | undefined);
+        if (toPhone) void phone.send(pushTargets(away), toPhone).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
+      } catch (e) {
+        ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
+      }
     });
 
     const refresh = () => {

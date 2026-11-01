@@ -20,7 +20,12 @@ export interface ShiftSettings {
   keepAwake: boolean;
   /** The morning report asks the worker model about each delivery; off, it says only what git says. */
   judge: boolean;
+  /** Absent on a run from before there was a choice. */
+  notify?: ShiftNotify;
 }
+
+/** Every step, or only what stops a ticket; the end is always told. */
+export type ShiftNotify = "steps" | "stuck";
 
 /** What one node of the plan does differently from the run; a field left out goes as the run goes. */
 export interface NodeConfig {
@@ -65,6 +70,18 @@ export interface ShiftTicket {
   engineLost?: string;
 }
 
+/** One thing that happened on the plan, kept with the run. */
+export interface ShiftStep {
+  at: number;
+  kind: StepKind;
+  itemId: string;
+  key: string;
+  title: string;
+  why: Why | null;
+}
+
+export type StepKind = "started" | "limited" | "delivered" | "merged" | "refused" | "needs-you" | "failed" | "skipped";
+
 export interface NightShift {
   id: string;
   projectId: string;
@@ -80,6 +97,8 @@ export interface NightShift {
   spentUsd: number;
   /** The morning report, in the project's Files, once it is written. */
   briefPath: string | null;
+  /** Oldest first; absent on a run from before there were any. */
+  steps?: ShiftStep[];
 }
 
 export interface SessionFacts {
@@ -246,6 +265,27 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
   if (active) return { shift: next, actions };
   const closed = tickets.map((t) => (t.state === "queued" ? { ...t, state: "skipped" as const, why: t.why ?? (halt ? { kind: "halted" as const, halt } : null) } : t));
   return { shift: { ...next, tickets: closed, status: "ended", endedAt: now }, actions };
+}
+
+/** A run keeps its last steps: enough to read back, and no more than its row should carry. */
+export const MAX_STEPS = 300;
+
+export const isStuck = (kind: StepKind): boolean => kind === "needs-you" || kind === "failed" || kind === "refused";
+
+const STEP_OF: Partial<Record<TicketState, StepKind>> = { limited: "limited", delivered: "delivered", done: "merged", "needs-you": "needs-you", failed: "failed", skipped: "skipped" };
+
+/** What changed between two looks at a run, once each: a state a ticket stays in says nothing new. */
+export function stepsBetween(before: NightShift, after: NightShift, at: number): ShiftStep[] {
+  const was = new Map(before.tickets.map((t) => [t.itemId, t]));
+  return after.tickets.flatMap((t): ShiftStep[] => {
+    const prior = was.get(t.itemId);
+    const step = (kind: StepKind): ShiftStep => ({ at, kind, itemId: t.itemId, key: t.key, title: t.title, why: t.why });
+    if (t.merge === "refused" && prior?.merge !== "refused") return [step("refused")];
+    if (prior?.state === t.state) return [];
+    if (t.state === "running") return prior?.state === "queued" ? [step("started")] : [];
+    const kind = STEP_OF[t.state];
+    return kind ? [step(kind)] : [];
+  });
 }
 
 /** What Tomrade tried for a ticket did not take: it counts against the shift like any other failure. */

@@ -31,6 +31,16 @@ export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectI
   );
 }
 
+function PlanViewSwitch({ view, onChange }: { view: "graph" | "list"; onChange: (next: "graph" | "list") => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="seg plan-view" role="group" aria-label={t("nightShift.tickets")} data-testid="plan-view">
+      <button type="button" aria-pressed={view === "graph"} data-view="graph" onClick={() => onChange("graph")}><Icon name="i-graph" size={13} /> {t("nightShift.viewGraph")}</button>
+      <button type="button" aria-pressed={view === "list"} data-view="list" onClick={() => onChange("list")}><Icon name="i-bars" size={13} /> {t("nightShift.viewList")}</button>
+    </div>
+  );
+}
+
 function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
   return (
@@ -48,8 +58,46 @@ function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue
   );
 }
 
+/** The run as the plan drew it, with each node where it stands. */
+function GoingGraph({ projectId, shift, onOpenIssue }: { projectId: string; shift: NightShiftView; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const all = useAllItems(projectId);
+  const byId = useMemo(() => new Map(shift.tickets.map((ticket) => [ticket.itemId, ticket])), [shift.tickets]);
+  const items = useMemo(() => (all.data ?? []).filter((item) => byId.has(item.id)), [all.data, byId]);
+  const everyone = useMemo(() => new Set(items.map((item) => item.id)), [items]);
+  const links = items.flatMap((item) => item.blocks.filter((to) => byId.has(to)).map((to) => ({ from: item.id, to, firm: true })));
+  const subOf = (item: Item) => {
+    const ticket = byId.get(item.id);
+    return ticket ? [t(`nightShift.state_${ticket.state}` as MessageKey), ticket.note].filter(Boolean).join(" · ") : null;
+  };
+  if (!items.length) return null;
+  return <PlanGraph items={items} links={links} chosen={everyone} subOf={subOf} subs={items.map(subOf).join("|")} onToggle={onOpenIssue} stateOf={(id) => byId.get(id)?.state} />;
+}
+
+/** What happened, newest first. It stays with the run, so it reads the same after a restart. */
+function Timeline({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue: (id: string) => void }) {
+  const { t, locale } = useI18n();
+  if (!shift.steps.length) return null;
+  return (
+    <Field label={t("nightShift.timeline")}>
+      <ol className="plan-timeline" data-testid="plan-timeline">
+        {[...shift.steps].reverse().map((step) => (
+          <li key={`${step.itemId}:${step.kind}:${step.at}`} data-testid="plan-step" data-kind={step.kind}>
+            <time className="meta-txt num">{new Date(step.at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}</time>
+            <span>
+              <button type="button" className="kref num" onClick={() => onOpenIssue(step.itemId)}>{step.key}</button> {t(`nightShift.step_${step.kind}` as MessageKey)}
+              {step.note && <span className="meta-txt"> · {step.note}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </Field>
+  );
+}
+
 function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; shift: NightShiftView; onClose: () => void; onOpenIssue: (id: string) => void }) {
   const { t, locale } = useI18n();
+  const [view, setView] = useState<"graph" | "list">("graph");
   const toast = useToast();
   const { stop } = useNightShiftActions(projectId);
   const until = new Date(shift.deadlineAt).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
@@ -65,7 +113,9 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
       <DialogBody>
         <div className="stack-4">
           <p className="meta-txt" data-testid="night-shift-going">{facts.join(" · ")}</p>
-          <TicketRows shift={shift} onOpenIssue={onOpenIssue} />
+          <PlanViewSwitch view={view} onChange={setView} />
+          {view === "graph" ? <GoingGraph projectId={projectId} shift={shift} onOpenIssue={onOpenIssue} /> : <TicketRows shift={shift} onOpenIssue={onOpenIssue} />}
+          <Timeline shift={shift} onOpenIssue={onOpenIssue} />
         </div>
       </DialogBody>
       <DialogFoot>
@@ -122,6 +172,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [maxUsd, setMaxUsd] = useState("");
   const [autoMerge, setAutoMerge] = useState(false);
   const [keepAwake, setKeepAwake] = useState(true);
+  const [notify, setNotify] = useState<"steps" | "stuck">("steps");
   const [judge, setJudge] = useState(true);
   const onBattery = useOnBattery();
 
@@ -177,6 +228,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         autoMerge,
         keepAwake,
         judge,
+        notify,
         dependencies: taken.map(({ from, to }) => ({ from, to })),
         nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id)))
       },
@@ -212,10 +264,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         <Field label={`${t("nightShift.tickets")} · ${t("nightShift.chosen", { n: chosen.size })}`}>
           {!candidates.length && !items.isLoading && <p className="meta-txt">{t("nightShift.noTickets")}</p>}
           <div className="plan-tools">
-            <div className="seg" role="group" aria-label={t("nightShift.tickets")} data-testid="plan-view">
-              <button type="button" aria-pressed={view === "graph"} data-view="graph" onClick={() => setView("graph")}><Icon name="i-graph" size={13} /> {t("nightShift.viewGraph")}</button>
-              <button type="button" aria-pressed={view === "list"} data-view="list" onClick={() => setView("list")}><Icon name="i-bars" size={13} /> {t("nightShift.viewList")}</button>
-            </div>
+            <PlanViewSwitch view={view} onChange={setView} />
             <button type="button" className="btn btn-ghost" data-testid="plan-pick-suggested" onClick={() => setPicked(new Set(suggested))}>{t("nightShift.pickSuggested")}</button>
             <button type="button" className="btn btn-ghost" data-testid="plan-pick-none" onClick={() => setPicked(new Set())}>{t("nightShift.pickNone")}</button>
           </div>
@@ -325,6 +374,13 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>
         </label>
         <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        <Field label={t("nightShift.notify")} htmlFor="nsNotify">
+          <select id="nsNotify" className="select" data-testid="night-shift-notify" value={notify} onChange={(event) => setNotify(event.target.value as "steps" | "stuck")}>
+            <option value="steps">{t("nightShift.notifySteps")}</option>
+            <option value="stuck">{t("nightShift.notifyStuck")}</option>
+          </select>
+          <p className="meta-txt">{t("nightShift.notifyHint")}</p>
+        </Field>
         <label className="cfg-row" style={{ cursor: "pointer" }}>
           <input type="checkbox" data-testid="night-shift-judge" checked={judge} onChange={(event) => setJudge(event.target.checked)} />
           <span className="cfg-name">{t("nightShift.judge")}</span>

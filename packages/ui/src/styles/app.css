@@ -3671,7 +3671,6 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .palette.sheet-plan { width: min(920px, calc(100vw - 64px)); }
 .night-shift-pick { max-height: 240px; overflow-y: auto; }
 .plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
-.plan-tools .seg button { display: inline-flex; align-items: center; gap: 6px; }
 .plan-graph { height: 340px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
 .plan-node {
@@ -3684,6 +3683,17 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
   border: 1px solid var(--border); border-radius: 4px; color: var(--bg);
 }
 .plan-node.is-chosen .plan-node-check { border-color: var(--accent); background: var(--accent); }
+.plan-node[data-state] { color: var(--fg); }
+.plan-node[data-state="queued"], .plan-node[data-state="skipped"] { border-color: var(--border); color: var(--muted); }
+.plan-node[data-state="running"], .plan-node[data-state="limited"] { border-color: var(--accent); }
+.plan-node[data-state="delivered"], .plan-node[data-state="done"] { border-color: var(--success); }
+.plan-node[data-state="needs-you"] { border-color: var(--warn); }
+.plan-node[data-state="failed"] { border-color: var(--danger); }
+.plan-timeline { display: flex; flex-direction: column; gap: var(--space-1); max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.plan-timeline li { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
+.plan-timeline time { flex-shrink: 0; }
+.plan-view { align-self: flex-start; }
+.plan-view button { display: inline-flex; align-items: center; gap: 6px; }
 .plan-node-cfg { flex-shrink: 0; width: 22px; height: 22px; margin-left: auto; color: var(--meta); }
 .plan-config, .plan-rule { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .plan-config-head, .plan-rule-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }

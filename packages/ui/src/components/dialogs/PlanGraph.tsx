@@ -20,22 +20,24 @@ interface PlanNodeData extends Record<string, unknown> {
   item: Item;
   chosen: boolean;
   sub: string | null;
-  onConfigure: (id: string) => void;
+  /** Where the node stands in a run; absent while it is only planned. */
+  state: string | undefined;
+  onConfigure: ((id: string) => void) | undefined;
 }
 type PlanFlowNode = Node<PlanNodeData, "plan">;
 
 function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
-  const { item, chosen, sub, onConfigure } = data;
+  const { item, chosen, sub, state, onConfigure } = data;
   const { t } = useI18n();
   return (
-    <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} aria-pressed={chosen} title={sub ?? item.title}>
+    <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} data-state={state} aria-pressed={state ? undefined : chosen} title={sub ?? item.title}>
       <Handle type="target" position={Position.Left} />
-      <span className="plan-node-check" aria-hidden>{chosen && <Icon name="i-check" size={11} />}</span>
+      {!state && <span className="plan-node-check" aria-hidden>{chosen && <Icon name="i-check" size={11} />}</span>}
       <span className="plan-node-text">
         <span className="plan-node-title"><span className="num">{item.key}</span> {item.title}</span>
         {sub && <span className="plan-node-sub">{sub}</span>}
       </span>
-      <button
+      {onConfigure && <button
         type="button"
         className="btn btn-icon plan-node-cfg nopan"
         aria-label={t("nightShift.configure", { key: item.key })}
@@ -47,7 +49,7 @@ function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
         }}
       >
         <Icon name="i-sliders" size={13} />
-      </button>
+      </button>}
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -63,11 +65,13 @@ interface PlanGraphProps {
   /** Changes when `subOf` would answer differently. */
   subs: string;
   onToggle: (id: string) => void;
-  onAdd: (ids: string[]) => void;
-  onConfigure: (id: string) => void;
+  /** Absent in a run: the box is for choosing, and nothing is left to choose. */
+  onAdd?: (ids: string[]) => void;
+  onConfigure?: (id: string) => void;
+  stateOf?: (id: string) => string | undefined;
 }
 
-function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure }: PlanGraphProps) {
+function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf }: PlanGraphProps) {
   const { fitView } = useReactFlow();
   const shape = links.map((l) => `${l.from}>${l.to}`).join();
   const ids = items.map((i) => i.id).join();
@@ -75,7 +79,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
   const placed = useMemo(() => layout(items, links, Object.fromEntries(items.map((i) => [i.id, PLAN_NODE_H]))), [ids, shape]);
   const [nodes, setNodes, onNodesChange] = useNodesState<PlanFlowNode>([]);
   useEffect(() => {
-    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), onConfigure } })));
+    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), onConfigure } })));
     // `subs` says when `subOf` changed; the function itself is new on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, placed, chosen, subs, setNodes]);
@@ -108,14 +112,14 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
       onNodeClick={(_, node) => onToggle(node.id)}
       onSelectionChange={({ nodes: selected }) => { boxed.current = selected.map((n) => n.id); }}
       onSelectionEnd={() => {
-        if (boxed.current.length) onAdd(boxed.current);
+        if (boxed.current.length) onAdd?.(boxed.current);
         boxed.current = [];
       }}
       nodesDraggable={false}
       nodesConnectable={false}
-      selectionOnDrag
+      selectionOnDrag={!!onAdd}
       selectionMode={SelectionMode.Partial}
-      panOnDrag={[1, 2]}
+      panOnDrag={onAdd ? [1, 2] : true}
       panOnScroll
       zoomOnDoubleClick={false}
       minZoom={0.3}

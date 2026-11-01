@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, settingsFor, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
+import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, settingsFor, stepsBetween, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
 
 const T0 = 1_000_000;
 const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...over });
@@ -269,5 +269,40 @@ describe("a node's own settings", () => {
   it("a terminal node goes on after a limit, in a run of sessions", () => {
     const { actions } = advance(shiftOf([started("A", { state: "limited", limitedUntil: T0 - 1, config: { mode: "terminal" } })]), world({ A: { status: "doing" } }), T0);
     expect(actions).toEqual([{ kind: "continue", itemId: "A" }]);
+  });
+});
+
+describe("the steps of a run", () => {
+  const steps = (before: ShiftTicket[], after: ShiftTicket[]) => stepsBetween(shiftOf(before), shiftOf(after), T0).map((s) => [s.key, s.kind]);
+
+  it("says each change of a ticket once", () => {
+    expect(steps([ticket("A")], [started("A")])).toEqual([["A", "started"]]);
+    expect(steps([started("A")], [started("A", { state: "delivered" })])).toEqual([["A", "delivered"]]);
+    expect(steps([started("A", { state: "delivered" })], [started("A", { state: "done" })])).toEqual([["A", "merged"]]);
+    expect(steps([started("A")], [started("A", { state: "needs-you" })])).toEqual([["A", "needs-you"]]);
+    expect(steps([started("A")], [started("A", { state: "failed" })])).toEqual([["A", "failed"]]);
+    expect(steps([ticket("A")], [ticket("A", { state: "skipped" })])).toEqual([["A", "skipped"]]);
+    expect(steps([started("A")], [started("A", { state: "limited" })])).toEqual([["A", "limited"]]);
+  });
+
+  it("says nothing of a ticket that stayed where it was", () => {
+    expect(steps([started("A")], [started("A", { nudgedAt: T0 + 5 })])).toEqual([]);
+    expect(steps([started("A", { state: "delivered", merge: "waiting" })], [started("A", { state: "delivered", merge: "waiting", mergeWaits: 2 })])).toEqual([]);
+  });
+
+  it("does not call an agent going on a new start", () => {
+    expect(steps([started("A", { state: "limited" })], [started("A")])).toEqual([]);
+    expect(steps([started("A", { state: "needs-you" })], [started("A")])).toEqual([]);
+  });
+
+  it("says a refused merge once, though the ticket stays delivered", () => {
+    const refused = started("A", { state: "delivered", merge: "refused", why: { kind: "checks-failed" } });
+    expect(steps([started("A", { state: "delivered" })], [refused])).toEqual([["A", "refused"]]);
+    expect(steps([refused], [refused])).toEqual([]);
+  });
+
+  it("carries the reason with the step", () => {
+    const why = { kind: "stalled" as const };
+    expect(stepsBetween(shiftOf([started("A")]), shiftOf([started("A", { state: "needs-you", why })]), T0)[0]).toMatchObject({ at: T0, why });
   });
 });
