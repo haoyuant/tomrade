@@ -92,6 +92,17 @@ export function renderBrief(shift: NightShiftView, deliveries: Map<string, Deliv
   section(w("needsYou"), of("needs-you"), w("needsYouNext"));
   section(w("failed"), of("failed"), w("failedNext"));
   section(w("skipped"), of("skipped"));
+  const inserted = shift.tickets.filter((t) => t.origin);
+  if (inserted.length) {
+    lines.push(`## ${w("insertedSection")}`, "");
+    for (const t of inserted) lines.push(`- ${t.key} ${t.title}: ${w("foundFrom", { key: t.origin!.fromKey, text: t.origin!.why })}`);
+    lines.push("");
+  }
+  if (shift.found.length) {
+    lines.push(`## ${w("foundSection")}`, "");
+    for (const f of shift.found) lines.push(`- ${f.key} ${f.title}: ${w("foundFrom", { key: f.fromKey, text: f.why })}`);
+    lines.push("");
+  }
   const worked = [...toReview, ...reviewOrder(of("done"), deliveries)];
   if (worked.length) {
     lines.push(`## ${w("details")}`, "");

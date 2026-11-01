@@ -8,6 +8,7 @@ const ticket = (key: string, state: NightShiftTicketView["state"], note: string 
 const shift = (tickets: NightShiftTicketView[], over: Partial<NightShiftView> = {}): NightShiftView => ({
   id: "s", projectId: "p", tickets, status: "ended", halt: null, startedAt: 0, deadlineAt: 0, endedAt: 3_600_000, failStreak: 0, spentUsd: 0, briefPath: null, costKnown: false,
   settings: { mode: "run", concurrency: 2, maxMinutes: 60, maxUsd: null, maxFailures: 3, autoMerge: false, keepAwake: true, judge: true },
+  steps: [], found: [],
   counts: { queued: 0, running: 0, limited: 0, "needs-you": 0, delivered: 0, done: 0, failed: 0, skipped: 0 }, ...over
 });
 const judged = (risk: Judgement["risk"]): Judgement => ({ risk, outOfScope: ["Renamed a helper"], unverified: ["The Windows path"], criteria: [{ text: "Exports a CSV", met: "yes", evidence: "export.test.ts covers it" }, { text: "Handles empty boards", met: "unknown", evidence: "it probably does" }] });

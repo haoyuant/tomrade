@@ -88,8 +88,23 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     "step_needs-you": "Needs you",
     step_failed: "Failed",
     step_skipped: "Not started",
+    step_inserted: "Added to the plan",
+    step_found: "Left in the backlog",
+    step_duplicate: "Already on the backlog",
     stuckTitle: "Your auto run needs you",
-    stuckBody: "{{attention}} need you, {{done}} of {{total}} delivered"
+    stuckBody: "{{attention}} need you, {{done}} of {{total}} delivered",
+    foundFrom: "Found in {{key}}: {{text}}",
+    foundBody: "Found by the agent working on {{key}} during an auto run.",
+    foundDuplicate: "It is already on the backlog",
+    notInserted_off: "This run adds nothing to its plan",
+    notInserted_limit: "This run has added as many tickets as it may",
+    notInserted_nested: "Found by a ticket that was itself added, so it waits for a person",
+    notInserted_halted: "The run is stopping",
+    "notInserted_not-coding": "It is not coding work",
+    notInserted_noModel: "No worker model could judge it, so it waits for a person",
+    notInserted_declined: "The worker model left it for later",
+    insertedSection: "Added along the way",
+    foundSection: "Found and left for you"
   },
   zh: {
     waitsMerge: "等 {{keys}} 合并",
@@ -176,7 +191,22 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     "step_needs-you": "等你处理",
     step_failed: "失败了",
     step_skipped: "没有开工",
+    step_inserted: "插入了计划",
+    step_found: "留在需求池",
+    step_duplicate: "需求池里已有",
     stuckTitle: "自动执行需要你",
-    stuckBody: "等你 {{attention}} 张，已交付 {{done}} / {{total}}"
+    stuckBody: "等你 {{attention}} 张，已交付 {{done}} / {{total}}",
+    foundFrom: "在 {{key}} 中发现：{{text}}",
+    foundBody: "由处理 {{key}} 的 Agent 在自动执行中发现。",
+    foundDuplicate: "需求池里已经有了",
+    notInserted_off: "这次运行不插入新工单",
+    notInserted_limit: "这次运行的插入数量已到上限",
+    notInserted_nested: "由插入的工单发现，留给人来看",
+    notInserted_halted: "运行正在停止",
+    "notInserted_not-coding": "不是编码工单",
+    notInserted_noModel: "没有 Worker 模型能判断，留给人来看",
+    notInserted_declined: "Worker 模型判断可以以后再做",
+    insertedSection: "途中插入的工单",
+    foundSection: "发现了但留给你的工单"
   }
 });

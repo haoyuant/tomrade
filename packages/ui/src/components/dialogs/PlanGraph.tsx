@@ -22,19 +22,21 @@ interface PlanNodeData extends Record<string, unknown> {
   sub: string | null;
   /** Where the node stands in a run; absent while it is only planned. */
   state: string | undefined;
+  /** It joined the run along the way, off the plan. */
+  added: boolean;
   onConfigure: ((id: string) => void) | undefined;
 }
 type PlanFlowNode = Node<PlanNodeData, "plan">;
 
 function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
-  const { item, chosen, sub, state, onConfigure } = data;
+  const { item, chosen, sub, state, added, onConfigure } = data;
   const { t } = useI18n();
   return (
-    <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} data-state={state} aria-pressed={state ? undefined : chosen} title={sub ?? item.title}>
+    <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} data-state={state} data-added={added || undefined} aria-pressed={state ? undefined : chosen} title={sub ?? item.title}>
       <Handle type="target" position={Position.Left} />
       {!state && <span className="plan-node-check" aria-hidden>{chosen && <Icon name="i-check" size={11} />}</span>}
       <span className="plan-node-text">
-        <span className="plan-node-title"><span className="num">{item.key}</span> {item.title}</span>
+        <span className="plan-node-title">{added && <span className="plan-node-added">{t("nightShift.added")}</span>} <span className="num">{item.key}</span> {item.title}</span>
         {sub && <span className="plan-node-sub">{sub}</span>}
       </span>
       {onConfigure && <button
@@ -69,9 +71,10 @@ interface PlanGraphProps {
   onAdd?: (ids: string[]) => void;
   onConfigure?: (id: string) => void;
   stateOf?: (id: string) => string | undefined;
+  addedOf?: (id: string) => boolean;
 }
 
-function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf }: PlanGraphProps) {
+function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure, stateOf, addedOf }: PlanGraphProps) {
   const { fitView } = useReactFlow();
   const shape = links.map((l) => `${l.from}>${l.to}`).join();
   const ids = items.map((i) => i.id).join();
@@ -79,7 +82,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
   const placed = useMemo(() => layout(items, links, Object.fromEntries(items.map((i) => [i.id, PLAN_NODE_H]))), [ids, shape]);
   const [nodes, setNodes, onNodesChange] = useNodesState<PlanFlowNode>([]);
   useEffect(() => {
-    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), onConfigure } })));
+    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), state: stateOf?.(item.id), added: addedOf?.(item.id) ?? false, onConfigure } })));
     // `subs` says when `subOf` changed; the function itself is new on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, placed, chosen, subs, setNodes]);
