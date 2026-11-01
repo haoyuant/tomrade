@@ -16,6 +16,7 @@ import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
+import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
 import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
 import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
 import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, settingsFor, stepsBetween, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
@@ -64,6 +65,15 @@ export const NightShiftInput = z.object({
   nodes: z.record(z.string(), NodeConfigInput).default({})
 });
 export type NightShiftInput = z.input<typeof NightShiftInput>;
+
+/** A change to a run going now. `stop` must be said: it ends an agent at work. */
+export const NightShiftEdit = z.object({
+  add: z.array(z.string().min(1)).max(50).default([]),
+  remove: z.array(z.object({ itemId: z.string().min(1), stop: z.boolean().default(false) })).max(50).default([]),
+  /** A node's config by ticket id; null clears it back to the run's. */
+  nodes: z.record(z.string(), NodeConfigInput.nullable()).default({})
+});
+export type NightShiftEdit = z.input<typeof NightShiftEdit>;
 
 export interface NightShiftTicketView extends ShiftTicket {
   /** Why it stands where it does, in the person's language. */
@@ -116,6 +126,7 @@ declare module "@tomradex/ipc" {
     "nightShift.ruleMatches": (projectId: string) => Record<string, string>;
     "nightShift.start": (projectId: string, input: NightShiftInput) => NightShiftView;
     "nightShift.stop": (projectId: string, id: string) => NightShiftView;
+    "nightShift.edit": (projectId: string, id: string, edit: NightShiftEdit) => NightShiftView;
   }
   interface Broadcasts {
     "nightShift.changed": (projectId: string) => void;
@@ -165,7 +176,7 @@ export type NightShiftConfig = z.output<typeof NightShiftConfig>;
 const OPEN_TO_START = new Set(["backlog", "todo", "doing", "verifying"]);
 
 /** What a report came to, waiting for the run's next pass: only a pass writes a run, so a report never races one. */
-type Arrival = { ticket: ShiftTicket; why: string; fromKey: string } | { finding: ShiftFinding };
+type Arrival = { ticket: ShiftTicket; why: string; fromKey: string } | { finding: ShiftFinding } | { edit: ShiftEdit };
 const STATES: TicketState[] = ["queued", "running", "limited", "needs-you", "delivered", "done", "failed", "skipped"];
 
 /** A ticket's own settings: the person's hand over a rule, field by field. */
@@ -225,6 +236,7 @@ export class NightShifts extends Service {
       ctx.ipc.handle("nightShift.ruleMatches", (projectId) => ctx.nightShift.ruleMatches(projectId));
       ctx.ipc.handle("nightShift.start", (projectId, input) => ctx.nightShift.start(projectId, input));
       ctx.ipc.handle("nightShift.stop", (projectId, id) => ctx.nightShift.stop(projectId, id));
+      ctx.ipc.handle("nightShift.edit", (projectId, id, edit) => ctx.nightShift.edit(projectId, id, edit));
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
       ctx.on("nightShift/step", (shift, notices) => {
         if (notices.length) ctx.ipc.send("nightShift.step", shift.projectId, notices);
@@ -286,6 +298,8 @@ export class NightShifts extends Service {
       case "merge-refused": return w("mergeRefused", { text: why.text });
       case "merge-conflict": return w("mergeConflict", { text: why.text });
       case "stopped": return w("stopped");
+      case "removed": return w("removed");
+      case "edit-late": return w("editLate");
       case "ended": return w("ended");
       case "never-started": return w("neverStarted");
       case "checks-failed": return w("checksFailed");
@@ -386,13 +400,9 @@ export class NightShifts extends Service {
     const tickets: ShiftTicket[] = [];
     const problems: string[] = [];
     for (const id of new Set(parsed.itemIds)) {
-      const item = this.home.items.get(projectId, id);
-      if (!item) problems.push(`no ticket ${id}`);
-      else if (item.kind !== "ticket") problems.push(`${item.key} is an epic`);
-      else if (!OPEN_TO_START.has(item.status)) problems.push(`${item.key} is ${item.status}`);
-      // Start would put a second prompt into the session already on it.
-      else if (this.home.codeLink.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running" || s.state === "waiting")) problems.push(`${item.key} has an agent on it already`);
-      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...configOf(item, workRules, parsed.nodes[item.id]) });
+      const taken = this.take(projectId, id, workRules, parsed.nodes[id]);
+      if (typeof taken === "string") problems.push(taken);
+      else tickets.push(taken);
     }
     if (problems.length) throw new Error(`A night shift cannot take these: ${problems.join("; ")}`);
     // The person took these on the plan, so they are the person's writes, and undo takes them back.
@@ -492,17 +502,24 @@ export class NightShifts extends Service {
     const arrivals = this.arrivals.get(shift.projectId);
     if (!arrivals?.length) return shift;
     this.arrivals.delete(shift.projectId);
-    const steps: ShiftStep[] = arrivals.map((arrival) =>
-      "ticket" in arrival
-        ? { at: now, kind: "inserted", itemId: arrival.ticket.itemId, key: arrival.ticket.key, title: arrival.ticket.title, why: { kind: "found", fromKey: arrival.fromKey, text: arrival.why } }
-        : { at: now, kind: arrival.finding.duplicate ? "duplicate" : "found", itemId: arrival.finding.itemId, key: arrival.finding.key, title: arrival.finding.title, why: { kind: "found", fromKey: arrival.finding.fromKey, text: arrival.finding.why } }
-    );
-    const next: NightShift = {
-      ...shift,
-      tickets: [...shift.tickets, ...arrivals.flatMap((a) => ("ticket" in a ? [a.ticket] : []))],
-      found: [...(shift.found ?? []), ...arrivals.flatMap((a) => ("finding" in a ? [a.finding] : []))],
-      steps: [...(shift.steps ?? []), ...steps].slice(-MAX_STEPS)
-    };
+    let next = shift;
+    const steps: ShiftStep[] = [];
+    for (const arrival of arrivals) {
+      if ("edit" in arrival) {
+        const applied = applyEdit(next, arrival.edit, now);
+        next = applied.shift;
+        steps.push(...applied.steps);
+        for (const ticket of applied.stopping) this.stopAgent(shift.projectId, ticket);
+      } else if ("ticket" in arrival) {
+        next = { ...next, tickets: [...next.tickets, arrival.ticket] };
+        steps.push({ at: now, kind: "inserted", itemId: arrival.ticket.itemId, key: arrival.ticket.key, title: arrival.ticket.title, why: { kind: "found", fromKey: arrival.fromKey, text: arrival.why } });
+      } else {
+        const { finding } = arrival;
+        next = { ...next, found: [...(next.found ?? []), finding] };
+        steps.push({ at: now, kind: finding.duplicate ? "duplicate" : "found", itemId: finding.itemId, key: finding.key, title: finding.title, why: { kind: "found", fromKey: finding.fromKey, text: finding.why } });
+      }
+    }
+    next = { ...next, steps: [...(next.steps ?? []), ...steps].slice(-MAX_STEPS) };
     this.save(next);
     this.tell(next, steps);
     return next;
@@ -511,6 +528,59 @@ export class NightShifts extends Service {
   /** Whether a shift going anywhere wants the computer kept awake. */
   wantsAwake(): boolean {
     return [...this.going].some((projectId) => this.running(projectId)?.settings.keepAwake);
+  }
+
+  /** A ticket as a run takes it, or why it cannot, in the person's language. */
+  private take(projectId: string, id: string, rules: readonly WorkRule[], manual: NodeConfig | undefined): ShiftTicket | string {
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const item = this.home.items.get(projectId, id);
+    if (!item) return w("takeGone", { id });
+    if (item.kind !== "ticket") return w("takeEpic", { key: item.key });
+    if (!OPEN_TO_START.has(item.status)) return w("takeStatus", { key: item.key, status: item.status });
+    // Start would put a second prompt into the session already on it.
+    if (this.home.codeLink.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running" || s.state === "waiting")) return w("takeBusy", { key: item.key });
+    return { itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...configOf(item, rules, manual) };
+  }
+
+  /**
+   * The person changes a run while it goes. All of it is checked here, so a refusal changes nothing, and it reaches
+   * the run through the next pass, so it cannot race one. Whatever moved in between is left as it stands, and said.
+   */
+  edit(projectId: string, id: string, input: NightShiftEdit): NightShiftView {
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const shift = this.running(projectId);
+    if (!shift || shift.id !== id) throw new Error(w("editEnded"));
+    if (shift.halt) throw new Error(w("editHalted"));
+    const parsed = NightShiftEdit.parse(input);
+    const inRun = new Map(shift.tickets.map((t) => [t.itemId, t]));
+    const rules = this.rules(projectId);
+    const problems: string[] = [];
+    const add: ShiftTicket[] = [];
+    for (const itemId of new Set(parsed.add)) {
+      const known = inRun.get(itemId);
+      const taken = known ? w("takeInRun", { key: known.key }) : this.take(projectId, itemId, rules, parsed.nodes[itemId] ?? undefined);
+      if (typeof taken === "string") problems.push(taken);
+      else add.push(taken);
+    }
+    for (const { itemId, stop } of parsed.remove) {
+      const ticket = inRun.get(itemId);
+      const refused = ticket ? cannotRemove(ticket, stop) : "settled";
+      if (refused) problems.push(w(refused === "working" ? "removeWorking" : "removeSettled", { key: ticket?.key ?? itemId }));
+    }
+    const nodes = Object.fromEntries(Object.entries(parsed.nodes).filter(([itemId]) => inRun.has(itemId)));
+    for (const itemId of Object.keys(nodes)) if (inRun.get(itemId)!.state !== "queued") problems.push(w("nodeBegun", { key: inRun.get(itemId)!.key }));
+    if (problems.length) throw new Error(w("editRefused", { problems: problems.join("; ") }));
+    if (!add.length && !parsed.remove.length && !Object.keys(nodes).length) return this.view(shift);
+    this.arrivals.set(projectId, [...(this.arrivals.get(projectId) ?? []), { edit: { add, remove: parsed.remove, nodes } }]);
+    this.kick(0);
+    return this.view(shift);
+  }
+
+  /** It ends with what it did: the worktree and the branch stay as they are. */
+  private stopAgent(projectId: string, ticket: ShiftTicket): void {
+    for (const session of this.home.codeLink.store.sessions(projectId, { itemId: ticket.itemId, live: true })) {
+      void this.home.codeLink.stopSession(projectId, session.id).catch((err: unknown) => this.home.logger.warn(`auto run could not stop ${ticket.key}: ${errorMessage(err)}`));
+    }
   }
 
   /** No new ticket starts; what is at work finishes. */

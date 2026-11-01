@@ -46,7 +46,7 @@ export type Why =
   | { kind: "halted"; halt: Halt }
   | { kind: "asked" | "error" | "gate" | "merge-refused" | "merge-conflict" | "blocked"; text: string }
   | { kind: "found"; fromKey: string; text: string }
-  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" | "conflict-unresolved" };
+  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" | "conflict-unresolved" | "removed" | "edit-late" };
 
 export interface ShiftTicket {
   itemId: string;
@@ -73,6 +73,8 @@ export interface ShiftTicket {
   engineLost?: string;
   /** It was not on the plan: an agent found it, and the worker model said to do it now. */
   origin?: { fromId: string; fromKey: string; why: string };
+  /** The person added it to a run already going, at this moment. */
+  joinedAt?: number;
 }
 
 /** A problem an agent reported that did not join the run. */
@@ -96,7 +98,7 @@ export interface ShiftStep {
   why: Why | null;
 }
 
-export type StepKind = "started" | "limited" | "delivered" | "merged" | "refused" | "needs-you" | "failed" | "skipped" | "inserted" | "found" | "duplicate";
+export type StepKind = "started" | "limited" | "delivered" | "merged" | "refused" | "needs-you" | "failed" | "skipped" | "inserted" | "found" | "duplicate" | "joined" | "removed" | "reconfigured" | "edit-refused";
 
 export interface NightShift {
   id: string;

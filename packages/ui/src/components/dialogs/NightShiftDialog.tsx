@@ -1,19 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { NightShiftView } from "@tomradex/night-shift";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
-import { Tag } from "~/components/ui/atoms";
+import { Spacer, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { DEFAULT_MAX_CONCURRENCY, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type NodeOverride } from "~/lib/nightShift";
+import { DEFAULT_MAX_CONCURRENCY, canLeave, editImpact, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, stopsAnAgent, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type EditImpact, type NodeOverride } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
-import { PlanGraph } from "./PlanGraph";
+import { PlanGraph, type PlanDraft } from "./PlanGraph";
 
 const HALT_WORD: Record<string, MessageKey> = { stopped: "nightShift.lastStopped", deadline: "nightShift.lastDeadline", budget: "nightShift.lastBudget", failures: "nightShift.lastFailures" };
 const usd = (amount: number) => `$${amount.toFixed(2)}`;
@@ -49,7 +49,7 @@ function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue
         <div className="inbox-row" key={ticket.itemId} data-testid="night-shift-ticket" data-state={ticket.state}>
           <div>
             <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
-            {ticket.origin && <Tag tone="faint">{t("nightShift.added")}</Tag>}
+            {(ticket.origin || ticket.joinedAt) && <Tag tone="faint">{t("nightShift.added")}</Tag>}
             {ticket.note && <p className="meta-txt">{ticket.note}</p>}
             {ticket.origin && <p className="meta-txt">{t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why })}</p>}
           </div>
@@ -60,27 +60,92 @@ function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue
   );
 }
 
-/** The run as the plan drew it, with each node where it stands. */
-function GoingGraph({ projectId, shift, onOpenIssue }: { projectId: string; shift: NightShiftView; onOpenIssue: (id: string) => void }) {
+/** The moment a card that joined a run is still news. */
+const FRESH_MS = 8_000;
+const LEAVING_MS = 450;
+
+interface PlanEditing {
+  candidates: Item[];
+  adds: ReadonlySet<string>;
+  removes: ReadonlySet<string>;
+  leaving: ReadonlySet<string>;
+  live: boolean;
+  onToggle: (id: string) => void;
+  onAdd: (ids: string[]) => void;
+  onConfigure: (id: string) => void;
+}
+
+/** The run as the plan drew it, with each node where it stands; while it is edited, what could join stands faded around it. */
+function GoingGraph({ projectId, shift, onOpenIssue, editing }: { projectId: string; shift: NightShiftView; onOpenIssue: (id: string) => void; editing: PlanEditing }) {
   const { t } = useI18n();
   const all = useAllItems(projectId);
+  const { adds, removes, leaving, live, candidates } = editing;
   const byId = useMemo(() => new Map(shift.tickets.map((ticket) => [ticket.itemId, ticket])), [shift.tickets]);
-  const items = useMemo(() => (all.data ?? []).filter((item) => byId.has(item.id)), [all.data, byId]);
-  const everyone = useMemo(() => new Set(items.map((item) => item.id)), [items]);
+  const ghosts = useMemo(() => new Set(live ? candidates.map((item) => item.id) : []), [live, candidates]);
+  const items = useMemo(() => (all.data ?? []).filter((item) => byId.has(item.id) || ghosts.has(item.id) || leaving.has(item.id)), [all.data, byId, ghosts, leaving]);
+  const chosen = useMemo(() => new Set([...byId.keys(), ...adds]), [byId, adds]);
   const shown = new Set(items.map((item) => item.id));
   const links = [
-    ...items.flatMap((item) => item.blocks.filter((to) => byId.has(to)).map((to) => ({ from: item.id, to, firm: true }))),
+    ...items.flatMap((item) => item.blocks.filter((to) => shown.has(to)).map((to) => ({ from: item.id, to, firm: true }))),
     // where an added ticket came from: not a dependency, so it stays dashed
     ...shift.tickets.flatMap((ticket) => (ticket.origin && shown.has(ticket.origin.fromId) && shown.has(ticket.itemId) ? [{ from: ticket.origin.fromId, to: ticket.itemId, firm: false }] : []))
   ];
+  const draftOf = (id: string): PlanDraft | undefined => (leaving.has(id) ? "leaving" : removes.has(id) ? "remove" : adds.has(id) ? "add" : byId.has(id) ? undefined : "ghost");
   const subOf = (item: Item) => {
     const ticket = byId.get(item.id);
+    if (adds.has(item.id)) return t("nightShift.editAddNote");
     if (!ticket) return null;
-    const from = ticket.origin ? t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why }) : null;
+    if (removes.has(item.id)) return t(stopsAnAgent(ticket.state) ? "nightShift.editStopNote" : "nightShift.editRemoveNote");
+    const from = ticket.origin ? t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why }) : ticket.joinedAt ? t("nightShift.addedByYou") : null;
     return [t(`nightShift.state_${ticket.state}` as MessageKey), ticket.note, from].filter(Boolean).join(" · ");
   };
   if (!items.length) return null;
-  return <PlanGraph items={items} links={links} chosen={everyone} subOf={subOf} subs={items.map(subOf).join("|")} onToggle={onOpenIssue} stateOf={(id) => byId.get(id)?.state} addedOf={(id) => !!byId.get(id)?.origin} />;
+  return (
+    <PlanGraph
+      items={items}
+      links={links}
+      chosen={chosen}
+      subOf={subOf}
+      subs={items.map((item) => `${subOf(item)}:${draftOf(item.id)}`).join("|")}
+      onToggle={live ? editing.onToggle : onOpenIssue}
+      {...(live ? { onAdd: editing.onAdd, onConfigure: editing.onConfigure, hint: t("nightShift.editHint") } : {})}
+      stateOf={(id) => byId.get(id)?.state}
+      addedOf={(id) => { const ticket = byId.get(id); return !!ticket?.origin || !!ticket?.joinedAt; }}
+      draftOf={draftOf}
+      freshOf={(id) => Date.now() - (byId.get(id)?.joinedAt ?? 0) < FRESH_MS}
+      configurableOf={(id) => { const state = byId.get(id)?.state; return !state || state === "queued"; }}
+      editing={live}
+    />
+  );
+}
+
+/** A draft of the change, above what it changes so it never covers a card: what it adds up to, what it would cost, and the way out. */
+function PlanDiff({ added, removed, configured, impacts, stopping, note, busy, onAddThem, onDiscard, onApply }: { added: number; removed: number; configured: number; impacts: EditImpact[]; stopping: string[]; note: string | null; busy: boolean; onAddThem: (ids: string[]) => void; onDiscard: () => void; onApply: () => void }) {
+  const { t } = useI18n();
+  const changes = added + removed + configured;
+  return (
+    <div className="plan-diff" role="group" aria-label={t("nightShift.editPlan")} data-testid="plan-diff">
+      <div className="plan-diff-head">
+        {added > 0 && <span className="plan-chip is-add num" data-testid="plan-diff-added">+{added}</span>}
+        {removed > 0 && <span className="plan-chip is-remove num" data-testid="plan-diff-removed">−{removed}</span>}
+        {configured > 0 && <span className="plan-chip num"><Icon name="i-sliders" size={11} /> {configured}</span>}
+        <span className="meta-txt">{changes ? t("nightShift.editChanges", { n: changes }) : t("nightShift.editHint")}</span>
+        <Spacer />
+        <button type="button" className="btn btn-ghost" data-testid="plan-diff-discard" onClick={onDiscard}>{t("nightShift.editDiscard")}</button>
+        <button type="button" className="btn btn-primary" data-testid="plan-diff-apply" disabled={!changes || busy} onClick={onApply}>
+          {stopping.length ? t("nightShift.editApplyStopping", { n: stopping.length }) : t("nightShift.editApply")}
+        </button>
+      </div>
+      {stopping.length > 0 && <p className="start-warning" role="note" data-testid="plan-diff-stops"><Icon name="i-warn" size={13} /><span>{t("nightShift.editStops", { keys: stopping.join(", ") })}</span></p>}
+      {impacts.map((impact) => (
+        <p className="meta-txt plan-impact" key={`${impact.kind}:${impact.key}`} data-testid="plan-impact" data-kind={impact.kind}>
+          {t(impact.kind === "orphaned" ? "nightShift.editOrphaned" : "nightShift.editOutside", { key: impact.key, keys: impact.keys.join(", ") })}
+          {impact.kind === "outside" && <> <button type="button" className="tlink" data-testid="plan-add-them" onClick={() => onAddThem(impact.ids)}>{t("nightShift.editAddThem")}</button></>}
+        </p>
+      ))}
+      {note && <p className="meta-txt" role="status" data-testid="plan-diff-note">{note}</p>}
+    </div>
+  );
 }
 
 /** What happened, newest first. It stays with the run, so it reads the same after a restart. */
@@ -108,8 +173,66 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
   const { t, locale } = useI18n();
   const [view, setView] = useState<"graph" | "list">("graph");
   const toast = useToast();
-  const { stop } = useNightShiftActions(projectId);
-  const added = shift.tickets.filter((ticket) => ticket.origin).length;
+  const { stop, edit } = useNightShiftActions(projectId);
+  const all = useAllItems(projectId);
+  const engines = useEngines();
+  const workRules = useWorkRules(projectId);
+  const ruleMatches = useRuleMatches(projectId);
+  const [editing, setEditing] = useState(false);
+  const [wantAdded, setAdds] = useState<ReadonlySet<string>>(new Set());
+  const [wantRemoved, setRemoves] = useState<ReadonlySet<string>>(new Set());
+  const [nodes, setNodes] = useState<Record<string, NodeOverride | null>>({});
+  const [focus, setFocus] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (!leaving.size) return;
+    const timer = setTimeout(() => setLeaving(new Set()), LEAVING_MS);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+  const byId = useMemo(() => new Map(shift.tickets.map((ticket) => [ticket.itemId, ticket])), [shift.tickets]);
+  const live = editing && !shift.halt;
+  // The run goes on under a draft: what has moved past changing drops out of it by itself.
+  const adds = useMemo(() => new Set([...wantAdded].filter((id) => !byId.has(id))), [wantAdded, byId]);
+  const removes = useMemo(() => new Set([...wantRemoved].filter((id) => { const ticket = byId.get(id); return !!ticket && canLeave(ticket.state); })), [wantRemoved, byId]);
+  const configured = Object.keys(nodes).filter((id) => adds.has(id) || (byId.get(id)?.state === "queued" && !removes.has(id)));
+  const candidates = useMemo(() => shiftCandidates(all.data ?? []).filter((item) => !byId.has(item.id)), [all.data, byId]);
+  const impacts = useMemo(() => (live ? editImpact(all.data ?? [], shift.tickets, adds, removes) : []), [live, all.data, shift.tickets, adds, removes]);
+  const stopping = [...removes].flatMap((id) => { const ticket = byId.get(id); return ticket && stopsAnAgent(ticket.state) ? [ticket.key] : []; });
+  const toggleIn = (set: ReadonlySet<string>, id: string) => {
+    const next = new Set(set);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  };
+  const toggle = (id: string) => {
+    const ticket = byId.get(id);
+    setNote(ticket && !canLeave(ticket.state) ? t("nightShift.editKept", { key: ticket.key }) : null);
+    if (!ticket) setAdds((now) => toggleIn(now, id));
+    else if (canLeave(ticket.state)) setRemoves((now) => toggleIn(now, id));
+  };
+  const addAll = (ids: string[]) => setAdds((now) => new Set([...now, ...ids.filter((id) => !byId.has(id))]));
+  const reset = () => {
+    setEditing(false);
+    setAdds(new Set());
+    setRemoves(new Set());
+    setNodes({});
+    setFocus(null);
+    setNote(null);
+  };
+  const apply = () =>
+    edit.mutate(
+      { id: shift.id, change: { add: [...adds], remove: [...removes].map((itemId) => ({ itemId, stop: stopsAnAgent(byId.get(itemId)!.state) })), nodes: Object.fromEntries(configured.map((id) => [id, nodes[id]!])) } },
+      {
+        onSuccess: () => {
+          setLeaving(new Set([...removes].filter((id) => byId.get(id)?.state === "queued")));
+          reset();
+        },
+        onError: (err) => toast(errorSpec(err))
+      }
+    );
+  const focusItem = focus ? (all.data ?? []).find((item) => item.id === focus) : undefined;
+  const ready = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && (shift.settings.mode === "terminal" || !e.terminalOnly));
+  const added = shift.tickets.filter((ticket) => ticket.origin || ticket.joinedAt).length;
   const until = new Date(shift.deadlineAt).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   const facts = [
     t(shift.settings.mode === "terminal" ? "nightShift.runsInTerminal" : "nightShift.runsInSession"),
@@ -119,13 +242,41 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
     ...(shift.spentUsd > 0 ? [t(shift.costKnown ? "nightShift.spent" : "nightShift.spentPartly", { amount: usd(shift.spentUsd) })] : []),
     ...(shift.halt ? [t("nightShift.stopping")] : shift.settings.maxMinutes <= 24 * 60 ? [t("nightShift.until", { at: until })] : [])
   ];
+  const graph = (
+    <GoingGraph
+      projectId={projectId}
+      shift={shift}
+      onOpenIssue={onOpenIssue}
+      editing={{ candidates, adds, removes, leaving, live, onToggle: toggle, onAdd: addAll, onConfigure: setFocus }}
+    />
+  );
   return (
     <>
       <DialogBody>
         <div className="stack-4">
           <p className="meta-txt" data-testid="night-shift-going">{facts.join(" · ")}</p>
-          <PlanViewSwitch view={view} onChange={setView} />
-          {view === "graph" ? <GoingGraph projectId={projectId} shift={shift} onOpenIssue={onOpenIssue} /> : <TicketRows shift={shift} onOpenIssue={onOpenIssue} />}
+          <div className="plan-tools">
+            {!live && <PlanViewSwitch view={view} onChange={setView} />}
+            {!live && (
+              <button type="button" className="btn btn-ghost" data-testid="plan-edit" disabled={!!shift.halt} title={shift.halt ? t("nightShift.editHaltedHint") : undefined} onClick={() => { setView("graph"); setEditing(true); }}>
+                <Icon name="i-pen" size={13} /> {t("nightShift.editPlan")}
+              </button>
+            )}
+            {shift.halt && <span className="meta-txt" role="status" data-testid="plan-edit-halted">{t("nightShift.editHaltedHint")}</span>}
+          </div>
+          {live && <PlanDiff added={adds.size} removed={removes.size} configured={configured.filter((id) => !adds.has(id)).length} impacts={impacts} stopping={stopping} note={note} busy={edit.isPending} onAddThem={addAll} onDiscard={reset} onApply={apply} />}
+          {view === "graph" ? graph : <TicketRows shift={shift} onOpenIssue={onOpenIssue} />}
+          {live && focusItem && (
+            <NodeConfigPanel
+              item={focusItem}
+              rule={(workRules.data ?? []).find((r) => r.id === ruleMatches.data?.[focusItem.id])}
+              override={focusItem.id in nodes ? (nodes[focusItem.id] ?? undefined) : byId.get(focusItem.id)?.config}
+              engines={ready}
+              allEngines={engines.data ?? []}
+              onChange={(next) => setNodes((now) => ({ ...now, [focusItem.id]: next }))}
+              onClose={() => setFocus(null)}
+            />
+          )}
           <Timeline shift={shift} onOpenIssue={onOpenIssue} />
         </div>
       </DialogBody>

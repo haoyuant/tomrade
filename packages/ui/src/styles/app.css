@@ -3686,6 +3686,8 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 /* the plan draws the board's graph: what it adds is a tick, a settings button, a note under the card, and where a run stands */
 .plan-canvas { position: absolute; inset: 0; }
 .plan-graph .react-flow__node, .plan-graph .gnode .card { cursor: pointer; }
+/* a card's paint containment would clip the ring around it */
+.plan-graph .card { content-visibility: visible; }
 .plan-node .card { border-color: var(--border); }
 .plan-node:not(.is-chosen):not([data-state]) .card { opacity: 0.72; }
 .plan-node.is-chosen .card { border-color: var(--accent); }
@@ -3700,6 +3702,45 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .plan-node[data-state="delivered"] .card, .plan-node[data-state="done"] .card { border-color: var(--success); }
 .plan-node[data-state="needs-you"] .card { border-color: var(--warn); }
 .plan-node[data-state="failed"] .card { border-color: var(--danger); }
+/* editing a run: the canvas lights up, what could join stands faded, and the change gathers in one card above it */
+.plan-graph { transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard); }
+.plan-graph.is-editing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 32px -10px var(--accent); }
+.plan-graph .plan-node[data-draft="ghost"]:not(.is-chosen) .card { border-style: dashed; opacity: 0.5; transition: opacity var(--motion-fast) var(--ease-standard); }
+.plan-graph .plan-node[data-draft="ghost"]:not(.is-chosen):hover .card { opacity: 0.9; }
+.plan-node[data-draft="add"] .card { border-style: dashed; border-color: var(--accent); }
+.plan-node[data-draft="remove"] .card { border-color: var(--danger); opacity: 0.62; }
+.plan-node[data-draft="remove"] .card-title { text-decoration: line-through; }
+.plan-node[data-draft="remove"] .plan-node-sub { color: var(--danger); }
+.plan-diff {
+  position: sticky; top: 0; z-index: 6;
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+  box-shadow: 0 10px 24px -14px color-mix(in oklch, var(--fg) 40%, transparent);
+}
+.plan-diff-head { display: flex; align-items: center; gap: var(--space-2); }
+.plan-diff .start-warning, .plan-diff .meta-txt { margin: 0; }
+.plan-impact { overflow-wrap: anywhere; }
+.plan-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: var(--text-xs); color: var(--fg-2); background: var(--tag-bg-faint); }
+.plan-chip.is-add { color: var(--bg); background: var(--accent); }
+.plan-chip.is-remove { color: var(--bg); background: var(--danger); }
+/* one soft ring: a pseudo-element's opacity and scale, so nothing repaints a frame at a time */
+.plan-node[data-state="running"] .card::after, .plan-node[data-fresh] .card::after {
+  content: ""; position: absolute; inset: -4px; border-radius: calc(var(--radius-md) + 4px); pointer-events: none;
+  border: 2px solid var(--accent); opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-performance], [data-software-compositing]) .plan-diff { animation: plan-diff-in 220ms var(--ease-standard) both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-state="running"] .card::after { animation: plan-alive 2.2s ease-in-out infinite alternate; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-fresh] { animation: plan-join 460ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-fresh] .card::after { animation: plan-ripple 900ms ease-out 120ms both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-draft="leaving"] { animation: plan-leave 420ms var(--ease-standard) both; }
+}
+.plan-node[data-draft="leaving"] { opacity: 0; }
+@keyframes plan-diff-in { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes plan-alive { from { opacity: 0.08; } to { opacity: 0.62; } }
+@keyframes plan-join { from { opacity: 0; transform: scale(0.82); } }
+@keyframes plan-ripple { from { opacity: 0.8; transform: scale(1); } to { opacity: 0; transform: scale(1.09); } }
+@keyframes plan-leave { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
 .plan-timeline { display: flex; flex-direction: column; gap: var(--space-1); max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .plan-timeline li { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
 .plan-timeline time { flex-shrink: 0; }
