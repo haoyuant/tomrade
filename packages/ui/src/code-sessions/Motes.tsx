@@ -4,7 +4,7 @@ const between = (low: number, high: number): number => low + Math.random() * (hi
 
 /**
  * One light in the air, as its CSS variables. Most are fine; a few are large and out of focus, and those sit dimmer,
- * as dust does near the eye. `lean` crowds them toward the sun at the bottom right.
+ * as dust does near the eye. `lean` crowds them toward the warm light at the bottom right.
  */
 function mote(smallest: number, largest: number, lean: number): CSSProperties {
   const near = Math.random() ** 4;
