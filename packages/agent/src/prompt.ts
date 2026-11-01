@@ -1,7 +1,24 @@
 import { linkedFileIds } from "@tomradex/domain";
-import type { FocusRef } from "./thread.js";
+import type { FocusRef, ThreadMessage, UserInput } from "./thread.js";
 import type { OpenDependency, TurnInput, TurnIO } from "./turn.js";
 import type { GeneralExecution } from "./workflow.js";
+
+const AFTER_INTERRUPTION =
+  "(From Tomrade: your last run was cut off when the app closed. The step it was taking may or may not have finished, and this conversation may not show it. Before repeating anything that leaves this machine, such as a push, a pull request, a comment, a merge or a ticket change, check whether it already happened: the working tree, the branch's log, the pull request, the ticket. Then do only what is still missing.)";
+
+/**
+ * The turn after a run was cut off, as the agent reads it: engines take the message from one or the other, so both say
+ * it. It goes no further than this turn: what is stored and shown stays what was sent.
+ */
+export function afterInterruption(input: UserInput, messages: ThreadMessage[]): Pick<TurnInput, "input" | "messages"> {
+  if (input.kind !== "text") return { input, messages };
+  const told = (text: string) => `${text}\n\n${AFTER_INTERRUPTION}`;
+  const last = messages.filter((m) => m.role === "user" && m.block.type === "text").at(-1);
+  return {
+    input: { ...input, text: told(input.text) },
+    messages: messages.map((m) => (m === last && m.block.type === "text" ? { ...m, block: { ...m.block, text: told(m.block.text) } } : m))
+  };
+}
 
 /**
  * The house rules every model-driven engine puts in its system prompt. One
