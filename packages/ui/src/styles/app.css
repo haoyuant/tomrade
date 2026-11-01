@@ -669,10 +669,11 @@ strong { font-weight: var(--font-weight-medium); }
 /* the wrap spans the full titlebar height so the menu drops from the header
    edge, not from the middle of the button */
 #projWrap { display: flex; align-items: center; align-self: stretch; }
-/* the bar gives up room in steps: first the keys, then the Terminal window's name, then the night shift's */
+/* the bar gives up room in steps: the keys, a running shift's name (its moon and progress say it), the Terminal window's name, then a night shift's */
 @container titlebar (max-width: 960px) { .titlebar .kbd { display: none; } }
-@container titlebar (max-width: 830px) { .titlebar-terminal .lbl { display: none; } }
-@container titlebar (max-width: 740px) { .titlebar-night-shift .lbl { display: none; } }
+@container titlebar (max-width: 830px) { .titlebar-night-shift.is-going .lbl { display: none; } }
+@container titlebar (max-width: 775px) { .titlebar-terminal .lbl { display: none; } }
+@container titlebar (max-width: 700px) { .titlebar-night-shift .lbl { display: none; } }
 .titlebar-night-shift.is-going { color: var(--accent); }
 .titlebar-night-shift-waiting {
   min-width: 16px; padding: 0 4px; border-radius: 8px; text-align: center;
