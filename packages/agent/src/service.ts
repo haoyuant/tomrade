@@ -19,7 +19,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, TAKEN_OVER, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { RULES_MAX_CHARS, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
+import { RULES_MAX_CHARS, afterInterruption, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
 import type { AgentPolicy } from "./hooks.js";
 import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
@@ -1547,6 +1547,8 @@ export class Agent extends Service implements AgentReader {
     const attachments = input.kind === "text" ? this.attached(thread, engine, input.attachments) : undefined;
     if (input.kind === "text") input = { ...input, attachments };
     const wasInterrupted = !!this.store.interruptedRun(projectId, threadId);
+    // An engine that matches what is typed (no model, the troubleshooter's words) reads it as sent; so does an answer to a waiting question.
+    const recovering = wasInterrupted && !engine.literal && thread.surface !== "doctor" && !this.store.pending(projectId, threadId);
     const { msg, run } = this.store.transaction(projectId, () => {
       const msg = this.store.appendMessage(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
       if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
@@ -1569,7 +1571,7 @@ export class Agent extends Service implements AgentReader {
     this.ctx.emit("agent/run-started", run, thread);
     // a new run is the interruption's answer: the conversation goes on
     if (wasInterrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
-    void this.drive(rc, input);
+    void this.drive(rc, input, recovering);
     return { runId: run.id };
   }
 
@@ -1947,7 +1949,7 @@ export class Agent extends Service implements AgentReader {
     });
   }
 
-  private async drive(rc: RunCtx, input: UserInput): Promise<void> {
+  private async drive(rc: RunCtx, input: UserInput, recovering: boolean): Promise<void> {
     let result: TurnResult | null = null;
     try {
       const routed = await this.routePending(rc, input);
@@ -1978,6 +1980,7 @@ export class Agent extends Service implements AgentReader {
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const project = contract(this.ctx, "projects")?.get(rc.projectId);
       const rules = this.rules(rc.projectId);
+      const messages = this.store.messages(rc.projectId, rc.threadId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
@@ -1986,9 +1989,8 @@ export class Agent extends Service implements AgentReader {
         execution: rc.thread.execution ?? undefined,
         permissionMode: selectedMode,
         ticket: this.ticketOf(rc.thread),
-        input,
+        ...(recovering ? afterInterruption(input, messages) : { input, messages }),
         ...(rules ? { rules } : {}),
-        messages: this.store.messages(rc.projectId, rc.threadId),
         cards: this.store.cards(rc.projectId, rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,

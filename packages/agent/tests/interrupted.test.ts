@@ -12,6 +12,7 @@ async function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-interrupted-"));
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], [Agent, { mediaDir: path.join(root, "media") }]] });
   const said: string[] = [];
+  const history: string[] = [];
   ctx.agent.engine({
     id: "coder",
     title: "Coder",
@@ -19,6 +20,8 @@ async function setup() {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       said.push(input.input.kind === "text" ? input.input.text : "");
+      const last = input.messages.at(-1)?.block;
+      history.push(last?.type === "text" ? last.text : "");
       io.emit({ type: "text", text: "Picking up." });
       return { stop: "end" };
     }
@@ -40,7 +43,7 @@ async function setup() {
     await ctx.fiber.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   };
-  return { ctx, project, said, changed, panel, handlers, done };
+  return { ctx, project, said, history, changed, panel, handlers, done };
 }
 
 const notes = (messages: ThreadMessage[]) => messages.flatMap((m) => (m.block.type === "note" ? [m.block as Extract<Block, { type: "note" }>] : []));
@@ -84,11 +87,51 @@ it("lists the conversation as interrupted for the panel until a new run continue
     const { runId } = handlers.get("agent.continueInterrupted")!(project.id, thread.id) as { runId: string };
     expect(changed).toEqual([thread.id]);
     await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).toBe("done");
-    expect(said).toEqual(["Tomrade restarted and interrupted the last run. Continue where you left off."]);
+    expect(said[0]).toMatch(/^Tomrade restarted and interrupted the last run\. Continue where you left off\.\n\n\(From Tomrade: /);
     expect(panel().find((th) => th.id === thread.id)?.interrupted).toBeUndefined();
     expect(ctx.agent.store.interruptedThreads(project.id)).toEqual([]);
     // nothing left to continue
     expect(() => ctx.agent.continueInterrupted(project.id, thread.id)).toThrow(/not interrupted/);
+  } finally { await done(); }
+});
+
+it("tells the agent to check before repeating, once, in what either kind of engine reads, and shows only what was sent", async () => {
+  const { ctx, project, said, history, done } = await setup();
+  try {
+    const thread = ctx.agent.newThread(project.id, "coder", null, { title: "Dedupe" });
+    ctx.agent.store.beginRun(project.id, thread.id, "coder");
+    ctx.agent.store.reconcileInterrupted(project.id, "Interrupted.");
+
+    const first = ctx.agent.send(project.id, thread.id, { kind: "text", text: "and open the PR" });
+    await expect.poll(() => ctx.agent.store.run(project.id, first.runId)?.status).toBe("done");
+    expect(said[0]).toMatch(/^and open the PR\n\n.*already happened/s);
+    expect(history[0]).toBe(said[0]);
+    const shown = ctx.agent.thread(project.id, thread.id).messages.filter((m) => m.role === "user").map((m) => (m.block as { text: string }).text);
+    expect(shown).toEqual(["and open the PR"]);
+
+    const second = ctx.agent.send(project.id, thread.id, { kind: "text", text: "thanks" });
+    await expect.poll(() => ctx.agent.store.run(project.id, second.runId)?.status).toBe("done");
+    expect(said[1]).toBe("thanks");
+    expect(history[1]).toBe("thanks");
+  } finally { await done(); }
+});
+
+it("says nothing of the kind to a conversation that was not interrupted, or to an engine with no model", async () => {
+  const { ctx, project, said, done } = await setup();
+  try {
+    const thread = ctx.agent.newThread(project.id, "coder", null, { title: "Plain" });
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+    await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).toBe("done");
+    expect(said).toEqual(["hello"]);
+
+    const heard: string[] = [];
+    ctx.agent.engine({ id: "menu", title: "Menu", author: "ai:menu", literal: true, available: async () => ({ ok: true }), async turn(input) { heard.push(input.input.kind === "text" ? input.input.text : ""); return { stop: "end" }; } });
+    const menu = ctx.agent.newThread(project.id, "menu", null, { title: "Menu" });
+    ctx.agent.store.beginRun(project.id, menu.id, "menu");
+    ctx.agent.store.reconcileInterrupted(project.id, "Interrupted.");
+    const again = ctx.agent.send(project.id, menu.id, { kind: "text", text: "cancel" });
+    await expect.poll(() => ctx.agent.store.run(project.id, again.runId)?.status).toBe("done");
+    expect(heard).toEqual(["cancel"]);
   } finally { await done(); }
 });
 
