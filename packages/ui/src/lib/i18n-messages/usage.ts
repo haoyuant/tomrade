@@ -92,6 +92,7 @@ export const usage = {
     purposeDependencies: "Dependency review",
     purposeInbox: "Inbox triage",
     purposePlaybook: "Playbook pick",
+    purposeNightShift: "Night shift report",
     purposeBranch: "Branch name",
     purposeOther: "Other"
   },
@@ -188,6 +189,7 @@ export const usage = {
     purposeDependencies: "依赖审查",
     purposeInbox: "收件箱分拣",
     purposePlaybook: "推荐 playbook",
+    purposeNightShift: "夜班晨报",
     purposeBranch: "分支命名",
     purposeOther: "其他"
   }
