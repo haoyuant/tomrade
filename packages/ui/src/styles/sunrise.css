@@ -22,16 +22,13 @@
 }
 :is(.sunrise, .daybreak) body::before,
 :is(.sunrise, .daybreak) body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
-/* The sky, reaching past the top and left edges so its drift never shows one. */
+/* The sky, reaching past the top and left edges so its drift never shows one. It carries Daybreak's last stars and
+   Sunrise's gold motes, from under the title bar down, where the panes let the sky through: the sidebar, the board's
+   head and its empty columns. Three tile widths keep them from lining up in a grid. */
 :is(.sunrise, .daybreak) body::before {
-  inset: -8vh 0 0 -8vw;
-  background: var(--sun-light-sky);
-  animation: sun-sky-drift 23s ease-in-out infinite alternate;
-}
-/* A few stars before the sun is up, from under the title bar down, where the panes let the sky through: the
-   sidebar, the board's head and its empty columns. Three tile widths keep them from lining up in a grid. */
-.daybreak body::before {
   --sun-stars-top: calc(8vh + var(--titlebar-h));
+  inset: -8vh 0 0 -8vw;
+  animation: sun-sky-drift 23s ease-in-out infinite alternate;
   background:
     radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
     radial-gradient(circle at 37px 252px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
@@ -138,7 +135,7 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 /* Cards catch the light at their edge rather than rising. */
 :is(.sunrise, .daybreak) .card:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
 :is(.sunrise, .daybreak) .card[data-selected="true"] { box-shadow: 0 0 0 1px var(--accent), 0 6px 20px -8px var(--sun-glow); }
-.daybreak .card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 45%), var(--surface); }
+:is(.sunrise, .daybreak) .card { background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), var(--surface); }
 
 /* Menus and sheets carry the horizon on their top edge. */
 :is(.sunrise, .daybreak) .palette::before {
