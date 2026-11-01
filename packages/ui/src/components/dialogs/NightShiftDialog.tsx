@@ -9,7 +9,7 @@ import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { factsChosen, nodeConfig, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type NodeOverride } from "~/lib/nightShift";
+import { DEFAULT_MAX_CONCURRENCY, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useWorkRules, withTaken, type NodeOverride } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
@@ -182,7 +182,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [chosenMode, setMode] = useState<"terminal" | "run" | null>(null);
   const [chosenEngine, setEngine] = useState<string | null>(null);
   const [chosenPermission, setPermission] = useState<string | null>(null);
-  const [concurrency, setConcurrency] = useState(2);
+  const [maxConcurrency, setMaxConcurrency] = useState(DEFAULT_MAX_CONCURRENCY);
   const [maxHours, setMaxHours] = useState(8);
   const [maxUsd, setMaxUsd] = useState("");
   const [autoMerge, setAutoMerge] = useState(false);
@@ -200,6 +200,8 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const rememberedPermission = remembered === engine?.id ? defaults.data?.permissionMode : undefined;
   const permissionMode = permissionModes ? (chosenPermission ?? rememberedPermission ?? permissionModes.default) : undefined;
   const spendLimit = Number(maxUsd);
+  const concurrency = runConcurrency(maxConcurrency, plan.data?.concurrency);
+  const concurrencyWhy = plan.data?.concurrencyWhy;
   const add = (ids: string[]) => {
     setTook((now) => new Set([...now, ...ids]));
     setLeft((now) => new Set([...now].filter((id) => !ids.includes(id))));
@@ -402,7 +404,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         )}
         <div className="night-shift-limits">
           <Field label={t("nightShift.concurrency")} htmlFor="nsConcurrency">
-            <input id="nsConcurrency" className="input" type="number" min={1} max={8} value={concurrency} onChange={(event) => setConcurrency(Math.min(8, Math.max(1, Number(event.target.value) || 1)))} />
+            <input id="nsConcurrency" className="input" type="number" min={1} max={8} value={maxConcurrency} onChange={(event) => setMaxConcurrency(Math.min(8, Math.max(1, Number(event.target.value) || 1)))} />
           </Field>
           {kind === "night" && (
             <Field label={t("nightShift.maxHours")} htmlFor="nsHours">
@@ -416,6 +418,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
             <input id="nsUsd" className="input" type="number" min={0} step={1} placeholder={t("nightShift.maxUsdPlaceholder")} value={maxUsd} onChange={(event) => setMaxUsd(event.target.value)} />
           </Field>
         </div>
+        <p className="meta-txt" data-testid="plan-concurrency">{concurrencyWhy ? t("nightShift.concurrencyDecidedWhy", { n: concurrency, why: concurrencyWhy }) : t("nightShift.concurrencyDecided", { n: concurrency })}</p>
         <p className="meta-txt" data-testid="night-shift-inserts-hint">{t(maxInserts ? "nightShift.maxInsertsHint" : "nightShift.maxInsertsOff")}</p>
         {spendLimit > 0 && <p className="meta-txt" data-testid="night-shift-cost-note">{t(mode === "terminal" ? "nightShift.costTerminal" : "nightShift.costSession")}</p>}
         <label className="cfg-row" style={{ cursor: "pointer" }}>

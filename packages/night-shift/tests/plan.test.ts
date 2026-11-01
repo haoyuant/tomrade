@@ -4,7 +4,7 @@ import { PlanReply, planUser, readPlan } from "@tomradex/night-shift";
 
 const item = (key: string, over: Partial<Item> = {}): Item =>
   ({ id: key, key, title: `Do ${key}`, body: null, kind: "ticket", workType: "coding", status: "todo", priority: 2, rank: 0, labels: [], blocks: [], blockedBy: [], ...over }) as Item;
-const reply = (over: Partial<PlanReply>): PlanReply => ({ summary: "", suggested: [], excluded: [], dependencies: [], ...over });
+const reply = (over: Partial<PlanReply>): PlanReply => ({ summary: "", suggested: [], excluded: [], dependencies: [], concurrency: null, concurrencyWhy: "", ...over });
 
 describe("a plan with no model", () => {
   it("takes To Do's coding work and says why it leaves general work out", () => {
@@ -25,6 +25,13 @@ describe("a plan with no model", () => {
 });
 
 describe("a model's plan", () => {
+  it("carries how many it would run at once, and drops a number outside the range", () => {
+    const plan = readPlan([item("A")], reply({ concurrency: 3, concurrencyWhy: " Far apart. " }), "");
+    expect(plan).toMatchObject({ concurrency: 3, concurrencyWhy: "Far apart." });
+    const parsed = PlanReply.parse({ summary: "", suggested: [], excluded: [], dependencies: [], concurrency: 40 });
+    expect(readPlan([item("A")], parsed, "")).toMatchObject({ concurrency: null, concurrencyWhy: null });
+  });
+
   it("can suggest Backlog work and leave To Do work out, with its reason", () => {
     const plan = readPlan([item("A"), item("B", { status: "backlog" })], reply({ summary: " Ship it. ", suggested: ["B"], excluded: [{ key: "A", why: "needs a decision" }] }), "");
     expect(plan.summary).toBe("Ship it.");
@@ -60,7 +67,7 @@ describe("a model's plan", () => {
 
   it("a mangled reply costs only the part that was mangled", () => {
     const parsed = PlanReply.parse({ summary: 3, suggested: ["A"], excluded: "none", dependencies: [{ before: 1 }] });
-    expect(parsed).toEqual({ summary: "", suggested: ["A"], excluded: [], dependencies: [] });
+    expect(parsed).toEqual({ summary: "", suggested: ["A"], excluded: [], dependencies: [], concurrency: null, concurrencyWhy: "" });
   });
 });
 
