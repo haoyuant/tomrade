@@ -426,6 +426,14 @@ export function ThemePane({
       <AppearanceGroupHead title={t("settingsDialog.themeSwitchMode")} />
       <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
       <hr className="rule" />
+      <AppearanceGroupHead title={t("settingsDialog.unifiedSkyTitle")}>{t("settingsDialog.unifiedSkyLede")}</AppearanceGroupHead>
+      <div className="row">
+        <span className="cfg-name">{t("settingsDialog.unifiedSkySwitch")}</span>
+        <Spacer />
+        <button type="button" className="switch" role="switch" aria-checked={settings.data?.unifiedSky === true} aria-label={t("settingsDialog.unifiedSkySwitch")}
+          disabled={!settings.data} onClick={() => settings.data && save.mutate({ ...settings.data, unifiedSky: settings.data.unifiedSky !== true })} />
+      </div>
+      <hr className="rule" />
       <AppearanceGroupHead title={t("settingsDialog.performanceModeTitle")} aside={<ScopeTag scope={performanceScope} />}>{t("settingsDialog.performanceModeLede")}</AppearanceGroupHead>
       <div className="row">
         <span className="cfg-name">{t("settingsDialog.performanceModeSwitch")}</span>

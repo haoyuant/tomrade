@@ -218,6 +218,12 @@ const PERFORMANCE_MODE: SettingsSection<boolean> = {
   schema: z.boolean(), defaults: false, order: 0.75, scope: "machine", agent: "write"
 };
 
+const UNIFIED_SKY: SettingsSection<boolean> = {
+  id: "unifiedSky", title: "One sky",
+  description: "In the Sunrise and Daybreak themes, let the sidebar, the board, the assistant and the sessions share one sky instead of each having its own background.",
+  schema: z.boolean(), defaults: false, order: 0.76, scope: "user", agent: "write"
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** A refused value names the field and why, rather than a dump of every issue. */
@@ -335,6 +341,7 @@ export class Settings extends Service implements SettingsReader {
     this.register(THEME_AUTOMATION);
     this.register(CUSTOM_THEMES);
     this.register(PERFORMANCE_MODE);
+    this.register(UNIFIED_SKY);
     this.register(LANGUAGE);
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
