@@ -296,3 +296,22 @@ html[data-frosted] :is(.cs-row, .cs-big) { background: color-mix(in srgb, var(--
 /* The grid reads on its cell's pane: the veil was chosen for text there. */
 .cs-backdrop :is(.cs-term, .cs-row-tail, .cs-big-tail) { background: transparent; }
 .cs-backdrop .xterm .xterm-viewport { background-color: transparent; }
+
+/* Sunrise and Daybreak: their sky, stars and sun (styles/sunrise.css) stand behind this window. The panes and the grid
+   let them through as they do on glass, and the focused cell's bar carries the horizon of the window's own. */
+:is(.sunrise, .daybreak) .cs-topbar { border-bottom-color: transparent; }
+:is(.sunrise, .daybreak) .cs-side { background: linear-gradient(180deg, var(--sun-sky-haze), transparent 40%); }
+:is(.sunrise, .daybreak) .cs-cell {
+  border-color: color-mix(in srgb, var(--accent) 14%, var(--border-soft));
+  background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), color-mix(in srgb, var(--surface) 62%, transparent);
+}
+:is(.sunrise, .daybreak) .cs-cell[data-focused] { border-color: var(--accent); box-shadow: 0 6px 20px -8px var(--sun-glow); }
+:is(.sunrise, .daybreak) .cs-cell-bar { background: linear-gradient(90deg, var(--sun-sky-haze), transparent 60%); }
+:is(.sunrise, .daybreak) .cs-cell[data-focused] .cs-cell-bar {
+  border-bottom-color: transparent;
+  background:
+    linear-gradient(90deg, transparent, var(--sun-sky) 18%, var(--sun-red) 55%, var(--sun-gold) 80%, transparent) bottom / 100% 1px no-repeat border-box,
+    linear-gradient(90deg, var(--sun-sky-haze), transparent 60%);
+}
+:is(.sunrise, .daybreak) .cs-term { background: transparent; }
+:is(.sunrise, .daybreak) .xterm .xterm-viewport { background-color: transparent; }

@@ -29,6 +29,10 @@ export interface SurfaceLook {
   frosted?: boolean;
   /** A custom theme made from pictures: its panes' opacity and frost; `terminalVeil` once the Terminal window has a picture of its own. */
   backdrop?: { veil: number; frost: number; terminalVeil?: number };
+  /** The built-in theme itself, or under a custom one: a window can draw that theme's own light. */
+  base?: string;
+  /** Decorative motion stays still: performance mode, or a shell compositing without the GPU. */
+  still?: boolean;
 }
 
 export interface DesktopSurfaceSpec {

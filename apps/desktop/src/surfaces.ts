@@ -9,6 +9,7 @@ import type {} from "@tomradex/settings";
 import { cameBack } from "./background.js";
 import { leadWindow, showMainWindow, takeKeptInFront } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
+import { softwareCompositing } from "./window.js";
 import { bornForMaterial, isFrosted, materialOptions, setFrosted, takesMaterial } from "./window-material.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
@@ -126,7 +127,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
 
   /** The look as a surface's page reads it: frosted only where the shell put the material under it. */
   private worn(look: SurfaceLook, win: BrowserWindow): SurfaceLook {
-    return { ...look, frosted: isFrosted(win) };
+    return { ...look, frosted: isFrosted(win), still: !!look.still || softwareCompositing() };
   }
 
   open(spec: DesktopSurfaceSpec): DesktopSurface {

@@ -235,6 +235,10 @@ export function App() {
     for (const [name, value] of Object.entries(look.tokens)) root.style.setProperty(name, value);
     root.classList.toggle("dark", look.dark);
     root.toggleAttribute("data-frosted", !!look.frosted);
+    root.classList.remove("sunrise", "daybreak");
+    const sky = skyOf(look);
+    if (sky) root.classList.add(sky);
+    root.toggleAttribute("data-performance", !!look.still);
   }, [look]);
   const locale = look?.locale ?? state?.locale ?? "en";
   useEffect(() => {
@@ -283,7 +287,7 @@ export function App() {
       }),
     [change, say, current, setFocused]
   );
-  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture }), [look, locale, picture]);
+  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture || !!skyOf(look) }), [look, locale, picture]);
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
@@ -691,6 +695,9 @@ export function App() {
     </GuessContext.Provider></SayContext.Provider>
   );
 }
+
+/** The theme whose sky is drawn behind this window; a theme's picture takes its place. */
+const skyOf = (look: Look | null): "sunrise" | "daybreak" | null => (!look?.backdrop && (look?.base === "sunrise" || look?.base === "daybreak") ? look.base : null);
 
 const PICTURE_VARS = ["--backdrop-image", "--backdrop-shell", "--backdrop-pane", "--backdrop-tile", "--backdrop-float"];
 /**

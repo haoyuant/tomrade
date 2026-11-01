@@ -66,7 +66,7 @@
 }
 
 /* The horizon: one hairline from the sky's lilac through the sun's red to gold. */
-:is(.sunrise, .daybreak) .titlebar {
+:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar) {
   border-bottom-color: transparent;
   background:
     linear-gradient(90deg, transparent, var(--sun-sky) 18%, var(--sun-red) 55%, var(--sun-gold) 80%, transparent) bottom / 100% 1px no-repeat border-box,
@@ -75,8 +75,8 @@
 }
 /* Now and then a glint runs along the horizon: a short light that travels inside the bar, so it needs no
    clipping and adds no overflow. With the motion still, it is not drawn. */
-:is(.sunrise, .daybreak) .titlebar { position: relative; }
-:is(.sunrise, .daybreak) .titlebar::after {
+:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar) { position: relative; }
+:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after {
   content: ""; position: absolute; left: 0; bottom: -1px; width: 16%; height: 2px; pointer-events: none; opacity: 0;
   background: linear-gradient(90deg, transparent, var(--sun-sheen) 30%, var(--sun-gold) 50%, var(--sun-sheen) 70%, transparent);
   animation: sun-horizon 16s ease-in-out infinite;
@@ -181,16 +181,16 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 /* Every moving light stays still together; last, so these win. */
 [data-software-compositing]:is(.sunrise, .daybreak) body::before,
 [data-software-compositing]:is(.sunrise, .daybreak) body::after,
-[data-software-compositing]:is(.sunrise, .daybreak) .titlebar::after,
+[data-software-compositing]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-software-compositing]:is(.sunrise, .daybreak) .ai::after,
 [data-performance]:is(.sunrise, .daybreak) body::before,
 [data-performance]:is(.sunrise, .daybreak) body::after,
-[data-performance]:is(.sunrise, .daybreak) .titlebar::after,
+[data-performance]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-performance]:is(.sunrise, .daybreak) .ai::after { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   :is(.sunrise, .daybreak) body::before,
   :is(.sunrise, .daybreak) body::after,
-  :is(.sunrise, .daybreak) .titlebar::after,
+  :is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
   :is(.sunrise, .daybreak) .ai::after { animation: none; }
 }
 }

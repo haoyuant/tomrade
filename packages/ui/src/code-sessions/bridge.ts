@@ -9,6 +9,8 @@ export interface Look {
   /** The shell put the system's frosted material under this window: the page leaves its own background off. */
   frosted?: boolean;
   backdrop?: { veil: number; frost: number; terminalVeil?: number };
+  base?: string;
+  still?: boolean;
   /** On this page only: something is behind the window (the system's material or the theme's picture), so terminals draw no background of their own. */
   clear?: boolean;
 }
