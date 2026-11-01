@@ -314,7 +314,7 @@ it("offers itself in the palette and shows on the status bar while it goes", asy
     await f.ctx.nightShift.tick();
     f.items.update(f.project.id, a.id, { status: "verifying" }, "human");
     await f.ctx.nightShift.tick();
-    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toMatchObject({ text: "Night shift 1/2", opens: "night-shift" });
+    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toMatchObject({ text: "Auto run 1/2", opens: "night-shift" });
   } finally {
     await f.ctx.fiber.dispose();
   }
@@ -351,8 +351,13 @@ class FakeLlm extends Service {
   async worker() {
     return this.working ? { ok: true } : { ok: false, reason: "no model" };
   }
-  async completeJson() {
+  planReply: unknown = null;
+  async completeJson(_schema: unknown, opts: { system: string }) {
     this.calls += 1;
+    if (opts.system.startsWith("You plan")) {
+      if (!this.planReply) throw new Error("the model fell over");
+      return this.planReply;
+    }
     return { criteria: [{ text: "It works", met: "yes", evidence: "a.ts" }], outOfScope: [], unverified: [], risk: "low" };
   }
 }
@@ -395,7 +400,7 @@ it("writes the report into Files when the shift ends, and the shift remembers wh
     expect(llm.calls).toBe(1);
     expect(body).toContain("https://example.com/pr/1");
     expect(body).toContain("✓ It works: a.ts");
-    expect(f.ctx.nightShift.list(f.project.id, 1)[0]!.briefPath).toMatch(/^Night shifts\/\d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
+    expect(f.ctx.nightShift.list(f.project.id, 1)[0]!.briefPath).toMatch(/^Auto runs\/\d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
   } finally {
     await f.ctx.fiber.dispose();
   }
@@ -434,4 +439,60 @@ it("the tools start, read and stop a shift", async () => {
   } finally {
     await t.ctx.fiber.dispose();
   }
+});
+
+describe("planning a run", () => {
+  it("asks the model, and shows it the project", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const board = f.ctx.boards.list(f.project.id)[0]!.id;
+      const a = f.items.create({ projectId: f.project.id, boardId: board, title: "A", status: "todo", workType: "coding", by: "human" });
+      llm.planReply = { summary: "Do A.", suggested: [a.key], excluded: [], dependencies: [] };
+      const plan = await f.ctx.nightShift.plan(f.project.id);
+      expect(plan).toMatchObject({ analyzed: true, summary: "Do A.", nodes: [{ key: a.key, suggested: true }] });
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("falls back to the tickets when the model fails, and when there is none", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "A", status: "todo", workType: "coding", by: "human" });
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false, nodes: [{ suggested: true }] });
+      llm.working = false;
+      const calls = llm.calls;
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false });
+      expect(llm.calls).toBe(calls);
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("writes the dependencies the person took as it starts, and only those", async () => {
+    const f = await bootWithReport();
+    try {
+      const board = f.f.ctx.boards.list(f.f.project.id)[0]!.id;
+      const make = (title: string) => f.f.items.create({ projectId: f.f.project.id, boardId: board, title, status: "todo", workType: "coding", by: "human" });
+      const a = make("A");
+      const b = make("B");
+      const c = make("C");
+      f.f.ctx.nightShift.start(f.f.project.id, { itemIds: [a.id, b.id, c.id], dependencies: [{ from: a.id, to: b.id }] });
+      expect(f.f.items.get(f.f.project.id, a.id)!.blocks).toEqual([b.id]);
+      expect(f.f.items.get(f.f.project.id, c.id)!.blockedBy).toEqual([]);
+    } finally {
+      await f.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("refuses a run past three days", async () => {
+    const t = await boot();
+    try {
+      const a = t.make("A");
+      expect(() => t.s.start(t.project.id, { itemIds: [a.id], maxMinutes: 72 * 60 + 1 })).toThrow();
+      expect(t.s.start(t.project.id, { itemIds: [a.id], maxMinutes: 72 * 60 }).settings.maxMinutes).toBe(72 * 60);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
 });

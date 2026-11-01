@@ -35,7 +35,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useSelectedId, useWorkspace } from "./context";
 
-const NODE_W = 260;
+export const NODE_W = 260;
 const NODE_H = 92;
 
 type IssueNode = Node<{ item: Item }, "issue">;
@@ -71,7 +71,7 @@ const LONERS_GAP = 64;
  * Each arrow keeps dagre's route: through a column of cards it runs in the
  * lane dagre left between them, so it never passes under a card.
  */
-function layout(items: Item[], edges: GraphEdge[], heights: Record<string, number>): { pos: Map<string, XY>; routes: Map<string, XY[]> } {
+export function layout(items: Pick<Item, "id">[], edges: Pick<GraphEdge, "from" | "to">[], heights: Record<string, number>): { pos: Map<string, XY>; routes: Map<string, XY[]> } {
   const heightOf = (id: string) => heights[id] ?? NODE_H;
   const linked = new Set(edges.flatMap((e) => [e.from, e.to]));
   const g = new dagre.graphlib.Graph();
@@ -178,7 +178,7 @@ function RoutedEdgeView({ sourceX, sourceY, targetX, targetY, sourcePosition, ta
   );
 }
 
-const edgeTypes = { routed: RoutedEdgeView };
+export const edgeTypes = { routed: RoutedEdgeView };
 
 /** Below this a card's title is too small to read. */
 const FIT_MIN_ZOOM = 0.65;
