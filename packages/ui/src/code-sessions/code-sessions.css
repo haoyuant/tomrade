@@ -330,8 +330,10 @@ html[data-frosted] :is(.cs-row, .cs-big) { background: color-mix(in srgb, var(--
 :is(.sunrise, .daybreak) .cs-term { background: transparent; }
 :is(.sunrise, .daybreak) .xterm .xterm-viewport { background-color: transparent; }
 :is(.sunrise, .daybreak) .cs-scrollbar-thumb { background: linear-gradient(180deg, var(--sun-sky), var(--sun-red) 60%, var(--sun-gold)); }
-/* The session bar's cards and the overview's catch the light as the board's do; the overview covers the cells, so its sky is its own. */
-:is(.sunrise, .daybreak) :is(.cs-row, .cs-big) { background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), color-mix(in srgb, var(--surface) 72%, transparent); }
+/* The session bar's cards and the overview's catch the light as the board's do, and are as solid: they repaint with every
+   line a pane prints, and over the sky that held up typing by 5 ms without the GPU. The overview covers the cells, so its
+   sky is its own. */
+:is(.sunrise, .daybreak) :is(.cs-row, .cs-big) { background: linear-gradient(180deg, var(--sun-card-light), transparent 45%), var(--surface); }
 :is(.sunrise, .daybreak) .cs-row[aria-current="true"] {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   box-shadow: inset 2px 0 0 var(--sun-red), 0 6px 18px -8px var(--sun-glow);
