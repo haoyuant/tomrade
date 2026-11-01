@@ -1,9 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { looksRateLimited, resetTime } from "../src/limits.js";
+import { limitCause, looksOutOfBalance, looksRateLimited, resetTime } from "../src/limits.js";
 
 // 2026-10-12 21:30 in Shanghai (UTC+8, no daylight saving)
 const NOW = Date.UTC(2026, 9, 12, 13, 30);
 const shanghai = (day: number, hour: number, minute = 0) => Date.UTC(2026, 9, day, hour - 8, minute);
+
+describe("limitCause", () => {
+  it("tells a balance that ran out from a limit that lifts", () => {
+    for (const error of [
+      "Credit balance is too low",
+      "Your credit balance is too low to access the Anthropic API.",
+      "Insufficient Balance",
+      "insufficient_quota",
+      "You exceeded your current quota, please check your plan and billing details.",
+      "out of credits",
+      "402 Payment Required",
+      "LLM request failed 402: no money",
+      "API error 402",
+      "账户余额不足，请充值",
+      "您的账户已欠费"
+    ]) {
+      expect(looksOutOfBalance(error), error).toBe(true);
+      expect(limitCause({ error }), error).toEqual({ kind: "balance" });
+    }
+    expect(limitCause({ error: "rate limited" })).toEqual({ kind: "wait", until: null });
+    expect(limitCause({ error: "You've hit your limit", limit: { until: 123 } })).toEqual({ kind: "wait", until: 123 });
+    expect(limitCause({ error: "usage limit reached", limit: { until: null } })).toEqual({ kind: "wait", until: null });
+  });
+
+  it("a time the engine gave is a wait, whatever else it says", () => {
+    expect(limitCause({ error: "credit balance low", limit: { until: 123 } })).toEqual({ kind: "wait", until: 123 });
+    expect(limitCause({ error: "credit balance low", limit: { until: null } })).toEqual({ kind: "balance" });
+  });
+
+  it("leaves ordinary failures alone, money words in passing included", () => {
+    for (const error of [undefined, null, "", "LLM request failed 401: invalid api key", "Could not edit src/billing.ts", "compile failed at line 402", "build #1402 broke"]) {
+      expect(looksOutOfBalance(error), String(error)).toBe(false);
+      expect(limitCause({ error }), String(error)).toBeNull();
+    }
+  });
+});
 
 describe("looksRateLimited", () => {
   it("knows the ways agents say it", () => {

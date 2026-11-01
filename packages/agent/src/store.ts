@@ -158,7 +158,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   // A run the app's closing interrupted, once the person waved it away instead of continuing.
   { version: 18, up: "ALTER TABLE plugin_agent_runs ADD COLUMN dismissed_at INTEGER" },
   // The machine a run is driven on: one another machine drives is never settled here.
-  { version: 19, up: "ALTER TABLE plugin_agent_runs ADD COLUMN device TEXT" }
+  { version: 19, up: "ALTER TABLE plugin_agent_runs ADD COLUMN device TEXT" },
+  // The engine the person chose to stay on when offered a move from it.
+  { version: 20, up: "ALTER TABLE plugin_agent_threads ADD COLUMN switch_declined TEXT" }
 ];
 
 interface ThreadRow {
@@ -206,7 +208,7 @@ interface RunRow {
 
 interface PendingRow {
   thread_id: string;
-  kind: "ask" | "workflow";
+  kind: "ask" | "workflow" | "switch";
   workflow: string | null;
   step: string | null;
   state_json: string | null;
@@ -441,6 +443,16 @@ export class AgentStore {
     if (sessionId === null) delete map[engine];
     else map[engine] = sessionId;
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET external_json = ? WHERE id = ?").run(JSON.stringify(map), threadId);
+  }
+
+  /** The engine whose limits the person said not to be asked about on this thread, until it works again or the thread moves on. */
+  switchDeclined(projectId: string, threadId: string): string | null {
+    const row = this.db(projectId).prepare("SELECT switch_declined FROM plugin_agent_threads WHERE id = ?").get(threadId) as { switch_declined: string | null } | undefined;
+    return row?.switch_declined ?? null;
+  }
+
+  setSwitchDeclined(projectId: string, threadId: string, engine: string | null): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET switch_declined = ? WHERE id = ?").run(engine, threadId);
   }
 
   waivers(projectId: string, threadId: string): Set<string> {
