@@ -7,6 +7,7 @@ import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/c
 import { FIELD_LABEL, viewIcon } from "~/lib/domain";
 import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { useRepoStates } from "~/lib/codeLink";
+import { useNightShift } from "~/lib/nightShift";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
@@ -17,6 +18,27 @@ import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
 
+/** The door to a night shift, in a project with a repository to work in. While one runs it says how far along it is, and who it is waiting for. */
+function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: () => void }) {
+  const { t } = useI18n();
+  const repos = useRepos(projectId);
+  const going = useNightShift(projectId);
+  const shift = going.data;
+  // an error here means the night shift plugin is off
+  if (going.isError || (!shift && !repos.data?.length)) return null;
+  const delivered = shift ? shift.counts.delivered + shift.counts.done : 0;
+  const waiting = shift?.counts["needs-you"] ?? 0;
+  const label = !shift ? t("nightShift.start") : [t("nightShift.going", { done: delivered, total: shift.tickets.length }), ...(waiting ? [t("nightShift.needsYou", { n: waiting })] : [])].join(" · ");
+  return (
+    <button type="button" className={`btn btn-ghost no-drag titlebar-night-shift${shift ? " is-going" : ""}`} aria-haspopup="dialog" onClick={onOpen} title={label} aria-label={label} data-testid="titlebar-night-shift">
+      <Icon name="i-moon" size={15} />
+      <span className="lbl">{t("nightShift.title")}</span>
+      {shift && <span className="num">{delivered}/{shift.tickets.length}</span>}
+      {waiting > 0 && <span className="titlebar-night-shift-waiting num">{waiting}</span>}
+    </button>
+  );
+}
+
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
  * two controls, separated by a hairline rather than a slash.
@@ -26,6 +48,7 @@ export function TitleBar({
   onNewIssue,
   onOpenSettings,
   onOpenUsage,
+  onOpenNightShift,
   projectMenuOpen,
   setProjectMenuOpen
 }: {
@@ -33,6 +56,7 @@ export function TitleBar({
   onNewIssue: () => void;
   onOpenSettings: () => void;
   onOpenUsage: () => void;
+  onOpenNightShift: () => void;
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
@@ -97,6 +121,7 @@ export function TitleBar({
         <Icon name="i-plus" size={14} />
         {t("titleBar.newButton")}
       </button>
+      <NightShiftButton projectId={project.id} onOpen={onOpenNightShift} />
       {openTerminal && (
         <button type="button" className="btn btn-ghost no-drag titlebar-terminal" onClick={openTerminal} title={t("titleBar.terminalWindowTitle")} aria-label={t("titleBar.terminalWindow")} data-testid="titlebar-terminal">
           <Icon name="i-terminal" size={15} />
