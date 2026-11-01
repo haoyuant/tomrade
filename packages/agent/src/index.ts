@@ -93,6 +93,7 @@ export {
   type McpLinkView,
   type McpProjectApproval,
   type RecordLine,
+  type RecordSession,
   type RecordRead,
   type RecordUsage,
   type RecordUsageCount

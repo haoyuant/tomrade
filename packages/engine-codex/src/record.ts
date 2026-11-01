@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { EngineRecord } from "@tomradex/agent";
+import type { EngineRecord, RecordSession } from "@tomradex/agent";
 import { blocksText, clipDetail, clipLine, countJsonlUsage, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine, type JsonlReader, type RecordCallLine, type UsageEntry } from "@tomradex/engine-kit";
 import { codexHome } from "./account.js";
 
@@ -135,9 +135,79 @@ export function findCodexRollout(sessionId: string, home = codexHome()): string 
   return walk(path.join(home, "sessions"), 0);
 }
 
+/** How much of a rollout's head is read for its `session_meta`: the instructions in it can run long, and only what comes first is needed. */
+const META_CHUNK = 16 * 1024;
+const DAY_MS = 86_400_000;
+
+/** The folder a rollout ran in and its branch, read from the head without parsing what may be a cut line. */
+function rolloutPlace(file: string): { cwd: string; branch: string | null } | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const chunk = Buffer.alloc(META_CHUNK);
+    const read = fs.readSync(fd, chunk, 0, META_CHUNK, 0);
+    const head = chunk.subarray(0, read).toString("utf8");
+    const value = (re: RegExp) => {
+      const raw = re.exec(head)?.[1];
+      if (raw === undefined) return null;
+      try {
+        return JSON.parse(`"${raw}"`) as string;
+      } catch {
+        return null;
+      }
+    };
+    const cwd = value(/"cwd":"((?:[^"\\]|\\.)*)"/);
+    return cwd ? { cwd, branch: value(/"git":\{[^{}]*"branch":"((?:[^"\\]|\\.)*)"/) } : null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Rollouts of sessions that ran in these folders. They are filed by day, so a walk stops at days older than `since`. */
+export function codexSessions(cwds: string[], opts: { since: number; limit: number }, home = codexHome()): RecordSession[] {
+  const wanted = new Set(cwds);
+  const found: RecordSession[] = [];
+  const down = (dir: string) => {
+    try {
+      return fs.readdirSync(dir).sort().reverse();
+    } catch {
+      return [];
+    }
+  };
+  const newest = () => found.sort((a, b) => b.at - a.at).slice(0, opts.limit);
+  const root = path.join(home, "sessions");
+  for (const year of down(root)) {
+    for (const month of down(path.join(root, year))) {
+      for (const day of down(path.join(root, year, month))) {
+        // A day's folder is local time: a day of slack keeps the edge.
+        if (Date.parse(`${year}-${month}-${day}`) + 2 * DAY_MS < opts.since) return newest();
+        const folder = path.join(root, year, month, day);
+        for (const name of down(folder)) {
+          if (!name.startsWith("rollout-") || !name.endsWith(".jsonl")) continue;
+          const file = path.join(folder, name);
+          const stat = fs.statSync(file, { throwIfNoEntry: false });
+          if (!stat || stat.mtimeMs < opts.since) continue;
+          const place = rolloutPlace(file);
+          if (place && wanted.has(place.cwd)) found.push({ file, at: stat.mtimeMs, ...place });
+        }
+      }
+    }
+  }
+  return newest();
+}
+
 export const codexRecord: EngineRecord = {
   find: (sessionId) => findCodexRollout(sessionId),
   read: (file, opts) => readJsonlRecord(file, CODEX_ROLLOUT, opts),
+  roots: () => {
+    const root = path.join(codexHome(), "sessions");
+    return fs.existsSync(root) ? [root] : [];
+  },
+  sessions: (cwds, opts) => codexSessions(cwds, opts),
   title: codexRolloutTitle,
   usage: (file, from) => countJsonlUsage(file, CODEX_ROLLOUT, from)
 };

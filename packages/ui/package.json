@@ -91,6 +91,7 @@
     "@tomradex/plugins": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/night-shift": "workspace:*",
+    "@tomradex/takeover": "workspace:*",
     "@tomradex/schedules": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",
