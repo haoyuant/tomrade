@@ -47,6 +47,7 @@ const run = async () => {
   const keyOf = (item) => item.key;
   ctx.llm.worker = async () => ({ ok: true });
   ctx.llm.completeJson = async (_schema, opts) => {
+    if (opts.system.startsWith("You decide")) return { decision: "now", why: "It stops the export working" };
     if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
     return { summary: "Ship the export.", suggested: [first.key, second.key], excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
   };
@@ -205,8 +206,18 @@ const run = async () => {
   await ctx.nightShift.tick();
   check("a delivery moves the count, in the dialog and on the status bar", (await waitFor(`${text("night-shift-going")}.includes('1 of 2 delivered')`)) && (await waitFor(`(${status()}).includes('Auto run 1/2')`)), await $(text("night-shift-going")));
   check("a delivery moves the node and the timeline", (await waitFor(`${nodeNamed(keyOf(first))}?.dataset.state === 'delivered'`)) && (await waitFor(`[...document.querySelectorAll('[data-testid="plan-step"]')].some((s) => s.dataset.kind === 'delivered')`)));
+  const reported = await ctx.nightShift.report(project.id, first.key, { title: "Saving crashes on empty names", body: "src/save.ts throws" });
+  await ctx.nightShift.tick();
+  check("a problem an agent found joins the run", reported.outcome === "inserted", reported);
+  check("the graph marks it, with where it came from and why", await waitFor(`${nodeNamed(reported.key)}?.dataset.added === 'true' && ${nodeNamed(reported.key)}.textContent.includes('Added') && ${nodeNamed(reported.key)}.textContent.includes('It stops the export working')`, 12000), await $(`${nodeNamed(reported.key)}?.outerHTML?.slice(0, 300) ?? null`));
+  check("a dashed line runs to it from where it was found", await waitFor(`!!document.querySelector('.plan-graph path[style*="dasharray"]')`));
+  check("the timeline says so", await waitFor(`[...document.querySelectorAll('[data-testid="plan-step"]')].some((s) => s.dataset.kind === 'inserted' && s.textContent.includes(${JSON.stringify(reported.key)}))`));
+  check("the summary counts it", await waitFor(`${text("night-shift-going")}.includes('1 added')`), await $(text("night-shift-going")));
   await sleep(800);
   await shot("night-shift-going");
+  check("the agent for it was started", await (async () => { for (let i = 0; i < 40 && starts.length < 2; i++) await sleep(50); return starts.length === 2; })(), starts);
+  ctx.items.update(project.id, ctx.nightShift.current(project.id).tickets.find((x) => x.origin).itemId, { status: "verifying" }, "human");
+  await ctx.nightShift.tick();
   const current = ctx.nightShift.current.bind(ctx.nightShift);
   ctx.nightShift.current = (id) => { const shift = current(id); return shift && { ...shift, counts: { ...shift.counts, "needs-you": 1 } }; };
   ctx.ipc.send("nightShift.changed", project.id);
@@ -235,10 +246,10 @@ const run = async () => {
   check("Stop halts it", await waitFor(`${text("night-shift-going")}.includes('Stopping') || !!${test("plan-view")}`));
   await ctx.nightShift.tick();
   await sleep(200);
-  check("no new ticket started", starts.length === 1, starts);
+  check("no new ticket started", starts.length === 2, starts);
   check("the status bar lets go once it ends", await waitFor(`!(${status()}).includes('Auto run')`), await $(status()));
   check("the title bar goes back to offering one", await waitFor(`${test("titlebar-night-shift")}.title === 'Start the auto run'`), await $(`${test("titlebar-night-shift")}.title`));
-  check("the dialog says how the last one went", await waitFor(`${text("night-shift-last")}.includes('Stopped: 1 of 2 delivered')`), await $(text("night-shift-last")));
+  check("the dialog says how the last one went", await waitFor(`${text("night-shift-last")}.includes('Stopped: 2 of 3 delivered')`), await $(text("night-shift-last")));
   check("the morning report lands in Files, with a way to it from the dialog", await waitFor(`!!${test("night-shift-brief")}`), ctx.nightShift.list(project.id, 1)[0]?.briefPath);
   const brief = ctx.nightShift.list(project.id, 1)[0]?.briefPath;
   const written = brief ? (await ctx.files.read(project.id, brief)) : null;

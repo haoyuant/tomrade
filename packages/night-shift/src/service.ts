@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { languageName, languageTag, type LanguageTag } from "@tomradex/domain";
+import { languageName, languageTag, type Item, type LanguageTag } from "@tomradex/domain";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/alerts";
 import type {} from "@tomradex/code-link";
@@ -16,8 +16,9 @@ import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
+import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
 import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
-import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, settingsFor, stepsBetween, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
+import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, settingsFor, stepsBetween, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
 import { WorkRules, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
@@ -49,6 +50,8 @@ export const NightShiftInput = z.object({
   /** Dependencies from the plan the person took: written to the tickets as the run starts. */
   dependencies: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).max(50).default([]),
   notify: z.enum(["steps", "stuck"]).default("steps"),
+  /** Tickets found along the way that may join the run; 0 takes none. */
+  maxInserts: z.number().int().min(0).max(10).default(DEFAULT_MAX_INSERTS),
   /** What the person set on single nodes, by ticket id. */
   nodes: z.record(z.string(), NodeConfigInput).default({})
 });
@@ -71,9 +74,10 @@ export interface StepNotice {
   body: string;
 }
 
-export interface NightShiftView extends Omit<NightShift, "tickets" | "steps"> {
+export interface NightShiftView extends Omit<NightShift, "tickets" | "steps" | "found"> {
   tickets: NightShiftTicketView[];
   steps: NightShiftStepView[];
+  found: ShiftFinding[];
   counts: Record<TicketState, number>;
   /** Whether `spentUsd` is the whole of it: terminal agents, and some engines, report no cost. */
   costKnown: boolean;
@@ -151,7 +155,18 @@ export const NightShiftConfig = z.preprocess(
 export type NightShiftConfig = z.output<typeof NightShiftConfig>;
 
 const OPEN_TO_START = new Set(["backlog", "todo", "doing", "verifying"]);
+
+/** What a report came to, waiting for the run's next pass: only a pass writes a run, so a report never races one. */
+type Arrival = { ticket: ShiftTicket; why: string; fromKey: string } | { finding: ShiftFinding };
 const STATES: TicketState[] = ["queued", "running", "limited", "needs-you", "delivered", "done", "failed", "skipped"];
+
+/** A ticket's own settings: the person's hand over a rule, field by field. */
+function configOf(item: Pick<Item, "id"> & Item, rules: readonly WorkRule[], manual: NodeConfig | undefined): Pick<ShiftTicket, "config" | "configFrom"> {
+  const rule = ruleFor(rules, item);
+  const config: NodeConfig = { ...(rule ? ruleConfig(rule) : {}), ...manual };
+  if (!Object.keys(config).length) return {};
+  return { config, configFrom: manual && Object.keys(manual).length ? { kind: "manual" } : { kind: "rule", name: rule!.name } };
+}
 
 export class NightShifts extends Service {
   static provide = "nightShift";
@@ -164,6 +179,7 @@ export class NightShifts extends Service {
   private settling: ReturnType<typeof setTimeout> | null = null;
   /** Projects with a shift going: a session's every word need not touch the database to learn there is none. */
   private readonly going = new Set<string>();
+  private readonly arrivals = new Map<string, Arrival[]>();
 
   constructor(
     ctx: Context,
@@ -271,6 +287,7 @@ export class NightShifts extends Service {
       case "stalled": return w("stalled");
       case "overtime": return w("overtime");
       case "conflict-unresolved": return w("conflictUnresolved");
+      case "found": return w("foundFrom", { key: why.fromKey, text: why.text });
     }
   }
 
@@ -280,7 +297,7 @@ export class NightShifts extends Service {
     const w = NIGHT_SHIFT_WORDS(this.locale());
     const tickets = shift.tickets.map((t) => ({ ...t, note: this.note(t.why) ?? (t.engineLost ? w("engineLost", { engine: t.engineLost }) : null) }));
     const steps = (shift.steps ?? []).map((step) => ({ ...step, note: this.note(step.why) }));
-    return { ...shift, tickets, steps, counts, costKnown: shift.tickets.every((t) => settingsFor(shift.settings, t).mode === "run") && unpriced === 0 };
+    return { ...shift, tickets, steps, found: shift.found ?? [], counts, costKnown: shift.tickets.every((t) => settingsFor(shift.settings, t).mode === "run") && unpriced === 0 };
   }
 
   current(projectId: string): NightShiftView | null {
@@ -349,14 +366,6 @@ export class NightShifts extends Service {
     const parsed = NightShiftInput.parse(input);
     const remembered = this.home.codeLink.startDefaults();
     const workRules = this.rules(projectId);
-    /** The person's hand over a rule, field by field. */
-    const configOf = (item: NonNullable<ReturnType<typeof this.home.items.get>>): Pick<ShiftTicket, "config" | "configFrom"> => {
-      const manual = parsed.nodes[item.id];
-      const rule = ruleFor(workRules, item);
-      const config: NodeConfig = { ...(rule ? ruleConfig(rule) : {}), ...manual };
-      if (!Object.keys(config).length) return {};
-      return { config, configFrom: manual && Object.keys(manual).length ? { kind: "manual" } : { kind: "rule", name: rule!.name } };
-    };
     const tickets: ShiftTicket[] = [];
     const problems: string[] = [];
     for (const id of new Set(parsed.itemIds)) {
@@ -366,7 +375,7 @@ export class NightShifts extends Service {
       else if (!OPEN_TO_START.has(item.status)) problems.push(`${item.key} is ${item.status}`);
       // Start would put a second prompt into the session already on it.
       else if (this.home.codeLink.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running" || s.state === "waiting")) problems.push(`${item.key} has an agent on it already`);
-      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...configOf(item) });
+      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...configOf(item, workRules, parsed.nodes[item.id]) });
     }
     if (problems.length) throw new Error(`A night shift cannot take these: ${problems.join("; ")}`);
     // The person took these on the plan, so they are the person's writes, and undo takes them back.
@@ -381,7 +390,7 @@ export class NightShifts extends Service {
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
-      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake, judge: parsed.judge, notify: parsed.notify },
+      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake, judge: parsed.judge, notify: parsed.notify, maxInserts: parsed.maxInserts },
       tickets,
       status: "running",
       halt: null,
@@ -396,6 +405,90 @@ export class NightShifts extends Service {
     this.going.add(projectId);
     this.kick(0);
     return this.view(shift);
+  }
+
+  /**
+   * An agent found something outside its ticket. A ticket is filed unless the backlog already has it; whether it joins
+   * the run is for the limits and then the worker model, never the agent that found it. Anything less than a clear yes stays in the backlog.
+   */
+  async report(projectId: string, fromKey: string, input: { title: string; body: string; workType?: "coding" | "general" }): Promise<{ outcome: "inserted" | "later" | "duplicate"; key: string; why: string }> {
+    const shift = this.running(projectId);
+    const from = shift?.tickets.find((t) => t.key === fromKey.toUpperCase());
+    if (!shift || !from) throw new Error(`No auto run is working on ${fromKey}: file it with create_item instead`);
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const pending = () => this.arrivals.get(projectId) ?? [];
+    const arrive = (arrival: Arrival) => {
+      this.arrivals.set(projectId, [...pending(), arrival]);
+      this.kick(0);
+    };
+
+    const known = await this.duplicateOf(projectId, input);
+    if (known) {
+      arrive({ finding: { itemId: known.id, key: known.key, title: known.title, fromKey: from.key, why: w("foundDuplicate"), duplicate: true } });
+      return { outcome: "duplicate", key: known.key, why: w("foundDuplicate") };
+    }
+
+    const found = this.home.items.get(projectId, from.itemId);
+    if (!found) throw new Error(`${from.key} is no longer on the backlog: file it with create_item instead`);
+    const workType = input.workType ?? "coding";
+    const item = this.home.items.create({ projectId, boardId: found.boardId, parentId: found.parentId, title: input.title, body: `${input.body.trim()}\n\n${w("foundBody", { key: from.key })}`, status: "backlog", workType, by: "ai:night-shift" });
+    const later = (why: string) => {
+      arrive({ finding: { itemId: item.id, key: item.key, title: item.title, fromKey: from.key, why, duplicate: false } });
+      return { outcome: "later" as const, key: item.key, why };
+    };
+    const gateWord = (gate: NotInserted) => w(`notInserted_${gate}`);
+    const gate = insertGate(shift, from, workType, pending().filter((a) => "ticket" in a).length);
+    if (gate) return later(gateWord(gate));
+    const llm = this.home.get("llm");
+    const worker = llm ? await llm.worker().catch(() => null) : null;
+    if (!llm || !worker?.ok) return later(w("notInserted_noModel"));
+    const verdict = await llm
+      .completeJson(Triage, { system: triageSystem(languageName(this.locale())), user: triageUser(input, from, shift, this.home.agent.brief(projectId)), maxTokens: 600, timeoutMs: 60_000, purpose: "night-shift" })
+      .catch((err: unknown) => {
+        this.home.logger.warn(`auto run triage: ${errorMessage(err)}`);
+        return null;
+      });
+    if (!verdict) return later(w("notInserted_noModel"));
+    const why = verdict.why.trim();
+    if (verdict.decision !== "now") return later(why || w("notInserted_declined"));
+    // Time passed while the model thought: the run may have stopped, or filled up.
+    const now = this.running(projectId);
+    const nowGate = now ? insertGate(now, from, workType, pending().filter((a) => "ticket" in a).length) : "halted";
+    if (nowGate) return later(gateWord(nowGate));
+    arrive({ ticket: insertedTicket(item, from, why, configOf(item, this.rules(projectId), undefined)), why, fromKey: from.key });
+    return { outcome: "inserted", key: item.key, why };
+  }
+
+  private async duplicateOf(projectId: string, input: { title: string; body: string }): Promise<{ id: string; key: string; title: string } | null> {
+    const same = input.title.trim().toLowerCase();
+    const open = this.home.items.listAll(projectId).filter((item) => item.status !== "done" && item.status !== "cancelled");
+    const exact = open.find((item) => item.title.trim().toLowerCase() === same);
+    if (exact) return exact;
+    const tools = this.home.get("tools");
+    const similar = (await tools?.execute("find_similar", { title: input.title, body: input.body }, { by: "ai:night-shift", projectId }).catch(() => null)) as { verdict?: string; matches?: { id: string }[] } | null | undefined;
+    if (similar?.verdict !== "duplicate" || !similar.matches?.[0]) return null;
+    return open.find((item) => item.id === similar.matches![0]!.id) ?? null;
+  }
+
+  /** Lets what was reported since the last pass into the run, and says so. */
+  private arrive(shift: NightShift, now: number): NightShift {
+    const arrivals = this.arrivals.get(shift.projectId);
+    if (!arrivals?.length) return shift;
+    this.arrivals.delete(shift.projectId);
+    const steps: ShiftStep[] = arrivals.map((arrival) =>
+      "ticket" in arrival
+        ? { at: now, kind: "inserted", itemId: arrival.ticket.itemId, key: arrival.ticket.key, title: arrival.ticket.title, why: { kind: "found", fromKey: arrival.fromKey, text: arrival.why } }
+        : { at: now, kind: arrival.finding.duplicate ? "duplicate" : "found", itemId: arrival.finding.itemId, key: arrival.finding.key, title: arrival.finding.title, why: { kind: "found", fromKey: arrival.finding.fromKey, text: arrival.finding.why } }
+    );
+    const next: NightShift = {
+      ...shift,
+      tickets: [...shift.tickets, ...arrivals.flatMap((a) => ("ticket" in a ? [a.ticket] : []))],
+      found: [...(shift.found ?? []), ...arrivals.flatMap((a) => ("finding" in a ? [a.finding] : []))],
+      steps: [...(shift.steps ?? []), ...steps].slice(-MAX_STEPS)
+    };
+    this.save(next);
+    this.tell(next, steps);
+    return next;
   }
 
   /** Whether a shift going anywhere wants the computer kept awake. */
@@ -476,11 +569,13 @@ export class NightShifts extends Service {
   }
 
   private async pass(projectId: string, now: number): Promise<void> {
-    const shift = this.running(projectId);
-    if (!shift) {
+    const running = this.running(projectId);
+    if (!running) {
       this.going.delete(projectId);
+      this.arrivals.delete(projectId);
       return;
     }
+    const shift = this.arrive(running, now);
     const spent = this.home.agent.spentOn(projectId, shift.tickets.map((t) => t.itemId), shift.startedAt);
     const { shift: next, actions } = advance({ ...shift, spentUsd: spent.usd }, this.factsOf(shift, now), now);
     if (JSON.stringify(next) !== JSON.stringify(shift)) this.save(next);
@@ -564,7 +659,7 @@ export class NightShifts extends Service {
     const ticket = shift.tickets.find((t) => t.itemId === action.itemId)!;
     if (action.kind === "merge") return this.merge(shift, ticket, now);
     const { how, engineLost } = await this.how(shift, ticket);
-    const opts: StartOptions = how;
+    const opts: StartOptions = action.kind === "start" ? { ...how, message: reportLine(ticket.key) } : how;
     const patch = (fields: Partial<ShiftTicket>): NightShift => ({ ...shift, tickets: shift.tickets.map((t) => (t.itemId === ticket.itemId ? { ...t, ...fields } : t)) });
     try {
       const result = await this.home.codeLink.start(shift.projectId, ticket.itemId, opts);
@@ -664,6 +759,23 @@ export class NightShifts extends Service {
           }
           return { started: true, shift: this.start(projectId, input) };
         }
+      })
+    );
+    ctx.tools.register(
+      defineTool({
+        name: "report_finding",
+        kit: "code",
+        title: "Report a problem outside your ticket",
+        description:
+          "During an auto run: you found a real problem outside your own ticket. Say so here instead of fixing it. A ticket is filed unless one exists, and something other than you decides whether it joins the run. It does not change your ticket: go on with it, whatever the answer.",
+        input: z.object({
+          from: z.string().min(1).describe("The ticket you are working on, e.g. TOM-42"),
+          title: z.string().min(1).max(200).describe("What is wrong, as a ticket title"),
+          body: z.string().min(1).max(4000).describe("What you saw and where, enough for another agent to start from"),
+          workType: z.enum(["coding", "general"]).optional().describe("general: it needs a person, not code"),
+          projectId: z.string().optional()
+        }),
+        execute: (args, inv) => this.report(requireProjectId("report_finding", args.projectId, inv), args.from, { title: args.title, body: args.body, ...(args.workType ? { workType: args.workType } : {}) })
       })
     );
     ctx.tools.register(

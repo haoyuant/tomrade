@@ -49,7 +49,9 @@ function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue
         <div className="inbox-row" key={ticket.itemId} data-testid="night-shift-ticket" data-state={ticket.state}>
           <div>
             <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
+            {ticket.origin && <Tag tone="faint">{t("nightShift.added")}</Tag>}
             {ticket.note && <p className="meta-txt">{ticket.note}</p>}
+            {ticket.origin && <p className="meta-txt">{t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why })}</p>}
           </div>
           <Tag tone={ticket.state === "needs-you" || ticket.state === "failed" ? "strong" : "faint"}>{t(`nightShift.state_${ticket.state}` as MessageKey)}</Tag>
         </div>
@@ -65,13 +67,20 @@ function GoingGraph({ projectId, shift, onOpenIssue }: { projectId: string; shif
   const byId = useMemo(() => new Map(shift.tickets.map((ticket) => [ticket.itemId, ticket])), [shift.tickets]);
   const items = useMemo(() => (all.data ?? []).filter((item) => byId.has(item.id)), [all.data, byId]);
   const everyone = useMemo(() => new Set(items.map((item) => item.id)), [items]);
-  const links = items.flatMap((item) => item.blocks.filter((to) => byId.has(to)).map((to) => ({ from: item.id, to, firm: true })));
+  const shown = new Set(items.map((item) => item.id));
+  const links = [
+    ...items.flatMap((item) => item.blocks.filter((to) => byId.has(to)).map((to) => ({ from: item.id, to, firm: true }))),
+    // where an added ticket came from: not a dependency, so it stays dashed
+    ...shift.tickets.flatMap((ticket) => (ticket.origin && shown.has(ticket.origin.fromId) && shown.has(ticket.itemId) ? [{ from: ticket.origin.fromId, to: ticket.itemId, firm: false }] : []))
+  ];
   const subOf = (item: Item) => {
     const ticket = byId.get(item.id);
-    return ticket ? [t(`nightShift.state_${ticket.state}` as MessageKey), ticket.note].filter(Boolean).join(" · ") : null;
+    if (!ticket) return null;
+    const from = ticket.origin ? t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why }) : null;
+    return [t(`nightShift.state_${ticket.state}` as MessageKey), ticket.note, from].filter(Boolean).join(" · ");
   };
   if (!items.length) return null;
-  return <PlanGraph items={items} links={links} chosen={everyone} subOf={subOf} subs={items.map(subOf).join("|")} onToggle={onOpenIssue} stateOf={(id) => byId.get(id)?.state} />;
+  return <PlanGraph items={items} links={links} chosen={everyone} subOf={subOf} subs={items.map(subOf).join("|")} onToggle={onOpenIssue} stateOf={(id) => byId.get(id)?.state} addedOf={(id) => !!byId.get(id)?.origin} />;
 }
 
 /** What happened, newest first. It stays with the run, so it reads the same after a restart. */
@@ -100,11 +109,13 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
   const [view, setView] = useState<"graph" | "list">("graph");
   const toast = useToast();
   const { stop } = useNightShiftActions(projectId);
+  const added = shift.tickets.filter((ticket) => ticket.origin).length;
   const until = new Date(shift.deadlineAt).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   const facts = [
     t(shift.settings.mode === "terminal" ? "nightShift.runsInTerminal" : "nightShift.runsInSession"),
     t("nightShift.going", { done: delivered(shift), total: shift.tickets.length }),
     ...(shift.counts["needs-you"] ? [t("nightShift.needsYou", { n: shift.counts["needs-you"] })] : []),
+    ...(added ? [t("nightShift.addedCount", { n: added })] : []),
     ...(shift.spentUsd > 0 ? [t(shift.costKnown ? "nightShift.spent" : "nightShift.spentPartly", { amount: usd(shift.spentUsd) })] : []),
     ...(shift.halt ? [t("nightShift.stopping")] : shift.settings.maxMinutes <= 24 * 60 ? [t("nightShift.until", { at: until })] : [])
   ];
@@ -173,6 +184,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [autoMerge, setAutoMerge] = useState(false);
   const [keepAwake, setKeepAwake] = useState(true);
   const [notify, setNotify] = useState<"steps" | "stuck">("steps");
+  const [maxInserts, setMaxInserts] = useState(3);
   const [judge, setJudge] = useState(true);
   const onBattery = useOnBattery();
 
@@ -229,6 +241,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         keepAwake,
         judge,
         notify,
+        maxInserts,
         dependencies: taken.map(({ from, to }) => ({ from, to })),
         nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id)))
       },
@@ -364,10 +377,14 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
               <input id="nsHours" className="input" type="number" min={1} max={24} value={maxHours} onChange={(event) => setMaxHours(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} />
             </Field>
           )}
+          <Field label={t("nightShift.maxInserts")} htmlFor="nsInserts">
+            <input id="nsInserts" className="input" data-testid="night-shift-max-inserts" type="number" min={0} max={10} value={maxInserts} onChange={(event) => setMaxInserts(Math.min(10, Math.max(0, Number(event.target.value) || 0)))} />
+          </Field>
           <Field label={t("nightShift.maxUsd")} htmlFor="nsUsd">
             <input id="nsUsd" className="input" type="number" min={0} step={1} placeholder={t("nightShift.maxUsdPlaceholder")} value={maxUsd} onChange={(event) => setMaxUsd(event.target.value)} />
           </Field>
         </div>
+        <p className="meta-txt" data-testid="night-shift-inserts-hint">{t(maxInserts ? "nightShift.maxInsertsHint" : "nightShift.maxInsertsOff")}</p>
         {spendLimit > 0 && <p className="meta-txt" data-testid="night-shift-cost-note">{t(mode === "terminal" ? "nightShift.costTerminal" : "nightShift.costSession")}</p>}
         <label className="cfg-row" style={{ cursor: "pointer" }}>
           <input type="checkbox" data-testid="night-shift-auto-merge" checked={autoMerge} onChange={(event) => setAutoMerge(event.target.checked)} />

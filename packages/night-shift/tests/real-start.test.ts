@@ -67,6 +67,7 @@ const deliveringEngine = (): Engine => ({
       if (asked.includes("no longer merges")) resolveConflict(input.cwd);
       else if (input.ticket.title.startsWith("Shared")) workOnShared(input.cwd, input.ticket.key);
       else work(input.cwd, input.ticket.key);
+      if (asked.includes("report_finding") && input.ticket.title.startsWith("Finds")) await io.tools.execute("report_finding", { from: input.ticket.key, title: "The save button is dead", body: "src/save.ts never fires" });
       await io.tools.execute("link_code", { scopeChecked: true });
     }
     return { stop: "end", resume: "fake-session" };
@@ -126,6 +127,22 @@ it("in background sessions: a chain delivers, merges and starts its dependant, a
   expect([t.status(up.id), t.status(down.id)]).toEqual(["done", "done"]);
   expect(git(["log", "--format=%s", "main"], t.checkout)).toContain(up.key);
   expect(git(["log", "--format=%s", "main"], t.checkout)).toContain(down.key);
+  await t.ctx.fiber.dispose();
+});
+
+it("in background sessions: an agent told of report_finding can call it, and with no model what it found stays in the backlog", { timeout: 60_000 }, async () => {
+  const t = await machine();
+  const finder = t.ticket("Finds a problem");
+  t.s.start(t.project.id, { itemIds: [finder.id], mode: "run", engine: "fake-code", autoMerge: true });
+  await until(async () => {
+    await t.s.tick(Date.now() + 120_000);
+    return t.s.current(t.project.id) === null;
+  }, 40_000);
+  const shift = t.s.list(t.project.id, 1)[0]!;
+  expect(shift).toMatchObject({ counts: { done: 1, failed: 0 }, found: [{ title: "The save button is dead", fromKey: finder.key, duplicate: false }] });
+  expect(shift.tickets).toHaveLength(1);
+  expect(t.status(shift.found[0]!.itemId)).toBe("backlog");
+  expect(t.status(finder.id)).toBe("done");
   await t.ctx.fiber.dispose();
 });
 

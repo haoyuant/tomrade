@@ -82,7 +82,7 @@ it("runs in the place the person chose, in order, and remembers it through a sav
     const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], mode: "terminal", engine: "claude-code", concurrency: 1 });
     expect(shift.settings).toMatchObject({ mode: "terminal", engine: "claude-code", concurrency: 1 });
     await t.s.tick();
-    expect(t.code.starts).toEqual([{ itemId: a.id, opts: { mode: "terminal", engine: "claude-code" } }]);
+    expect(t.code.starts).toMatchObject([{ itemId: a.id, opts: { mode: "terminal", engine: "claude-code" } }]);
     expect(t.s.current(t.project.id)?.tickets[0]).toMatchObject({ state: "running", threadId: `th-${a.id}`, branch: `b/${a.id}` });
     t.items.update(t.project.id, a.id, { status: "verifying" }, "human");
     t.code.sessionsList[0]!.state = "waiting";
@@ -352,8 +352,15 @@ class FakeLlm extends Service {
     return this.working ? { ok: true } : { ok: false, reason: "no model" };
   }
   planReply: unknown = null;
-  async completeJson(_schema: unknown, opts: { system: string }) {
+  triageReply: unknown = null;
+  seen: string[] = [];
+  async completeJson(_schema: unknown, opts: { system: string; user: string }) {
     this.calls += 1;
+    if (opts.system.startsWith("You decide")) {
+      this.seen.push(opts.user);
+      if (!this.triageReply) throw new Error("the model fell over");
+      return this.triageReply;
+    }
     if (opts.system.startsWith("You plan")) {
       if (!this.planReply) throw new Error("the model fell over");
       return this.planReply;
@@ -676,6 +683,188 @@ describe("telling the person", () => {
       expect(told.flatMap((x) => x.notices).some((n) => n.body.startsWith("Not started"))).toBe(false);
     } finally {
       await t.ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("what an agent finds along the way", () => {
+  const scene = async (maxInserts = 3) => {
+    const { f, llm } = await bootWithReport();
+    const code = f.ctx.codeLink as unknown as FakeCodeLink;
+    const boardId = f.ctx.boards.list(f.project.id)[0]!.id;
+    const make = (title: string) => f.items.create({ projectId: f.project.id, boardId, title, status: "todo", workType: "coding", by: "human" });
+    const a = make("Build the export");
+    const shift = f.ctx.nightShift.start(f.project.id, { itemIds: [a.id], maxInserts, concurrency: 2 });
+    await f.ctx.nightShift.tick();
+    return { f, llm, code, a, shift, s: f.ctx.nightShift, make };
+  };
+  const finding = { title: "Saving crashes on empty names", body: "src/save.ts throws" };
+
+  it("tells each agent how to report when it starts", async () => {
+    const t = await scene();
+    try {
+      expect(t.code.starts[0]!.opts.message).toContain(`from: "${t.a.key}"`);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("files it, and a clear yes joins the run with where it came from", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "now", why: "It stops the export working" };
+      const told = await t.s.report(t.f.project.id, t.a.key, finding);
+      expect(told.outcome).toBe("inserted");
+      await t.s.tick();
+      const view = t.s.current(t.f.project.id)!;
+      const added = view.tickets.find((x) => x.key === told.key)!;
+      expect(added.origin).toEqual({ fromId: t.a.id, fromKey: t.a.key, why: "It stops the export working" });
+      expect(t.code.starts.map((s) => s.itemId)).toContain(added.itemId);
+      expect(view.steps.find((s) => s.kind === "inserted")).toMatchObject({ key: told.key, note: `Found in ${t.a.key}: It stops the export working` });
+      expect(t.f.items.get(t.f.project.id, added.itemId)).toMatchObject({ title: finding.title, status: expect.any(String) });
+      expect(t.f.items.get(t.f.project.id, t.a.id)!.title).toBe("Build the export");
+      expect(t.llm.seen[0]).toContain(finding.title);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("files it and leaves it when the model says later, keeps the reason, and starts nothing", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "later", why: "A cleanup" };
+      const told = await t.s.report(t.f.project.id, t.a.key, finding);
+      expect(told).toMatchObject({ outcome: "later", why: "A cleanup" });
+      await t.s.tick();
+      const view = t.s.current(t.f.project.id)!;
+      expect(view.tickets).toHaveLength(1);
+      expect(view.found).toMatchObject([{ key: told.key, fromKey: t.a.key, why: "A cleanup", duplicate: false }]);
+      expect(t.f.items.get(t.f.project.id, view.found[0]!.itemId)!.status).toBe("backlog");
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("files it and inserts nothing when no model can judge, or the model fails", async () => {
+    const t = await scene();
+    try {
+      expect((await t.s.report(t.f.project.id, t.a.key, finding)).outcome).toBe("later");
+      t.llm.working = false;
+      expect((await t.s.report(t.f.project.id, t.a.key, { ...finding, title: "Another problem entirely" })).outcome).toBe("later");
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("does not ask the model when the limit already says no", async () => {
+    const t = await scene(0);
+    try {
+      t.llm.triageReply = { decision: "now", why: "x" };
+      expect((await t.s.report(t.f.project.id, t.a.key, finding)).outcome).toBe("later");
+      expect(t.llm.seen).toEqual([]);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("holds the limit when two reports race the model", async () => {
+    const t = await scene(1);
+    try {
+      t.llm.triageReply = { decision: "now", why: "x" };
+      const both = await Promise.all([t.s.report(t.f.project.id, t.a.key, finding), t.s.report(t.f.project.id, t.a.key, { title: "A different failure on load", body: "elsewhere" })]);
+      expect(both.map((b) => b.outcome).sort()).toEqual(["inserted", "later"]);
+      await t.s.tick();
+      expect(t.s.current(t.f.project.id)!.tickets.filter((x) => x.origin)).toHaveLength(1);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("files nothing new for what the backlog already has", async () => {
+    const t = await scene();
+    try {
+      const known = t.make("Saving crashes on empty names");
+      const before = t.f.items.listAll(t.f.project.id).length;
+      expect(await t.s.report(t.f.project.id, t.a.key, finding)).toMatchObject({ outcome: "duplicate", key: known.key });
+      await t.s.tick();
+      expect(t.f.items.listAll(t.f.project.id)).toHaveLength(before);
+      expect(t.s.current(t.f.project.id)!.steps.at(-1)).toMatchObject({ kind: "duplicate", key: known.key });
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("one level deep: what an added ticket finds stays in the backlog", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "now", why: "x" };
+      const first = await t.s.report(t.f.project.id, t.a.key, finding);
+      await t.s.tick();
+      const nested = await t.s.report(t.f.project.id, first.key, { title: "A second, deeper problem", body: "found by the added ticket" });
+      expect(nested.outcome).toBe("later");
+      expect(t.llm.seen).toHaveLength(1);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("takes nothing on once the run is stopping", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "now", why: "x" };
+      t.s.stop(t.f.project.id, t.shift.id);
+      expect((await t.s.report(t.f.project.id, t.a.key, finding)).outcome).toBe("later");
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("an added ticket counts against the run's failures", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "now", why: "x" };
+      const told = await t.s.report(t.f.project.id, t.a.key, finding);
+      await t.s.tick();
+      const session = t.code.sessionsList.find((s) => s.itemIds.includes(t.s.current(t.f.project.id)!.tickets.find((x) => x.key === told.key)!.itemId))!;
+      session.state = "error";
+      await t.s.tick();
+      expect(t.s.current(t.f.project.id)!.failStreak).toBe(1);
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("refuses a ticket that is not on the run", async () => {
+    const t = await scene();
+    try {
+      await expect(t.s.report(t.f.project.id, "NOPE-1", finding)).rejects.toThrow("No auto run");
+    } finally {
+      await t.f.ctx.fiber.dispose();
+    }
+  });
+
+  it("the report lists what joined and what was left", async () => {
+    const t = await scene();
+    try {
+      t.llm.triageReply = { decision: "now", why: "It matters" };
+      const added = await t.s.report(t.f.project.id, t.a.key, finding);
+      t.llm.triageReply = { decision: "later", why: "It can wait" };
+      const left = await t.s.report(t.f.project.id, t.a.key, { title: "Tidy the export names", body: "cosmetic" });
+      await t.f.ctx.nightShift.tick();
+      const files = t.f.ctx.files as unknown as FakeFiles;
+      for (const ticket of t.s.current(t.f.project.id)!.tickets) t.f.items.update(t.f.project.id, ticket.itemId, { status: "verifying" }, "human");
+      for (const session of t.code.sessionsList) session.state = "idle";
+      await vi.waitFor(async () => {
+        await t.s.tick();
+        expect(t.s.list(t.f.project.id, 1)[0]?.briefPath).toBeTruthy();
+      });
+      const body = [...files.written.values()][0]!;
+      expect(body).toContain("## Added along the way");
+      expect(body).toContain(`- ${added.key} ${finding.title}: Found in ${t.a.key}: It matters`);
+      expect(body).toContain("## Found and left for you");
+      expect(body).toContain(`- ${left.key} Tidy the export names: Found in ${t.a.key}: It can wait`);
+    } finally {
+      await t.f.ctx.fiber.dispose();
     }
   });
 });
