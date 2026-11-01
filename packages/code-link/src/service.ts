@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { Engine, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
+import type { Engine, EngineCapability, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -1451,6 +1451,12 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.store.patchSession(projectId, session.id, { state: "ended", endedAt: Date.now(), activity: null });
     this.notify(projectId);
     return true;
+  }
+
+  /** The engine a ticket can go on with now, past those it stopped on; null when none can. */
+  async nextEngine(stopped: readonly string[], need: { capability: EngineCapability; terminal: boolean }): Promise<string | null> {
+    const agent = this.ctx.get("agent");
+    return agent ? ((await this.starter.takeOver(agent, stopped, need))?.id ?? null) : null;
   }
 
   /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */

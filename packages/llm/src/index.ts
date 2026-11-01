@@ -52,6 +52,11 @@ export interface CompletionRequest {
   repair?: boolean;
   /** What the call is for, so the Usage pane can say what the worker spent on what. */
   purpose?: WorkerPurpose;
+  /**
+   * Asks an agent signed in on this computer first, this one if it can answer, and the worker if none does. Set to
+   * follow the person's default engine, as a conversation does; a worker they picked by hand still wins.
+   */
+  preferEngine?: string;
 }
 
 const NO_PROFILE = "No model profile configured — add one in Settings → Assistant";
@@ -655,18 +660,41 @@ export class Llm extends Service implements LlmService {
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
+    const agent = await this.preferredAgent(request);
+    let refusal: unknown;
+    if (agent) {
+      try {
+        return await this.askLent(agent, schema, request);
+      } catch (err) {
+        if (request.signal?.aborted) throw err;
+        refusal = err;
+        this.ctx.logger.warn(`${agent.title} could not answer, so the worker is asked: ${errorMessage(err)}`);
+      }
+    }
     const source = await this.workerSource();
     if (source.kind === "lent") {
-      const lent = source.lent;
-      return this.lentSlot(
-        () => this.tallied(`lent:${lent.id}`, lent.title, request, (spent) => completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`, spent)),
-        request.signal
-      );
+      if (source.lent === agent) throw refusal;
+      return this.askLent(source.lent, schema, request);
     }
     if (source.kind === "none") throw new LlmError(source.chosen ? source.reason : NO_PROFILE);
     const profile = source.profile;
     const label = `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)`;
     return this.tallied(`profile:${profile.id}`, profile.title || profile.model, request, (spent) => completeJson(this.for("worker"), schema, request, label, spent));
+  }
+
+  private askLent<T>(lent: LentModel, schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
+    return this.lentSlot(
+      () => this.tallied(`lent:${lent.id}`, lent.title, request, (spent) => completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`, spent)),
+      request.signal
+    );
+  }
+
+  /** The agent a call asked for, else the first that is ready. A worker the person picked is never passed over. */
+  private async preferredAgent(request: CompletionRequest): Promise<LentModel | undefined> {
+    if (request.preferEngine === undefined || this.models().roles.worker) return undefined;
+    const named = this.lent.find((m) => m.id === request.preferEngine);
+    if (named && (await named.ready().catch(() => false))) return named;
+    return this.readyLent();
   }
 
   /** What worker calls spent today, over the last week and across the pane's range, by source and purpose. */

@@ -15,6 +15,22 @@ const NOT_A_WAIT = /\b(insufficient (?:balance|credits?|funds)|billing|payment r
 /** The engine stopped on a limit that lifts by itself, as far as its words say. */
 export const looksRateLimited = (text: string | null | undefined): boolean => !!text && LIMITED.test(text) && !NOT_A_WAIT.test(text);
 
+// Narrower than NOT_A_WAIT: any failure may mention "billing", and only saying the money ran out counts here.
+const OUT_OF_BALANCE = /\b(insufficient[ _](?:balance|credits?|funds|quota)|payment required|credit balance|out of credits|exceeded your current quota|billing_error)\b|(?:^|\b(?:status|code|http|error|failed)\b\W*)402\b|余额不足|欠费/i;
+
+/** The engine stopped because the account is out of money, as far as its words say. */
+export const looksOutOfBalance = (text: string | null | undefined): boolean => !!text && OUT_OF_BALANCE.test(text);
+
+/** Why a limit stopped an engine: `wait` lifts by itself (at `until`, when known), `balance` waits for someone to pay. */
+export type LimitCause = { kind: "wait"; until: number | null } | { kind: "balance" };
+
+/** What stopped a failed run, when a limit did. A time the engine gave wins over its words: something that lifts is a wait. */
+export function limitCause(stopped: { error?: string | null; limit?: { until: number | null } }): LimitCause | null {
+  if (!stopped.limit?.until && looksOutOfBalance(stopped.error)) return { kind: "balance" };
+  if (stopped.limit || looksRateLimited(stopped.error)) return { kind: "wait", until: stopped.limit?.until ?? resetTime(stopped.error) };
+  return null;
+}
+
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const UNIT_MS: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1000 };
 /** Past this, a reading is a misreading: no plan's window is longer than a week. */

@@ -22,13 +22,13 @@ import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } f
 import { RULES_MAX_CHARS, afterInterruption, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
 import type { AgentPolicy } from "./hooks.js";
-import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
+import type { CliCheck, Engine, EngineAvailability, EngineCapability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
 import { normalizeEngine } from "./engine-shape.js";
 import { PANEL_SURFACES, type AgentEvent, type Block, type CardView, type FocusRef, type ParkView, type PendingView, type RunView, type ThreadMessage, type ThreadSummary, type ThreadSurface, type UserInput } from "./thread.js";
 import type { OpenDependency, RetryState, SteerInput, TurnInput, TurnIO, TurnResult } from "./turn.js";
 import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEntry, type PlaybookSource, type Suspended, type TurnFollowUp, type WorkflowIO, type WorkflowSpec } from "./workflow.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
-import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
+import { limitCause, untilLabel, type LimitCause } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
 import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
@@ -304,6 +304,12 @@ interface RunCtx {
  * on a file opened again settles only what nobody owns. Kept on globalThis so a second copy of this module shares it.
  */
 const LIVE_RUNS: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("tomradex.agent.liveRuns")] ??= new Set<string>()) as Set<string>;
+
+/** What a waiting `switch` question holds: the engine it offers and the run that stopped. */
+interface SwitchOffer {
+  to: string;
+  runId: string;
+}
 
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
@@ -995,6 +1001,24 @@ export class Agent extends Service implements AgentReader {
     return this.allEngines().filter((e) => e.capabilities?.includes("code"));
   }
 
+  /**
+   * The first engine that can take over from `limited` right now, in the order `Starter.pickEngine` tries
+   * them; several when the work has stopped on more than one. `capability`: what the work needs. `terminal`:
+   * the work runs in a terminal rather than the panel.
+   */
+  async nextEngine(limited: string | readonly string[], need: { capability?: EngineCapability; terminal?: boolean } = {}): Promise<Engine | null> {
+    const { capability = "backlog", terminal = false } = need;
+    const stopped = new Set([limited].flat().map((id) => this.answering(id)));
+    for (const engine of this.allEngines()) {
+      // A literal engine only follows its script: it cannot carry on someone else's work.
+      if (stopped.has(engine.id) || engine.literal || !(engine.capabilities ?? ["backlog"]).includes(capability)) continue;
+      if (engine.terminal?.mode === (terminal ? "none" : "only")) continue;
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: errorMessage(err) }));
+      if (state.ok && (!state.capabilities || state.capabilities.includes(capability))) return engine;
+    }
+    return null;
+  }
+
   private generalStarts = new Set<string>();
   private generalTakeovers = new Set<string>();
   private generalScratch: string | null = null;
@@ -1418,6 +1442,7 @@ export class Agent extends Service implements AgentReader {
     }
     // Overrides belong to the engine they were picked for.
     this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null, options: null });
+    this.store.setSwitchDeclined(projectId, threadId, null);
     const thread = this.store.thread(projectId, threadId)!;
     this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words()("engineSwitched", { title: this.engines.get(engineId)?.title ?? engineId }) }, null);
     return thread;
@@ -1541,6 +1566,11 @@ export class Agent extends Service implements AgentReader {
     // Another plugin may hold the thread's session elsewhere (its CLI resuming it in a terminal): a second process on it is refused.
     const refused = this.ctx.bail("agent/before-send", thread);
     if (refused) throw new Error(refused);
+    const waiting = this.store.pending(projectId, threadId);
+    if (waiting?.kind === "switch") {
+      const answered = this.answerSwitch(thread, waiting, input, record);
+      if (answered) return answered;
+    }
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
@@ -2171,8 +2201,9 @@ export class Agent extends Service implements AgentReader {
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
     const tries = this.limitTries.get(rc.run.id) ?? 0;
     this.limitTries.delete(rc.run.id);
-    const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
-    const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
+    const cause = status === "error" ? limitCause(result) : null;
+    const park = cause?.kind === "wait" ? this.park(rc.projectId, rc.threadId, { until: cause.until, runId: rc.run.id, attempt: tries + 1 }) : null;
+    if (status === "done") this.store.setSwitchDeclined(rc.projectId, rc.threadId, null);
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: takenOver ? TAKEN_OVER : result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
     // what it said last, kept with the thread once the turn is over — never while it streams
     const lastText = this.store.lastText(rc.projectId, rc.threadId, rc.run.id);
@@ -2183,6 +2214,63 @@ export class Agent extends Service implements AgentReader {
     this.ctx.emit("agent/run-ended", run, thread);
     // once per run, here and nowhere else: a background conversation's conclusion lands in the one it reports to
     if (thread.parentId) this.relayToParent(rc, run, thread);
+    if (cause && (thread.surface === "assistant" || thread.surface === "code")) {
+      void this.offerSwitch(thread, rc, cause, park).catch((err: unknown) => this.ctx.logger.warn(`switch offer failed: ${errorMessage(err)}`));
+    }
+  }
+
+  /** Asks in the thread whether the next engine takes over: only when one can, and never again once the person said no. */
+  private async offerSwitch(thread: ThreadSummary, rc: RunCtx, cause: LimitCause, park: ParkView | null): Promise<void> {
+    const { projectId, id: threadId } = thread;
+    if (this.store.switchDeclined(projectId, threadId) === rc.engine.id) return;
+    if (this.ctx.bail("agent/before-switch-offer", thread)) return;
+    const capability: EngineCapability = thread.execution ? "general" : thread.itemId || thread.parentId ? "code" : "backlog";
+    const next = await this.nextEngine(rc.engine.id, { capability });
+    if (!next || !this.ctx.db.has(projectId)) return;
+    // Looking took a moment: the thread may have gone on, or its limit lifted, meanwhile.
+    if (this.activeByThread.has(threadId) || this.store.pending(projectId, threadId) || this.store.thread(projectId, threadId)?.engine !== rc.engine.id) return;
+    if (park && !this.store.parked(projectId, threadId)) return;
+    const w = this.words();
+    const names = { from: rc.engine.title, to: next.title };
+    const text = cause.kind === "balance"
+      ? w("switchAskBalance", names)
+      : w("switchAskLimit", { ...names, lifts: park?.known ? w("limitLiftsAt", { when: untilLabel(park.until, w.locale) }) : "" });
+    const question = { id: randomUUID(), text, options: [w("switchYes", { to: next.title }), w(cause.kind === "balance" ? "switchStay" : "switchWait")] };
+    const offer: SwitchOffer = { to: next.id, runId: rc.run.id };
+    this.store.setPending(projectId, threadId, { kind: "switch", workflow: null, step: null, state: offer, question, accepts: "options", waiveRule: null, waiveOn: [] });
+    this.appendAndBroadcast(projectId, threadId, "agent", { type: "question", ...question }, rc.run.id);
+    this.broadcast(threadId, { type: "pending", pending: this.pendingView(this.store.pending(projectId, threadId)!) });
+  }
+
+  private dropSwitchOffer(projectId: string, threadId: string): void {
+    if (this.store.pending(projectId, threadId)?.kind !== "switch") return;
+    this.store.clearPending(projectId, threadId);
+    this.broadcast(threadId, { type: "pending", pending: null });
+  }
+
+  /** The person's word on an offer to switch engines; null when what came is something else, and the offer lapses for it. */
+  private answerSwitch(thread: ThreadSummary, waiting: PendingRecord, input: UserInput, record: (runId: string) => void): { runId: string } | null {
+    const { projectId, id: threadId } = thread;
+    const said = input.kind === "answer" ? input.value : input.text.trim();
+    const [yes, no] = waiting.question.options ?? [];
+    const offer = waiting.state as SwitchOffer;
+    this.dropSwitchOffer(projectId, threadId);
+    if (said === no) {
+      // A wait stays parked and goes on by itself; no run starts here, so the answer belongs to the run that stopped.
+      this.store.setSwitchDeclined(projectId, threadId, thread.engine);
+      this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text: no! }, offer.runId);
+      record(offer.runId);
+      return { runId: offer.runId };
+    }
+    if (said !== yes) return null;
+    const from = this.engines.get(thread.engine)?.title ?? thread.engine;
+    const to = this.engines.get(offer.to);
+    // A session it kept from earlier on this thread stops before what happened since; a new one gets all of it as a recap.
+    for (const id of [offer.to, ...(to?.includes ?? [])]) this.store.setExternal(projectId, threadId, id, null);
+    this.setEngine(projectId, threadId, offer.to);
+    const started = this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterSwitch", { from, to: to?.title ?? offer.to }) });
+    record(started.runId);
+    return started;
   }
 
   /** The thread waiting for a usage limit to lift, if it is. */
@@ -2244,6 +2332,8 @@ export class Agent extends Service implements AgentReader {
     const park = this.store.parked(projectId, threadId);
     if (!park) return;
     this.store.unpark(projectId, threadId);
+    // With the limit gone there is nothing left to move away from.
+    this.dropSwitchOffer(projectId, threadId);
     const thread = this.store.thread(projectId, threadId);
     if (!thread || this.activeByThread.has(threadId)) return;
     if (park.resume && this.settingsOf().resumeAfterLimit !== false) {

@@ -13,6 +13,8 @@ declare module "cordis" {
     "agent/prepare-brief"(brief: { projectId: string; itemId: string; filesIndex?: string }): Promise<void> | void;
     /** A message is about to start a run on the thread. The first listener to answer with a reason refuses it; the reason reaches the person. */
     "agent/before-send"(thread: ThreadSummary): string | void;
+    /** A limit stopped this thread: true when a plugin decides what happens next, so nobody is asked. */
+    "agent/before-switch-offer"(thread: ThreadSummary): true | void;
     /** A run began driving a thread. */
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */

@@ -8,7 +8,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent } from "@tomradex/agent";
 import { Contributions } from "@tomradex/contributions";
-import { NightShifts } from "@tomradex/night-shift";
+import { NightShifts, PlanReply } from "@tomradex/night-shift";
 
 interface FakeSession { itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
 
@@ -31,6 +31,9 @@ class FakeCodeLink extends Service {
   }
   startDefaults() {
     return this.defaults;
+  }
+  async nextEngine() {
+    return null;
   }
   async start(_projectId: string, itemId: string, opts: Record<string, unknown>) {
     this.starts.push({ itemId, opts });
@@ -354,16 +357,19 @@ class FakeLlm extends Service {
   planReply: unknown = null;
   triageReply: unknown = null;
   seen: string[] = [];
-  async completeJson(_schema: unknown, opts: { system: string; user: string }) {
+  asked: { preferEngine?: string }[] = [];
+  refusal = "the model fell over";
+  async completeJson(_schema: unknown, opts: { system: string; user: string; preferEngine?: string }) {
     this.calls += 1;
+    this.asked.push(opts);
     if (opts.system.startsWith("You decide")) {
       this.seen.push(opts.user);
       if (!this.triageReply) throw new Error("the model fell over");
       return this.triageReply;
     }
     if (opts.system.startsWith("You plan")) {
-      if (!this.planReply) throw new Error("the model fell over");
-      return this.planReply;
+      if (!this.planReply) throw new Error(this.refusal);
+      return PlanReply.parse(this.planReply);
     }
     return { criteria: [{ text: "It works", met: "yes", evidence: "a.ts" }], outOfScope: [], unverified: [], risk: "low" };
   }
@@ -456,7 +462,8 @@ describe("planning a run", () => {
       const a = f.items.create({ projectId: f.project.id, boardId: board, title: "A", status: "todo", workType: "coding", by: "human" });
       llm.planReply = { summary: "Do A.", suggested: [a.key], excluded: [], dependencies: [] };
       const plan = await f.ctx.nightShift.plan(f.project.id);
-      expect(plan).toMatchObject({ analyzed: true, summary: "Do A.", nodes: [{ key: a.key, suggested: true }] });
+      expect(plan).toMatchObject({ analyzed: true, why: null, summary: "Do A.", nodes: [{ key: a.key, suggested: true }] });
+      expect(llm.asked.at(-1)).toMatchObject({ preferEngine: f.ctx.agent.answering(f.ctx.agent.settingsOf().defaultEngine) });
     } finally {
       await f.ctx.fiber.dispose();
     }
@@ -466,10 +473,11 @@ describe("planning a run", () => {
     const { f, llm } = await bootWithReport();
     try {
       f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "A", status: "todo", workType: "coding", by: "human" });
-      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false, nodes: [{ suggested: true }] });
+      llm.refusal = '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low"}}';
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false, why: expect.stringMatching(/: Your credit balance is too low$/), nodes: [{ suggested: true }] });
       llm.working = false;
       const calls = llm.calls;
-      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false });
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false, why: expect.stringMatching(/^No agent or model/) });
       expect(llm.calls).toBe(calls);
     } finally {
       await f.ctx.fiber.dispose();

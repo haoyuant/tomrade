@@ -29,6 +29,14 @@ export const useLastNightShift = (projectId: string) =>
 /** "Until it is done" still ends; the service holds the same limit. */
 export const UNTIL_DONE_HOURS = 72;
 
+/** What the person's limit starts at: the ceiling, not what runs. */
+export const DEFAULT_MAX_CONCURRENCY = 4;
+/** With no model to weigh the tickets, a run stays small. */
+const CAUTIOUS_CONCURRENCY = 2;
+
+/** How many a run takes at once: the agent's call, within the person's limit. */
+export const runConcurrency = (limit: number, decided: number | null | undefined): number => Math.min(limit, decided ?? CAUTIOUS_CONCURRENCY);
+
 /** One model call: kept while the dialog comes and goes, and asked again only by hand. */
 export const useShiftPlan = (projectId: string) =>
   useQuery({ queryKey: keys.nightShift.plan(projectId), queryFn: () => invoke("nightShift.plan", projectId), retry: false, staleTime: 10 * 60_000 });
