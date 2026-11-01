@@ -324,7 +324,6 @@ html[data-traffic-lights="on"] {
   --sun-btn-from: #bf2e28;
   --sun-btn-to: #d2511d;
   --sun-sheen: rgba(255, 226, 170, 0.45);
-  --sun-star: rgba(224, 148, 48, 0.85);
   --sun-card-light: rgba(242, 164, 58, 0.03);
 }
 .daybreak {

@@ -19,9 +19,11 @@
   --sun-light-glow: radial-gradient(ellipse 56vw 44vh at 98vw 120vh, var(--sun-glow),
     color-mix(in srgb, var(--sun-glow) 74%, transparent) 20%, color-mix(in srgb, var(--sun-glow) 46%, transparent) 42%,
     color-mix(in srgb, var(--sun-glow) 22%, transparent) 64%, color-mix(in srgb, var(--sun-glow) 7%, transparent) 84%, transparent);
-  /* Daybreak's last stars and Sunrise's gold motes, from under the title bar down past the board's middle.
-     Three tile widths keep them from lining up in a grid. */
   --sun-pane: var(--surface);
+}
+/* Daybreak's last stars, from under the title bar down past the board's middle. Three tile widths keep them from lining
+   up in a grid. */
+.daybreak {
   --sun-stars-top: calc(8vh + var(--titlebar-h));
   --sun-stars:
     radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 760px repeat-x,
@@ -44,8 +46,9 @@
 :is(.sunrise, .daybreak) body::before {
   inset: -8vh 0 0 -8vw;
   animation: sun-sky-drift 23s ease-in-out infinite alternate;
-  background: var(--sun-stars), var(--sun-light-sky);
+  background: var(--sun-light-sky);
 }
+.daybreak body::before { background: var(--sun-stars), var(--sun-light-sky); }
 /* The sun below the bottom right corner. It starts risen, so a theme shows its light the moment it is picked,
    then sets and rises again. Its layer reaches well past every edge, so no edge shows as it moves. */
 :is(.sunrise, .daybreak) body::after {
@@ -99,7 +102,7 @@
 :is(.sunrise, .daybreak) .ai { background: transparent; }
 :is(.sunrise, .daybreak) .ai::before { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; background: var(--sun-pane); }
 /* That surface covers the sky, so the panel has stars of its own. They breathe with the sky but stay put: drifting, they would cross the panel's edge. */
-:is(.sunrise, .daybreak) .ai::after {
+.daybreak .ai::after {
   content: ""; position: absolute; inset: -8vh 0 0 0; z-index: -1; pointer-events: none;
   background: var(--sun-stars);
   animation: sun-stars-breathe 23s ease-in-out infinite alternate;
@@ -107,6 +110,52 @@
 @keyframes sun-stars-breathe {
   from { opacity: 1; }
   to { opacity: 0.5; }
+}
+
+/* Sunrise's dust and Daybreak's brightest stars (Motes.tsx). Last in the document at the sky's level, so they stand over
+   the assistant's floor and under everything else. Each changes a little in brightness and size on one animation, and
+   the larger ones in glow on a halo beside them. A halo is a sibling, never a child: a composited child under a fading
+   parent makes the GPU draw that light to an offscreen surface, about 1% of a GPU core per halo as measured. */
+.sun-motes { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; contain: strict; }
+.sun-mote, .sun-halo { position: absolute; left: var(--x); top: var(--y); width: var(--size); height: var(--size); }
+.sun-mote {
+  opacity: calc(var(--peak) * 0.5);
+  animation: sun-mote-turn var(--blink) ease-in-out var(--blink-from) infinite;
+}
+.sun-halo {
+  opacity: calc(var(--peak) * 0.3); transform: scale(2.4);
+  background: radial-gradient(circle, var(--sun-mote-halo), transparent 68%);
+  animation: sun-mote-glow var(--glow) ease-in-out var(--blink-from) infinite;
+}
+.sun-dust { position: absolute; inset: 0; opacity: 0.6; animation: sun-dust-turn 11s ease-in-out -3s infinite; }
+.sun-dust:nth-child(2) { animation-duration: 13s; animation-delay: -9s; }
+.sun-dust:nth-child(3) { animation-duration: 17s; animation-delay: -6s; }
+.sun-dust .sun-mote { opacity: var(--peak); animation: none; }
+.sunrise { --sun-mote-halo: rgba(255, 196, 110, 0.5); }
+.daybreak { --sun-mote-halo: rgba(196, 184, 255, 0.42); }
+.sunrise .sun-mote {
+  background: radial-gradient(circle, rgba(226, 136, 28, 0.95) 0 22%, rgba(242, 164, 58, 0.5) 45%, transparent 72%);
+}
+.daybreak .sun-mote {
+  background:
+    radial-gradient(ellipse 50% 3.5% at center, var(--sun-star), transparent),
+    radial-gradient(ellipse 3.5% 50% at center, var(--sun-star), transparent),
+    radial-gradient(circle, rgba(200, 188, 255, 0.5) 0 6%, transparent 30%);
+}
+@keyframes sun-mote-turn {
+  0%, 100% { opacity: calc(var(--peak) * 0.12); transform: scale(0.88); }
+  32% { opacity: var(--peak); transform: scale(1.1); }
+  48% { opacity: calc(var(--peak) * 0.4); transform: scale(0.94); }
+  68% { opacity: calc(var(--peak) * 0.85); transform: scale(1.04); }
+}
+@keyframes sun-mote-glow {
+  0%, 100% { opacity: calc(var(--peak) * 0.15); }
+  50% { opacity: calc(var(--peak) * 0.5); }
+}
+@keyframes sun-dust-turn {
+  0%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+  65% { opacity: 0.5; }
 }
 
 /* The sidebar lets the sky through instead of covering it. */
@@ -176,21 +225,30 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 /* The bar drops its own glow and its horizon, whose line would stop at the assistant's head. */
 [data-unified-sky]:is(.sunrise, .daybreak) .titlebar { background: transparent; border-bottom-color: var(--border); }
 [data-unified-sky]:is(.sunrise, .daybreak) .tab[aria-selected="true"] { background: transparent; }
-[data-unified-sky]:is(.sunrise, .daybreak) .ai::after { content: none; }
+[data-unified-sky].daybreak .ai::after { content: none; }
 
 /* Every moving light stays still together; last, so these win. */
 [data-software-compositing]:is(.sunrise, .daybreak) body::before,
 [data-software-compositing]:is(.sunrise, .daybreak) body::after,
 [data-software-compositing]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-software-compositing]:is(.sunrise, .daybreak) .ai::after,
+[data-software-compositing] .sun-mote,
+[data-software-compositing] .sun-halo,
+[data-software-compositing] .sun-dust,
 [data-performance]:is(.sunrise, .daybreak) body::before,
 [data-performance]:is(.sunrise, .daybreak) body::after,
 [data-performance]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
-[data-performance]:is(.sunrise, .daybreak) .ai::after { animation: none; }
+[data-performance]:is(.sunrise, .daybreak) .ai::after,
+[data-performance] .sun-mote,
+[data-performance] .sun-halo,
+[data-performance] .sun-dust { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   :is(.sunrise, .daybreak) body::before,
   :is(.sunrise, .daybreak) body::after,
   :is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
-  :is(.sunrise, .daybreak) .ai::after { animation: none; }
+  :is(.sunrise, .daybreak) .ai::after,
+  .sun-mote,
+  .sun-halo,
+  .sun-dust { animation: none; }
 }
 }
