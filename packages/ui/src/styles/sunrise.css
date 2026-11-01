@@ -28,13 +28,18 @@
   background: var(--sun-light-sky);
   animation: sun-sky-drift 23s ease-in-out infinite alternate;
 }
-/* A few stars before the sun is up, only along the top of the sky. */
+/* A few stars before the sun is up, from under the title bar down, where the panes let the sky through: the
+   sidebar, the board's head and its empty columns. Three tile widths keep them from lining up in a grid. */
 .daybreak body::before {
+  --sun-stars-top: calc(8vh + var(--titlebar-h));
   background:
-    radial-gradient(1px 1px at 22px 34px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 141px 92px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
-    radial-gradient(1.5px 1.5px at 236px 18px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
-    radial-gradient(1px 1px at 90px 171px, var(--sun-star), transparent) 0 8vh / 280px 210px repeat-x,
+    radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
+    radial-gradient(circle at 37px 252px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 420px repeat-x,
+    radial-gradient(circle at 128px 58px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 331px 420px repeat-x,
+    radial-gradient(circle at 271px 318px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 331px 420px repeat-x,
+    radial-gradient(circle at 84px 16px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
+    radial-gradient(circle at 340px 214px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
+    radial-gradient(circle at 190px 396px, var(--sun-star) 0.8px, transparent 2.2px) 0 var(--sun-stars-top) / 419px 420px repeat-x,
     var(--sun-light-sky);
 }
 /* The sun below the bottom right corner. It starts risen, so a theme shows its light the moment it is picked,
