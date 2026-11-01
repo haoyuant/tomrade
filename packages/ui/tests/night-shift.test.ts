@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "@tomradex/domain";
-import { factsChosen, shiftCandidates, shiftNote, shiftOrder, withTaken } from "../src/lib/nightShift";
+import { factsChosen, runConcurrency, shiftCandidates, shiftNote, shiftOrder, withTaken } from "../src/lib/nightShift";
 
 const item = (key: string, over: Partial<Item> = {}): Item => ({ id: key, key, title: key, kind: "ticket", status: "todo", priority: 0, rank: 0, blockedBy: [], blocks: [], ...over }) as Item;
+
+describe("how many run at once", () => {
+  it("is the agent's call, within the person's limit", () => {
+    expect(runConcurrency(4, 3)).toBe(3);
+    expect(runConcurrency(2, 3)).toBe(2);
+  });
+  it("stays small with no agent to weigh the tickets", () => {
+    expect(runConcurrency(4, null)).toBe(2);
+    expect(runConcurrency(1, undefined)).toBe(1);
+  });
+});
 
 describe("what a shift is offered", () => {
   it("takes tickets not begun, To Do first, then by priority; never epics or work under way", () => {
