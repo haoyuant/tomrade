@@ -14,6 +14,7 @@ import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
+import { Motes } from "./Motes";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
 import { redrawTerminals } from "./TerminalCell";
@@ -589,11 +590,13 @@ export function App() {
       />
     );
 
+  const sky = skyOf(look);
   return (
     <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
       <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
+        {sky ? <Motes sky={sky} /> : null}
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
