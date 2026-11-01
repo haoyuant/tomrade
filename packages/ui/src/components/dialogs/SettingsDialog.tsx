@@ -30,7 +30,7 @@ import { reportError } from "~/lib/toast";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 // closedWindow is per project, drawn in each project's settings.
-const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow"]);
+const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow"]);
 
 /** A row in the side menu and the pane it reveals are one and the same thing. */
 interface Pane {

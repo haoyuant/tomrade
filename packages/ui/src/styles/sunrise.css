@@ -21,6 +21,7 @@
     color-mix(in srgb, var(--sun-glow) 22%, transparent) 64%, color-mix(in srgb, var(--sun-glow) 7%, transparent) 84%, transparent);
   /* Daybreak's last stars and Sunrise's gold motes, from under the title bar down past the board's middle.
      Three tile widths keep them from lining up in a grid. */
+  --sun-pane: var(--surface);
   --sun-stars-top: calc(8vh + var(--titlebar-h));
   --sun-stars:
     radial-gradient(circle at 212px 24px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 263px 760px repeat-x,
@@ -90,13 +91,13 @@
   border-top-color: transparent;
   background:
     linear-gradient(90deg, transparent, color-mix(in srgb, var(--sun-red) 45%, transparent) 50%, transparent) top / 100% 1px no-repeat border-box,
-    var(--surface);
+    var(--sun-pane);
 }
 
 /* The assistant's open floor is where the sun comes up: its surface is a layer under the sun, not a background over
    it, and the panel is no stacking context, so its tooltips and resize handle still stack as before. */
 :is(.sunrise, .daybreak) .ai { background: transparent; }
-:is(.sunrise, .daybreak) .ai::before { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; background: var(--surface); }
+:is(.sunrise, .daybreak) .ai::before { content: ""; position: absolute; inset: 0 0 0 -1px; z-index: -1; pointer-events: none; background: var(--sun-pane); }
 /* That surface covers the sky, so the panel has stars of its own. They breathe with the sky but stay put: drifting, they would cross the panel's edge. */
 :is(.sunrise, .daybreak) .ai::after {
   content: ""; position: absolute; inset: -8vh 0 0 0; z-index: -1; pointer-events: none;
@@ -167,6 +168,15 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 
 :is(.sunrise, .daybreak) .live-dot { box-shadow: 0 0 6px var(--success); }
 :is(.sunrise, .daybreak) ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* One sky: the panes stop covering it, so the sidebar, the board, the assistant and the sessions read as one window.
+   Cards, menus and inputs keep their surfaces, and sticky table and lane heads keep theirs so rows do not show through. */
+[data-unified-sky]:is(.sunrise, .daybreak) { --sun-pane: transparent; }
+[data-unified-sky]:is(.sunrise, .daybreak) :is(.sidebar, .side-rail, .tab-strip, .query-bar, .ai-rail, .sbar) { background: transparent; }
+/* The bar drops its own glow and its horizon, whose line would stop at the assistant's head. */
+[data-unified-sky]:is(.sunrise, .daybreak) .titlebar { background: transparent; border-bottom-color: var(--border); }
+[data-unified-sky]:is(.sunrise, .daybreak) .tab[aria-selected="true"] { background: transparent; }
+[data-unified-sky]:is(.sunrise, .daybreak) .ai::after { content: none; }
 
 /* Every moving light stays still together; last, so these win. */
 [data-software-compositing]:is(.sunrise, .daybreak) body::before,
