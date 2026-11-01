@@ -31,7 +31,7 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
-import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
@@ -54,7 +54,7 @@ import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts
 import { ghRow, probeGh, type GhStatus } from "./gh.js";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-export { compareUrl, MERGE_COMMAND, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult } from "./landing.js";
+export { compareUrl, MERGE_COMMAND, rollupChecks, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult, type PrChecks } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
 export { lastSaid } from "./herdr-bridge.js";
@@ -1729,6 +1729,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     const item = this.ctx.items.get(projectId, itemId);
     if (item) this.reportMerge(projectId, item, result.merged ? "merged" : "refused", result.message, result.cause);
     return result;
+  }
+
+  /** What the ticket's pull request's checks say right now; read, not waited for. */
+  prChecks(projectId: string, itemId: string): Promise<PrChecks> {
+    return this.landing.prChecks(projectId, itemId);
   }
 
   /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */

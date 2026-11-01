@@ -152,6 +152,9 @@
       "path": "./packages/schedules"
     },
     {
+      "path": "./packages/night-shift"
+    },
+    {
       "path": "./packages/git"
     },
     {

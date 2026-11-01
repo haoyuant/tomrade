@@ -22,6 +22,24 @@ export interface OpenPrResult {
 /** Why a merge did not go through: what the person (or the agent) can do about it hangs on this. */
 export type MergeCause = "conflict" | "dirty" | "no-branch" | "no-pr" | "no-checkout" | "no-gh" | "refused" | "policy";
 
+/** What a pull request's checks say: `none` when nothing runs on it, `unknown` when they could not be read. */
+export type PrChecks = "none" | "pending" | "passed" | "failed" | "unknown";
+
+interface CheckRollup {
+  status?: string | null;
+  conclusion?: string | null;
+  state?: string | null;
+}
+
+/** gh's statusCheckRollup in one word: check runs carry status and conclusion, commit statuses a state. */
+export function rollupChecks(rollup: CheckRollup[]): PrChecks {
+  if (!rollup.length) return "none";
+  const bad = new Set(["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
+  if (rollup.some((c) => bad.has(c.conclusion ?? "") || bad.has(c.state ?? ""))) return "failed";
+  const waiting = rollup.some((c) => (c.status ? c.status !== "COMPLETED" : c.state === "PENDING" || c.state === "EXPECTED"));
+  return waiting ? "pending" : "passed";
+}
+
 export interface MergeLocalResult {
   merged: boolean;
   /** The default branch's head after the merge; null when nothing was merged, or when GitHub did it and the scan reads it later. */
@@ -215,6 +233,26 @@ export class Landing {
     const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
     if (link && repo && this.store.repoState(projectId, repo.id)?.remote === "none") return this.mergeLocal(projectId, itemId);
     return this.mergePr(projectId, itemId);
+  }
+
+  /** `gh pr merge` goes through on red or running checks where the branch is not protected, so whoever merges unattended asks here first. */
+  async prChecks(projectId: string, itemId: string): Promise<PrChecks> {
+    const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha && l.prState !== "merged");
+    const link = primaryOf(open);
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (link && repo && this.store.repoState(projectId, repo.id)?.remote === "none") return "none";
+    const pr = open.find((l) => l.prUrl && l.prState === "open");
+    const prRepo = pr ? this.ctx.repos.get(projectId, pr.repoId) : null;
+    if (!pr?.prUrl || !prRepo) return "unknown";
+    const cwd = this.worktreeOf(projectId, itemId) ?? this.ctx.repos.checkout(prRepo.remote).checkout;
+    if (!cwd || !fs.existsSync(cwd) || !(await commandOk("gh"))) return "unknown";
+    try {
+      const env = await this.ctx.github.environment(this.git, cwd);
+      const view = JSON.parse(await exec("gh", ["pr", "view", pr.prUrl, "--json", "statusCheckRollup"], cwd, env)) as { statusCheckRollup?: CheckRollup[] };
+      return rollupChecks(view.statusCheckRollup ?? []);
+    } catch {
+      return "unknown";
+    }
   }
 
   /** Merge the ticket's open pull request with gh, by the first method the repository allows: squash, then merge commit, then rebase. */

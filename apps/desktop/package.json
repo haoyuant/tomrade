@@ -135,6 +135,7 @@
     "@tomradex/pty-host": "workspace:*",
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
+    "@tomradex/night-shift": "workspace:*",
     "@tomradex/schedules": "workspace:*",
     "@tomradex/doctor": "workspace:*",
     "@tomradex/herdr": "workspace:*",
