@@ -33,7 +33,12 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     whereRun: "in background sessions",
     mergeOn: ", merging each one whose checks pass",
     askYes: "Start it",
-    askNo: "Don't"
+    askNo: "Don't",
+    commandTitle: "Start a night shift…",
+    commandGroup: "Coding",
+    statusTitle: "Open the night shift",
+    statusText: "Night shift {{done}}/{{total}}",
+    statusNeedsYou: "{{n}} need you"
   },
   zh: {
     waitsMerge: "等 {{keys}} 合并",
@@ -67,6 +72,11 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     whereRun: "在后台会话里跑",
     mergeOn: "，检查通过就自动合并",
     askYes: "开始",
-    askNo: "不了"
+    askNo: "不了",
+    commandTitle: "开始夜班…",
+    commandGroup: "编码",
+    statusTitle: "打开夜班",
+    statusText: "夜班 {{done}}/{{total}}",
+    statusNeedsYou: "{{n}} 张等你"
   }
 });

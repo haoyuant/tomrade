@@ -1,0 +1,59 @@
+import { useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Item } from "@tomradex/domain";
+import type { NightShiftInput } from "@tomradex/night-shift";
+import { invoke, subscribe } from "./api";
+import { keys } from "./queries/keys";
+
+function useLive(projectId: string) {
+  const qc = useQueryClient();
+  useEffect(() => subscribe("nightShift.changed", (id) => id === projectId && void qc.invalidateQueries({ queryKey: keys.nightShift.all(projectId) })), [projectId, qc]);
+}
+
+export function useNightShift(projectId: string) {
+  useLive(projectId);
+  return useQuery({ queryKey: keys.nightShift.current(projectId), queryFn: () => invoke("nightShift.current", projectId), retry: false });
+}
+
+export const useLastNightShift = (projectId: string) =>
+  useQuery({ queryKey: keys.nightShift.last(projectId), queryFn: async () => (await invoke("nightShift.list", projectId, 1))[0] ?? null, retry: false });
+
+export function useNightShiftActions(projectId: string) {
+  const qc = useQueryClient();
+  const done = () => void qc.invalidateQueries({ queryKey: keys.nightShift.all(projectId) });
+  return {
+    start: useMutation({ mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input), onSuccess: done }),
+    stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done })
+  };
+}
+
+const OPEN_FOR_SHIFT = new Set<Item["status"]>(["todo", "backlog"]);
+
+/** What a shift can be offered: tickets not begun, To Do first, then by priority. */
+export function shiftCandidates(items: Item[]): Item[] {
+  const rank = (item: Item) => (item.status === "todo" ? 0 : 1);
+  return items.filter((item) => item.kind === "ticket" && OPEN_FOR_SHIFT.has(item.status)).sort((a, b) => rank(a) - rank(b) || b.priority - a.priority || a.rank - b.rank);
+}
+
+/** The chosen tickets with each after what it waits on, as the shift will try them; a cycle keeps the order it came in. */
+export function shiftOrder(chosen: Item[]): Item[] {
+  const left = new Map(chosen.map((item) => [item.id, item]));
+  const out: Item[] = [];
+  while (left.size) {
+    const next = [...left.values()].find((item) => !item.blockedBy.some((id) => left.has(id))) ?? [...left.values()][0]!;
+    out.push(next);
+    left.delete(next.id);
+  }
+  return out;
+}
+
+export type ShiftNote = { kind: "after" | "after-merge" | "outside"; keys: string[] } | null;
+
+/** Why a chosen ticket will not start at once, or at all: `open` holds every ticket still open, chosen or not. */
+export function shiftNote(item: Item, chosen: ReadonlySet<string>, open: ReadonlyMap<string, Item>, autoMerge: boolean): ShiftNote {
+  const waits = item.blockedBy.flatMap((id) => open.get(id) ?? []);
+  const outside = waits.filter((b) => !chosen.has(b.id));
+  if (outside.length) return { kind: "outside", keys: outside.map((b) => b.key) };
+  if (!waits.length) return null;
+  return { kind: autoMerge ? "after" : "after-merge", keys: waits.map((b) => b.key) };
+}

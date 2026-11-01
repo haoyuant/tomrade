@@ -1885,6 +1885,9 @@ importers:
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1910,9 +1913,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@tomradex/contributions':
-        specifier: workspace:*
-        version: link:../contributions
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github

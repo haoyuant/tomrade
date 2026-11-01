@@ -7,6 +7,7 @@ import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent } from "@tomradex/agent";
+import { Contributions } from "@tomradex/contributions";
 import { NightShifts } from "@tomradex/night-shift";
 
 interface FakeSession { itemIds: string[]; state: string; mode: string; startedAt: number; threadId: string | null; blocked: null; ask: null; summary: string | null; lastEventAt?: number | null }
@@ -196,6 +197,25 @@ it("a restart picks the shift up from what was saved, and starts nothing twice",
     expect(t.s.current(t.project.id)?.counts).toMatchObject({ running: 1, queued: 1 });
   } finally {
     await t.ctx.fiber.dispose();
+  }
+});
+
+it("offers itself in the palette and shows on the status bar while it goes", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-night-shift-"));
+  const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Contributions, Agent, FakeCodeLink, [NightShifts, { tickMs: 3_600_000, settleMs: 3_600_000 }]] });
+  await settle();
+  try {
+    const shiftOf = (title: string) => f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title, status: "todo", workType: "coding", by: "human" });
+    expect(await f.ctx.contributions.run("nightShift.open", {})).toEqual({ opens: "night-shift" });
+    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toBeUndefined();
+    const a = shiftOf("A");
+    f.ctx.nightShift.start(f.project.id, { itemIds: [a.id, shiftOf("B").id], concurrency: 1 });
+    await f.ctx.nightShift.tick();
+    f.items.update(f.project.id, a.id, { status: "verifying" }, "human");
+    await f.ctx.nightShift.tick();
+    expect((await f.ctx.contributions.statusItems({ projectId: f.project.id })).find((s) => s.id === "night-shift")).toMatchObject({ text: "Night shift 1/2", opens: "night-shift" });
+  } finally {
+    await f.ctx.fiber.dispose();
   }
 });
 

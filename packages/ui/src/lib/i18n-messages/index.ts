@@ -73,6 +73,7 @@ import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 import { feedback, inbox } from "./inbox";
+import { nightShift } from "./nightShift";
 import { errors } from "./errors";
 import { domain } from "./domain";
 import { ledger } from "./ledger";
@@ -159,6 +160,7 @@ export const en = {
   notes: notes.en,
   history: history.en,
   inbox: inbox.en,
+  nightShift: nightShift.en,
   feedback: feedback.en,
   errors: errors.en,
   domain: domain.en,
@@ -246,6 +248,7 @@ export const zh: typeof en = {
   notes: notes.zh,
   history: history.zh,
   inbox: inbox.zh,
+  nightShift: nightShift.zh,
   feedback: feedback.zh,
   errors: errors.zh,
   domain: domain.zh,

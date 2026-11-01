@@ -12,6 +12,7 @@
     { "path": "../contracts" },
     { "path": "../agent" },
     { "path": "../code-link" },
+    { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },
     { "path": "../ipc" },
