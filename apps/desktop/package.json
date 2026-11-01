@@ -61,6 +61,7 @@
     "test:rules": "electron scripts/rules-check.mjs",
     "test:brief": "electron scripts/brief-check.mjs",
     "test:schedules": "electron scripts/schedules-check.mjs",
+    "test:night-shift": "electron scripts/night-shift-check.mjs",
     "test:search": "electron scripts/search-check.mjs",
     "test:backlog-sidebar": "electron scripts/backlog-sidebar-check.mjs",
     "test:tabs-keys": "electron scripts/tabs-keys-check.mjs",

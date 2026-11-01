@@ -21,7 +21,7 @@ export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectI
   const { t } = useI18n();
   const current = useNightShift(projectId);
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")}>
+    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-md">
       <DialogHead title={t("nightShift.title")} />
       {current.data ? <Going projectId={projectId} shift={current.data} onClose={onClose} onOpenIssue={onOpenIssue} /> : current.isLoading ? null : <SetUp projectId={projectId} onClose={onClose} />}
     </Dialog>
@@ -60,8 +60,10 @@ function Going({ projectId, shift, onClose, onOpenIssue }: { projectId: string; 
   return (
     <>
       <DialogBody>
-        <p className="meta-txt" data-testid="night-shift-going">{facts.join(" · ")}</p>
-        <TicketRows shift={shift} onOpenIssue={onOpenIssue} />
+        <div className="stack-4">
+          <p className="meta-txt" data-testid="night-shift-going">{facts.join(" · ")}</p>
+          <TicketRows shift={shift} onOpenIssue={onOpenIssue} />
+        </div>
       </DialogBody>
       <DialogFoot>
         <DialogClose asChild><button type="button" className="btn btn-secondary" onClick={onClose}>{t("common.close")}</button></DialogClose>
@@ -133,6 +135,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   return (
     <>
       <DialogBody>
+        <div className="stack-4">
         <p className="meta-txt">{t("nightShift.intro")}</p>
         {lastWords && <p className="meta-txt" data-testid="night-shift-last">{t("nightShift.lastShift")}: {lastWords}</p>}
         <Field label={`${t("nightShift.tickets")} · ${t("nightShift.chosen", { n: chosen.size })}`}>
@@ -151,7 +154,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           </div>
         </Field>
         <Field label={t("nightShift.where")}>
-          <div className="seg" role="group" aria-label={t("nightShift.where")} data-testid="night-shift-mode">
+          <div className="seg night-shift-mode" role="group" aria-label={t("nightShift.where")} data-testid="night-shift-mode">
             <button type="button" aria-pressed={mode === "terminal"} data-mode="terminal" onClick={() => setMode("terminal")}>
               <Icon name="i-terminal" size={13} /> {t("nightShift.whereTerminal")}
             </button>
@@ -165,7 +168,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <select id="nsEngine" className="select" value={engine?.id ?? ""} onChange={(event) => { setEngine(event.target.value); setPermission(null); }}>
             {ready.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
           </select>
-          {!ready.length && <p className="meta-txt">{t("nightShift.noAgents")}</p>}
+          {engines.isSuccess && !ready.length && <p className="meta-txt">{t("nightShift.noAgents")}</p>}
         </Field>
         {permissionModes ? (
           <Field label={t("nightShift.permissions")} htmlFor="nsPermission">
@@ -198,6 +201,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>
         </label>
         <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        </div>
       </DialogBody>
       <DialogFoot>
         <DialogClose asChild><button type="button" className="btn btn-secondary" onClick={onClose}>{t("common.cancel")}</button></DialogClose>

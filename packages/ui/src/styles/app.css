@@ -3661,6 +3661,8 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 
 /* Night shift */
 .night-shift-pick { max-height: 240px; overflow-y: auto; }
+.night-shift-mode { align-self: flex-start; }
+.night-shift-mode button { display: inline-flex; align-items: center; gap: 6px; }
 .night-shift-pick .cfg-row { flex-wrap: wrap; }
 .night-shift-pick .cfg-name { min-width: 0; overflow-wrap: anywhere; }
-.night-shift-limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); }
+.night-shift-limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); align-items: end; }
