@@ -7,6 +7,7 @@ import { sendSurfaceLook } from "./surface-look";
 import { backdropFills } from "@tomradex/theme-image/colors";
 import { useThemeImageUrl } from "./theme-image";
 import { useFrosted } from "./frost";
+import { Motes, skyOf } from "~/components/Motes";
 
 export type ResolvedTheme = BuiltInTheme;
 export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" | "i-monitor" }[] = [
@@ -140,6 +141,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [automation, customThemes, mutate, preference, qc]);
   const value = useMemo(() => ({ preference: active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme }), [active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme]);
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  const sky = skyOf(theme, !!picture);
+  return <Ctx.Provider value={value}>{children}{sky ? <Motes sky={sky} /> : null}</Ctx.Provider>;
 }
 export const useTheme = () => useContext(Ctx);

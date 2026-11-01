@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon, IconSprite } from "~/components/icons";
+import { Motes, skyOf } from "~/components/Motes";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { useFrosted } from "~/lib/frost";
@@ -14,7 +15,6 @@ import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
-import { Motes } from "./Motes";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
 import { redrawTerminals } from "./TerminalCell";
@@ -237,7 +237,7 @@ export function App() {
     root.classList.toggle("dark", look.dark);
     root.toggleAttribute("data-frosted", !!look.frosted);
     root.classList.remove("sunrise", "daybreak");
-    const sky = skyOf(look);
+    const sky = skyOf(look?.base, !!look?.backdrop);
     if (sky) root.classList.add(sky);
     root.toggleAttribute("data-performance", !!look.still);
   }, [look]);
@@ -288,7 +288,7 @@ export function App() {
       }),
     [change, say, current, setFocused]
   );
-  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture || !!skyOf(look) }), [look, locale, picture]);
+  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture || !!skyOf(look?.base, !!look?.backdrop) }), [look, locale, picture]);
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
@@ -590,7 +590,7 @@ export function App() {
       />
     );
 
-  const sky = skyOf(look);
+  const sky = skyOf(look?.base, !!look?.backdrop);
   return (
     <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
       <WordsContext.Provider value={anyWords}>
@@ -698,9 +698,6 @@ export function App() {
     </GuessContext.Provider></SayContext.Provider>
   );
 }
-
-/** The theme whose sky is drawn behind this window; a theme's picture takes its place. */
-const skyOf = (look: Look | null): "sunrise" | "daybreak" | null => (!look?.backdrop && (look?.base === "sunrise" || look?.base === "daybreak") ? look.base : null);
 
 const PICTURE_VARS = ["--backdrop-image", "--backdrop-shell", "--backdrop-pane", "--backdrop-tile", "--backdrop-float"];
 /**
