@@ -6,6 +6,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
 import { FIELD_LABEL, viewIcon } from "~/lib/domain";
 import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
+import { subscribe } from "~/lib/api";
 import { useRepoStates } from "~/lib/codeLink";
 import { useNightShift } from "~/lib/nightShift";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
@@ -24,6 +25,11 @@ function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: ()
   const repos = useRepos(projectId);
   const going = useNightShift(projectId);
   const shift = going.data;
+  const toast = useToast();
+  useEffect(() => subscribe("nightShift.step", (id, notices) => {
+    const last = notices.at(-1);
+    if (id === projectId && last) toast({ body: `${last.title}: ${last.body}` });
+  }), [projectId, toast]);
   // an error here means the night shift plugin is off
   if (going.isError || (!shift && !repos.data?.length)) return null;
   const delivered = shift ? shift.counts.delivered + shift.counts.done : 0;

@@ -184,6 +184,7 @@ const run = async () => {
 
   // ── going ─────────────────────────────────────────────────────────────
   // finding the agents on this machine takes a moment, and the button waits for them
+  await $(`(() => { const s = ${test("night-shift-notify")}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'stuck'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   check("the start button waits for an agent", await waitFor(`${test("night-shift-start")}?.disabled === false`, 30000));
   await press(test("night-shift-start"));
   check("it starts in the place chosen, upstream first", await waitFor(`!!${test("night-shift-going")}`) && (await (async () => { for (let i = 0; i < 50 && !starts.length; i++) await sleep(100); return starts[0]?.itemId === first.id && starts[0]?.mode === "terminal"; })()), starts);
@@ -191,6 +192,10 @@ const run = async () => {
   check("the dependency the person took is on the tickets", ctx.items.get(project.id, second.id).blocks.includes(later.id), ctx.items.get(project.id, second.id).blocks);
   check("until done runs for three days at most", ctx.nightShift.current(project.id)?.settings.maxMinutes === 72 * 60);
   check("what was set on the node reached the shift", ctx.nightShift.current(project.id)?.tickets.find((x) => x.itemId === second.id)?.config?.mode === "terminal");
+  check("how to be told is kept on the run", ctx.nightShift.current(project.id)?.settings.notify === "stuck");
+  check("the running dialog shows the plan graph", await waitFor(`!!${test("plan-graph")} && !!${nodeNamed(keyOf(first))}`));
+  check("a node shows where it stands", await waitFor(`${nodeNamed(keyOf(first))}?.dataset.state === 'running' && ${nodeNamed(keyOf(second))}?.dataset.state === 'queued'`), await $(`${nodeNamed(keyOf(first))}?.dataset.state`));
+  check("the timeline says it started", await waitFor(`[...document.querySelectorAll('[data-testid="plan-step"]')].some((s) => s.dataset.kind === 'started' && s.textContent.includes(${JSON.stringify(keyOf(first))}))`));
   check("the setting is kept on the shift", ctx.nightShift.current(project.id)?.settings.mode === "terminal" && ctx.nightShift.current(project.id)?.settings.autoMerge === true);
   check("the dialog says where it runs", await waitFor(`${text("night-shift-going")}.includes('In terminal panes')`));
   check("the status bar shows it", await waitFor(`(${status()}).includes('Auto run 0/2')`), await $(status()));
@@ -199,6 +204,8 @@ const run = async () => {
   ctx.items.update(project.id, first.id, { status: "verifying" }, "human");
   await ctx.nightShift.tick();
   check("a delivery moves the count, in the dialog and on the status bar", (await waitFor(`${text("night-shift-going")}.includes('1 of 2 delivered')`)) && (await waitFor(`(${status()}).includes('Auto run 1/2')`)), await $(text("night-shift-going")));
+  check("a delivery moves the node and the timeline", (await waitFor(`${nodeNamed(keyOf(first))}?.dataset.state === 'delivered'`)) && (await waitFor(`[...document.querySelectorAll('[data-testid="plan-step"]')].some((s) => s.dataset.kind === 'delivered')`)));
+  await sleep(800);
   await shot("night-shift-going");
   const current = ctx.nightShift.current.bind(ctx.nightShift);
   ctx.nightShift.current = (id) => { const shift = current(id); return shift && { ...shift, counts: { ...shift.counts, "needs-you": 1 } }; };

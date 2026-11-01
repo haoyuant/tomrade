@@ -592,3 +592,90 @@ describe("a rule that leaves work out", () => {
     }
   });
 });
+
+describe("telling the person", () => {
+  type Told = { notices: { key: string; title: string; body: string }[]; stuck: { title: string; body: string } | null };
+  const listen = (t: Awaited<ReturnType<typeof boot>>) => {
+    const told: Told[] = [];
+    t.ctx.on("nightShift/step", (_shift, notices, stuck) => told.push({ notices, stuck }));
+    return told;
+  };
+  const deliver = (t: Awaited<ReturnType<typeof boot>>, id: string) => {
+    t.items.update(t.project.id, id, { status: "verifying" }, "human");
+    t.code.sessionsList.find((s) => s.itemIds.includes(id))!.state = "idle";
+  };
+
+  it("keeps every step with the run, and says each one once, naming the ticket", async () => {
+    const t = await boot();
+    try {
+      const told = listen(t);
+      const a = t.make("Alpha");
+      t.s.start(t.project.id, { itemIds: [a.id, t.make("Beta").id], concurrency: 1 });
+      await t.s.tick();
+      await t.s.tick();
+      expect(told).toHaveLength(1);
+      expect(told[0]!.notices).toEqual([{ key: expect.stringContaining(":started:"), title: `${a.key} Alpha`, body: "Started" }]);
+      expect(told[0]!.stuck).toBeNull();
+      deliver(t, a.id);
+      await t.s.tick();
+      await t.s.tick();
+      const steps = t.s.list(t.project.id, 1)[0]!.steps.map((s) => [s.key, s.kind]);
+      expect(steps).toEqual([[a.key, "started"], [a.key, "delivered"], [expect.any(String), "started"]]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("gives a phone numbers alone when a ticket stops", async () => {
+    const t = await boot();
+    try {
+      const told = listen(t);
+      const a = t.make("Secret title");
+      t.s.start(t.project.id, { itemIds: [a.id] });
+      await t.s.tick();
+      t.code.sessionsList.at(-1)!.state = "error";
+      await t.s.tick();
+      const stuck = told.at(-1)!.stuck!;
+      expect(stuck).toEqual({ title: "Your auto run needs you", body: "1 need you, 0 of 1 delivered" });
+      expect(JSON.stringify(stuck)).not.toContain("Secret");
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("can tell only what stops a ticket", async () => {
+    const t = await boot();
+    try {
+      const told = listen(t);
+      const a = t.make("A");
+      const b = t.make("B");
+      t.s.start(t.project.id, { itemIds: [a.id, b.id], notify: "stuck" });
+      await t.s.tick();
+      expect(told.flatMap((x) => x.notices)).toEqual([]);
+      t.code.sessionsList.find((s) => s.itemIds.includes(a.id))!.state = "error";
+      await t.s.tick();
+      expect(told.flatMap((x) => x.notices).map((n) => n.title)).toEqual([`${a.key} A`]);
+      expect(t.s.current(t.project.id)!.steps.map((s) => s.kind)).toEqual(["started", "started", "failed"]);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("writes the tickets it never reached down, without a message each", async () => {
+    const t = await boot();
+    try {
+      const told = listen(t);
+      const a = t.make("A");
+      const shift = t.s.start(t.project.id, { itemIds: [a.id, t.make("B").id], concurrency: 1 });
+      await t.s.tick();
+      t.s.stop(t.project.id, shift.id);
+      t.code.sessionsList.at(-1)!.state = "error";
+      await t.s.tick();
+      const last = t.s.list(t.project.id, 1)[0]!;
+      expect(last.steps.map((s) => s.kind)).toContain("skipped");
+      expect(told.flatMap((x) => x.notices).some((n) => n.body.startsWith("Not started"))).toBe(false);
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+});

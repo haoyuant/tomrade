@@ -79,7 +79,17 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     notifyBody: "{{review}} to review, {{merged}} merged, {{attention}} need you",
     notCoding: "Not coding work: it needs a person",
     ruleSkipped: "Left out by the rule “{{name}}”",
-    engineLost: "{{engine}} could not run, so this went as the run does"
+    engineLost: "{{engine}} could not run, so this went as the run does",
+    step_started: "Started",
+    step_limited: "Waiting for a usage limit",
+    step_delivered: "Delivered",
+    step_merged: "Merged",
+    step_refused: "Not merged",
+    "step_needs-you": "Needs you",
+    step_failed: "Failed",
+    step_skipped: "Not started",
+    stuckTitle: "Your auto run needs you",
+    stuckBody: "{{attention}} need you, {{done}} of {{total}} delivered"
   },
   zh: {
     waitsMerge: "等 {{keys}} 合并",
@@ -157,6 +167,16 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     notifyBody: "待审查 {{review}} 张，已合并 {{merged}} 张，等你 {{attention}} 张",
     notCoding: "不是编码工单，需要人来做",
     ruleSkipped: "被规则“{{name}}”排除",
-    engineLost: "{{engine}} 无法运行，这张改用默认配置"
+    engineLost: "{{engine}} 无法运行，这张改用默认配置",
+    step_started: "开工了",
+    step_limited: "在等用量上限解除",
+    step_delivered: "已交付",
+    step_merged: "已合并",
+    step_refused: "没有合并",
+    "step_needs-you": "等你处理",
+    step_failed: "失败了",
+    step_skipped: "没有开工",
+    stuckTitle: "自动执行需要你",
+    stuckBody: "等你 {{attention}} 张，已交付 {{done}} / {{total}}"
   }
 });

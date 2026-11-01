@@ -17,7 +17,7 @@ import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
 import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
-import { MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, settingsFor, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
+import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, settingsFor, stepsBetween, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
 import { WorkRules, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
@@ -48,6 +48,7 @@ export const NightShiftInput = z.object({
   judge: z.boolean().default(true),
   /** Dependencies from the plan the person took: written to the tickets as the run starts. */
   dependencies: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).max(50).default([]),
+  notify: z.enum(["steps", "stuck"]).default("steps"),
   /** What the person set on single nodes, by ticket id. */
   nodes: z.record(z.string(), NodeConfigInput).default({})
 });
@@ -58,8 +59,21 @@ export interface NightShiftTicketView extends ShiftTicket {
   note: string | null;
 }
 
-export interface NightShiftView extends Omit<NightShift, "tickets"> {
+export interface NightShiftStepView extends ShiftStep {
+  /** Why it came to this, in the person's language. */
+  note: string | null;
+}
+
+/** One step, said for a chat: it names the ticket, so it goes only to the person's own direct chat. */
+export interface StepNotice {
+  key: string;
+  title: string;
+  body: string;
+}
+
+export interface NightShiftView extends Omit<NightShift, "tickets" | "steps"> {
   tickets: NightShiftTicketView[];
+  steps: NightShiftStepView[];
   counts: Record<TicketState, number>;
   /** Whether `spentUsd` is the whole of it: terminal agents, and some engines, report no cost. */
   costKnown: boolean;
@@ -74,6 +88,8 @@ declare module "cordis" {
     "nightShift/ended"(shift: NightShiftView): void;
     /** The morning report is written: words for a phone or a chat, which carry no code. */
     "nightShift/briefed"(shift: NightShiftView, notice: { title: string; body: string }): void;
+    /** Steps worth telling, and, when one stopped a ticket, words for a phone: numbers only, since a phone's message passes through someone else's service. */
+    "nightShift/step"(shift: NightShiftView, notices: StepNotice[], stuck: { title: string; body: string } | null): void;
   }
 }
 
@@ -91,6 +107,7 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "nightShift.changed": (projectId: string) => void;
+    "nightShift.step": (projectId: string, notices: StepNotice[]) => void;
   }
 }
 
@@ -185,6 +202,9 @@ export class NightShifts extends Service {
       ctx.ipc.handle("nightShift.start", (projectId, input) => ctx.nightShift.start(projectId, input));
       ctx.ipc.handle("nightShift.stop", (projectId, id) => ctx.nightShift.stop(projectId, id));
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
+      ctx.on("nightShift/step", (shift, notices) => {
+        if (notices.length) ctx.ipc.send("nightShift.step", shift.projectId, notices);
+      });
     });
     this.home.inject(["tools"], (ctx) => this.registerTools(ctx));
     this.home.inject(["contributions"], (ctx) => {
@@ -259,7 +279,8 @@ export class NightShifts extends Service {
     const unpriced = this.home.agent.spentOn(shift.projectId, shift.tickets.map((t) => t.itemId), shift.startedAt).unpriced;
     const w = NIGHT_SHIFT_WORDS(this.locale());
     const tickets = shift.tickets.map((t) => ({ ...t, note: this.note(t.why) ?? (t.engineLost ? w("engineLost", { engine: t.engineLost }) : null) }));
-    return { ...shift, tickets, counts, costKnown: shift.tickets.every((t) => settingsFor(shift.settings, t).mode === "run") && unpriced === 0 };
+    const steps = (shift.steps ?? []).map((step) => ({ ...step, note: this.note(step.why) }));
+    return { ...shift, tickets, steps, counts, costKnown: shift.tickets.every((t) => settingsFor(shift.settings, t).mode === "run") && unpriced === 0 };
   }
 
   current(projectId: string): NightShiftView | null {
@@ -360,7 +381,7 @@ export class NightShifts extends Service {
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
-      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake, judge: parsed.judge },
+      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake, judge: parsed.judge, notify: parsed.notify },
       tickets,
       status: "running",
       halt: null,
@@ -465,13 +486,30 @@ export class NightShifts extends Service {
     if (JSON.stringify(next) !== JSON.stringify(shift)) this.save(next);
     let current = next;
     for (const action of actions) current = await this.act(current, action, now);
+    const steps = stepsBetween(shift, current, now);
+    if (steps.length) current = { ...current, steps: [...(current.steps ?? []), ...steps].slice(-MAX_STEPS) };
     if (current !== next) this.save(current);
+    if (steps.length) this.tell(current, steps);
     if (current.status === "ended") {
       this.going.delete(projectId);
       this.home.emit("nightShift/changed", projectId);
       this.home.emit("nightShift/ended", this.view(current));
       void this.brief(current).catch((err) => this.home.logger.warn(`night shift report in ${projectId}: ${errorMessage(err)}`));
     } else if (current !== next) this.kick(0);
+  }
+
+  /** Tickets a run never reached are counted in the report; one message each would say nothing more. */
+  private tell(shift: NightShift, steps: ShiftStep[]): void {
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const view = this.view(shift);
+    const told = steps.filter((step) => step.kind !== "skipped" && (shift.settings.notify !== "stuck" || isStuck(step.kind)));
+    const notices = told.map((step) => {
+      const word = w(`step_${step.kind}`);
+      const note = this.note(step.why);
+      return { key: `${shift.id}:${step.itemId}:${step.kind}:${step.at}`, title: `${step.key} ${step.title}`, body: note ? `${word}: ${note}` : word };
+    });
+    const stuck = steps.some((step) => isStuck(step.kind)) ? { title: w("stuckTitle"), body: w("stuckBody", { attention: view.counts["needs-you"] + view.counts.failed, done: view.counts.delivered + view.counts.done, total: shift.tickets.length }) } : null;
+    this.home.emit("nightShift/step", view, notices, stuck);
   }
 
   /** One model call per delivery, and a report that stands without any of them. */

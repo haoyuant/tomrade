@@ -14,7 +14,7 @@ vi.mock("electron", () => ({
   }
 }));
 vi.mock("../src/main-window.js", () => ({ showMainWindow: () => null, whenLoaded: () => {} }));
-import { allowOf, announceAway, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { allowOf, announceAway, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, tellShiftSteps, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -202,6 +202,30 @@ it("sends news that belongs to no conversation to IM only for someone who chose 
   expect(told).toHaveLength(1);
   // No IM running: nothing to do, and nothing breaks.
   expect(() => announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, "night-shift:s4", notice, undefined)).not.toThrow();
+});
+
+describe("an auto run's steps", () => {
+  const step = { key: "s:a:started:1", title: "TOM-1 Fix it", body: "Started" };
+  const stuck = { title: "Your auto run needs you", body: "1 need you, 0 of 1 delivered" };
+  const targets = { ...NOTIFICATIONS_SECTION.defaults, away: "push" as const, pushBarkCredential: "https://api.day.app/key" };
+
+  it("each goes to the IM of someone who chose it, under a key of its own", () => {
+    const told: unknown[] = [];
+    expect(tellShiftSteps({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, [step], stuck, { announce: (n) => (told.push(n), true) })).toBeNull();
+    expect(told).toEqual([{ key: "night-shift:s:a:started:1", title: "TOM-1 Fix it", body: "Started" }]);
+  });
+
+  it("a phone hears only what stopped a ticket", () => {
+    const told: unknown[] = [];
+    const im = { announce: (n: unknown) => (told.push(n), true) };
+    expect(tellShiftSteps(targets, [step], null, im)).toBeNull();
+    expect(tellShiftSteps(targets, [step], stuck, im)).toEqual(stuck);
+    expect(told).toEqual([]);
+  });
+
+  it("nobody who chose neither hears anything", () => {
+    expect(tellShiftSteps({ ...NOTIFICATIONS_SECTION.defaults, away: "none" }, [step], stuck, undefined)).toBeNull();
+  });
 });
 
 describe("the attention row", () => {
