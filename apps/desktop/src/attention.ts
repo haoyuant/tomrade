@@ -9,6 +9,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/night-shift";
 import type { ImReminder } from "@tomradex/im";
 import type {} from "@tomradex/pr-feedback";
+import type {} from "@tomradex/watchdog";
 import { showMainWindow, whenLoaded } from "./main-window.js";
 import { PhonePush, type FetchLike, type PushFailure, type PushRequest, type PushTarget } from "./push.js";
 import { DESKTOP_WORDS, type DesktopWords } from "./words.js";
@@ -21,7 +22,8 @@ export interface AttentionEntry {
   threadId: string | null;
   itemId: string | null;
   itemKey: string | null;
-  kind: "permission" | "question" | "waiting" | "stuck";
+  /** `suspect`: it still runs, and only seems to get nowhere (the watchdog's word, not the agent's). */
+  kind: "permission" | "question" | "waiting" | "stuck" | "suspect";
   /** Who is waiting: the coding agent's name, or null for the assistant. */
   who: string | null;
   /** The question, or what the agent last said. */
@@ -415,6 +417,16 @@ export const attention = {
           who: engineTitle(notice.agent), text: clip(notice.text), sessionId: notice.sessionId
         });
       }
+      // what the watchdog suspects of a run; a wait of its own already says more
+      for (const notice of ctx.get("watchdog")?.notices() ?? []) {
+        const key = `thread:${notice.threadId}`;
+        if (out.has(key)) continue;
+        const sessionId = codeLink?.sessionsOf(notice.projectId, undefined, { live: true, threadId: notice.threadId })[0]?.id;
+        out.set(key, {
+          key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "suspect",
+          who: notice.itemId ? engineTitle(notice.engine) : null, text: clip(notice.text), ...(sessionId ? { sessionId } : {})
+        });
+      }
       return [...out.values()].sort((x, y) => x.key.localeCompare(y.key));
     };
 
@@ -520,6 +532,7 @@ export const attention = {
     });
     ctx.on("codeLink/changed", schedule);
     ctx.on("prFeedback/changed", schedule);
+    ctx.on("watchdog/changed", schedule);
     ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);
     ctx.on("attention/open", (target) => void open(target));

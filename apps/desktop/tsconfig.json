@@ -18,6 +18,9 @@
       "path": "../../packages/pr-feedback"
     },
     {
+      "path": "../../packages/watchdog"
+    },
+    {
       "path": "../../packages/archify"
     },
     {

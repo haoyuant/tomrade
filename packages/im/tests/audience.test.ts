@@ -116,6 +116,18 @@ describe("who sees what in IM", () => {
     await expect.poll(() => w.to("dm-owner").some(t => t.includes("already handled")), { timeout: 5000 }).toBe(true);
   });
 
+  it("tells of a suspected run in the direct chat, with no buttons to answer", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    const desk = w.ctx.agent.newThread(w.project.id, "test", null, { title: "Deploy" });
+    expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "suspect", title: "Test may be stuck", body: "No activity for 16 min." })).toBe(true);
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**Test may be stuck**")), { timeout: 5000 }).toBeDefined();
+    const told = w.delivered.find(d => d.content.text.startsWith("**Test may be stuck**"))!;
+    expect(told.content.text).toBe("**Test may be stuck**\nNo activity for 16 min.");
+    expect(told.content.actions ?? []).toEqual([]);
+  });
+
   it("doesn't remind where the conversation already shows the question", async () => {
     const w = await boot();
     await w.receive(dm("d1", "ask"));

@@ -2222,6 +2222,7 @@ export const ru: PartialMessages = {
     attention_question: "Задаёт вам вопрос",
     attention_waiting: "Ждёт вас",
     attention_stuck: "Остановлен",
+    attention_suspect: "Возможно, завис",
     parkedUntil: "Лимит использования · продолжит {{time}}",
     expandAssistantAria: "Развернуть панель ассистента",
     assistantLabel: "Ассистент",

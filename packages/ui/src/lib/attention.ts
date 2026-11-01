@@ -13,7 +13,7 @@ export interface AttentionEntry {
   threadId: string | null;
   itemId: string | null;
   itemKey: string | null;
-  kind: "permission" | "question" | "waiting" | "stuck";
+  kind: "permission" | "question" | "waiting" | "stuck" | "suspect";
   who: string | null;
   text: string | null;
   /** Since when it has waited in this kind. */
@@ -30,7 +30,8 @@ export const ATTENTION_KEY: Record<AttentionEntry["kind"], MessageKey> = {
   permission: "agentPanel.attention_permission",
   question: "agentPanel.attention_question",
   waiting: "agentPanel.attention_waiting",
-  stuck: "agentPanel.attention_stuck"
+  stuck: "agentPanel.attention_stuck",
+  suspect: "agentPanel.attention_suspect"
 };
 
 declare module "@tomradex/ipc" {

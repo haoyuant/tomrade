@@ -79,7 +79,7 @@ export interface ImThreadBinding {
 }
 /** Something waiting on the person, as the desktop's attention row decided it; reaches them in their direct chat. */
 export interface ImReminder {
-  projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck";
+  projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck" | "suspect";
   title: string; body: string;
 }
 /** News for the people paired with this desktop that belongs to no conversation: words only, once per `key`. */
@@ -1359,7 +1359,7 @@ export class Im extends Service {
    * it reached someone.
    */
   remind(n: ImReminder): boolean {
-    if (!n.threadId || (n.kind !== "permission" && n.kind !== "question" && n.kind !== "stuck") || !this.home.db.has(n.projectId)) return false;
+    if (!n.threadId || (n.kind !== "permission" && n.kind !== "question" && n.kind !== "stuck" && n.kind !== "suspect") || !this.home.db.has(n.projectId)) return false;
     const detail = this.home.agent.thread(n.projectId, n.threadId);
     const runId = detail.runs.at(-1)?.id ?? null;
     const bound = this.store.bindings().filter(b => b.thread_id === n.threadId && this.authorizedBinding(b));
@@ -1371,7 +1371,7 @@ export class Im extends Service {
     const known = [...bound, ...watching];
     const people = known.length ? known.map(b => [b.connection_id, b.actor_id] as const)
       : this.settings.identities.map(i => [i.connectionId, i.actorId] as const);
-    const pending = n.kind === "stuck" ? null : detail.pending;
+    const pending = n.kind === "stuck" || n.kind === "suspect" ? null : detail.pending;
     let reached = false;
     for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
       const dm = this.directChat(connectionId, actorId);

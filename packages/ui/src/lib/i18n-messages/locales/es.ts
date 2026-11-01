@@ -2183,6 +2183,7 @@ export const es: PartialMessages = {
     attention_question: "Te está preguntando algo",
     attention_waiting: "Esperándote",
     attention_stuck: "Detenido",
+    attention_suspect: "Puede estar bloqueado",
     parkedUntil: "Límite de uso · continúa {{time}}",
     expandAssistantAria: "Expandir el panel del asistente",
     assistantLabel: "Asistente",

@@ -2256,6 +2256,7 @@ export const zhHant: PartialMessages = {
     attention_question: "在問你問題",
     attention_waiting: "在等你",
     attention_stuck: "停下來了",
+    attention_suspect: "可能卡住了",
     parkedUntil: "用量上限 · {{time}} 繼續",
     expandAssistantAria: "展開助理面板",
     assistantLabel: "助理",

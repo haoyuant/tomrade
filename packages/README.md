@@ -53,6 +53,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
 | `night-shift` | A night shift: a batch of tickets worked through by dependency, in terminal panes or background sessions, within limits on concurrency, time, spend and failures. | `nightShift` | agent, code-link, contributions, items, tools |
 | `pr-feedback` | Failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket. | `prFeedback` | agent, code-link, github, hub, items, repos |
+| `watchdog` | Tells the person when a run seems stuck, repeats itself or goes nowhere; it never touches the run. | `watchdog` | agent, items, llm |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |
 | `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |
 

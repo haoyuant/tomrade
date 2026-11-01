@@ -248,6 +248,9 @@ importers:
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      '@tomradex/watchdog':
+        specifier: workspace:*
+        version: link:../../packages/watchdog
       '@tomradex/web-search':
         specifier: workspace:*
         version: link:../../packages/web-search
@@ -3035,6 +3038,43 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
+  packages/watchdog:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
 
   packages/web-search:
     dependencies:
