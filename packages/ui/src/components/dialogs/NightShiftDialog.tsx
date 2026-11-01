@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { NightShiftView } from "@tomradex/night-shift";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
@@ -90,6 +91,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const defaults = useStartDefaults();
   const last = useLastNightShift(projectId);
   const { start } = useNightShiftActions(projectId);
+  const navigate = useNavigate();
 
   const candidates = useMemo(() => shiftCandidates(items.data ?? []), [items.data]);
   const open = useMemo(() => new Map((items.data ?? []).filter((i) => i.status !== "done" && i.status !== "cancelled").map((i) => [i.id, i] as [string, Item])), [items.data]);
@@ -103,6 +105,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [maxUsd, setMaxUsd] = useState("");
   const [autoMerge, setAutoMerge] = useState(false);
   const [keepAwake, setKeepAwake] = useState(true);
+  const [judge, setJudge] = useState(true);
   const onBattery = useOnBattery();
 
   const mode = chosenMode ?? defaults.data?.mode ?? "run";
@@ -129,10 +132,15 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         maxMinutes: Math.round(maxHours * 60),
         ...(spendLimit > 0 ? { maxUsd: spendLimit } : {}),
         autoMerge,
-        keepAwake
+        keepAwake,
+        judge
       },
       { onError: (err) => toast(errorSpec(err)) }
     );
+  const openBrief = (file: string) => {
+    onClose();
+    void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: file } });
+  };
   const lastWords = last.data && t(last.data.halt ? HALT_WORD[last.data.halt]! : "nightShift.lastFinished", { done: delivered(last.data), total: last.data.tickets.length });
 
   return (
@@ -140,7 +148,12 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
       <DialogBody>
         <div className="stack-4">
         <p className="meta-txt">{t("nightShift.intro")}</p>
-        {lastWords && <p className="meta-txt" data-testid="night-shift-last">{t("nightShift.lastShift")}: {lastWords}</p>}
+        {lastWords && (
+          <p className="meta-txt" data-testid="night-shift-last">
+            {t("nightShift.lastShift")}: {lastWords}
+            {last.data?.briefPath && <> · <button type="button" className="tlink" data-testid="night-shift-brief" onClick={() => openBrief(last.data!.briefPath!)}>{t("nightShift.openBrief")}</button></>}
+          </p>
+        )}
         <Field label={`${t("nightShift.tickets")} · ${t("nightShift.chosen", { n: chosen.size })}`}>
           {!candidates.length && !items.isLoading && <p className="meta-txt">{t("nightShift.noTickets")}</p>}
           <div className="inbox-list night-shift-pick" data-testid="night-shift-pick">
@@ -204,6 +217,11 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>
         </label>
         <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        <label className="cfg-row" style={{ cursor: "pointer" }}>
+          <input type="checkbox" data-testid="night-shift-judge" checked={judge} onChange={(event) => setJudge(event.target.checked)} />
+          <span className="cfg-name">{t("nightShift.judge")}</span>
+        </label>
+        <p className="meta-txt">{t("nightShift.judgeHint")}</p>
         <label className="cfg-row" style={{ cursor: "pointer" }}>
           <input type="checkbox" data-testid="night-shift-keep-awake" checked={keepAwake} onChange={(event) => setKeepAwake(event.target.checked)} />
           <span className="cfg-name">{t("nightShift.keepAwake")}</span>

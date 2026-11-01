@@ -131,7 +131,13 @@ const run = async () => {
   check("no new ticket started", starts.length === 1, starts);
   check("the status bar lets go once it ends", await waitFor(`!(${status()}).includes('Night shift')`), await $(status()));
   check("the dialog says how the last one went", await waitFor(`${text("night-shift-last")}.includes('Stopped: 1 of 2 delivered')`), await $(text("night-shift-last")));
+  check("the morning report lands in Files, with a way to it from the dialog", await waitFor(`!!${test("night-shift-brief")}`), ctx.nightShift.list(project.id, 1)[0]?.briefPath);
+  const brief = ctx.nightShift.list(project.id, 1)[0]?.briefPath;
+  const written = brief ? (await ctx.files.read(project.id, brief)) : null;
+  check("and it says what happened", !!written && String(written.body ?? written).includes("It was stopped before it finished."), written);
   await shot("night-shift-stopped");
+  await press(test("night-shift-brief"));
+  check("the link opens the report", await waitFor(`location.hash.includes('/f/')`), await $(`location.hash`));
   check("harness reached the end", true);
 };
 

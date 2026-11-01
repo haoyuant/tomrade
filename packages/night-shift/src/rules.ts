@@ -18,6 +18,8 @@ export interface ShiftSettings {
   autoMerge: boolean;
   /** The computer stays awake while the shift goes. */
   keepAwake: boolean;
+  /** The morning report asks the worker model about each delivery; off, it says only what git says. */
+  judge: boolean;
 }
 
 export type TicketState = "queued" | "running" | "limited" | "needs-you" | "delivered" | "done" | "failed" | "skipped";
@@ -60,6 +62,8 @@ export interface NightShift {
   endedAt: number | null;
   failStreak: number;
   spentUsd: number;
+  /** The morning report, in the project's Files, once it is written. */
+  briefPath: string | null;
 }
 
 export interface SessionFacts {

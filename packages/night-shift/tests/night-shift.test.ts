@@ -22,7 +22,7 @@ class FakeCodeLink extends Service {
   checks = "passed";
   refuse: { gate: string; message: string } | null = null;
   defaults: Record<string, unknown> | null = null;
-  store = { sessions: (_: string, q: { itemId: string }) => this.sessionsList.filter((s) => s.itemIds.includes(q.itemId)) };
+  store = { sessions: (_: string, q: { itemId: string }) => this.sessionsList.filter((s) => s.itemIds.includes(q.itemId)), links: () => [{ prUrl: "https://example.com/pr/1" }] };
   constructor(ctx: Context) {
     super(ctx, "codeLink");
   }
@@ -37,6 +37,9 @@ class FakeCodeLink extends Service {
   }
   async prChecks() {
     return this.checks;
+  }
+  async deliveryDiff() {
+    return { stat: " a.ts | 2 +-", patch: "+code", lines: 2 };
   }
   async merge(projectId: string, itemId: string) {
     this.merges.push(itemId);
@@ -236,6 +239,88 @@ it("wants the computer awake only while a shift goes, and only if asked", async 
     expect(t.s.wantsAwake()).toBe(false);
   } finally {
     await t.ctx.fiber.dispose();
+  }
+});
+
+/** Stands for the model and for Files, so a report can be read back and its model calls counted. */
+class FakeLlm extends Service {
+  static provide = "llm";
+  calls = 0;
+  working = true;
+  constructor(ctx: Context) {
+    super(ctx, "llm");
+  }
+  async worker() {
+    return this.working ? { ok: true } : { ok: false, reason: "no model" };
+  }
+  async completeJson() {
+    this.calls += 1;
+    return { criteria: [{ text: "It works", met: "yes", evidence: "a.ts" }], outOfScope: [], unverified: [], risk: "low" };
+  }
+}
+class FakeFiles extends Service {
+  static provide = "files";
+  written = new Map<string, string>();
+  constructor(ctx: Context) {
+    super(ctx, "files");
+  }
+  async write(_projectId: string, file: string, body: string) {
+    this.written.set(file, body);
+  }
+}
+
+async function bootWithReport(judge = true) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-night-shift-"));
+  const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, FakeCodeLink, FakeLlm, FakeFiles, [NightShifts, { tickMs: 3_600_000, settleMs: 3_600_000 }]] });
+  await settle();
+  const llm = f.ctx.llm as unknown as FakeLlm;
+  const files = f.ctx.files as unknown as FakeFiles;
+  const run = async () => {
+    const item = f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "A", status: "todo", workType: "coding", by: "human" });
+    f.ctx.nightShift.start(f.project.id, { itemIds: [item.id], judge });
+    await f.ctx.nightShift.tick();
+    f.items.update(f.project.id, item.id, { status: "verifying" }, "human");
+    (f.ctx.codeLink as unknown as FakeCodeLink).sessionsList.at(-1)!.state = "idle";
+    await vi.waitFor(async () => {
+      await f.ctx.nightShift.tick();
+      expect(f.ctx.nightShift.list(f.project.id, 1)[0]?.briefPath).toBeTruthy();
+    });
+    return [...files.written.values()][0]!;
+  };
+  return { f, llm, run };
+}
+
+it("writes the report into Files when the shift ends, and the shift remembers where", async () => {
+  const { f, llm, run } = await bootWithReport();
+  try {
+    const body = await run();
+    expect(llm.calls).toBe(1);
+    expect(body).toContain("https://example.com/pr/1");
+    expect(body).toContain("✓ It works: a.ts");
+    expect(f.ctx.nightShift.list(f.project.id, 1)[0]!.briefPath).toMatch(/^Night shifts\/\d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
+  } finally {
+    await f.ctx.fiber.dispose();
+  }
+});
+
+it("switched off, the report asks no model", async () => {
+  const { f, llm, run } = await bootWithReport(false);
+  try {
+    expect(await run()).toContain("Not judged");
+    expect(llm.calls).toBe(0);
+  } finally {
+    await f.ctx.fiber.dispose();
+  }
+});
+
+it("with no model to ask, the report still comes, with the facts", async () => {
+  const { f, llm, run } = await bootWithReport();
+  try {
+    llm.working = false;
+    expect(await run()).toContain("Not judged");
+    expect(llm.calls).toBe(0);
+  } finally {
+    await f.ctx.fiber.dispose();
   }
 });
 

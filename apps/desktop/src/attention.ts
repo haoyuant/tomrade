@@ -6,6 +6,7 @@ import type { SettingsSection } from "@tomradex/settings";
 import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/night-shift";
 import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
 import { PhonePush, type FetchLike, type PushFailure, type PushRequest, type PushTarget } from "./push.js";
@@ -445,6 +446,12 @@ export const attention = {
         if (!shows || !Notification.isSupported()) return;
         void tomradeTells(note.entry, herdrClient).then((ours) => ours && show(note));
       }
+    });
+
+    // What a night shift came to reaches a phone the way anything else does while the person is away.
+    ctx.on("nightShift/briefed", (_shift, notice) => {
+      const away = prefsOf();
+      if (away.away === "push" && pushTargets(away).length) void phone.send(pushTargets(away), notice).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
     });
 
     const refresh = () => {
