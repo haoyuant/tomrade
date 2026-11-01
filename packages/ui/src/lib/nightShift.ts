@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
 import type { NightShiftInput } from "@tomradex/night-shift";
@@ -25,6 +25,28 @@ export function useNightShiftActions(projectId: string) {
     start: useMutation({ mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input), onSuccess: done }),
     stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done })
   };
+}
+
+/** True while the computer runs on battery; null where the browser cannot tell. */
+export function useOnBattery(): boolean | null {
+  const [onBattery, setOnBattery] = useState<boolean | null>(null);
+  useEffect(() => {
+    const nav = navigator as Navigator & { getBattery?: () => Promise<EventTarget & { charging: boolean }> };
+    let gone = false;
+    let release = () => {};
+    void nav.getBattery?.().then((battery) => {
+      if (gone) return;
+      const read = () => setOnBattery(!battery.charging);
+      read();
+      battery.addEventListener("chargingchange", read);
+      release = () => battery.removeEventListener("chargingchange", read);
+    });
+    return () => {
+      gone = true;
+      release();
+    };
+  }, []);
+  return onBattery;
 }
 
 const OPEN_FOR_SHIFT = new Set<Item["status"]>(["todo", "backlog"]);

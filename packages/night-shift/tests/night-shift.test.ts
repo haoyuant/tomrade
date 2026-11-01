@@ -219,6 +219,26 @@ it("offers itself in the palette and shows on the status bar while it goes", asy
   }
 });
 
+it("wants the computer awake only while a shift goes, and only if asked", async () => {
+  const t = await boot();
+  try {
+    expect(t.s.wantsAwake()).toBe(false);
+    const a = t.make("A");
+    t.s.start(t.project.id, { itemIds: [a.id] });
+    expect(t.s.wantsAwake()).toBe(true);
+    const heard: boolean[] = [];
+    t.ctx.on("nightShift/changed", () => heard.push(t.s.wantsAwake()));
+    t.s.stop(t.project.id, t.s.current(t.project.id)!.id);
+    await t.s.tick();
+    expect(t.s.current(t.project.id)).toBeNull();
+    expect(heard.at(-1)).toBe(false);
+    t.s.start(t.project.id, { itemIds: [t.make("B").id], keepAwake: false });
+    expect(t.s.wantsAwake()).toBe(false);
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
 it("the tools start, read and stop a shift", async () => {
   const t = await boot();
   try {

@@ -26,7 +26,8 @@ export const NightShiftInput = z.object({
   maxMinutes: z.number().int().min(5).max(24 * 60).default(8 * 60),
   maxUsd: z.number().positive().nullable().default(null),
   maxFailures: z.number().int().min(1).max(20).default(3),
-  autoMerge: z.boolean().default(false)
+  autoMerge: z.boolean().default(false),
+  keepAwake: z.boolean().default(true)
 });
 export type NightShiftInput = z.input<typeof NightShiftInput>;
 
@@ -127,6 +128,7 @@ export class NightShifts extends Service {
     const resume = (projectId: string) => {
       if (this.running(projectId)) {
         this.going.add(projectId);
+        this.home.emit("nightShift/changed", projectId);
         this.kick();
       }
     };
@@ -248,7 +250,7 @@ export class NightShifts extends Service {
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
-      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge },
+      settings: { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}), concurrency: parsed.concurrency, maxMinutes: parsed.maxMinutes, maxUsd: parsed.maxUsd, maxFailures: parsed.maxFailures, autoMerge: parsed.autoMerge, keepAwake: parsed.keepAwake },
       tickets,
       status: "running",
       halt: null,
@@ -262,6 +264,11 @@ export class NightShifts extends Service {
     this.going.add(projectId);
     this.kick(0);
     return this.view(shift);
+  }
+
+  /** Whether a shift going anywhere wants the computer kept awake. */
+  wantsAwake(): boolean {
+    return [...this.going].some((projectId) => this.running(projectId)?.settings.keepAwake);
   }
 
   /** No new ticket starts; what is at work finishes. */
@@ -350,6 +357,7 @@ export class NightShifts extends Service {
     if (current !== next) this.save(current);
     if (current.status === "ended") {
       this.going.delete(projectId);
+      this.home.emit("nightShift/changed", projectId);
       this.home.emit("nightShift/ended", this.view(current));
     } else if (current !== next) this.kick(0);
   }
