@@ -304,6 +304,13 @@ export function remindAway(prefs: NotificationPrefs, note: AttentionNote, im: Im
   im?.remind({ projectId: note.entry.projectId, threadId: note.entry.threadId, kind: note.entry.kind, title: note.title, body: note.body });
 }
 
+export interface ImAnnounceable { announce(n: { key: string; title: string; body: string }): boolean }
+
+/** News that belongs to no conversation reaches an IM the same way, for someone who chose it. */
+export function announceAway(prefs: NotificationPrefs, key: string, notice: { title: string; body: string }, im: ImAnnounceable | undefined): void {
+  if (prefs.away === "im") im?.announce({ key, ...notice });
+}
+
 /**
  * What a phone gets: the ticket key and the event on the first line, the ticket's
  * own title and how long it waited under it. The agent's words only when asked —
@@ -457,9 +464,14 @@ export const attention = {
       }
     });
 
-    // What a night shift came to reaches a phone the way anything else does while the person is away.
-    ctx.on("nightShift/briefed", (_shift, notice) => {
+    // What a night shift came to reaches a phone or a chat the way anything else does while the person is away.
+    ctx.on("nightShift/briefed", (shift, notice) => {
       const away = prefsOf();
+      try {
+        announceAway(away, `night-shift:${shift.id}`, notice, ctx.get("im") as ImAnnounceable | undefined);
+      } catch (e) {
+        ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
+      }
       if (away.away === "push" && pushTargets(away).length) void phone.send(pushTargets(away), notice).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
     });
 
