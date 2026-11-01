@@ -16,6 +16,8 @@ export interface ShiftSettings {
   /** Failures in a row, with nothing delivered between them, before no new ticket starts. */
   maxFailures: number;
   autoMerge: boolean;
+  /** The computer stays awake while the shift goes. */
+  keepAwake: boolean;
 }
 
 export type TicketState = "queued" | "running" | "limited" | "needs-you" | "delivered" | "done" | "failed" | "skipped";

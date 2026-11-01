@@ -8,7 +8,7 @@ import { Field } from "~/components/dialogs/plugins/parts";
 import { useEngines } from "~/lib/agent";
 import { isFullAccess, permissionLabel, useStartDefaults } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { shiftCandidates, shiftNote, shiftOrder, useLastNightShift, useNightShift, useNightShiftActions } from "~/lib/nightShift";
+import { shiftCandidates, shiftNote, shiftOrder, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 
@@ -102,6 +102,8 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [maxHours, setMaxHours] = useState(8);
   const [maxUsd, setMaxUsd] = useState("");
   const [autoMerge, setAutoMerge] = useState(false);
+  const [keepAwake, setKeepAwake] = useState(true);
+  const onBattery = useOnBattery();
 
   const mode = chosenMode ?? defaults.data?.mode ?? "run";
   const ready = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && (mode === "terminal" || !e.terminalOnly));
@@ -126,7 +128,8 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         concurrency,
         maxMinutes: Math.round(maxHours * 60),
         ...(spendLimit > 0 ? { maxUsd: spendLimit } : {}),
-        autoMerge
+        autoMerge,
+        keepAwake
       },
       { onError: (err) => toast(errorSpec(err)) }
     );
@@ -201,6 +204,12 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>
         </label>
         <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        <label className="cfg-row" style={{ cursor: "pointer" }}>
+          <input type="checkbox" data-testid="night-shift-keep-awake" checked={keepAwake} onChange={(event) => setKeepAwake(event.target.checked)} />
+          <span className="cfg-name">{t("nightShift.keepAwake")}</span>
+        </label>
+        <p className="meta-txt">{t("nightShift.awakeNote")}</p>
+        {onBattery && <p className="start-warning" role="note" data-testid="night-shift-battery"><Icon name="i-warn" size={13} /><span>{t("nightShift.onBattery")}</span></p>}
         </div>
       </DialogBody>
       <DialogFoot>
