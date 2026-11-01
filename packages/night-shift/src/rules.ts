@@ -1,0 +1,210 @@
+import type { ItemStatus } from "@tomradex/domain";
+
+/** Where a shift's agents work: a terminal pane the person can watch, or a background session in the assistant panel. */
+export type ShiftMode = "terminal" | "run";
+
+export interface ShiftSettings {
+  mode: ShiftMode;
+  engine?: string;
+  options?: Record<string, unknown>;
+  /** Background sessions only: a terminal agent runs as its own command says. */
+  permissionMode?: string;
+  concurrency: number;
+  maxMinutes: number;
+  /** Null sets no limit. Counts only what engines report, which terminal agents do not. */
+  maxUsd: number | null;
+  /** Failures in a row, with nothing delivered between them, before no new ticket starts. */
+  maxFailures: number;
+  autoMerge: boolean;
+}
+
+export type TicketState = "queued" | "running" | "limited" | "needs-you" | "delivered" | "done" | "failed" | "skipped";
+export type Halt = "stopped" | "deadline" | "budget" | "failures";
+
+export type Why =
+  | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-outside"; keys: string[] }
+  | { kind: "halted"; halt: Halt }
+  | { kind: "asked" | "error" | "gate" | "merge-refused" | "merge-conflict" | "blocked"; text: string }
+  | { kind: "stopped" | "ended" | "never-started" | "checks-failed" | "checks-unknown" | "checks-timeout" | "resumes-spent" | "stalled" | "overtime" };
+
+export interface ShiftTicket {
+  itemId: string;
+  key: string;
+  title: string;
+  state: TicketState;
+  why: Why | null;
+  threadId: string | null;
+  branch: string | null;
+  startedAt: number | null;
+  /** The last time Tomrade set its agent going: a session that has not spoken since is not yet judged. */
+  nudgedAt: number | null;
+  resumes: number;
+  limitedUntil: number | null;
+  merge: "none" | "waiting" | "merged" | "refused";
+  mergeAt: number | null;
+  mergeWaits: number;
+}
+
+export interface NightShift {
+  id: string;
+  projectId: string;
+  settings: ShiftSettings;
+  tickets: ShiftTicket[];
+  status: "running" | "ended";
+  /** Why no new ticket starts; null while it goes on, and for a shift that simply finished. */
+  halt: Halt | null;
+  startedAt: number;
+  deadlineAt: number;
+  endedAt: number | null;
+  failStreak: number;
+  spentUsd: number;
+}
+
+export interface SessionFacts {
+  state: "running" | "waiting" | "idle" | "error" | "ended" | "lost";
+  headless: boolean;
+  blocked: boolean;
+  asks: boolean;
+  summary: string | null;
+  lastEventAt: number | null;
+}
+
+export interface TicketFacts {
+  status: ItemStatus | null;
+  /** Tickets that must land first, still open. */
+  blockers: { itemId: string; key: string }[];
+  session: SessionFacts | null;
+  parkedUntil: number | null;
+  interrupted: boolean;
+}
+
+export type Action = { kind: "start" | "continue" | "merge"; itemId: string };
+
+export const MAX_RESUMES = 5;
+/** Two minutes between looks at a pull request's checks, for an hour and a half. */
+export const MERGE_WAIT_MS = 2 * 60_000;
+export const MERGE_WAITS = 45;
+export const START_GRACE_MS = 60_000;
+export const NEVER_STARTED_MS = 5 * 60_000;
+/** A terminal agent this long without a word holds a place the next ticket could use; it may yet speak up and count again. */
+export const STALL_MS = 30 * 60_000;
+/** How long past its deadline a shift waits for what is still at work before it stops watching. */
+export const OVERTIME_MS = 60 * 60_000;
+
+const WORKING = new Set<TicketState>(["running", "limited"]);
+
+function settle(t: ShiftTicket, f: TicketFacts, now: number): ShiftTicket {
+  if (t.state === "skipped" || t.state === "done") return t;
+  if (f.status === null || f.status === "cancelled") return { ...t, state: "skipped", why: null };
+  if (f.status === "done") return { ...t, state: "done", why: null, limitedUntil: null };
+  if (f.status === "verifying") return { ...t, state: "delivered", why: t.state === "delivered" ? t.why : null, limitedUntil: null };
+  if (t.state === "queued") return t;
+
+  if (f.parkedUntil !== null) return { ...t, state: "limited", limitedUntil: f.parkedUntil, why: null };
+  const s = f.session;
+  // The limit has lifted, and a terminal agent waits for a word from Tomrade to go on.
+  if (t.state === "limited" && (!s || s.state === "error")) return t;
+  const since = t.nudgedAt ?? t.startedAt ?? now;
+  if (!s) {
+    // Stopped at a gate, it has no session and never will.
+    if (t.state !== "running") return t;
+    return now - since > NEVER_STARTED_MS ? { ...t, state: "failed", why: { kind: "never-started" } } : t;
+  }
+  if (s.blocked) return { ...t, state: "needs-you", why: { kind: "blocked", text: s.summary ?? "" } };
+  if (s.state === "error") return { ...t, state: "failed", why: { kind: "error", text: s.summary ?? "" } };
+  if (s.state === "ended" || s.state === "lost") return { ...t, state: "failed", why: { kind: "ended" } };
+  if (s.state === "waiting") return { ...t, state: "needs-you", why: s.asks ? { kind: "asked", text: s.summary ?? "" } : { kind: "stopped" } };
+  // A background session rests idle once its run ended; a terminal one only went quiet.
+  if (s.headless && s.state === "idle" && now - since > START_GRACE_MS) return { ...t, state: "needs-you", why: { kind: "stopped" } };
+  if (s.state === "idle" && now - Math.max(s.lastEventAt ?? 0, since) > STALL_MS) return { ...t, state: "needs-you", why: { kind: "stalled" } };
+  return { ...t, state: "running", why: null };
+}
+
+/** The whole of a shift's judgement: what the world now says of each ticket, and what to do next. */
+export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFacts, now: number): { shift: NightShift; actions: Action[] } {
+  if (shift.status === "ended") return { shift, actions: [] };
+  let failStreak = shift.failStreak;
+  let tickets = shift.tickets.map((t) => {
+    const next = settle(t, factsOf(t.itemId), now);
+    if (next.state === "failed" && t.state !== "failed") failStreak += 1;
+    else if ((next.state === "delivered" || next.state === "done") && t.state !== "delivered" && t.state !== "done") failStreak = 0;
+    return next;
+  });
+
+  const { settings } = shift;
+  let halt = shift.halt;
+  if (!halt && now >= shift.deadlineAt) halt = "deadline";
+  if (!halt && failStreak >= settings.maxFailures) halt = "failures";
+  if (!halt && settings.maxUsd !== null && shift.spentUsd >= settings.maxUsd) halt = "budget";
+
+  const actions: Action[] = [];
+  const merging = settings.autoMerge && halt !== "stopped";
+  tickets = tickets.map((t) => {
+    const f = factsOf(t.itemId);
+    if (t.state === "delivered" && merging && (t.merge === "none" || t.merge === "waiting") && (t.mergeAt ?? 0) <= now && f.session?.state !== "running") {
+      actions.push({ kind: "merge", itemId: t.itemId });
+      return t;
+    }
+    const due = t.state === "limited" ? settings.mode === "terminal" && (t.limitedUntil ?? 0) <= now : t.state === "running" && f.interrupted && now - (t.nudgedAt ?? 0) > START_GRACE_MS;
+    if (!due || halt === "stopped") return t;
+    if (t.resumes >= MAX_RESUMES) {
+      failStreak += 1;
+      return { ...t, state: "failed" as const, why: { kind: "resumes-spent" as const }, limitedUntil: null };
+    }
+    actions.push({ kind: "continue", itemId: t.itemId });
+    return { ...t, state: "running" as const, resumes: t.resumes + 1, limitedUntil: null, nudgedAt: now };
+  });
+
+  const byId = new Map(tickets.map((t) => [t.itemId, t]));
+  const willLand = (t: ShiftTicket, seen: Set<string>): boolean => {
+    if (seen.has(t.itemId)) return false;
+    const on = new Set(seen).add(t.itemId);
+    if (WORKING.has(t.state)) return true;
+    if (t.state === "delivered") return merging ? t.merge !== "refused" && (t.merge !== "merged" || !halt) : factsOf(t.itemId).session?.state === "running";
+    return t.state === "queued" && canStart(t, on);
+  };
+  const canStart = (t: ShiftTicket, seen: Set<string>): boolean =>
+    !halt &&
+    factsOf(t.itemId).blockers.every((b) => {
+      const upstream = byId.get(b.itemId);
+      return !!upstream && willLand(upstream, seen);
+    });
+  const whyWaiting = (t: ShiftTicket): Why | null => {
+    const blockers = factsOf(t.itemId).blockers;
+    const keys = (test: (upstream: ShiftTicket | undefined) => boolean) => blockers.filter((b) => test(byId.get(b.itemId))).map((b) => b.key);
+    const outside = keys((u) => !u);
+    if (outside.length) return { kind: "waits-outside", keys: outside };
+    const unmerged = keys((u) => u?.state === "delivered" && !merging);
+    if (unmerged.length) return { kind: "waits-merge", keys: unmerged };
+    const stuck = keys((u) => !!u && (u.state === "failed" || u.state === "needs-you" || u.state === "skipped" || (u.state === "delivered" && u.merge === "refused")));
+    if (stuck.length) return { kind: "upstream-stuck", keys: stuck };
+    return blockers.length ? { kind: "waits-upstream", keys: blockers.map((b) => b.key) } : null;
+  };
+
+  let busy = tickets.filter((t) => WORKING.has(t.state)).length;
+  const held = tickets.some((t) => t.state === "limited" && (t.limitedUntil ?? 0) > now);
+  tickets = tickets.map((t) => {
+    if (t.state !== "queued") return t;
+    if (halt || held || busy >= settings.concurrency || factsOf(t.itemId).blockers.length) return { ...t, why: whyWaiting(t) };
+    busy += 1;
+    actions.push({ kind: "start", itemId: t.itemId });
+    return { ...t, state: "running" as const, why: null, startedAt: now, nudgedAt: now };
+  });
+
+  for (const t of tickets) byId.set(t.itemId, t);
+  // Agents go on past this; only the shift stops waiting for them, so it cannot stay open for good.
+  if (now >= shift.deadlineAt + OVERTIME_MS) {
+    const closed = tickets.map((t): ShiftTicket => (WORKING.has(t.state) || (t.state === "delivered" && t.merge === "waiting") ? { ...t, state: "needs-you", why: { kind: "overtime" }, limitedUntil: null } : t.state === "queued" ? { ...t, state: "skipped", why: t.why ?? { kind: "halted", halt: "deadline" } } : t));
+    return { shift: { ...shift, tickets: closed, halt: halt ?? "deadline", failStreak, status: "ended", endedAt: now }, actions: [] };
+  }
+  const active = actions.length > 0 || tickets.some((t) => WORKING.has(t.state) || (t.state === "delivered" && willLand(t, new Set())) || (t.state === "queued" && canStart(t, new Set())));
+  const next: NightShift = { ...shift, tickets, halt, failStreak };
+  if (active) return { shift: next, actions };
+  const closed = tickets.map((t) => (t.state === "queued" ? { ...t, state: "skipped" as const, why: t.why ?? (halt ? { kind: "halted" as const, halt } : null) } : t));
+  return { shift: { ...next, tickets: closed, status: "ended", endedAt: now }, actions };
+}
+
+/** What Tomrade tried for a ticket did not take: it counts against the shift like any other failure. */
+export function failTicket(shift: NightShift, itemId: string, why: Why): NightShift {
+  return { ...shift, failStreak: shift.failStreak + 1, tickets: shift.tickets.map((t) => (t.itemId === itemId ? { ...t, state: "failed", why } : t)) };
+}

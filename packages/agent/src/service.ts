@@ -888,6 +888,16 @@ export class Agent extends Service implements AgentReader {
     return usageSummary(runs, { days, now, titles });
   }
 
+  /** What finished runs on these tickets cost since `since`: the sum engines reported, and how many runs reported nothing. */
+  spentOn(projectId: string, itemIds: string[], since: number): { usd: number; unpriced: number } {
+    if (!itemIds.length || !this.ctx.db.has(projectId)) return { usd: 0, unpriced: 0 };
+    const rows = this.ctx.db
+      .for(projectId)
+      .prepare(`SELECT r.cost_usd AS cost FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE r.started_at >= ? AND r.status <> 'running' AND t.item_id IN (${itemIds.map(() => "?").join(", ")})`)
+      .all(since, ...itemIds) as { cost: number | null }[];
+    return { usd: rows.reduce((sum, r) => sum + (r.cost ?? 0), 0), unpriced: rows.filter((r) => r.cost === null).length };
+  }
+
   /** `<project folder>/.tomrade/rules.md`: text beside the project's playbooks and decisions, travelling with it. */
   rulesFile(projectId: string): string | null {
     const dir = contract(this.ctx, "storage")?.artifactDirFor(projectId);

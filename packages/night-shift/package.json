@@ -1,0 +1,44 @@
+{
+  "name": "@tomradex/night-shift",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A night shift: a batch of tickets worked through by dependency, in terminal panes or background sessions, within limits the person set",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/code-link": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/herdr": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/storage": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}
