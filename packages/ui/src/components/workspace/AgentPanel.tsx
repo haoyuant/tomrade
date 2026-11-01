@@ -48,7 +48,7 @@ import { useConfirm } from "~/lib/confirm";
 import { swapPanels } from "~/lib/motion";
 
 /** What each kind of waiting is called in the queue line. */
-const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
+const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck", suspect: "waitQueue.suspect" } as const;
 
 const MIN_W = 352;
 /** The most of the window it may be dragged to; the CSS max-width still keeps the board a column on narrower ones. */

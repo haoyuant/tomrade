@@ -2213,6 +2213,7 @@ export const ja: PartialMessages = {
     attention_question: "質問があります",
     attention_waiting: "あなたを待っています",
     attention_stuck: "停止しました",
+    attention_suspect: "止まっている可能性",
     parkedUntil: "使用量の上限 · {{time}} に再開",
     expandAssistantAria: "アシスタントパネルを展開",
     assistantLabel: "アシスタント",
