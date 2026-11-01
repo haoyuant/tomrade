@@ -7,7 +7,7 @@ export { aggregateUsage, dayKeyOf, dayStartOf, usageSummary, windowStart, MICRO_
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";
-export { looksRateLimited, resetTime, untilLabel } from "./limits.js";
+export { looksOutOfBalance, looksRateLimited, resetTime, untilLabel } from "./limits.js";
 export { describeFailure, readableError, redactSecrets, DETAILS_MAX_CHARS } from "./failure.js";
 export { conversationRecap, firstSentence, handoffRecap, withRecap } from "./recap.js";
 export { resultLine, stepHint, stepSummary } from "./steps.js";
