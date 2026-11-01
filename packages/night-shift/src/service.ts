@@ -16,12 +16,21 @@ import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
-import { PlanReply, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
-import { MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, type Action, type NightShift, type SessionFacts, type ShiftTicket, type TicketFacts, type TicketState, type Why } from "./rules.js";
+import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
+import { MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, settingsFor, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
+import { WorkRules, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
 /** "Until it is done" still ends: a run nothing can finish must not stay open for good. */
 export const MAX_HOURS = 72;
+
+const NodeConfigInput = z.object({
+  mode: z.enum(["terminal", "run"]).optional(),
+  engine: z.string().min(1).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
+  permissionMode: z.string().min(1).optional(),
+  autoMerge: z.boolean().optional()
+});
 
 export const NightShiftInput = z.object({
   itemIds: z.array(z.string().min(1)).min(1).max(50),
@@ -38,7 +47,9 @@ export const NightShiftInput = z.object({
   keepAwake: z.boolean().default(true),
   judge: z.boolean().default(true),
   /** Dependencies from the plan the person took: written to the tickets as the run starts. */
-  dependencies: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).max(50).default([])
+  dependencies: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).max(50).default([]),
+  /** What the person set on single nodes, by ticket id. */
+  nodes: z.record(z.string(), NodeConfigInput).default({})
 });
 export type NightShiftInput = z.input<typeof NightShiftInput>;
 
@@ -71,6 +82,10 @@ declare module "@tomradex/ipc" {
     "nightShift.current": (projectId: string) => NightShiftView | null;
     "nightShift.list": (projectId: string, limit?: number) => NightShiftView[];
     "nightShift.plan": (projectId: string) => ShiftPlan;
+    "nightShift.rules": (projectId: string) => WorkRule[];
+    "nightShift.setRules": (projectId: string, rules: WorkRule[]) => WorkRule[];
+    /** Which rule each open ticket falls under, by ticket id. */
+    "nightShift.ruleMatches": (projectId: string) => Record<string, string>;
     "nightShift.start": (projectId: string, input: NightShiftInput) => NightShiftView;
     "nightShift.stop": (projectId: string, id: string) => NightShiftView;
   }
@@ -92,11 +107,20 @@ CREATE TABLE IF NOT EXISTS plugin_nightshift_shifts (
 );
 CREATE INDEX IF NOT EXISTS idx_plugin_nightshift_project ON plugin_nightshift_shifts(project_id, started_at);
 `
+  },
+  {
+    version: 2,
+    up: `
+CREATE TABLE IF NOT EXISTS plugin_nightshift_rules (
+  project_id TEXT PRIMARY KEY,
+  doc_json   TEXT NOT NULL
+);
+`
   }
 ];
 
 /** A shift runs on the machine it was started on: its agents and worktrees are here, and a second machine must not run it again. */
-export const TABLES = { plugin_nightshift_shifts: { project: "project_id", export: false } } as const;
+export const TABLES = { plugin_nightshift_shifts: { project: "project_id", export: false }, plugin_nightshift_rules: { project: "project_id", export: { order: "project_id" } } } as const;
 
 export const NightShiftConfig = z.preprocess(
   (value) => value ?? {},
@@ -155,6 +179,9 @@ export class NightShifts extends Service {
       ctx.ipc.handle("nightShift.current", (projectId) => ctx.nightShift.current(projectId));
       ctx.ipc.handle("nightShift.list", (projectId, limit) => ctx.nightShift.list(projectId, limit));
       ctx.ipc.handle("nightShift.plan", (projectId) => ctx.nightShift.plan(projectId));
+      ctx.ipc.handle("nightShift.rules", (projectId) => ctx.nightShift.rules(projectId));
+      ctx.ipc.handle("nightShift.setRules", (projectId, rules) => ctx.nightShift.setRules(projectId, rules));
+      ctx.ipc.handle("nightShift.ruleMatches", (projectId) => ctx.nightShift.ruleMatches(projectId));
       ctx.ipc.handle("nightShift.start", (projectId, input) => ctx.nightShift.start(projectId, input));
       ctx.ipc.handle("nightShift.stop", (projectId, id) => ctx.nightShift.stop(projectId, id));
       ctx.on("nightShift/changed", (projectId) => ctx.ipc.send("nightShift.changed", projectId));
@@ -230,7 +257,9 @@ export class NightShifts extends Service {
   private view(shift: NightShift): NightShiftView {
     const counts = Object.fromEntries(STATES.map((s) => [s, shift.tickets.filter((t) => t.state === s).length])) as Record<TicketState, number>;
     const unpriced = this.home.agent.spentOn(shift.projectId, shift.tickets.map((t) => t.itemId), shift.startedAt).unpriced;
-    return { ...shift, tickets: shift.tickets.map((t) => ({ ...t, note: this.note(t.why) })), counts, costKnown: shift.settings.mode === "run" && unpriced === 0 };
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const tickets = shift.tickets.map((t) => ({ ...t, note: this.note(t.why) ?? (t.engineLost ? w("engineLost", { engine: t.engineLost }) : null) }));
+    return { ...shift, tickets, counts, costKnown: shift.tickets.every((t) => settingsFor(shift.settings, t).mode === "run") && unpriced === 0 };
   }
 
   current(projectId: string): NightShiftView | null {
@@ -242,21 +271,55 @@ export class NightShifts extends Service {
     return this.rows(projectId, "ORDER BY started_at DESC LIMIT ?", limit).map((s) => this.view(s));
   }
 
+  /** The project's work rules, in the order they are tried. */
+  rules(projectId: string): WorkRule[] {
+    if (!this.home.db.has(projectId)) return [];
+    const row = this.home.db.for(projectId).prepare("SELECT doc_json FROM plugin_nightshift_rules WHERE project_id = ?").get(projectId) as { doc_json: string } | undefined;
+    return row ? WorkRules.parse(JSON.parse(row.doc_json)) : [];
+  }
+
+  setRules(projectId: string, rules: WorkRule[]): WorkRule[] {
+    const parsed = WorkRules.parse(rules);
+    this.home.db.for(projectId).prepare("INSERT INTO plugin_nightshift_rules (project_id, doc_json) VALUES (?, ?) ON CONFLICT(project_id) DO UPDATE SET doc_json = excluded.doc_json").run(projectId, JSON.stringify(parsed));
+    this.home.emit("nightShift/changed", projectId);
+    return parsed;
+  }
+
+  ruleMatches(projectId: string): Record<string, string> {
+    const rules = this.rules(projectId);
+    return Object.fromEntries(planCandidates(this.home.items.listAll(projectId)).flatMap((item) => {
+      const rule = ruleFor(rules, item);
+      return rule ? [[item.id, rule.id]] : [];
+    }));
+  }
+
   /** The person's starting point for a run. It always answers: with no model, or a model that fails, it is the backlog's own facts. */
   async plan(projectId: string): Promise<ShiftPlan> {
     if (!this.home.db.has(projectId)) throw new Error("That project is not open on this machine");
     const items = this.home.items.listAll(projectId);
-    const notCoding = NIGHT_SHIFT_WORDS(this.locale())("notCoding");
+    const w = NIGHT_SHIFT_WORDS(this.locale());
+    const rules = this.rules(projectId);
+    const byId = new Map(items.map((item) => [item.id, item]));
+    // A rule that leaves a ticket out outranks the model: it is the person's standing word.
+    const ruled = (plan: ShiftPlan): ShiftPlan => ({
+      ...plan,
+      nodes: plan.nodes.map((node) => {
+        const item = byId.get(node.itemId);
+        const rule = item ? ruleFor(rules, item) : null;
+        return rule?.then.skip ? { ...node, suggested: false, why: w("ruleSkipped", { name: rule.name }) } : node;
+      })
+    });
+    const notCoding = w("notCoding");
     const llm = this.home.get("llm");
     const worker = llm ? await llm.worker().catch(() => null) : null;
-    if (!llm || !worker?.ok) return readPlan(items, null, notCoding);
+    if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding));
     const reply = await llm
       .completeJson(PlanReply, { system: planSystem(languageName(this.locale())), user: planUser(items, this.home.agent.brief(projectId)), maxTokens: 4000, timeoutMs: 120_000, purpose: "night-shift" })
       .catch((err: unknown) => {
         this.home.logger.warn(`auto run plan: ${errorMessage(err)}`);
         return null;
       });
-    return readPlan(items, reply, notCoding);
+    return ruled(readPlan(items, reply, notCoding));
   }
 
   start(projectId: string, input: NightShiftInput, now = Date.now()): NightShiftView {
@@ -264,6 +327,15 @@ export class NightShifts extends Service {
     if (this.running(projectId)) throw new Error("A night shift is already going in this project: stop it, or wait for it to end");
     const parsed = NightShiftInput.parse(input);
     const remembered = this.home.codeLink.startDefaults();
+    const workRules = this.rules(projectId);
+    /** The person's hand over a rule, field by field. */
+    const configOf = (item: NonNullable<ReturnType<typeof this.home.items.get>>): Pick<ShiftTicket, "config" | "configFrom"> => {
+      const manual = parsed.nodes[item.id];
+      const rule = ruleFor(workRules, item);
+      const config: NodeConfig = { ...(rule ? ruleConfig(rule) : {}), ...manual };
+      if (!Object.keys(config).length) return {};
+      return { config, configFrom: manual && Object.keys(manual).length ? { kind: "manual" } : { kind: "rule", name: rule!.name } };
+    };
     const tickets: ShiftTicket[] = [];
     const problems: string[] = [];
     for (const id of new Set(parsed.itemIds)) {
@@ -273,7 +345,7 @@ export class NightShifts extends Service {
       else if (!OPEN_TO_START.has(item.status)) problems.push(`${item.key} is ${item.status}`);
       // Start would put a second prompt into the session already on it.
       else if (this.home.codeLink.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running" || s.state === "waiting")) problems.push(`${item.key} has an agent on it already`);
-      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false });
+      else tickets.push({ itemId: item.id, key: item.key, title: item.title, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...configOf(item) });
     }
     if (problems.length) throw new Error(`A night shift cannot take these: ${problems.join("; ")}`);
     // The person took these on the plan, so they are the person's writes, and undo takes them back.
@@ -453,18 +525,27 @@ export class NightShifts extends Service {
   private async act(shift: NightShift, action: Action, now: number): Promise<NightShift> {
     const ticket = shift.tickets.find((t) => t.itemId === action.itemId)!;
     if (action.kind === "merge") return this.merge(shift, ticket, now);
-    const { mode, engine, options, permissionMode } = shift.settings;
-    const opts: StartOptions = { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}) };
+    const { how, engineLost } = await this.how(shift, ticket);
+    const opts: StartOptions = how;
     const patch = (fields: Partial<ShiftTicket>): NightShift => ({ ...shift, tickets: shift.tickets.map((t) => (t.itemId === ticket.itemId ? { ...t, ...fields } : t)) });
     try {
       const result = await this.home.codeLink.start(shift.projectId, ticket.itemId, opts);
-      if (result.ok) return patch({ threadId: result.threadId ?? ticket.threadId, branch: result.branch || ticket.branch });
+      if (result.ok) return patch({ threadId: result.threadId ?? ticket.threadId, branch: result.branch || ticket.branch, ...(engineLost ? { engineLost } : {}) });
       // Something filed a dependency since the look: it waits like any other blocked ticket.
       if (result.gate === "blocked") return patch({ state: "queued", startedAt: null, nudgedAt: null });
       return failTicket(shift, ticket.itemId, { kind: "gate", text: result.message });
     } catch (err) {
       return failTicket(shift, ticket.itemId, { kind: "gate", text: errorMessage(err) });
     }
+  }
+
+  /** How to start or go on with a ticket. An agent its config names that cannot run costs the node its config, not the ticket. */
+  private async how(shift: NightShift, ticket: ShiftTicket): Promise<{ how: Omit<TicketSettings, "autoMerge">; engineLost: string | null }> {
+    const wanted = ticket.config?.engine;
+    const ready = wanted ? await this.home.agent.engineViews().then((views) => !!views.find((e) => e.id === wanted)?.ok).catch(() => false) : true;
+    const config = ready ? ticket : { config: { ...ticket.config, engine: undefined, options: undefined, permissionMode: undefined } };
+    const { autoMerge: _autoMerge, ...how } = settingsFor(shift.settings, config);
+    return { how, engineLost: ready ? null : wanted! };
   }
 
   private async merge(shift: NightShift, ticket: ShiftTicket, now: number): Promise<NightShift> {
@@ -491,8 +572,8 @@ export class NightShifts extends Service {
     if (ticket.conflictRetried) return unresolved();
     // A shift past its limits spends nothing more on it.
     if (shift.halt) return { ...shift, tickets: patch({ merge: "refused", mergeAt: null, why: { kind: "merge-conflict", text: message } }) };
-    const { mode, engine, options, permissionMode } = shift.settings;
-    const entry = await this.home.codeLink.resolveMerge(shift.projectId, ticket.itemId, null, { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}) }).catch(() => null);
+    const { how } = await this.how(shift, ticket);
+    const entry = await this.home.codeLink.resolveMerge(shift.projectId, ticket.itemId, null, how).catch(() => null);
     if (!entry?.ok) return unresolved();
     return { ...shift, tickets: patch({ state: "running", why: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: true, nudgedAt: now, threadId: entry.threadId ?? ticket.threadId }) };
   }

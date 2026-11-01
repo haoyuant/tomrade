@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Background, BackgroundVariant, Handle, Position, ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
+import { useI18n } from "~/lib/i18n";
 import { layout, NODE_W, edgeTypes } from "~/components/workspace/GraphView";
 
 /** Tall enough for a key, two lines of title and a line of why. */
@@ -19,11 +20,13 @@ interface PlanNodeData extends Record<string, unknown> {
   item: Item;
   chosen: boolean;
   sub: string | null;
+  onConfigure: (id: string) => void;
 }
 type PlanFlowNode = Node<PlanNodeData, "plan">;
 
 function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
-  const { item, chosen, sub } = data;
+  const { item, chosen, sub, onConfigure } = data;
+  const { t } = useI18n();
   return (
     <div className={`plan-node${chosen ? " is-chosen" : ""}`} style={{ width: NODE_W, height: PLAN_NODE_H }} data-testid="plan-node" data-key={item.key} aria-pressed={chosen} title={sub ?? item.title}>
       <Handle type="target" position={Position.Left} />
@@ -32,6 +35,19 @@ function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
         <span className="plan-node-title"><span className="num">{item.key}</span> {item.title}</span>
         {sub && <span className="plan-node-sub">{sub}</span>}
       </span>
+      <button
+        type="button"
+        className="btn btn-icon plan-node-cfg nopan"
+        aria-label={t("nightShift.configure", { key: item.key })}
+        title={t("nightShift.configure", { key: item.key })}
+        data-testid="plan-node-cfg"
+        onClick={(event) => {
+          event.stopPropagation();
+          onConfigure(item.id);
+        }}
+      >
+        <Icon name="i-sliders" size={13} />
+      </button>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -39,7 +55,19 @@ function PlanNodeView({ data }: NodeProps<PlanFlowNode>) {
 
 const nodeTypes = { plan: PlanNodeView };
 
-function Canvas({ items, links, chosen, subOf, onToggle, onAdd }: { items: Item[]; links: PlanLink[]; chosen: ReadonlySet<string>; subOf: (item: Item) => string | null; onToggle: (id: string) => void; onAdd: (ids: string[]) => void }) {
+interface PlanGraphProps {
+  items: Item[];
+  links: PlanLink[];
+  chosen: ReadonlySet<string>;
+  subOf: (item: Item) => string | null;
+  /** Changes when `subOf` would answer differently. */
+  subs: string;
+  onToggle: (id: string) => void;
+  onAdd: (ids: string[]) => void;
+  onConfigure: (id: string) => void;
+}
+
+function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigure }: PlanGraphProps) {
   const { fitView } = useReactFlow();
   const shape = links.map((l) => `${l.from}>${l.to}`).join();
   const ids = items.map((i) => i.id).join();
@@ -47,10 +75,10 @@ function Canvas({ items, links, chosen, subOf, onToggle, onAdd }: { items: Item[
   const placed = useMemo(() => layout(items, links, Object.fromEntries(items.map((i) => [i.id, PLAN_NODE_H]))), [ids, shape]);
   const [nodes, setNodes, onNodesChange] = useNodesState<PlanFlowNode>([]);
   useEffect(() => {
-    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item) } })));
-    // a stale `subOf` closes over the same choice, so the choice is what says to draw again
+    setNodes(items.map((item) => ({ id: item.id, type: "plan", position: placed.pos.get(item.id) ?? { x: 0, y: 0 }, selected: false, data: { item, chosen: chosen.has(item.id), sub: subOf(item), onConfigure } })));
+    // `subs` says when `subOf` changed; the function itself is new on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, placed, chosen, setNodes]);
+  }, [items, placed, chosen, subs, setNodes]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => void fitView(FIT));
     return () => cancelAnimationFrame(frame);
@@ -101,7 +129,7 @@ function Canvas({ items, links, chosen, subOf, onToggle, onAdd }: { items: Item[
 }
 
 /** The plan as a graph: a click takes a ticket or leaves it, a drag across the canvas takes everything it touches. */
-export function PlanGraph(props: { items: Item[]; links: PlanLink[]; chosen: ReadonlySet<string>; subOf: (item: Item) => string | null; onToggle: (id: string) => void; onAdd: (ids: string[]) => void }) {
+export function PlanGraph(props: PlanGraphProps) {
   return (
     <div className="plan-graph" data-testid="plan-graph">
       <ReactFlowProvider>

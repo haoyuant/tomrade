@@ -63,6 +63,7 @@ const run = async () => {
   const base = process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/";
   await win.loadURL(`${base}#/p/${project.id}`);
   const $ = (js) => win.webContents.executeJavaScript(js, true);
+  win.webContents.on("console-message", (e) => { if (e.level === "error") console.log(`RENDERER: ${String(e.message).slice(0, 400)}`); });
   const press = (expr) => $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true })); return true; })()`);
   const shot = async (name) => fs.writeFileSync(path.join(shots, `${name}.png`), (await win.webContents.capturePage()).toPNG());
   const waitFor = async (expr, ms = 8000) => {
@@ -129,6 +130,22 @@ const run = async () => {
   check("nothing is written while it is only offered", !ctx.items.get(project.id, later.id).blockedBy.length);
   await press(`document.querySelector('[data-testid="plan-proposed-edge"] input')`);
   check("taken, it is drawn solid", await waitFor(`!document.querySelector('.plan-graph path[style*="dasharray"]')`));
+  // ── a node's own settings ─────────────────────────────────────────────
+  await press(`${nodeNamed(keyOf(second))}.querySelector('[data-testid="plan-node-cfg"]')`);
+  check("a node opens its settings, and a click on them does not choose it", (await waitFor(`!!${test("plan-config")}`)) && (await $(nodeChosen(keyOf(second)))));
+  check("left alone, it goes as the run goes", (await $(text("plan-config-from"))) === "As the run goes", await $(text("plan-config-from")));
+  await shot("plan-config");
+  const pick = (selector, value) => $(`(() => { const s = ${selector}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await pick(`${test("plan-config")}.querySelectorAll('select')[0]`, "terminal");
+  check("a setting by hand says so, on the panel and on the node", (await waitFor(`${text("plan-config-from")} === 'Set by hand'`)) && (await waitFor(`${nodeNamed(keyOf(second))}.textContent.includes('Set by hand')`)));
+  await press(`document.querySelector('[data-testid="plan-rules"]')?.closest('.fold')?.querySelector('.fold-head') ?? document.querySelector('[data-fold="plan-rules"] .fold-head')`);
+  await waitFor(`!!${test("plan-rule-add")}`);
+  await press(test("plan-rule-add"));
+  check("a new rule says it matches nothing yet", await waitFor(`!!${test("plan-rule-empty")}`));
+  await $(`(() => { const i = ${test("plan-rule-label")}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'docs'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); return true; })()`);
+  check("a condition saves it", await waitFor(`!${test("plan-rule-empty")}`) && (await (async () => { for (let i = 0; i < 40 && !ctx.nightShift.rules(project.id)[0]?.when.label; i++) await sleep(50); return ctx.nightShift.rules(project.id)[0]?.when.label === "docs"; })()), ctx.nightShift.rules(project.id));
+  await press(test("plan-rule-delete"));
+  check("and it can go again", await waitFor(`!${test("plan-rule")}`) && (await (async () => { for (let i = 0; i < 40 && ctx.nightShift.rules(project.id).length; i++) await sleep(50); return !ctx.nightShift.rules(project.id).length; })()));
   await press(`document.querySelector('[data-testid="plan-view"] [data-view="list"]')`);
   check("the list is a click away", await waitFor(`!!${test("night-shift-pick")} && !${test("plan-graph")}`));
   check("how long: until done has no hours to set, a night shift does", !(await $(`!!document.querySelector('#nsHours')`)));
@@ -173,6 +190,7 @@ const run = async () => {
   check("its dependant waits", starts.length === 1, starts);
   check("the dependency the person took is on the tickets", ctx.items.get(project.id, second.id).blocks.includes(later.id), ctx.items.get(project.id, second.id).blocks);
   check("until done runs for three days at most", ctx.nightShift.current(project.id)?.settings.maxMinutes === 72 * 60);
+  check("what was set on the node reached the shift", ctx.nightShift.current(project.id)?.tickets.find((x) => x.itemId === second.id)?.config?.mode === "terminal");
   check("the setting is kept on the shift", ctx.nightShift.current(project.id)?.settings.mode === "terminal" && ctx.nightShift.current(project.id)?.settings.autoMerge === true);
   check("the dialog says where it runs", await waitFor(`${text("night-shift-going")}.includes('In terminal panes')`));
   check("the status bar shows it", await waitFor(`(${status()}).includes('Auto run 0/2')`), await $(status()));

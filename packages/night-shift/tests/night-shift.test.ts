@@ -496,3 +496,99 @@ describe("planning a run", () => {
     }
   });
 });
+
+describe("nodes and work rules", () => {
+  const docs = { id: "r1", name: "Docs", when: { label: "docs" }, then: { engine: "fake", autoMerge: true } };
+  const labelled = (t: Awaited<ReturnType<typeof boot>>, title: string) => {
+    const item = t.make(title);
+    return t.items.update(t.project.id, item.id, { labels: ["docs"] }, "human");
+  };
+  const fakeEngine = (ok: boolean) => ({ id: "fake", title: "Fake", author: "ai:fake" as const, capabilities: ["code" as const], available: async () => ({ ok }), async turn() { return { stop: "end" as const }; } });
+
+  it("keeps rules with the project, in order, and says which ticket falls under which", async () => {
+    const t = await boot();
+    try {
+      const a = labelled(t, "A");
+      const b = t.make("B");
+      t.s.setRules(t.project.id, [docs]);
+      expect(t.s.rules(t.project.id)).toEqual([docs]);
+      expect(t.s.ruleMatches(t.project.id)).toEqual({ [a.id]: "r1" });
+      expect(t.s.ruleMatches(t.project.id)[b.id]).toBeUndefined();
+      expect(() => t.s.setRules(t.project.id, [{ ...docs, name: "" }])).toThrow();
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("the person's hand beats a rule, a rule beats the run, field by field", async () => {
+    const t = await boot();
+    try {
+      t.ctx.agent.engine(fakeEngine(true));
+      t.s.setRules(t.project.id, [docs]);
+      const ruled = labelled(t, "Ruled");
+      const manual = labelled(t, "Manual");
+      const plain = t.make("Plain");
+      const shift = t.s.start(t.project.id, { itemIds: [ruled.id, manual.id, plain.id], engine: "default-engine", mode: "run", concurrency: 3, nodes: { [manual.id]: { autoMerge: false } } });
+      const of = (id: string) => shift.tickets.find((x) => x.itemId === id)!;
+      expect(of(ruled.id)).toMatchObject({ config: { engine: "fake", autoMerge: true }, configFrom: { kind: "rule", name: "Docs" } });
+      expect(of(manual.id)).toMatchObject({ config: { engine: "fake", autoMerge: false }, configFrom: { kind: "manual" } });
+      expect(of(plain.id).config).toBeUndefined();
+      await t.s.tick();
+      expect(t.code.starts.find((s) => s.itemId === ruled.id)!.opts).toMatchObject({ engine: "fake" });
+      expect(t.code.starts.find((s) => s.itemId === plain.id)!.opts).toMatchObject({ engine: "default-engine" });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("an agent that cannot run costs the node its config, not the ticket", async () => {
+    const t = await boot();
+    try {
+      t.ctx.agent.engine(fakeEngine(false));
+      const a = t.make("A");
+      t.s.start(t.project.id, { itemIds: [a.id], engine: "default-engine", mode: "run", nodes: { [a.id]: { engine: "fake", permissionMode: "yolo", autoMerge: true } } });
+      await t.s.tick();
+      expect(t.code.starts[0]!.opts).toMatchObject({ engine: "default-engine" });
+      expect(t.code.starts[0]!.opts.permissionMode).toBeUndefined();
+      const ticket = t.s.current(t.project.id)!.tickets[0]!;
+      expect(ticket.state).toBe("running");
+      expect(ticket.note).toContain("fake could not run");
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+
+  it("a conflict goes back to the agent the node named", async () => {
+    const t = await boot();
+    try {
+      t.ctx.agent.engine(fakeEngine(true));
+      t.code.conflicts = 1;
+      const a = t.make("A");
+      t.s.start(t.project.id, { itemIds: [a.id], engine: "default-engine", mode: "run", nodes: { [a.id]: { engine: "fake", autoMerge: true } } });
+      await t.s.tick();
+      t.items.update(t.project.id, a.id, { status: "verifying" }, "human");
+      t.code.sessionsList.at(-1)!.state = "idle";
+      await t.s.tick();
+      await t.s.tick();
+      expect(t.code.resolves[0]?.how).toMatchObject({ engine: "fake" });
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("a rule that leaves work out", () => {
+  it("takes it off the plan, whatever the model said, and the person can still run it", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const a = f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "Risky", status: "todo", workType: "coding", by: "human" });
+      f.ctx.nightShift.setRules(f.project.id, [{ id: "r", name: "Not this", when: { titleHas: "risky" }, then: { skip: true } }]);
+      llm.planReply = { summary: "", suggested: [a.key], excluded: [], dependencies: [] };
+      const plan = await f.ctx.nightShift.plan(f.project.id);
+      expect(plan.nodes[0]).toMatchObject({ suggested: false, why: "Left out by the rule “Not this”" });
+      expect(f.ctx.nightShift.start(f.project.id, { itemIds: [a.id] }).tickets).toHaveLength(1);
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+});

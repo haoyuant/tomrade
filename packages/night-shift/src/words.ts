@@ -77,7 +77,9 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     unverified: "Not shown to work",
     notifyTitle: "Your auto run is done",
     notifyBody: "{{review}} to review, {{merged}} merged, {{attention}} need you",
-    notCoding: "Not coding work: it needs a person"
+    notCoding: "Not coding work: it needs a person",
+    ruleSkipped: "Left out by the rule “{{name}}”",
+    engineLost: "{{engine}} could not run, so this went as the run does"
   },
   zh: {
     waitsMerge: "等 {{keys}} 合并",
@@ -153,6 +155,8 @@ export const NIGHT_SHIFT_WORDS = defineWords("night-shift", {
     unverified: "没有验证的部分",
     notifyTitle: "自动执行结束了",
     notifyBody: "待审查 {{review}} 张，已合并 {{merged}} 张，等你 {{attention}} 张",
-    notCoding: "不是编码工单，需要人来做"
+    notCoding: "不是编码工单，需要人来做",
+    ruleSkipped: "被规则“{{name}}”排除",
+    engineLost: "{{engine}} 无法运行，这张改用默认配置"
   }
 });

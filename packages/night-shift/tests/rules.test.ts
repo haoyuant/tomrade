@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
+import { MAX_RESUMES, MERGE_WAIT_MS, OVERTIME_MS, STALL_MS, START_GRACE_MS, advance, failTicket, settingsFor, type NightShift, type SessionFacts, type ShiftSettings, type ShiftTicket, type TicketFacts } from "../src/rules.js";
 
 const T0 = 1_000_000;
 const ticket = (key: string, over: Partial<ShiftTicket> = {}): ShiftTicket => ({ itemId: key, key, title: key, state: "queued", why: null, threadId: null, branch: null, startedAt: null, nudgedAt: null, resumes: 0, limitedUntil: null, merge: "none", mergeAt: null, mergeWaits: 0, conflictRetried: false, ...over });
@@ -232,3 +232,42 @@ describe("merging", () => {
   });
 });
 
+describe("a node's own settings", () => {
+  const run = shiftOf([]).settings;
+
+  it("goes as the run goes when it says nothing", () => {
+    expect(settingsFor({ ...run, engine: "a", permissionMode: "auto" }, {})).toMatchObject({ mode: "run", engine: "a", permissionMode: "auto", autoMerge: false });
+  });
+
+  it("does not inherit another engine's options or permissions", () => {
+    const settings = { ...run, engine: "a", options: { model: "big" }, permissionMode: "auto" };
+    const own = settingsFor(settings, { config: { engine: "b" } });
+    expect(own.engine).toBe("b");
+    expect(own.options).toBeUndefined();
+    expect(own.permissionMode).toBeUndefined();
+  });
+
+  it("drops permissions in a terminal, where the agent's own apply", () => {
+    expect(settingsFor({ ...run, permissionMode: "auto" }, { config: { mode: "terminal" } }).permissionMode).toBeUndefined();
+  });
+
+  it("merges one ticket and leaves the next for the person", () => {
+    const { actions } = advance(shiftOf([started("A", { state: "delivered" }), started("B", { state: "delivered", config: { autoMerge: true } })]), world({ A: { status: "verifying", session: session("idle") }, B: { status: "verifying", session: session("idle") } }), T0);
+    expect(actions).toEqual([{ kind: "merge", itemId: "B" }]);
+  });
+
+  it("a ticket that says no merge is not merged by a run that does", () => {
+    const { actions } = advance(shiftOf([started("A", { state: "delivered", config: { autoMerge: false } })], { autoMerge: true }), world({ A: { status: "verifying", session: session("idle") } }), T0);
+    expect(actions).toEqual([]);
+  });
+
+  it("what waits on an unmerged node says so, whatever the run does", () => {
+    const { shift } = advance(shiftOf([started("A", { state: "delivered", config: { autoMerge: false } }), ticket("B")], { autoMerge: true }), world({ A: { status: "verifying", session: session("running") }, B: { blockers: [{ itemId: "A", key: "A" }] } }), T0);
+    expect(shift.tickets[1]!.why).toEqual({ kind: "waits-merge", keys: ["A"] });
+  });
+
+  it("a terminal node goes on after a limit, in a run of sessions", () => {
+    const { actions } = advance(shiftOf([started("A", { state: "limited", limitedUntil: T0 - 1, config: { mode: "terminal" } })]), world({ A: { status: "doing" } }), T0);
+    expect(actions).toEqual([{ kind: "continue", itemId: "A" }]);
+  });
+});
