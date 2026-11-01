@@ -292,7 +292,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           ) : plan.data?.summary ? (
             <p>{plan.data.summary}</p>
           ) : (
-            plan.data && !plan.data.analyzed && <p className="meta-txt">{t("nightShift.noPlanModel")}</p>
+            plan.data && !plan.data.analyzed && <p className="meta-txt" data-testid="plan-why">{plan.data.why}</p>
           )}
           {!plan.isFetching && <button type="button" className="tlink" data-testid="plan-again" onClick={() => void plan.refetch()}>{t("nightShift.planAgain")}</button>}
         </div>

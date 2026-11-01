@@ -30,6 +30,8 @@ export interface PlanEdge {
 export interface ShiftPlan {
   /** False: read from the backlog alone, because no model answered. */
   analyzed: boolean;
+  /** What stopped the analysis, in the person's language. */
+  why: string | null;
   summary: string | null;
   nodes: PlanNode[];
   proposed: PlanEdge[];
@@ -100,7 +102,7 @@ function reaches(blocks: ReadonlyMap<string, readonly string[]>, from: string, t
  * a key it made up is dropped, and a dependency that repeats one or would close a loop is not offered. Without a reply
  * the plan is the backlog's own: the coding tickets in To Do.
  */
-export function readPlan(items: Item[], reply: PlanReply | null, notCoding: string): ShiftPlan {
+export function readPlan(items: Item[], reply: PlanReply | null, notCoding: string, why: string | null = null): ShiftPlan {
   const open = planCandidates(items);
   const byKey = new Map(open.map((item) => [item.key, item]));
   const suggested = reply ? new Set(reply.suggested) : null;
@@ -120,5 +122,5 @@ export function readPlan(items: Item[], reply: PlanReply | null, notCoding: stri
     blocks.get(from.id)!.push(to.id);
     proposed.push({ from: from.id, to: to.id, fromKey: from.key, toKey: to.key, why });
   }
-  return { analyzed: !!reply, summary: reply?.summary.trim() || null, nodes, proposed };
+  return { analyzed: !!reply, why: reply ? null : why, summary: reply?.summary.trim() || null, nodes, proposed };
 }

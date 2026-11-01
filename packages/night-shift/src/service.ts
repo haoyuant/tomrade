@@ -24,6 +24,14 @@ import { NIGHT_SHIFT_WORDS } from "./words.js";
 
 /** "Until it is done" still ends: a run nothing can finish must not stay open for good. */
 export const MAX_HOURS = 72;
+/** An agent on this computer answers all at once, and a long backlog takes it a while. */
+const PLAN_TIMEOUT_MS = 5 * 60_000;
+
+/** An API's refusal arrives as a status and its JSON; the person needs the sentence inside. */
+const plainError = (err: unknown): string => {
+  const text = errorMessage(err);
+  return (/"message"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? text).slice(0, 200);
+};
 
 const NodeConfigInput = z.object({
   mode: z.enum(["terminal", "run"]).optional(),
@@ -350,14 +358,23 @@ export class NightShifts extends Service {
     const notCoding = w("notCoding");
     const llm = this.home.get("llm");
     const worker = llm ? await llm.worker().catch(() => null) : null;
-    if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding));
+    if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding, w("planNoEngine")));
+    let failed = "";
     const reply = await llm
-      .completeJson(PlanReply, { system: planSystem(languageName(this.locale())), user: planUser(items, this.home.agent.brief(projectId)), maxTokens: 4000, timeoutMs: 120_000, purpose: "night-shift" })
+      .completeJson(PlanReply, { system: planSystem(languageName(this.locale())), user: planUser(items, this.home.agent.brief(projectId)), maxTokens: 4000, timeoutMs: PLAN_TIMEOUT_MS, purpose: "night-shift", ...this.defaultAgent() })
       .catch((err: unknown) => {
         this.home.logger.warn(`auto run plan: ${errorMessage(err)}`);
+        failed = plainError(err);
         return null;
       });
-    return ruled(readPlan(items, reply, notCoding));
+    return ruled(readPlan(items, reply, notCoding, w("planFailed", { detail: failed })));
+  }
+
+  /** As in a conversation, the default engine does a run's thinking; one that runs on Tomrade's profiles leaves it to the worker. */
+  private defaultAgent(): { preferEngine?: string } {
+    const { agent } = this.home;
+    const id = agent.answering(agent.settingsOf().defaultEngine);
+    return agent.engineOf(id)?.usesModels ? {} : { preferEngine: id };
   }
 
   start(projectId: string, input: NightShiftInput, now = Date.now()): NightShiftView {
@@ -443,7 +460,7 @@ export class NightShifts extends Service {
     const worker = llm ? await llm.worker().catch(() => null) : null;
     if (!llm || !worker?.ok) return later(w("notInserted_noModel"));
     const verdict = await llm
-      .completeJson(Triage, { system: triageSystem(languageName(this.locale())), user: triageUser(input, from, shift, this.home.agent.brief(projectId)), maxTokens: 600, timeoutMs: 60_000, purpose: "night-shift" })
+      .completeJson(Triage, { system: triageSystem(languageName(this.locale())), user: triageUser(input, from, shift, this.home.agent.brief(projectId)), maxTokens: 600, timeoutMs: 120_000, purpose: "night-shift", ...this.defaultAgent() })
       .catch((err: unknown) => {
         this.home.logger.warn(`auto run triage: ${errorMessage(err)}`);
         return null;
@@ -622,7 +639,7 @@ export class NightShifts extends Service {
         const item = items.get(shift.projectId, ticket.itemId);
         const said = codeLink.store.sessions(shift.projectId, { itemId: ticket.itemId }).sort((a, b) => b.startedAt - a.startedAt)[0]?.summary ?? null;
         judgement = await llm
-          .completeJson(Judgement, { system: judgeSystem(languageName(this.locale())), user: judgeUser({ key: ticket.key, title: ticket.title, body: item?.body ?? null }, said, diff), maxTokens: 2000, timeoutMs: 120_000, purpose: "night-shift" })
+          .completeJson(Judgement, { system: judgeSystem(languageName(this.locale())), user: judgeUser({ key: ticket.key, title: ticket.title, body: item?.body ?? null }, said, diff), maxTokens: 2000, timeoutMs: 120_000, purpose: "night-shift", ...this.defaultAgent() })
           .catch((err: unknown) => {
             this.home.logger.warn(`night shift report on ${ticket.key}: ${errorMessage(err)}`);
             return null;
