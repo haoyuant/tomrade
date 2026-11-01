@@ -50,10 +50,12 @@ const run = async () => {
     if (opts.system.startsWith("You decide")) return { decision: "now", why: "It stops the export working" };
     if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
     await planHeld;
+    if (planRefusal) throw new Error(planRefusal);
     return { summary: "Ship the export.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
   };
   let suggesting = [first.key, second.key];
   let planHeld = Promise.resolve();
+  let planRefusal = "";
   ctx.items.update(project.id, first.id, { blocks: [second.id] }, "human");
   const starts = [];
   ctx.codeLink.start = async (_projectId, itemId, opts) => {
@@ -134,6 +136,12 @@ const run = async () => {
   check("and the answer goes with it", !(await $(text("plan-pick-note"))));
   await press(`document.querySelector('[data-testid="plan-pick-suggested"]')`);
   check("Suggested brings it back", await waitFor(`document.querySelectorAll('.plan-node.is-chosen').length === 2`));
+  planRefusal = '400 {"type":"error","error":{"message":"Your credit balance is too low"}}';
+  await press(test("plan-again"));
+  check("a failed analysis says what stopped it", await waitFor(`(${text("plan-why")}).includes('Your credit balance is too low')`), await $(text("plan-summary")));
+  planRefusal = "";
+  await press(test("plan-again"));
+  await waitFor(`${text("plan-summary")}.includes('Ship the export')`);
   suggesting = [];
   await press(test("plan-again"));
   check("a plan that suggests nothing says so, and the button is off", await waitFor(`${text("plan-pick-note")}.includes('suggests no tickets') && ${test("plan-pick-suggested")}.disabled`), await $(text("plan-pick-note")));

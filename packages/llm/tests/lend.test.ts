@@ -5,7 +5,7 @@
 import os from "node:os";
 import path from "node:path";
 import { Context } from "cordis";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Settings } from "@tomradex/settings";
 import { LENDER_WAIT_MS, LENT_CONCURRENCY, Llm, transcriptOf, userMessage, type ChatModel, type ChatRequest } from "@tomradex/llm";
@@ -147,4 +147,59 @@ it("flattens a repair round into one prompt", () => {
   expect(transcriptOf([userMessage("plan it")])).toBe("plan it");
   const prompt = transcriptOf([userMessage("plan it"), { role: "assistant", content: [{ type: "text", text: "{bad" }] }, userMessage("fix the JSON")]);
   expect(prompt).toBe("USER:\nplan it\n\nYOU (earlier):\n{bad\n\nUSER:\nfix the JSON");
+});
+
+async function withProfile(name: string, worker = "") {
+  const ctx = new Context();
+  await ctx.plugin(Settings, { path: path.join(os.tmpdir(), `tomrade-lend-${name}-${Date.now()}.json`) });
+  await ctx.plugin(Llm);
+  ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ id: "p", title: "", provider: "openai-compatible", apiKey: "k", model: "m" }], roles: { worker } } });
+  const fromProfile: ChatRequest[] = [];
+  vi.spyOn(ctx.llm, "for").mockReturnValue(lent('{"n":9}', fromProfile));
+  return { ctx, fromProfile };
+}
+
+const refusing: ChatModel = {
+  capabilities: { tools: false, streaming: false, json: false },
+  async *chat() {
+    throw new Error("out of credit");
+  }
+};
+
+it("a call that prefers an engine asks that agent before a profile, and the first ready one when it cannot", async () => {
+  const { ctx, fromProfile } = await withProfile("prefer");
+  const schema = z.object({ n: z.number() });
+  let namedReady = true;
+  ctx.llm.lend({ id: "first", title: "First", rank: 10, ready: async () => true, model: lent('{"n":1}', []) });
+  ctx.llm.lend({ id: "named", title: "Named", rank: 20, ready: async () => namedReady, model: lent('{"n":2}', []) });
+
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u", preferEngine: "named" })).toEqual({ n: 2 });
+  namedReady = false;
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u", preferEngine: "named" })).toEqual({ n: 1 });
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u", preferEngine: "tomrade" })).toEqual({ n: 1 });
+  expect(fromProfile).toEqual([]);
+  // without the wish, a profile still answers worker calls
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u" })).toEqual({ n: 9 });
+});
+
+it("falls back to the worker when the preferred agent fails", async () => {
+  const { ctx } = await withProfile("fallback");
+  ctx.llm.lend({ id: "named", title: "Named", ready: async () => true, model: refusing });
+  expect(await ctx.llm.completeJson(z.object({ n: z.number() }), { system: "s", user: "u", preferEngine: "named" })).toEqual({ n: 9 });
+});
+
+it("asks a failing agent only once when it is the worker too", async () => {
+  const ctx = new Context();
+  await ctx.plugin(Settings, { path: path.join(os.tmpdir(), `tomrade-lend-once-${Date.now()}.json`) });
+  await ctx.plugin(Llm);
+  const chat = vi.spyOn(refusing, "chat");
+  ctx.llm.lend({ id: "named", title: "Named", ready: async () => true, model: refusing });
+  await expect(ctx.llm.completeJson(z.object({ n: z.number() }), { system: "s", user: "u", preferEngine: "named" })).rejects.toThrow(/out of credit/);
+  expect(chat).toHaveBeenCalledTimes(1);
+});
+
+it("a worker the person picked is not passed over", async () => {
+  const { ctx } = await withProfile("chosen", "p");
+  ctx.llm.lend({ id: "named", title: "Named", ready: async () => true, model: lent('{"n":2}', []) });
+  expect(await ctx.llm.completeJson(z.object({ n: z.number() }), { system: "s", user: "u", preferEngine: "named" })).toEqual({ n: 9 });
 });
