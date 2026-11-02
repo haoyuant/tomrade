@@ -159,9 +159,9 @@
   50% { opacity: calc(var(--peak) * 0.5); }
 }
 @keyframes sun-dust-turn {
-  0%, 100% { opacity: 0.25; }
+  0%, 100% { opacity: 0.5; }
   40% { opacity: 1; }
-  65% { opacity: 0.5; }
+  65% { opacity: 0.7; }
 }
 /* A loop, so nothing jumps when it comes round, and linear, so nothing stops on its way. */
 @keyframes sun-drift {

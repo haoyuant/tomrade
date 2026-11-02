@@ -38,7 +38,7 @@ function mote(smallest: number, largest: number, lean: number, bright = 1): Mote
 function field(count: number, smallest: number, largest: number, lean: number, haloFrom: number, faint = 0) {
   const motes = Array.from({ length: count }, () => mote(smallest, largest, lean));
   // Spread evenly, and static inside the dust's layers, so they cost no animation of their own.
-  const specks = Array.from({ length: faint }, () => mote(1, 2.4, 1, 0.5));
+  const specks = Array.from({ length: faint }, () => mote(2.4, 4, 1, 0.75));
   const dust = [...motes.filter((m) => m.size < DUST_BELOW), ...specks];
   const lights = motes.filter((m) => m.size >= DUST_BELOW).map((m) => ({ ...m, halo: m.size >= haloFrom }));
   return Array.from({ length: GROUPS }, (_, g) => ({
@@ -49,7 +49,7 @@ function field(count: number, smallest: number, largest: number, lean: number, h
 
 // Picked once a window: the same field across themes and renders, and no two windows alike.
 const FIELDS = {
-  sunrise: field(48, 2, 10, 0.75, 6, 20),
+  sunrise: field(48, 2, 10, 0.75, 6, 80),
   daybreak: field(14, 13, 27, 1, 15)
 };
 
