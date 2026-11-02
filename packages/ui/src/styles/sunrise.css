@@ -115,7 +115,9 @@
 /* Sunrise's dust and Daybreak's brightest stars (Motes.tsx). Last in the document at the sky's level, so they stand over
    the assistant's floor and under everything else. Each changes a little in brightness and size on one animation, and
    the larger ones in glow on a halo beside them. A halo is a sibling, never a child: a composited child under a fading
-   parent makes the GPU draw that light to an offscreen surface, about 1% of a GPU core per halo as measured. */
+   parent makes the GPU draw that light to an offscreen surface, about 1% of a GPU core per halo as measured. Sunrise's
+   dust also wanders slowly, in three groups: one animation each moves every light in them, where one per light cost a
+   third more of the page's process as measured. :where() keeps that below the still lists. */
 .sun-motes { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; contain: strict; }
 .sun-mote, .sun-halo { position: absolute; left: var(--x); top: var(--y); width: var(--size); height: var(--size); }
 .sun-mote {
@@ -127,10 +129,19 @@
   background: radial-gradient(circle, var(--sun-mote-halo), transparent 68%);
   animation: sun-mote-glow var(--glow) ease-in-out var(--blink-from) infinite;
 }
-.sun-dust { position: absolute; inset: 0; opacity: 0.6; animation: sun-dust-turn 11s ease-in-out -3s infinite; }
-.sun-dust:nth-child(2) { animation-duration: 13s; animation-delay: -9s; }
-.sun-dust:nth-child(3) { animation-duration: 17s; animation-delay: -6s; }
-.sun-dust .sun-mote { opacity: var(--peak); animation: none; }
+.sun-drift { position: absolute; inset: 0; }
+:where(.sunrise) .sun-drift { --drift-x: 110px; --drift-y: -90px; animation: sun-drift 67s linear -20s infinite; }
+:where(.sunrise) .sun-drift:nth-child(2) { --drift-x: -95px; --drift-y: -115px; animation-duration: 79s; animation-delay: -51s; }
+:where(.sunrise) .sun-drift:nth-child(3) { --drift-x: 120px; --drift-y: 80px; animation-duration: 59s; animation-delay: -33s; }
+/* A group's dust is one canvas (Motes.tsx), not painted elements: a composited element is rastered whole at the screen's
+   resolution, so three window-sized layers of sparse dust took 420 MB on a large window. A canvas keeps its own low
+   resolution. It reaches past the window by more than a group wanders. */
+.sun-dust {
+  position: absolute; left: -130px; top: -130px; width: calc(100% + 260px); height: calc(100% + 260px); opacity: 0.6;
+  animation: sun-dust-turn 11s ease-in-out -3s infinite;
+}
+.sun-drift:nth-child(2) .sun-dust { animation-duration: 13s; animation-delay: -9s; }
+.sun-drift:nth-child(3) .sun-dust { animation-duration: 17s; animation-delay: -6s; }
 .sunrise { --sun-mote-halo: rgba(255, 196, 110, 0.5); }
 .daybreak { --sun-mote-halo: rgba(196, 184, 255, 0.42); }
 .sunrise .sun-mote {
@@ -153,9 +164,16 @@
   50% { opacity: calc(var(--peak) * 0.5); }
 }
 @keyframes sun-dust-turn {
-  0%, 100% { opacity: 0.25; }
+  0%, 100% { opacity: 0.5; }
   40% { opacity: 1; }
-  65% { opacity: 0.5; }
+  65% { opacity: 0.7; }
+}
+/* A loop, so nothing jumps when it comes round, and linear, so nothing stops on its way. */
+@keyframes sun-drift {
+  0%, 100% { translate: 0 0; }
+  25% { translate: var(--drift-x) calc(var(--drift-y) * 0.4); }
+  50% { translate: calc(var(--drift-x) * 0.5) var(--drift-y); }
+  75% { translate: calc(var(--drift-x) * -0.5) calc(var(--drift-y) * 0.5); }
 }
 
 /* The sidebar lets the sky through instead of covering it. */
@@ -235,13 +253,15 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 [data-software-compositing] .sun-mote,
 [data-software-compositing] .sun-halo,
 [data-software-compositing] .sun-dust,
+[data-software-compositing] .sun-drift,
 [data-performance]:is(.sunrise, .daybreak) body::before,
 [data-performance]:is(.sunrise, .daybreak) body::after,
 [data-performance]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-performance]:is(.sunrise, .daybreak) .ai::after,
 [data-performance] .sun-mote,
 [data-performance] .sun-halo,
-[data-performance] .sun-dust { animation: none; }
+[data-performance] .sun-dust,
+[data-performance] .sun-drift { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   :is(.sunrise, .daybreak) body::before,
   :is(.sunrise, .daybreak) body::after,
@@ -249,6 +269,7 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
   :is(.sunrise, .daybreak) .ai::after,
   .sun-mote,
   .sun-halo,
-  .sun-dust { animation: none; }
+  .sun-dust,
+  .sun-drift { animation: none; }
 }
 }
