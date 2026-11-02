@@ -845,6 +845,8 @@ strong { font-weight: var(--font-weight-medium); }
 /* The column beside the sidebar: the tab strip over whatever the open tab shows.
  * It carries the board's old sizing, so the detail pane still squeezes it the same way. */
 .main-col { display: flex; flex-direction: column; min-height: 0; flex: 1 1 362px; min-width: 362px; }
+/* between the three-pane floor and what three panes really take, the board gives way: the detail must not run under the assistant */
+.workspace:has(> .detail) .main-col { min-width: 0; flex-shrink: 3; }
 .main-col > .board-region { flex: 1 1 0; min-width: 0; }
 .tab-strip {
   display: flex; align-items: stretch; gap: 2px;
