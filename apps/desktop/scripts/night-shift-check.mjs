@@ -210,9 +210,14 @@ const run = async () => {
 
   // ── choosing ──────────────────────────────────────────────────────────
   check("To Do is chosen, Backlog is not", await $(`${candidate("Add the export button")}.querySelector('input').checked && ${candidate("Write the export docs")}.querySelector('input').checked && !${candidate("A long one")}.querySelector('input').checked`));
-  check("a dependant says it needs automatic merging", (await $(`${candidate("Write the export docs")}.textContent`)).includes("starts only with automatic merging"));
-  await press(test("night-shift-auto-merge"));
+  check("automatic merging starts ticked, with no warning", await $(`${test("night-shift-auto-merge")}.checked && !${test("night-shift-no-merge-warning")}`));
   check("with it on, it says what it waits for", await waitFor(`${candidate("Write the export docs")}.textContent.includes('After AL-')  && !${candidate("Write the export docs")}.textContent.includes('only with')`));
+  await press(test("night-shift-auto-merge"));
+  check("turning it off warns what that does to the run", await waitFor(`${test("night-shift-no-merge-warning")}?.textContent.includes('stall')`));
+  check("and a dependant says it needs automatic merging", await waitFor(`${candidate("Write the export docs")}.textContent.includes('starts only with automatic merging')`));
+  check("the warning does not stop a start", await $(`!${test("night-shift-start")}.disabled`));
+  await press(test("night-shift-auto-merge"));
+  check("turning it back on takes the warning away", await waitFor(`!${test("night-shift-no-merge-warning")}`));
 
   // ── where it runs ─────────────────────────────────────────────────────
   const pressed = () => $(`${test("night-shift-mode")}.querySelector('[aria-pressed="true"]').dataset.mode`);
