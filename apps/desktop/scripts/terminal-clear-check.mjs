@@ -1,4 +1,4 @@
-// Real TerminalCell on a clear terminal: dim and italic cells stay see-through, inverse text stays light (patches/@xterm__addon-webgl).
+// Real TerminalCell on a clear terminal: dim and italic cells stay see-through, dim text keeps its contrast, inverse text stays light (patches/@xterm__addon-webgl).
 // Run: pnpm --filter @tomrade/desktop exec electron scripts/terminal-clear-check.mjs
 import { app, BrowserWindow } from "electron";
 import assert from "node:assert/strict";
@@ -29,7 +29,7 @@ app.whenReady().then(async () => {
   const js = (code) => win.webContents.executeJavaScript(code);
   const wait = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
   try {
-    await win.loadURL(`data:text/html,<html><body style='margin:0;background:${encodeURIComponent(PAGE)};--surface: %23ffffff; --fg: %23201a18'><div id='term' style='width:700px;height:300px'></div></body></html>`);
+    await win.loadURL(`data:text/html,<html><body style='margin:0;background:${encodeURIComponent(PAGE)};--surface: %23fffdfd; --fg: %23241b3a'><div id='term' style='width:700px;height:300px'></div></body></html>`);
     await win.webContents.insertCSS(fs.readFileSync(require.resolve("@xterm/xterm/css/xterm.css"), "utf8"));
     await js(`window.sent = []; window.tomradeSurface = {send: m => sent.push(m), onMessage: fn => {window.receive = fn; return () => {}}}; void 0;`);
     await js(bundle.outputFiles[0].text + "\nvoid 0;");
@@ -53,7 +53,13 @@ app.whenReady().then(async () => {
       assert.equal(gap(row), PAGE, `${ROWS[row][0]} cells leave the page showing`);
       console.log("PASS", ROWS[row][0], "cells leave the page showing");
     }
-    assert.equal(gap(3), "#201a18", "inverse cells are filled with the text colour");
+    // Half the text colour over the page, as dim text is on an opaque background; a glyph's alpha left squared lets the page wash it out.
+    let darkest = 255;
+    for (let y = box.y + box.h; y < box.y + box.h * 2; y += .5) for (let x = box.x; x < box.x + box.w * 2; x += .5) darkest = Math.min(darkest, pixel(x, y)[1]);
+    const half = (0x1b + 0xdc) / 2;
+    assert.ok(Math.abs(darkest - half) <= 12, `dim text is half the text colour over the page: ${darkest}, not about ${half}`);
+    console.log("PASS dim text is half the text colour over the page");
+    assert.equal(gap(3), "#241b3a", "inverse cells are filled with the text colour");
     console.log("PASS inverse cells are filled with the text colour");
     let brightest = 0;
     for (let y = box.y + box.h * 3; y < box.y + box.h * 4; y += .5) for (let x = box.x; x < box.x + box.w * 2; x += .5) brightest = Math.max(brightest, pixel(x, y)[1]);

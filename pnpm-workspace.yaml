@@ -23,5 +23,7 @@ overrides:
 
 # xterm keeps dim and italic in a cell's background word, so WebGL painted them an
 # opaque block on a clear terminal: its rectangles read colour bits only.
+# Its glyphs blend alpha apart from colour: on a clear canvas alpha came out squared,
+# and the page washed dim text out.
 patchedDependencies:
   '@xterm/addon-webgl@0.18.0': patches/@xterm__addon-webgl@0.18.0.patch
