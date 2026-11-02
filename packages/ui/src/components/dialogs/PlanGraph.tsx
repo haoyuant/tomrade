@@ -154,7 +154,8 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
   // The box only ever adds: taking a ticket off is a click on it.
   const boxed = useRef<string[]>([]);
   return (
-    <div className="plan-canvas" ref={region}>
+    <div className="plan-canvas">
+      <div className="plan-flow" ref={region}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -186,6 +187,7 @@ function Canvas({ items, links, chosen, subOf, subs, onToggle, onAdd, onConfigur
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--border-soft)" />
       </ReactFlow>
+      </div>
       <div className="graph-foot">
         <span className="meta-txt dense graph-hint">{hint ?? t(onAdd ? "nightShift.graphHintChoose" : "nightShift.graphHintWatch")}</span>
         <div className="graph-actions">
