@@ -373,7 +373,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [maxConcurrency, setMaxConcurrency] = useState(DEFAULT_MAX_CONCURRENCY);
   const [maxHours, setMaxHours] = useState(8);
   const [maxUsd, setMaxUsd] = useState("");
-  const [autoMerge, setAutoMerge] = useState(false);
+  const [autoMerge, setAutoMerge] = useState(true);
   const [keepAwake, setKeepAwake] = useState(true);
   const [notify, setNotify] = useState<"steps" | "stuck">("steps");
   const [maxInserts, setMaxInserts] = useState(3);
@@ -622,7 +622,11 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           <input type="checkbox" data-testid="night-shift-auto-merge" checked={autoMerge} onChange={(event) => setAutoMerge(event.target.checked)} />
           <span className="cfg-name">{t("nightShift.autoMerge")}</span>
         </label>
-        <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        {autoMerge ? (
+          <p className="meta-txt">{t("nightShift.autoMergeHint")}</p>
+        ) : (
+          <p className="start-warning" role="note" data-testid="night-shift-no-merge-warning"><Icon name="i-warn" size={13} /><span>{t("nightShift.noAutoMergeWarning")}</span></p>
+        )}
         <Field label={t("nightShift.notify")} htmlFor="nsNotify">
           <select id="nsNotify" className="select" data-testid="night-shift-notify" value={notify} onChange={(event) => setNotify(event.target.value as "steps" | "stuck")}>
             <option value="steps">{t("nightShift.notifySteps")}</option>
