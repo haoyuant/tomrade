@@ -251,8 +251,31 @@ export function spawnCli(launch: CliLaunch, args: string[], options: SpawnOption
   return spawn(spec.command, spec.args, { ...options, env: launch.env(options.env), windowsHide: true, windowsVerbatimArguments: spec.verbatim });
 }
 
+/** What spawnCliTree started: each leads a process group, which goes on after it while anything it started lives. */
+const groups = new WeakSet<ChildProcess>();
+
+/**
+ * spawnCli for an agent that starts processes of its own and can hang on the way out: Gemini CLI runs itself again as a
+ * child, and stopping only the one Tomrade started leaves that child running for good. On Windows stopCli takes the tree.
+ */
+export function spawnCliTree(launch: CliLaunch, args: string[], options: SpawnOptions & { env?: NodeJS.ProcessEnv } = {}): ChildProcess {
+  const detached = process.platform !== "win32";
+  const child = spawnCli(launch, args, { ...options, detached });
+  if (detached) groups.add(child);
+  return child;
+}
+
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (child.pid) process.kill(-child.pid, signal);
+  } catch {
+    // nothing in the group is left
+  }
+}
+
 /** On Windows a signal reaches only the process itself; a CLI's own children (node → codex.exe) need the tree taken down. */
 export function stopCli(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
+  if (groups.has(child)) return signalGroup(child, signal);
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32" && child.pid) {
     const kill = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
@@ -264,6 +287,7 @@ export function stopCli(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM")
 
 /** stopCli for a `process.on("exit")` handler, where nothing asynchronous runs: taskkill waits, so the tree is gone before Tomrade is. */
 export function stopCliNow(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
+  if (groups.has(child)) return signalGroup(child, signal);
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32" && child.pid && !spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).error) return;
   child.kill(signal);

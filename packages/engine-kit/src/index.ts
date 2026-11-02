@@ -2,7 +2,7 @@ export { localAvailability, chosenCommand, desktopAppPaths, type DesktopApp } fr
 export { lineSplitter, runJsonl, signedIn, type CliRun } from "./cli.js";
 export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
 export {
-  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, stopCliNow, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
+  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, spawnCliTree, stopCli, stopCliNow, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
   installDirs, searchPath, findCommand, machineHost, archiveFolder,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult
 } from "./locate.js";
