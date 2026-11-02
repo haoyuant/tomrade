@@ -478,6 +478,45 @@ describe("planning a run", () => {
     }
   });
 
+  it("asks the model again only when what it would be shown changed, or when told to", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const board = f.ctx.boards.list(f.project.id)[0]!.id;
+      const a = f.items.create({ projectId: f.project.id, boardId: board, title: "A", status: "todo", workType: "coding", by: "human" });
+      llm.planReply = { summary: "Do A.", suggested: [a.key], excluded: [], dependencies: [] };
+      const calls = llm.calls;
+      const plan = () => f.ctx.nightShift.plan(f.project.id);
+      await Promise.all([plan(), plan()]);
+      expect(llm.calls).toBe(calls + 1);
+      expect(await plan()).toMatchObject({ analyzed: true, summary: "Do A." });
+      expect(llm.calls).toBe(calls + 1);
+      await f.ctx.nightShift.plan(f.project.id, true);
+      expect(llm.calls).toBe(calls + 2);
+      f.items.update(f.project.id, a.id, { title: "A, renamed" }, "human");
+      await plan();
+      expect(llm.calls).toBe(calls + 3);
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("keeps no failed plan, and applies today's rules to a kept one", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const a = f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title: "A", status: "todo", workType: "coding", by: "human" });
+      llm.refusal = "the model fell over";
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: false });
+      llm.planReply = { summary: "Do A.", suggested: [a.key], excluded: [], dependencies: [] };
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ analyzed: true, nodes: [{ suggested: true }] });
+      const calls = llm.calls;
+      f.ctx.nightShift.setRules(f.project.id, [{ id: "r1", name: "Not this", when: { titleHas: "A" }, then: { skip: true } }]);
+      expect(await f.ctx.nightShift.plan(f.project.id)).toMatchObject({ nodes: [{ suggested: false, why: "Left out by the rule “Not this”" }] });
+      expect(llm.calls).toBe(calls);
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
   it("falls back to the tickets when the model fails, and when there is none", async () => {
     const { f, llm } = await bootWithReport();
     try {

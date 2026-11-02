@@ -11,7 +11,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/files";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
-import type {} from "@tomradex/llm";
+import type { LlmService } from "@tomradex/llm";
 import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
@@ -113,6 +113,8 @@ export interface StepNotice {
   body: string;
 }
 
+type PlanAnswer = { reply: PlanReply | null; failed: string };
+
 export interface NightShiftView extends Omit<NightShift, "tickets" | "steps" | "found"> {
   tickets: NightShiftTicketView[];
   steps: NightShiftStepView[];
@@ -142,7 +144,8 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "nightShift.current": (projectId: string) => NightShiftView | null;
     "nightShift.list": (projectId: string, limit?: number) => NightShiftView[];
-    "nightShift.plan": (projectId: string) => ShiftPlan;
+    /** `fresh` asks the model even though nothing it would be shown has changed. */
+    "nightShift.plan": (projectId: string, fresh?: boolean) => ShiftPlan;
     "nightShift.rules": (projectId: string) => WorkRule[];
     "nightShift.setRules": (projectId: string, rules: WorkRule[]) => WorkRule[];
     /** Which rule each open ticket falls under, by ticket id. */
@@ -227,6 +230,8 @@ export class NightShifts extends Service {
   private readonly going = new Set<string>();
   private readonly arrivals = new Map<string, Arrival[]>();
   private readonly proposals = new Map<string, { view: ShiftProposal; input: NightShiftInput; timer: ReturnType<typeof setTimeout> }>();
+  /** Each project's last plan and what the model was shown for it; a failed one is not kept. */
+  private readonly plans = new Map<string, { asked: string; answer: Promise<PlanAnswer> }>();
 
   constructor(
     ctx: Context,
@@ -260,7 +265,7 @@ export class NightShifts extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("nightShift.current", (projectId) => ctx.nightShift.current(projectId));
       ctx.ipc.handle("nightShift.list", (projectId, limit) => ctx.nightShift.list(projectId, limit));
-      ctx.ipc.handle("nightShift.plan", (projectId) => ctx.nightShift.plan(projectId));
+      ctx.ipc.handle("nightShift.plan", (projectId, fresh) => ctx.nightShift.plan(projectId, fresh));
       ctx.ipc.handle("nightShift.rules", (projectId) => ctx.nightShift.rules(projectId));
       ctx.ipc.handle("nightShift.setRules", (projectId, rules) => ctx.nightShift.setRules(projectId, rules));
       ctx.ipc.handle("nightShift.ruleMatches", (projectId) => ctx.nightShift.ruleMatches(projectId));
@@ -394,7 +399,7 @@ export class NightShifts extends Service {
   }
 
   /** The person's starting point for a run. It always answers: with no model, or a model that fails, it is the backlog's own facts. */
-  async plan(projectId: string): Promise<ShiftPlan> {
+  async plan(projectId: string, fresh = false): Promise<ShiftPlan> {
     if (!this.home.db.has(projectId)) throw new Error("That project is not open on this machine");
     const items = this.home.items.listAll(projectId);
     const w = NIGHT_SHIFT_WORDS(this.locale());
@@ -413,15 +418,27 @@ export class NightShifts extends Service {
     const llm = this.home.get("llm");
     const worker = llm ? await llm.worker().catch(() => null) : null;
     if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding, w("planNoEngine")));
-    let failed = "";
-    const reply = await llm
-      .completeJson(PlanReply, { system: planSystem(languageName(this.locale())), user: planUser(items, this.home.agent.brief(projectId)), maxTokens: 4000, timeoutMs: PLAN_TIMEOUT_MS, purpose: "night-shift", ...this.defaultAgent() })
-      .catch((err: unknown) => {
-        this.home.logger.warn(`auto run plan: ${errorMessage(err)}`);
-        failed = plainError(err);
-        return null;
-      });
+    const system = planSystem(languageName(this.locale()));
+    const user = planUser(items, this.home.agent.brief(projectId));
+    const asked = `${system}\n${user}`;
+    const kept = this.plans.get(projectId);
+    const { reply, failed } = await (!fresh && kept?.asked === asked ? kept.answer : this.askPlan(llm, projectId, asked, system, user));
     return ruled(readPlan(items, reply, notCoding, w("planFailed", { detail: failed })));
+  }
+
+  private askPlan(llm: LlmService, projectId: string, asked: string, system: string, user: string): Promise<PlanAnswer> {
+    const answer: Promise<PlanAnswer> = llm
+      .completeJson(PlanReply, { system, user, maxTokens: 4000, timeoutMs: PLAN_TIMEOUT_MS, purpose: "night-shift", ...this.defaultAgent() })
+      .then(
+        (reply) => ({ reply, failed: "" }),
+        (err: unknown) => {
+          this.home.logger.warn(`auto run plan: ${errorMessage(err)}`);
+          if (this.plans.get(projectId)?.answer === answer) this.plans.delete(projectId);
+          return { reply: null, failed: plainError(err) };
+        }
+      );
+    this.plans.set(projectId, { asked, answer });
+    return answer;
   }
 
   /** As in a conversation, the default engine does a run's thinking; one that runs on Tomrade's profiles leaves it to the worker. */
