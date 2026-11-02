@@ -3676,12 +3676,17 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }
 
 /* Night shift */
-.palette.modal.sheet-plan { width: min(1280px, calc(100vw - 64px)); height: var(--overlay-max-h); max-height: var(--overlay-max-h); }
+.palette.modal.sheet-plan {
+  container-type: size;
+  width: min(1280px, calc(100vw - 64px)); height: var(--overlay-max-h);
+  min-width: min(640px, calc(100vw - 64px)); max-width: calc(100vw - 64px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
+}
 .night-shift-pick { max-height: 240px; overflow-y: auto; }
 .plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .plan-tools .btn .num { margin-left: 6px; color: var(--meta); }
 /* the sheet's own height less what stands above the graph, so it opens filling the view */
-.plan-graph { flex: none; height: clamp(340px, calc(var(--overlay-max-h) - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.plan-graph { flex: none; height: clamp(340px, calc(100cqh - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
 /* the plan draws the board's graph: what it adds is a tick, a settings button, a note under the card, and where a run stands */
 .plan-canvas { position: absolute; inset: 0; }
