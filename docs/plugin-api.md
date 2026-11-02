@@ -462,8 +462,9 @@ exported for a provider that wants the same behaviour over its own `ChatModel`.
 Keep optional fields in a schema forgiving (`.catch(undefined)`), so a cosmetic
 slip does not cost the whole document.
 
-While no profile is configured, a plugin can **lend** a model for the worker
-role: `ctx.llm.lend({ id, title, rank, ready, model })` returns its withdrawal
+A plugin can **lend** a model for the worker role, which answers while no
+profile is configured and whenever the worker fails:
+`ctx.llm.lend({ id, title, rank, ready, model })` returns its withdrawal
 (wrap it in `ctx.effect`). The Claude Code, WorkBuddy (CodeBuddy), Codex and
 Gemini CLI engines lend their signed-in CLI this way — one prompt, no tools, no
 session — so planning works with a subscription and no API key. Automatic asks
@@ -473,11 +474,22 @@ status command can build its lent model with `cliLentModel` from
 `@tomradex/engine-kit`: it learns the sign-in from one tiny prompt and
 from each call, and `llm.lenders` shows it as still checking (`ready: null`)
 meanwhile. The person can also pick a lent model for the
-worker over a profile (`roles.worker: "lent:<id>"`); a picked one that is not
-ready makes the call fail with the reason, never a silent switch. At most
-`LENT_CONCURRENCY` lent calls run at once. `ctx.llm.worker()` says who answers worker calls
-(`via: "profile" | "lent"`); `ready()` still answers for profiles only, because
-a lent model has no tools to run the loop engine with.
+worker over a profile (`roles.worker: "lent:<id>"`). At most `LENT_CONCURRENCY`
+lent calls run at once.
+
+The worker the person picked or Automatic chose goes first. When it fails, is
+not ready, or runs out of credit, the first ready lent model other than the one
+that failed answers instead, and a `warn` line says so; its usage counts for the
+model that answered. A failed profile is left alone for `WORKER_COOLDOWN_MS`
+while an agent can answer, until settings change. Nothing moves to another
+profile, which would spend a key the person did not pick. Neither a cancelled
+call, a call out of its caller's time (`signal`, `timeoutMs`), nor an answer that
+fails the schema moves on, and the stand-in gets only the time left. When nobody
+can answer, the error is the worker's own.
+
+`ctx.llm.worker()` says who would answer now (`via: "profile" | "lent"`), the
+stand-in included; `ready()` still answers for profiles only, because a lent
+model has no tools to run the loop engine with.
 
 Quick setup lives in the same plugin, so the UI knows no provider: `llm.providers`
 lists the well-known ones in the reader's order, `llm.guess` reads a pasted key's

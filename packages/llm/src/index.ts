@@ -12,7 +12,7 @@ import { BUILTIN_PROVIDERS } from "./builtin-providers.js";
 import { sameCapabilities, type ModelCapabilities } from "./capabilities.js";
 import { contract, errorMessage } from "@tomradex/contracts";
 export { ImagesModel } from "./images.js";
-import { LlmError, MediaRefused } from "./errors.js";
+import { LlmError, MediaRefused, NotAModelFailure } from "./errors.js";
 import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
 import { withPromptTools } from "./prompt-tools.js";
 import type { ModelProviderSpec, ModelProviderView, ProviderSignIn } from "./provider.js";
@@ -112,8 +112,9 @@ export interface LlmStatus {
 
 /**
  * A model another plugin answers one-shot prompts with — a local agent the
- * person is signed in to. It stands in for the worker role only while no
- * profile is configured, so planning works with a subscription and no API key.
+ * person is signed in to. It answers worker calls while no profile is
+ * configured, so planning works with a subscription and no API key, and stands
+ * in when the worker fails, so a key out of credit does not stop planning.
  */
 export interface LentModel {
   id: string;
@@ -163,6 +164,9 @@ export const LENDER_WAIT_MS = 1500;
 
 /** Lent calls start local processes; past this many at once, the rest wait their turn. */
 export const LENT_CONCURRENCY = 2;
+
+/** How long a worker profile that failed is left alone while an agent can answer: time-limited callers would spend their limit on it failing again. */
+export const WORKER_COOLDOWN_MS = 10 * 60_000;
 
 /** A sign-in ends in the key the profile keeps, or says why not. */
 export type SignInResult = { ok: true; apiKey: string } | { ok: false; detail: string };
@@ -215,7 +219,7 @@ export interface LlmService extends LLMProvider {
   tested(profile: Pick<ModelProfile, "provider" | "baseURL" | "apiKey" | "model">): KeptTest | null;
   /** The models an endpoint lists that a profile of its kind can use. */
   listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing>;
-  /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
+  /** Offer a model for worker calls: while no profile is configured, and in place of a worker that fails. Returns the withdrawal. */
   lend(model: LentModel): () => void;
   worker(): Promise<WorkerStatus>;
   /** The worker profile's remembered one-token test, run once when nothing is remembered; null when the worker is not a profile. */
@@ -339,7 +343,7 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
     problem = out.stop === "max_tokens" ? "it was cut off at the output limit" : result.problem;
     messages.push(assistantMessage({ text: out.text, toolCalls: [] }), userMessage(`That reply does not fit the required JSON shape (${problem}). Reply with the corrected JSON document only.`));
   }
-  throw new LlmError(`${label} returned output that failed schema validation — ${problem}`);
+  throw new NotAModelFailure(`${label} returned output that failed schema validation — ${problem}`);
 }
 
 /**
@@ -361,7 +365,7 @@ async function collectWithin(
   };
   const why = (): unknown =>
     idle.signal.aborted ? new LlmError(opts.streaming ? `${opts.label} sent nothing for ${quietMs / 1000}s` : `${opts.label} did not answer within ${quietMs / 60_000} minutes`)
-    : opts.deadline?.aborted ? new LlmError(`${opts.label} did not answer within ${(opts.timeoutMs ?? 0) / 1000}s`)
+    : opts.deadline?.aborted ? new NotAModelFailure(`${opts.label} did not answer within ${(opts.timeoutMs ?? 0) / 1000}s`)
     : opts.signal?.reason ?? new LlmError(`${opts.label} request was cancelled`);
   let onAbort = () => {};
   const aborted = new Promise<never>((_, reject) => {
@@ -415,6 +419,8 @@ export class Llm extends Service implements LlmService {
   private refused = new RefusedMedia();
   private keptTests = new KeptTests();
   private testingNow = new Map<string, Promise<WorkerTest>>();
+  /** By profile content, so a call still running on the old key cannot cool the one just saved. */
+  private cooling = new Map<string, { until: number; why: unknown }>();
 
   constructor(ctx: Context, config: LlmConfig = { builtins: true }) {
     super(ctx, "llm");
@@ -459,6 +465,7 @@ export class Llm extends Service implements LlmService {
     this.ctx.inject(["webSearch"], (ctx) => this.offerSearches(ctx));
     this.ctx.on("settings/changed", () => {
       this.cache.clear();
+      this.cooling.clear();
       this.refused.keepFor(this.models().profiles);
     });
     void this.redetect().catch((err) => this.ctx.logger.warn(`model media not re-detected: ${errorMessage(err)}`));
@@ -671,15 +678,40 @@ export class Llm extends Service implements LlmService {
         this.ctx.logger.warn(`${agent.title} could not answer, so the worker is asked: ${errorMessage(err)}`);
       }
     }
-    const source = await this.workerSource();
-    if (source.kind === "lent") {
-      if (source.lent === agent) throw refusal;
-      return this.askLent(source.lent, schema, request);
+    const source = await this.workerSource(agent);
+    if (source.kind === "none") {
+      if (agent) throw refusal;
+      throw new LlmError(source.chosen ? source.reason : NO_PROFILE);
     }
-    if (source.kind === "none") throw new LlmError(source.chosen ? source.reason : NO_PROFILE);
-    const profile = source.profile;
+    if (source.kind === "lent" && source.insteadOf !== undefined) return this.askStandIn(source.lent, source.insteadOf, schema, request);
+    const began = Date.now();
+    try {
+      return await (source.kind === "lent" ? this.askLent(source.lent, schema, request) : this.askProfile(source.profile, schema, request));
+    } catch (err) {
+      if (err instanceof NotAModelFailure || request.signal?.aborted) throw err;
+      if (source.kind === "profile") this.cooling.set(testKey(source.profile), { until: Date.now() + WORKER_COOLDOWN_MS, why: err });
+      const standIn = await this.readyLent(agent, source.kind === "lent" ? source.lent : undefined);
+      if (!standIn) throw err;
+      const left = request.timeoutMs === undefined ? {} : { timeoutMs: Math.max(0, request.timeoutMs - (Date.now() - began)) };
+      return this.askStandIn(standIn, err, schema, { ...request, ...left });
+    }
+  }
+
+  private askProfile<T>(profile: ModelProfile, schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
     const label = `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)`;
     return this.tallied(`profile:${profile.id}`, profile.title || profile.model, request, (spent) => completeJson(this.for("worker"), schema, request, label, spent));
+  }
+
+  /** An agent's answer in place of a worker that cannot give one. When it fails too, `why` is what the caller hears: the worker is what the person has to fix. */
+  private async askStandIn<T>(lent: LentModel, why: unknown, schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
+    this.ctx.logger.warn(`${lent.title} answers for the worker: ${errorMessage(why)}`);
+    try {
+      return await this.askLent(lent, schema, request);
+    } catch (err) {
+      if (request.signal?.aborted) throw err;
+      this.ctx.logger.warn(`${lent.title} could not stand in for the worker: ${errorMessage(err)}`);
+      throw why;
+    }
   }
 
   private askLent<T>(lent: LentModel, schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
@@ -689,7 +721,7 @@ export class Llm extends Service implements LlmService {
     );
   }
 
-  /** The agent a call asked for, else the first that is ready. A worker the person picked is never passed over. */
+  /** The agent a call asked for, else the first that is ready. A worker the person picked goes first: an agent answers only once it fails. */
   private async preferredAgent(request: CompletionRequest): Promise<LentModel | undefined> {
     if (request.preferEngine === undefined || this.models().roles.worker) return undefined;
     const named = this.lent.find((m) => m.id === request.preferEngine);
@@ -721,21 +753,28 @@ export class Llm extends Service implements LlmService {
   }
 
   /**
-   * Who answers worker calls. A lent model the person chose is never swapped for
-   * another source behind their back: when it is not ready, the call says why.
+   * Who answers worker calls, `failed` having already been asked. A worker that
+   * cannot answer gives way to a ready agent, signed in and already paid for;
+   * `insteadOf` says why. Never to another profile: that is a key the person did
+   * not pick. With nobody to stand in, a cooling profile is still asked.
    */
-  private async workerSource(): Promise<{ kind: "profile"; profile: ModelProfile } | { kind: "lent"; lent: LentModel } | { kind: "none"; reason: string; chosen: boolean }> {
+  private async workerSource(failed?: LentModel): Promise<{ kind: "profile"; profile: ModelProfile } | { kind: "lent"; lent: LentModel; insteadOf?: unknown } | { kind: "none"; reason: string; chosen: boolean }> {
     const chosen = this.models().roles.worker;
     if (chosen.startsWith(LENT_WORKER)) {
       const id = chosen.slice(LENT_WORKER.length);
       const lent = this.lent.find((m) => m.id === id);
       if (lent && (await lent.ready().catch(() => false))) return { kind: "lent", lent };
-      const name = lent?.title ?? id;
-      return { kind: "none", chosen: true, reason: this.words()("workerUnavailable", { name }) };
+      const reason = this.words()("workerUnavailable", { name: lent?.title ?? id });
+      const standIn = await this.readyLent();
+      return standIn ? { kind: "lent", lent: standIn, insteadOf: new LlmError(reason) } : { kind: "none", chosen: true, reason };
     }
     const profile = this.profileFor("worker");
-    if (profile) return { kind: "profile", profile };
-    const lent = await this.readyLent();
+    if (profile) {
+      const cooling = this.cooling.get(testKey(profile));
+      const standIn = cooling && cooling.until > Date.now() ? await this.readyLent(failed) : undefined;
+      return standIn ? { kind: "lent", lent: standIn, insteadOf: cooling!.why } : { kind: "profile", profile };
+    }
+    const lent = await this.readyLent(failed);
     if (lent) return { kind: "lent", lent };
     return { kind: "none", chosen: false, reason: this.ready().reason ?? "" };
   }
@@ -883,8 +922,8 @@ export class Llm extends Service implements LlmService {
     return { ok: true, profile: { id, title: profile.title, model } };
   }
 
-  private async readyLent(): Promise<LentModel | undefined> {
-    for (const model of this.lent) if (await model.ready().catch(() => false)) return model;
+  private async readyLent(...skip: (LentModel | undefined)[]): Promise<LentModel | undefined> {
+    for (const model of this.lent) if (!skip.includes(model) && (await model.ready().catch(() => false))) return model;
     return undefined;
   }
 
