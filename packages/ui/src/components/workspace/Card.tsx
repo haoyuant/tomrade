@@ -179,7 +179,7 @@ const CardFace = memo(function CardFace({
         ) : session && (
           <span className="card-session" data-testid="card-session" title={session.title}>
             <span className="card-session-mark" aria-hidden="true" />
-            {session.label}
+            <span className="card-session-label">{session.label}</span>
           </span>
         )}
         {(epicName || item.labels.length > 0 || tags.length > 0 || customs.length > 0) && (
