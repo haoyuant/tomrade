@@ -260,7 +260,7 @@ export class AcpRuntime implements Runtime {
     let text = turnPrompt(input, io, { staleIndex: stale });
     // ACP has no system prompt of its own; the session's first message carries it, and the history keeps it.
     // A new session on a thread with history (the agent cannot reopen, or the thread came from another engine) gets the conversation too.
-    if (this.brief) { text = `${sessionSystem(input, this.agent.title)}\n\n${withRecap(io.recap?.(), text)}`; this.brief = false; }
+    if (this.brief) { text = `${sessionSystem(input, this.agent)}\n\n${withRecap(io.recap?.(), text)}`; this.brief = false; }
     const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/"));
     const seesImages = this.seesImages();
     if (images.length && !seesImages) io.emit({ type: "note", text: `${this.agent.title} takes no images in a prompt, so the attached ones were left out` });

@@ -224,6 +224,8 @@ describe("an ACP agent as an engine", () => {
     expect(sent("session/set_config_option").map((r) => [r.params.configId, r.params.value])).toEqual([["mode", "bypass"], ["model", '["fake","large"]'], ["reasoning_effort", "low"]]);
     const [first] = sent("session/prompt");
     expect(first.params.prompt[0].text).toContain("You are conducting a thread inside Tomrade");
+    expect(first.params.prompt[0].text).not.toContain("with your own tools first");
+    expect(engine.nativeWebSearch).toBeUndefined();
     expect(first.params.prompt[0].text).toContain("USER MESSAGE:\n\nhello");
     expect(first.params.prompt[1]).toEqual({ type: "image", data: "YWJj", mimeType: "image/png" });
 

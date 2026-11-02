@@ -6,7 +6,7 @@ import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent
 import { claudeMediaBlocks, claudeMediaInput, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
 import { engineLocale, KIT_WORDS, localCli, MessageQueue, MODE_ALLOWS, OpenAsks, runtimeDirectory, runTurn, sessionSystem, spawnCli, STDERR_CAP, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
 import { lostConversation } from "./cli.js";
-import { ClaudeCodeOptions, retryReason } from "./engine.js";
+import { CLAUDE_CODE, ClaudeCodeOptions, retryReason } from "./engine.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
 
 /**
@@ -276,7 +276,7 @@ export class ClaudeRuntime implements Runtime {
           env: launch.env({ ...process.env, ...input.env }),
           model: options.model, effort: options.effort as Options["effort"],
           resume: io.resume, includePartialMessages: true,
-          systemPrompt: { type: "preset", preset: "claude_code", append: sessionSystem(input, "Claude Code") },
+          systemPrompt: { type: "preset", preset: "claude_code", append: sessionSystem(input, CLAUDE_CODE) },
           settingSources: ["user", "project", "local"],
           mcpServers: { tomrade: {
             type: "http", url: this.ctx.mcp.url!, headers: { "X-Tomrade-Run": this.token },

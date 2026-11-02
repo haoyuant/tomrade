@@ -63,6 +63,8 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     expect(requests.find(r => r.method === "turn/start").params.input).toContainEqual({ type: "image", url: "data:image/png;base64,YWJj" });
     expect(requests.filter((r) => r.spawn)).toHaveLength(1);
     expect(requests.filter((r) => r.method === "thread/start")).toHaveLength(1);
+    expect(engine.nativeWebSearch).toBe(true);
+    expect(requests.find((r) => r.method === "thread/start").params.developerInstructions).toContain("with your own tools first");
     expect(requests.filter((r) => r.method === "turn/start")).toHaveLength(5);
     expect(requests.some((r) => r.method === "turn/interrupt")).toBe(true);
     input.purpose = "code";

@@ -276,6 +276,8 @@ export interface Engine {
   terminal?: EngineTerminal;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
   usesModels?: boolean;
+  /** True: it searches and reads the web with tools of its own, so Tomrade's web_search and web_fetch are told to it as the fallback. */
+  nativeWebSearch?: boolean;
   /** How it takes messages sent while a turn runs; absent, the panel queues them until the turn ends. */
   steering?: EngineSteering;
   /** The agent's own setup on this machine: its CLI, install, connection, permissions and knobs. */

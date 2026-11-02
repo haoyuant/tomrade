@@ -69,6 +69,7 @@ export const localAgentOf = (host: Host, spec: LocalAgentSpec<LocalAgentOptions>
       ...(record.title ? { title: (file: string) => now(() => record.title!(file), "record title", null) } : {})
     } } : {}),
     ...(spec.approval ? { approval: copy(spec.approval) } : {}),
+    ...(spec.nativeWebSearch ? { nativeWebSearch: true } : {}),
     // A lent call is bounded by its caller's signal, as the app's own are.
     ...(lend ? { lend: { ...(lend.rank !== undefined ? { rank: lend.rank } : {}), ask: host.back(lend.ask.bind(lend), `${label} lent call`) } } : {})
   };
