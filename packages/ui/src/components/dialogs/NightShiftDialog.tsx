@@ -486,7 +486,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
           ) : (
             plan.data && !plan.data.analyzed && <p className="meta-txt" data-testid="plan-why">{plan.data.why}</p>
           )}
-          {!plan.isFetching && <button type="button" className="tlink" data-testid="plan-again" onClick={() => void plan.refetch()}>{t("nightShift.planAgain")}</button>}
+          {!plan.isFetching && <button type="button" className="tlink" data-testid="plan-again" onClick={plan.again}>{t("nightShift.planAgain")}</button>}
         </div>
         <Field label={`${t("nightShift.tickets")} · ${t("nightShift.chosen", { n: chosen.size })}`}>
           {!candidates.length && !items.isLoading && <p className="meta-txt">{t("nightShift.noTickets")}</p>}

@@ -43,9 +43,14 @@ const CAUTIOUS_CONCURRENCY = 2;
 /** How many a run takes at once: the agent's call, within the person's limit. */
 export const runConcurrency = (limit: number, decided: number | null | undefined): number => Math.min(limit, decided ?? CAUTIOUS_CONCURRENCY);
 
-/** One model call: kept while the dialog comes and goes, and asked again only by hand. */
-export const useShiftPlan = (projectId: string) =>
-  useQuery({ queryKey: keys.nightShift.plan(projectId), queryFn: () => invoke("nightShift.plan", projectId), retry: false, staleTime: 10 * 60_000 });
+/** Read at every opening: the service calls the model only when what it would show it has changed, or when `again` says so. */
+export function useShiftPlan(projectId: string) {
+  const qc = useQueryClient();
+  const queryKey = keys.nightShift.plan(projectId);
+  const plan = useQuery({ queryKey, queryFn: () => invoke("nightShift.plan", projectId), retry: false, staleTime: 0 });
+  const again = useMutation({ mutationFn: () => invoke("nightShift.plan", projectId, true), onSuccess: (fresh) => qc.setQueryData(queryKey, fresh) });
+  return { data: plan.data, isFetching: plan.isFetching || again.isPending, again: () => again.mutate() };
+}
 
 export const useWorkRules = (projectId: string) =>
   useQuery({ queryKey: keys.nightShift.rules(projectId), queryFn: () => invoke("nightShift.rules", projectId), retry: false });
