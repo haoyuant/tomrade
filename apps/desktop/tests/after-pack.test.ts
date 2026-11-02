@@ -5,9 +5,10 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { packAsar, pruneConpty, pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations, unpackAsar } = require("../scripts/after-pack.cjs") as {
+const { packAsar, pruneConpty, pruneKoffi, pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations, unpackAsar } = require("../scripts/after-pack.cjs") as {
   packAsar: (resources: string) => Promise<void>;
   pruneConpty: (modules: string, platform: string, arch: string) => void;
+  pruneKoffi: (modules: string, platform: string, arch: string) => void;
   pruneSqlite: (modules: string, platform: string, arch: string) => void;
   pruneUnused: (modules: string) => void;
   requireIcons: (resources: string) => void;
@@ -169,11 +170,46 @@ describe("node-pty in a packaged app", () => {
     expect(() => pruneConpty(root, "win32", "x64")).toThrow(/no prebuilt win32-x64/);
   });
 
-  it.each([["darwin", "universal"], ["darwin", "arm64"], ["linux", "x64"]])("leaves a %s %s app none of the built-in terminal's runtime", (platform, arch) => {
+  it.each([["darwin", "universal"], ["darwin", "arm64"], ["linux", "x64"], ["linux", "arm64"]])("leaves a %s %s app none of the built-in terminal's runtime", (platform, arch) => {
     const root = withPty();
     pruneConpty(root, platform, arch);
     for (const gone of ["node-pty", "@xterm/headless"]) expect(fs.existsSync(path.join(root, gone))).toBe(false);
     expect(fs.existsSync(path.join(root, "@tomradex/pty-host/dist/index.js"))).toBe(true);
+  });
+});
+
+describe("koffi in a packaged app", () => {
+  const PLATFORMS = ["darwin-arm64", "darwin-x64", "win32-arm64", "win32-x64"];
+  /** node_modules holding koffi and the platform packages a cross-building install brings. */
+  function withKoffi(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    const write = (rel: string) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), ""); };
+    write("koffi/index.js");
+    for (const name of PLATFORMS) {
+      write(`@koromix/koffi-${name}/index.js`);
+      write(`@koromix/koffi-${name}/${name.replace("-", "_")}/koffi.node`);
+    }
+    return root;
+  }
+
+  it.each(["x64", "arm64"])("keeps only the binary a win32 %s app loads", (arch) => {
+    const root = withKoffi();
+    pruneKoffi(root, "win32", arch);
+    expect(fs.readdirSync(path.join(root, "@koromix"))).toEqual([`koffi-win32-${arch}`]);
+    expect(fs.existsSync(path.join(root, "koffi/index.js"))).toBe(true);
+  });
+
+  it("fails a Windows build that carries no binary for its arch", () => {
+    const root = withKoffi();
+    fs.rmSync(path.join(root, "@koromix/koffi-win32-arm64"), { recursive: true });
+    expect(() => pruneKoffi(root, "win32", "arm64")).toThrow(/koffi has no prebuilt win32-arm64/);
+  });
+
+  it.each([["darwin", "universal"], ["linux", "x64"]])("leaves a %s %s app no koffi at all", (platform, arch) => {
+    const root = withKoffi();
+    pruneKoffi(root, platform, arch);
+    for (const gone of ["koffi", "@koromix"]) expect(fs.existsSync(path.join(root, gone))).toBe(false);
   });
 });
 

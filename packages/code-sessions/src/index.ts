@@ -10,8 +10,8 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
-import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
+import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, droppedPaste, dropsFolder, panesOf, readableDrops, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
+import { choiceOnScreen, PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/herdr";
@@ -19,7 +19,6 @@ import type {} from "@tomradex/mcp";
 import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
-import { droppedPaste, readableDrops } from "./drop.js";
 import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
 import type { ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
@@ -741,6 +740,8 @@ function apply(ctx: Context, config: Config) {
   /** herdr's server being started again for the windows, and whether the last start did not work (then only the person's retry tries again). */
   let reviving: Promise<void> | null = null;
   let reviveFailed = false;
+  /** The pty host's pipe refused this app when last read: once it lets the app in, the cells cut off attach again. */
+  let shutOut = false;
 
   /** A window with saved terminals, or sessions that run or lately ran in herdr, has panes to bring back. */
   const wantsHerdr = (projectId: string, sessions: SessionRow[]) =>
@@ -775,8 +776,9 @@ function apply(ctx: Context, config: Config) {
   };
 
   /**
-   * What each waiting session's screen asks, read only for those whose agent declared its keys: a prompt seen stays
-   * known until the session's next event, none is looked for again at most every PROMPT_RECHECK_MS.
+   * What each waiting session's screen asks, read only for a permission whose agent declared its keys and a question
+   * whose choices its hook told of: a prompt seen stays known until the session's next event, none is looked for again
+   * at most every PROMPT_RECHECK_MS.
    */
   const prompts = new Map<string, { at: number; event: number | null; prompt: SessionRow["prompt"] }>();
   const withPrompts = async (rows: SessionRow[]): Promise<SessionRow[]> => {
@@ -784,14 +786,16 @@ function apply(ctx: Context, config: Config) {
     const now = Date.now();
     return Promise.all(
       rows.map(async (r) => {
-        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || r.ask?.kind !== "permission") {
+        const choices = r.ask?.kind === "question" ? (r.ask.options ?? null) : null;
+        if (!provider || r.endedAt !== null || !r.pane || r.state !== "waiting" || !(choices || (r.approval && r.ask?.kind === "permission"))) {
           prompts.delete(r.id);
           return r;
         }
         const known = prompts.get(r.id);
         if (known && known.event === r.lastEventAt && (known.prompt || now - known.at < PROMPT_RECHECK_MS)) return { ...r, prompt: known.prompt };
-        const seen = promptOnScreen((await provider.readTail(r.pane, PROMPT_LINES).catch(() => null)) ?? "");
-        const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
+        const screen = (await provider.readTail(r.pane, PROMPT_LINES).catch(() => null)) ?? "";
+        const seen = choices ? null : promptOnScreen(screen);
+        const prompt = choices ? (choiceOnScreen(screen, choices) ? "choice" : null) : seen ? (seen.allows ? "allow" : "deny") : null;
         prompts.set(r.id, { at: now, event: r.lastEventAt, prompt });
         return { ...r, prompt };
       })
@@ -840,7 +844,8 @@ function apply(ctx: Context, config: Config) {
     // Only the sessions a state uses are read: the ended ones code link keeps grow by the day.
     const shown = listed(projectId, () => shownSessions(projectId, [...inCells, ...(win?.reveal?.sessionId ? [win.reveal.sessionId] : [])]));
     if (b.state === "ready") reviveFailed = false;
-    if (b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) revive();
+    if ((b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) || (b.state === "ready" && shutOut)) revive();
+    shutOut = b.state === "forbidden";
     // after the start is decided: the bridge read above must not go stale across this await
     if (b.state === "ready") shown.sessions = await withPrompts(shown.sessions);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
@@ -869,6 +874,7 @@ function apply(ctx: Context, config: Config) {
       projectId,
       projectName: projectName(projectId),
       locale: ctx.settings.locale(),
+      keybindings: (ctx.settings.get().keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides ?? {},
       bridge: b,
       provider: backend()?.kind ?? null,
       herdrClient: b.state === "ready" && !builtin() && ((await ctx.get("herdr")?.clientAttached().catch(() => false)) ?? false),
@@ -1208,9 +1214,10 @@ function apply(ctx: Context, config: Config) {
 
   /**
    * One frame joins its cell's batch. A pane can paint faster than a screen shows — a burst of frames
-   * becomes one message, its bytes unchanged and in order.
+   * becomes one message, its bytes unchanged and in order. The built-in host paces its paints itself (slower in a flood):
+   * its frames are `paced` and go at once, since a batch would only hold each one back a frame (TOM-841).
    */
-  const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }) => {
+  const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }, paced = false) => {
     if (win.closed || !frame.bytes.length) return;
     const pending = win.frames.get(cell);
     // Another size paints a screen the open batch no longer fits: what waits goes first.
@@ -1224,7 +1231,7 @@ function apply(ctx: Context, config: Config) {
       win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer });
       // The first frame after a keystroke goes at once: herdr may already have held it for its next paint (other panes
       // watched in the background keep it painting), and a batch on top of that is felt as lag (TOM-713).
-      if (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS) flushFrames(win, cell);
+      if (paced || (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS)) flushFrames(win, cell);
       return;
     }
     batch.bytes.push(frame.bytes);
@@ -1297,6 +1304,8 @@ function apply(ctx: Context, config: Config) {
         post(win, { type: "closed", cell, reason: restarting });
         return revive();
       }
+      // Starting another host would not help: the one holding the pipe stays until someone ends it.
+      if ((error as { code?: unknown } | null)?.code === "forbidden") return post(win, { type: "closed", cell, reason: words()("hostForbidden") });
       // The pty host names a pane it no longer has; herdr's own words come as they are.
       return post(win, { type: "closed", cell, reason: (error as { code?: unknown } | null)?.code === "pane_not_found" ? words()("paneEnded") : errorMessage(error) });
     }
@@ -1309,7 +1318,8 @@ function apply(ctx: Context, config: Config) {
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
     record(projectId, win, cell, pane);
-    stream.onFrame((f) => pushFrame(win, cell, f));
+    const paced = provider.kind === "builtin";
+    stream.onFrame((f) => pushFrame(win, cell, f, paced));
     stream.onClose(provider.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
@@ -1444,6 +1454,17 @@ function apply(ctx: Context, config: Config) {
     if (result === "notPrompt") await show(projectId, m.sessionId);
     return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
   };
+  // A card's choice for a terminal session's question, picked on its pane's menu.
+  const chooseSession = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "choose" }>) => {
+    const result = await ctx.codeLink.sessionChoose(projectId, m.sessionId, m.choice).catch(() => "failed" as const);
+    prompts.delete(m.sessionId);
+    if (result === "answered") {
+      post(win, { type: "toast", text: words()("answeredStay", { name: nameOf(projectId, m.sessionId) }) });
+      return void refresh(projectId);
+    }
+    if (result === "notPrompt") await show(projectId, m.sessionId);
+    return post(win, { type: "toast", text: words()(result === "notPrompt" ? "choiceInPane" : "answerNotTaken") });
+  };
   // A card's choice for an assistant conversation's question.
   const answerThread = async (win: Open, projectId: string, m: Extract<WindowMessage, { type: "answerThread" }>) => {
     const agent = ctx.get("agent");
@@ -1554,8 +1575,7 @@ function apply(ctx: Context, config: Config) {
         return onMessage(projectId, win, { type: "input", cell: m.cell, data: "\r" });
       }
       case "drop": {
-        // Copies go to the temp folder, which the system clears of what has not been used for a while.
-        const text = droppedPaste(await readableDrops(m.paths, path.join(os.tmpdir(), "tomrade-drops")));
+        const text = droppedPaste(await readableDrops(m.paths, dropsFolder()));
         if (text) win.terminals.get(m.cell)?.input(text);
         return;
       }
@@ -1629,6 +1649,13 @@ function apply(ctx: Context, config: Config) {
       case "answer": {
         try {
           return await answerSession(win, projectId, m);
+        } finally {
+          if (m.token !== undefined) post(win, { type: "answered", token: m.token });
+        }
+      }
+      case "choose": {
+        try {
+          return await chooseSession(win, projectId, m);
         } finally {
           if (m.token !== undefined) post(win, { type: "answered", token: m.token });
         }
@@ -1782,6 +1809,7 @@ function apply(ctx: Context, config: Config) {
       height: 760,
       minWidth: 640,
       minHeight: 400,
+      captionStrip: true,
       initialState,
       onMessage: (message) => void onMessage(projectId, win, message as WindowMessage).catch((error: unknown) => {
         ctx.logger.warn(`code sessions: ${(message as { type?: string }).type ?? "message"} failed: ${errorMessage(error)}`);

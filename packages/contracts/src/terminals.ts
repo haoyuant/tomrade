@@ -43,6 +43,8 @@ export type TerminalBridge =
   | { state: "ready"; version: string }
   /** No backend runs here: herdr's direct attach on native Windows, or a build without the pty host's runtime. */
   | { state: "unsupported" }
+  /** The pty host's pipe is held by a host this app may not open: one run as administrator while the app is not, or the reverse. */
+  | { state: "forbidden" }
   | { state: "notInstalled" }
   | { state: "notRunning"; version: string }
   | { state: "tooOld"; version: string; need: string; fix: string }
@@ -106,6 +108,8 @@ export interface TerminalLaunch {
 export interface TerminalInput {
   text?: string;
   keys?: string[];
+  /** `text` is a paste: in the bracketed markers when the program asked for them. herdr sends all its text so. */
+  paste?: boolean;
 }
 
 /** How `revive` went: the backend answers (already, or started now), did not come up, is held by the limit, or is not here. */

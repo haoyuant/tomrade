@@ -1,19 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon, IconSprite } from "~/components/icons";
+import { Motes, skyOf } from "~/components/Motes";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
-import { hits } from "~/lib/keybindings";
-import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
+import { useFrosted } from "~/lib/frost";
+import { announceKeymap, formatChord, hits, primeKeymap, resolveKeymap } from "~/lib/keybindings";
+import { backdropFills } from "@tomradex/theme-image/colors";
+import { answerSession, answerThreadAsk, chooseSession, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, type Look } from "./bridge";
+import type { SessionReply } from "./cards";
 import { Cell } from "./Cell";
+import { clipboardOf } from "./clipboard";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
+import { redrawTerminals } from "./TerminalCell";
 import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
+import { swapPanels } from "~/lib/motion";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
 /** What a cell's buttons and menu do, read from the window's latest render when they are used. */
@@ -46,19 +53,32 @@ const sameTails = (a: Record<string, string | null>, b: Record<string, string | 
 /** Whether anyone can see the window: not when it is minimised, hidden or covered. */
 const seen = () => document.visibilityState !== "hidden";
 
-/** The keys the window keeps, said along its bottom edge the way this platform writes them. */
+/** The keys the window keeps, said along its bottom edge the way this platform writes them; at its end, a way to redraw a spoiled terminal. */
 function KeysFooter() {
   const say = useSay();
   return (
     <footer className="cs-keys" data-testid="cs-keys">
-      <span>{say("keysNote")}</span>
-      <span><kbd>{keyLabel("splitRight")}</kbd> {say("keySplitRight")}</span>
-      <span><kbd>{keyLabel("splitDown")}</kbd> {say("keySplitDown")}</span>
-      <span><kbd>{keyLabel("close")}</kbd> {say("keyClose")}</span>
-      <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
-      <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
-      <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
-      <span>{say("keyOnlyNew")} <kbd>{keyLabel("palette")}</kbd></span>
+      <div className="cs-keys-list">
+        <span>{say("keysNote")}</span>
+        <span><kbd>{keyLabel("splitRight")}</kbd> {say("keySplitRight")}</span>
+        <span><kbd>{keyLabel("splitDown")}</kbd> {say("keySplitDown")}</span>
+        <span><kbd>{keyLabel("close")}</kbd> {say("keyClose")}</span>
+        <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
+        <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
+        <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
+        <span>{say("keyOnlyNew")} <kbd>{keyLabel("palette")}</kbd></span>
+      </div>
+      <div className="cs-redraw">
+        <button type="button" className="cs-redraw-ask" aria-describedby="cs-redraw-what">{say("redrawAsk")}</button>
+        <div className="cs-redraw-card" role="tooltip" id="cs-redraw-what">
+          <div className="cs-redraw-card-box">
+            <p>{say("redrawWhat")}</p>
+            <button type="button" className="btn btn-secondary btn-xs" onClick={redrawTerminals}>
+              {say("redrawDo")}
+            </button>
+          </div>
+        </div>
+      </div>
     </footer>
   );
 }
@@ -95,6 +115,7 @@ function Banner({ state }: { state: WindowState }) {
         )}
       </>
     );
+  else if (b.state === "forbidden") body = <span>{say("hostForbidden")}</span>;
   else if (state.revive === "starting") body = <span>{say(builtin ? "hostStarting" : "herdrStarting")}</span>;
   else if (state.revive === "failed" && (builtin || b.state === "notRunning"))
     body = (
@@ -163,7 +184,7 @@ export function App() {
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
   const folded = foldedHere ?? state?.folded ?? false;
   const toggleFold = useCallback(() => {
-    setFoldedHere(!folded);
+    swapPanels(() => setFoldedHere(!folded));
     send({ type: "fold", folded: !folded });
   }, [folded]);
   // The cells, or every session as one big card over them; the cells stay attached underneath.
@@ -174,6 +195,13 @@ export function App() {
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
   const guesses = useMemo(() => guessesByPane(state?.sessions ?? []), [state]);
+  // The person's keys, as the app's window has them: copy and paste here are theirs.
+  const overrides = state?.keybindings;
+  const overridesKey = JSON.stringify(overrides ?? {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const keymap = useMemo(() => resolveKeymap(overrides), [overridesKey]);
+  primeKeymap(keymap);
+  useLayoutEffect(announceKeymap, [keymap]);
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
@@ -207,11 +235,17 @@ export function App() {
     const root = document.documentElement;
     for (const [name, value] of Object.entries(look.tokens)) root.style.setProperty(name, value);
     root.classList.toggle("dark", look.dark);
+    root.toggleAttribute("data-frosted", !!look.frosted);
+    root.classList.remove("sunrise", "daybreak");
+    const sky = skyOf(look?.base, !!look?.backdrop);
+    if (sky) root.classList.add(sky);
+    root.toggleAttribute("data-performance", !!look.still);
   }, [look]);
   const locale = look?.locale ?? state?.locale ?? "en";
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  const picture = useTerminalPicture(look);
 
   // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
@@ -254,7 +288,7 @@ export function App() {
       }),
     [change, say, current, setFocused]
   );
-  const shown: Look = look ?? { theme: "", dark: false, tokens: {}, locale };
+  const shown: Look = useMemo(() => ({ ...(look ?? { theme: "", dark: false, tokens: {}, locale }), clear: !!look?.frosted || !!picture || !!skyOf(look?.base, !!look?.backdrop) }), [look, locale, picture]);
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
@@ -348,7 +382,7 @@ export function App() {
   };
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
-  const answer = (s: SessionRow, which: "allow" | "deny") => answerSession(s.id, which);
+  const answer = (s: SessionRow, reply: SessionReply) => (typeof reply === "string" ? answerSession(s.id, reply) : chooseSession(s.id, reply.choice));
   const answerThread = (t: ThreadRow, questionId: string, value: string) => answerThreadAsk(t.id, questionId, value);
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
@@ -374,8 +408,12 @@ export function App() {
   const cellMenu = (node: Extract<Layout, { type: "leaf" }>): ReactNode => {
     const terminals = state.terminals.filter((t) => !t.sessionId && t.pane);
     const choices = [...state.sessions.filter(live), ...terminals];
+    const clipboard = clipboardOf(node.id);
+    const hint = (chords: string[]) => (chords[0] ? formatChord(chords[0]) : undefined);
     return (
       <>
+        <ContextMenuActionItem icon={null} name={say("copy")} hint={hint(keymap.terminalCopy)} disabled={!clipboard?.canCopy()} onSelect={() => clipboard?.copy()} />
+        <ContextMenuActionItem icon={null} name={say("paste")} hint={hint(keymap.terminalPaste)} disabled={!clipboard} onSelect={() => clipboard?.paste()} />
         <ContextMenuActionItem icon={null} name={node.locked ? say("unlockCell") : say("lockCell")} disabled={!node.sessionId} onSelect={() => change(lock(layout, node.id, !node.locked))} />
         {node.locked ? (
           <ContextMenuActionItem icon={null} name={say("connect")} disabled onSelect={() => undefined} />
@@ -552,11 +590,13 @@ export function App() {
       />
     );
 
+  const sky = skyOf(look?.base, !!look?.backdrop);
   return (
     <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
       <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
+        {sky ? <Motes sky={sky} /> : null}
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
@@ -657,4 +697,36 @@ export function App() {
       </WordsContext.Provider>
     </GuessContext.Provider></SayContext.Provider>
   );
+}
+
+const PICTURE_VARS = ["--backdrop-image", "--backdrop-shell", "--backdrop-pane", "--backdrop-tile", "--backdrop-float"];
+/**
+ * The picture a custom theme puts behind this window, painted under translucent panes the way the
+ * main window paints its own; null when the theme has none for it, or this machine lacks it.
+ */
+function useTerminalPicture(look: Look | null): string | null {
+  const [picture, setPicture] = useState<{ theme: string; url: string } | null>(null);
+  const themeId = look?.backdrop?.terminalVeil !== undefined ? look.theme : null;
+  useEffect(() => {
+    if (!themeId) return setPicture(null);
+    let url: string | null = null, gone = false;
+    void terminalPicture(themeId).then(image => {
+      if (gone) return;
+      if (!image) return setPicture(null);
+      url = URL.createObjectURL(new Blob([Uint8Array.from(atob(image.base64), char => char.charCodeAt(0))], { type: image.mime }));
+      setPicture({ theme: themeId, url });
+    });
+    return () => { gone = true; if (url) URL.revokeObjectURL(url); };
+  }, [themeId]);
+  const shown = useFrosted(picture && picture.theme === themeId ? picture.url : null, look?.backdrop?.frost ?? 0);
+  const veil = look?.backdrop?.terminalVeil, bg = look?.tokens["--bg"], surface = look?.tokens["--surface"];
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("cs-backdrop", !!shown);
+    for (const name of PICTURE_VARS) root.style.removeProperty(name);
+    if (!shown || veil === undefined || !bg || !surface) return;
+    root.style.setProperty("--backdrop-image", `url("${shown}")`);
+    for (const [name, value] of Object.entries(backdropFills({ bg, surface }, veil))) root.style.setProperty(`--${name}`, value);
+  }, [shown, veil, bg, surface]);
+  return shown;
 }

@@ -53,8 +53,11 @@ export interface SessionRow {
   recordSaved: "whole" | "end" | null;
   /** Its agent declared the keys that answer its permission prompt: Allow and Deny on its card press them in its pane. */
   approval: boolean;
-  /** What its screen asks that those keys answer now: a permission prompt with yes under the cursor, one with no, or nothing they could safely answer. */
-  prompt: "allow" | "deny" | null;
+  /**
+   * What its screen asks that its card answers now: a permission prompt with yes under the cursor, one with no, the menu
+   * of the question its hook told of (its `ask.options`, picked with arrows and Enter), or nothing that could safely be answered.
+   */
+  prompt: "allow" | "deny" | "choice" | null;
   /** When its hooks last spoke; what the session bar orders waiting and idle rows by. */
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
@@ -191,6 +194,8 @@ export interface WindowState {
   projectName: string;
   /** The app's language, so the window speaks it even before the main window says how it looks. */
   locale: string;
+  /** The commands the person rebound (settings "keybindings".overrides), so the window's copy and paste keys are theirs. */
+  keybindings?: Record<string, string[]>;
   bridge: TerminalBridge;
   /** Which backend the panes are on: herdr, Tomrade's own terminal host (native Windows), or none. */
   provider: "herdr" | "builtin" | null;
@@ -285,6 +290,8 @@ export type WindowMessage =
   | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny"; token?: number }
+  /** The session's question answered from its card with one of its choices, picked on its pane's menu. */
+  | { type: "choose"; sessionId: string; choice: string; token?: number }
   /** An assistant conversation's question answered from its card with one of its choices. */
   | { type: "answerThread"; threadId: string; questionId: string; value: string; token?: number }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */

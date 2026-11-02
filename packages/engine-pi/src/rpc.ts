@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { attachedMedia, deferredTools, kitLines, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, deferredTools, kitLines, stepHint, stepSummary, withRecap, type MediaContent, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bestEffort } from "@tomradex/contracts";
 import { engineLocale, JsonLinePeer, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type RpcDialect, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
@@ -14,6 +14,12 @@ import { PiOptions, toolSelection } from "./options.js";
 import { PI_WORDS } from "./words.js";
 
 type Json = Record<string, any>;
+
+/** The `images` a prompt or a steer carries; pi reads no other kind of file. */
+const imagesField = (media: MediaContent[]) => {
+  const images = media.filter((m) => m.mime.startsWith("image/")).map((m) => ({ type: "image", data: m.base64, mimeType: m.mime }));
+  return images.length ? { images } : {};
+};
 interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }
 
 const DIALOGS = new Set(["confirm", "select", "input", "editor"]);
@@ -145,7 +151,7 @@ export class PiRuntime implements Runtime {
     const deferred = deferredTools(listed, input.purpose, input.messages);
     const hidden = this.ctx.tools.served("run").map((t) => t.name).filter((name) => !shown.has(name));
     fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval, deferred: deferred.map((t) => t.name), hidden, kits: kitLines(deferred, io.tools.kits?.(), { names: false }) }), { mode: 0o600 });
-    fs.writeFileSync(system, sessionSystem(input, "Pi"), { mode: 0o600 });
+    fs.writeFileSync(system, sessionSystem(input, { title: "Pi" }), { mode: 0o600 });
     const tools = toolSelection(input);
     const start = await this.start(input);
     // Closed while it was being found (a cancel): nothing to start.
@@ -206,16 +212,18 @@ export class PiRuntime implements Runtime {
         this.asks.settle();
         return true;
       });
-      io.steerTo?.(async (steer) => {
-        if (!prompted || settled || turn.cancelled || !this.alive) return false;
+      io.steersMedia?.();
+      // Taken once the prompt is sent.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
+        if (settled || turn.cancelled || !this.alive) return false;
         // known before the request: pi may put it before the model before it answers
         forwarded.push(steer);
-        const reply = await this.request("steer", { message: steer.text }).catch(() => ({}) as Json);
+        const reply = await this.request("steer", { message: steer.text, ...imagesField(steer.media ?? []) }).catch(() => ({}) as Json);
         if (reply.disposition === "queued") return true;
         const at = forwarded.indexOf(steer);
         if (at >= 0) forwarded.splice(at, 1);
         return false;
-      });
+      };
       this.onFailure = (error) => finish(turn.failed(error.message, { error }));
       // The model's last reply without its text: provider, model, stop reason and Pi's own error words.
       const lastSaid = () => { if (!last) return undefined; const { content: _, ...rest } = last; return rest; };
@@ -312,11 +320,13 @@ export class PiRuntime implements Runtime {
           }
         }
       }
-      const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/")).map((media) => ({ type: "image", data: media.base64, mimeType: media.mime }));
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       prompted = true;
       const message = turnPrompt(input, io, { staleIndex: stale });
-      const accepted = await this.request("prompt", { message: this.fresh ? withRecap(io.recap?.(), message) : message, ...(images.length ? { images } : {}) });
+      const prompting = this.request("prompt", { message: this.fresh ? withRecap(io.recap?.(), message) : message, ...imagesField(attachedMedia(input, io)) });
+      // pi reads its commands in order: a steer sent from here comes after the prompt
+      io.steerTo?.(forward);
+      const accepted = await prompting;
       this.fresh = false;
       metrics.readyMs = performance.now() - start;
       if (accepted.disposition === "handled") finish(result("end"));

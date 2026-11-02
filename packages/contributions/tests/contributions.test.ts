@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Contributions } from "@tomradex/contributions";
 import { fresh } from "@tomradex/testkit";
@@ -29,6 +31,7 @@ describe("contributions", () => {
     });
 
     expect(ctx.contributions.commands()).toEqual([{ id: "demo.ack", title: "Acknowledge" }]);
+    expect([ctx.contributions.hasCommand("demo.ack"), ctx.contributions.hasCommand("demo.nope")]).toEqual([true, false]);
     expect((await ctx.contributions.badgesFor(project.id))).toEqual({ [item.id]: [{ id: "bug", label: "bug!" }] });
     expect((await ctx.contributions.statusItems({ projectId: project.id }))).toEqual([]);
     expect(await ctx.contributions.run("demo.ack", { projectId: project.id, itemId: item.id })).toEqual({ toast: "Acknowledged" });
@@ -49,6 +52,7 @@ describe("contributions", () => {
 
     await fiber.dispose();
     expect(ctx.contributions.commands()).toEqual([]);
+    expect(ctx.contributions.hasCommand("demo.ack")).toBe(false);
     expect((await ctx.contributions.badgesFor(project.id))).toEqual({});
     expect(ctx.contributions.assistantAccessories()).toEqual([]);
     await expect(ctx.contributions.run("demo.ack", {})).rejects.toThrow(/Unknown command/);
@@ -73,5 +77,25 @@ describe("contributions", () => {
     ]);
     await fiber.dispose();
     expect(await ctx.contributions.sidebarModules(project.id)).toEqual([]);
+  });
+
+  it("a plugin adds a layout: a module inside its package, served from there alone, and gone with it", async () => {
+    const { ctx } = await fresh({ plugins: [Contributions] });
+    const root = path.join(os.tmpdir(), "tomrade-layout-demo");
+    expect(() => ctx.contributions.layout({ id: "demo.l", title: "Timeline", module: "layouts/../../x.js", render: "sandbox", plugin: { id: "someone/demo", root } })).toThrow(/outside the plugin/);
+    expect(() => ctx.contributions.layout({ id: "demo.l", title: "Timeline", module: "x.js", render: "sandbox", plugin: { id: "someone/demo", root: "relative" } })).toThrow(/package directory/);
+    const fiber = await ctx.plugin({
+      name: "demo",
+      inject: ["contributions"],
+      apply(ctx) {
+        ctx.contributions.layout({ id: "demo.l", title: () => "Timeline", icon: "i-grid", module: "layouts/timeline.js", render: "native", plugin: { id: "someone/demo", root } });
+      }
+    });
+    expect(ctx.contributions.layouts()).toEqual([{ id: "demo.l", title: "Timeline", icon: "i-grid", module: "layouts/timeline.js", render: "native", pluginId: "someone/demo" }]);
+    expect(ctx.contributions.layoutFile("someone/demo", "layouts/timeline.js")).toBe(path.join(root, "layouts/timeline.js"));
+    expect(ctx.contributions.layoutFile("someone/demo", "layouts/../../etc/passwd")).toBeNull();
+    expect(ctx.contributions.layoutFile("someone/other", "layouts/timeline.js")).toBeNull();
+    await fiber.dispose();
+    expect(ctx.contributions.layouts()).toEqual([]);
   });
 });

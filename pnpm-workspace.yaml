@@ -9,6 +9,8 @@ allowBuilds:
   # Squirrel.Windows only; the Windows build is NSIS.
   electron-winstaller: false
   esbuild: true
+  # Loads the prebuilt binary its @koromix/koffi-<os>-<arch> package brings; never compiled.
+  koffi: false
   node-pty: false
 
 # The editor's parsers ride on caret ranges; hold them at releases that have
@@ -18,3 +20,10 @@ overrides:
   "@lezer/javascript": 1.5.5
   "@lezer/lr": 1.4.10
   "@lezer/markdown": 1.7.2
+
+# xterm keeps dim and italic in a cell's background word, so WebGL painted them an
+# opaque block on a clear terminal: its rectangles read colour bits only.
+# Its glyphs blend alpha apart from colour: on a clear canvas alpha came out squared,
+# and the page washed dim text out.
+patchedDependencies:
+  '@xterm/addon-webgl@0.18.0': patches/@xterm__addon-webgl@0.18.0.patch

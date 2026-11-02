@@ -1,4 +1,7 @@
-import { HOUSE_RULES, focusSuffix, promptSections, type TurnIO, type TurnInput } from "@tomradex/agent";
+import { HOUSE_RULES, focusSuffix, promptSections, type Engine, type TurnIO, type TurnInput } from "@tomradex/agent";
+
+// The tools stay listed: its own search may be off, refused, or missing on a third-party API.
+const OWN_WEB_SEARCH = "Search and read the web with your own tools first. Tomrade's web_search and web_fetch, when you have them, are only for when yours fail or are unavailable.";
 
 export function staticSystem(agentName: string): string {
   return (
@@ -9,12 +12,13 @@ export function staticSystem(agentName: string): string {
 
 /**
  * What an external agent is told once, when its session opens: its identity,
- * the house rules, and the index of the project's files. The index belongs
- * here and not in the per-turn prompt — this text is cached by the provider,
- * while everything in a user message is paid for again on every turn.
+ * the house rules, whose web search comes first when it has its own, and the
+ * index of the project's files. The index belongs here and not in the per-turn
+ * prompt — this text is cached by the provider, while everything in a user
+ * message is paid for again on every turn.
  */
-export function sessionSystem(input: TurnInput, agentName: string): string {
-  return [staticSystem(agentName), ...(input.filesIndex ? [input.filesIndex.markdown] : [])].join("\n\n");
+export function sessionSystem(input: TurnInput, agent: Pick<Engine, "title" | "nativeWebSearch">): string {
+  return [staticSystem(agent.title), ...(agent.nativeWebSearch ? [OWN_WEB_SEARCH] : []), ...(input.filesIndex ? [input.filesIndex.markdown] : [])].join("\n\n");
 }
 
 /**

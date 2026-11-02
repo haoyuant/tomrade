@@ -222,6 +222,12 @@ export default {
     });
 
     // ── dependencies follow ticket changes ────────────────────────────────
+    /** A provider's JSON error body read down to its message, short enough for one line. */
+    const plainReason = (text: string) => {
+      const message = /"message"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+      const reason = message ? `${text.slice(0, text.indexOf("{")).trim()} ${message}`.trim() : text;
+      return reason.length > 200 ? `${reason.slice(0, 199)}…` : reason;
+    };
     // Runs whose ticket changes have not been reviewed yet, per thread. Best effort: a restart forgets them.
     const owed = new Map<string, Set<string>>();
     const reviewed = new Set<string>();
@@ -261,15 +267,25 @@ export default {
             return { done: outcome };
           }
           const changes = ticketChanges(ctx, projectId, state.runIds);
+          if (!changes.length && !state.full) return { done: { proposed: 0 } };
+          // A check that could not run says why: "0 proposed" alone reads as "nothing to change".
+          // Asked for by name, the person sees it too; after a turn, a broken worker would nag every time.
+          const w = BACKLOG_WORDS(localeOf(ctx));
+          const failed = (reason: string) => {
+            if (state.full) io.emit({ type: "note", text: w("dependenciesCheckFailed", { reason }) });
+            return { done: { proposed: 0, failed: reason } };
+          };
           const model = llm();
-          if ((!changes.length && !state.full) || !model || !(await model.worker()).ok) return { done: { proposed: 0 } };
+          const worker = model ? await model.worker() : null;
+          if (!model || !worker?.ok) return failed(worker?.reason || w("dependenciesNoWorker"));
           let proposal: DependencyProposal;
-          io.activity(BACKLOG_WORDS(localeOf(ctx))("checkingDependencies"));
+          io.activity(w("checkingDependencies"));
           try {
             proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal, brief: ctx.agent.brief(projectId) });
           } catch (err) {
-            if (!io.signal.aborted) ctx.logger.warn(`dependency review failed: ${errorMessage(err)}`);
-            return { done: { proposed: 0 } };
+            if (io.signal.aborted) return { done: { proposed: 0 } };
+            ctx.logger.warn(`dependency review failed: ${errorMessage(err)}`);
+            return failed(plainReason(errorMessage(err)));
           } finally {
             io.activity(null);
           }

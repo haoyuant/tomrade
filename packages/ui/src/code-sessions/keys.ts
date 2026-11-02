@@ -1,5 +1,5 @@
 import { isMac } from "../lib/keys";
-import { formatChord, matchesChord } from "../lib/keybindings";
+import { formatChord, hitChord, matchesChord } from "../lib/keybindings";
 
 type Direction = "left" | "right" | "up" | "down";
 export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "previous" | "next" | "fold" | "palette";
@@ -56,6 +56,18 @@ export const keyLabel = (id: WindowKey, mac = isMac): string => formatChord(WIND
 
 /** The modifiers the pane arrows take, as this platform writes them: "⌥⌘" on a Mac, "Alt" elsewhere. */
 export const arrowsLabel = (mac = isMac): string => keyLabel("left", mac).replace(/[←→↑↓]/g, "").replace(/\+$/, "").trim();
+
+/** The person's copy or paste key (Keyboard shortcuts "In the Terminal window"), or null. */
+export function clipboardKey(e: KeyEventLike): "copy" | "paste" | null {
+  if (e.isComposing) return null;
+  return hitChord(e, "terminalCopy") ? "copy" : hitChord(e, "terminalPaste") ? "paste" : null;
+}
+
+/**
+ * Ctrl+C alone, which is also the shell's interrupt: it copies only a selection the person can see, and lets it
+ * go once copied, so pressing it again interrupts.
+ */
+export const isInterrupt = (e: KeyEventLike): boolean => e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.code === "KeyC" || e.key.toLowerCase() === "c");
 
 /** Ctrl+Enter or Shift+Enter, which xterm types as a plain Enter: the backend sends them as the pane's program reads keys. */
 export function modifiedEnter(e: KeyEventLike): "ctrl+enter" | "shift+enter" | null {

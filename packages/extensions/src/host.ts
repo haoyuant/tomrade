@@ -42,6 +42,8 @@ export interface ExtensionIdentity {
   title?: string;
   /** Its manifest grants `permissions.window`; a built-in needs none. */
   window?: boolean;
+  /** Its manifest grants `permissions.renderer`: a layout may run inside Tomrade's window. */
+  renderer?: boolean;
 }
 
 /**

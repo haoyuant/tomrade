@@ -15,11 +15,17 @@ export function onPath(name: string, env: NodeJS.ProcessEnv = process.env, exist
   return null;
 }
 
+/**
+ * Windows PowerShell 5.1 ships PSReadLine 2.0, which paints the console's background color behind every redraw as an
+ * explicit color, leaving blocks under spaces and erased characters; without it the line still edits, with history and Tab.
+ */
+const dropOldPSReadLine = "if ((Get-Module PSReadLine).Version -lt [version]'2.1') { Remove-Module PSReadLine -ErrorAction Ignore }";
+
 /** What a plain terminal runs: PowerShell 7 when it is installed, else Windows PowerShell. */
 export function defaultShell(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = fs.existsSync): { file: string; args: string[] } {
   const pwsh = onPath("pwsh", env, exists);
   if (pwsh) return { file: pwsh, args: ["-NoLogo"] };
-  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\Windows";
+  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
   const builtin = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  return { file: exists(builtin) ? builtin : "powershell.exe", args: ["-NoLogo"] };
+  return { file: exists(builtin) ? builtin : "powershell.exe", args: ["-NoLogo", "-NoExit", "-Command", dropOldPSReadLine] };
 }

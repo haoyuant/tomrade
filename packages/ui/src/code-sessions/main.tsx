@@ -4,7 +4,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createQueryClient } from "../lib/queryClient";
 import { App } from "./App";
 import "../styles/app.css";
+import "../styles/sunrise.css";
 import "./code-sessions.css";
+import "../styles/motion.css";
 
 // A file dropped outside a terminal must not open in the window; a terminal cell takes the ones meant for it.
 for (const type of ["dragover", "drop"] as const) document.addEventListener(type, (e) => e.preventDefault());

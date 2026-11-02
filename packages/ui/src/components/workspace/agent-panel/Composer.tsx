@@ -36,7 +36,7 @@ export function Composer({ composer, draft, placeholder, archived, busy, canSend
       <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
         onAttach(Array.from(event.target.files ?? [])); event.target.value = "";
       }} />
-      <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || archived || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
+      <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={archived || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
       {/* typing stays open while the agent works; Enter then queues the message for when the turn ends */}
       <textarea
         ref={composer}

@@ -31,6 +31,12 @@ export interface UnlinkedBranch {
   committedAt: number;
 }
 
+/** A branch with commits the default branch lacks and no ticket holding it, whether or not its name follows the template. */
+export interface UnmergedBranch extends UnlinkedBranch {
+  ahead: number;
+  behind: number;
+}
+
 export interface ScanSummary {
   repos: number;
   scanned: number;
@@ -104,6 +110,7 @@ export interface GitScanDeps {
  */
 export class GitScan {
   readonly unlinkedByProject = new Map<string, UnlinkedBranch[]>();
+  readonly unmergedByProject = new Map<string, UnmergedBranch[]>();
   readonly scannedAt = new Map<string, number>();
   readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Per repository, the ticket branches with uncommitted changes in a worktree, as the last scan saw them. */
@@ -201,6 +208,7 @@ export class GitScan {
     // Which ticket each key number is, read once a pass; a ticket is read whole only when a branch names it.
     const keyed = new Map((this.ctx.db.for(projectId).prepare("SELECT key_num AS n, id FROM items WHERE project_id = ?").all(projectId) as { n: number; id: string }[]).map((r) => [r.n, r.id]));
     const unlinked: UnlinkedBranch[] = [];
+    const unmerged: UnmergedBranch[] = [];
     const now = Date.now();
     await this.migrateCredentialHelpers(projectId);
     // Read before any repository is judged: one repository's merge waits on another's uncommitted work.
@@ -249,6 +257,8 @@ export class GitScan {
         }
       }
       const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked, keyed);
+      const held = new Set(this.store.linksForRepo(projectId, repo.id).map((l) => l.branch));
+      for (const b of result.branches) if (b.ahead > 0 && !held.has(b.name)) unmerged.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum: b.keyNum, sha: b.sha, committedAt: b.committedAt, ahead: b.ahead, behind: b.behind });
       this.releaseMerged(projectId, repo.id);
       summary.links += outcome.links;
       summary.changed += outcome.changed;
@@ -256,6 +266,7 @@ export class GitScan {
     }
     for (const item of this.closable(projectId)) this.closeEmptyScannedDelivery(projectId, item, now);
     this.unlinkedByProject.set(projectId, unlinked);
+    this.unmergedByProject.set(projectId, unmerged);
     this.scannedAt.set(projectId, now);
     // A pass that found nothing new tells no one: every window would read the project's tickets and threads again.
     if (firstScan || this.footprint(projectId) !== before || JSON.stringify(unlinked) !== unlinkedBefore) this.notify(projectId);

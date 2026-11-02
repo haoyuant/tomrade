@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../agent" },
+    { "path": "../agent-backlog" },
+    { "path": "../boards" },
+    { "path": "../code-link" },
+    { "path": "../contracts" },
+    { "path": "../domain" },
+    { "path": "../git" },
+    { "path": "../github" },
+    { "path": "../inbox" },
+    { "path": "../inbox-github" },
+    { "path": "../ipc" },
+    { "path": "../items" },
+    { "path": "../llm" },
+    { "path": "../repos" },
+    { "path": "../settings" }
+  ]
+}

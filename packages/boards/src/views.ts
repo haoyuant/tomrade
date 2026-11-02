@@ -3,7 +3,7 @@ import { Context, Service } from "cordis";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { Oplog } from "@tomradex/oplog";
 import { write } from "@tomradex/write";
-import { InUseError, LAYOUTS, NotFoundError, normalizeQuery, type Author, type CreateViewInput, type Layout, type View, type ViewPatch } from "@tomradex/domain";
+import { InUseError, NotFoundError, normalizeQuery, parseLayout, type Author, type CreateViewInput, type View, type ViewPatch } from "@tomradex/domain";
 
 declare module "cordis" {
   interface Context {
@@ -37,7 +37,7 @@ function rowToView(r: ViewRow): View {
     projectId: r.project_id,
     name: r.name,
     icon: r.icon,
-    layout: (LAYOUTS as readonly string[]).includes(r.layout) ? (r.layout as Layout) : "board",
+    layout: parseLayout(r.layout),
     query: parseQuery(r.query_json),
     rank: r.rank,
     createdAt: r.created_at,

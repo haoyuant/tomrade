@@ -13,10 +13,27 @@ export interface ViewSeed {
 export type SeedLocale = "en" | "zh";
 
 /** Seeded rows are data, not labels: once written they are the project's own names, so they are written in the language the person reads. */
-const SEED_NAMES: Record<SeedLocale, { main: string; backlog: string; recent: string }> = {
-  en: { main: "Main", backlog: "Backlog", recent: "Recently updated" },
-  zh: { main: "主线", backlog: "看板", recent: "最近更新" }
+const SEED_NAMES: Record<SeedLocale, { main: string; backlog: string; recent: string; grouped: Record<GroupedTableField, string> }> = {
+  en: { main: "Main", backlog: "Backlog", recent: "Recently updated", grouped: { status: "By status", epic: "By epic", priority: "By priority", board: "By workstream" } },
+  zh: { main: "主线", backlog: "看板", recent: "最近更新", grouped: { status: "按状态", epic: "按需求组", priority: "按优先级", board: "按工作流" } }
 };
+
+/** Tables grouped by one field, urgent first within a group; the renderer offers the same ones as presets (ui lib/viewPresets.ts). */
+const GROUPED_TABLES = [
+  { groupBy: "status", icon: "i-cards" },
+  { groupBy: "epic", icon: "i-stack" },
+  { groupBy: "priority", icon: "i-alarm" },
+  { groupBy: "board", icon: "i-split" }
+] as const;
+type GroupedTableField = (typeof GROUPED_TABLES)[number]["groupBy"];
+
+const groupedTableQuery = (groupBy: GroupedTableField): Record<string, unknown> => ({
+  groupBy,
+  sortBy: [
+    { field: "priority", dir: "asc" },
+    { field: "updated", dir: "desc" }
+  ]
+});
 
 export const seedLocale = (locale?: string | null): SeedLocale => (locale?.toLowerCase().startsWith("zh") ? "zh" : "en");
 
@@ -28,7 +45,8 @@ export function defaultViews(locale?: string | null): readonly ViewSeed[] {
   const names = SEED_NAMES[seedLocale(locale)];
   return [
     { name: names.backlog, icon: "i-board", layout: "board", query: { columnBy: "status" } },
-    { name: names.recent, icon: "i-clock", layout: "table", query: { sortBy: [{ field: "updated", dir: "desc" }] } }
+    { name: names.recent, icon: "i-clock", layout: "table", query: { sortBy: [{ field: "updated", dir: "desc" }] } },
+    ...GROUPED_TABLES.map((g): ViewSeed => ({ name: names.grouped[g.groupBy], icon: g.icon, layout: "table", query: groupedTableQuery(g.groupBy) }))
   ];
 }
 

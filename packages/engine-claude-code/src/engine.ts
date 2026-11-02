@@ -34,12 +34,15 @@ export function retryReason(message: { error_status: number | null; error: strin
   return `${message.error.replace(/_/g, " ")} (HTTP ${message.error_status})`;
 }
 
+/** Who the engine is, and what its sessions are told of it. */
+export const CLAUDE_CODE = { title: "Claude Code", nativeWebSearch: true };
+
 /** Everything about the Claude Code engine except how a turn runs: identity, options, availability, setup. */
 export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
   const cli = localCli("claude");
   return {
+    ...CLAUDE_CODE,
     id: "claude-code",
-    title: "Claude Code",
     author: "ai:claude-code",
     capabilities: ["backlog", "code", "general"],
     options: ClaudeCodeOptions,

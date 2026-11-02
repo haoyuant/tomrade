@@ -108,7 +108,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   }
   class FakeHerdr extends Service {
     static provide = "terminals";
-    readonly kind = "herdr" as const;
+    kind: "herdr" | "builtin" = "herdr";
     constructor(ctx: Context) {
       super(ctx, "terminals");
     }
@@ -300,6 +300,14 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "What you typed while the terminal was connecting was not sent" });
   await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
   expect(streams.at(-1)!.sent).toEqual([]);
+  // The built-in host paces its own paints: its frames reach the window as they come, none held for a batch.
+  const terminals = w.ctx.get("terminals") as unknown as FakeHerdr;
+  terminals.kind = "builtin";
+  await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  streams.at(-1)!.frame("one", { full: false });
+  streams.at(-1)!.frame("two", { full: false });
+  expect(shown().slice(-2)).toEqual(["one", "two"]);
+  terminals.kind = "herdr";
   win.spec.onClose();
   expect(streams.at(-1)!.closed).toBe(true);
   // Closed: the next open is a new window, with the remembered layout.
@@ -1431,6 +1439,82 @@ it("starts herdr's server again when it went away, on opening with saved termina
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([saved]);
 });
 
+it("says so when the pty host's pipe refuses this app, starts nothing over it, and attaches the cells again once it lets the app in", async () => {
+  let forbidden = true;
+  const revives: boolean[] = [];
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class ElevatedHost extends Service {
+    static provide = "terminals";
+    readonly kind = "builtin" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => (forbidden ? { state: "forbidden" as const } : { state: "ready" as const, version: "0.24.0" });
+    serverGone = async () => true;
+    panes = async () => null;
+    processes = async () => [];
+    revive = async (force = false) => {
+      revives.push(force);
+      return "started";
+    };
+    terminal = async () => {
+      throw Object.assign(new Error("the terminal host does not let this app in"), { code: "forbidden" });
+    };
+    onScroll = () => () => {};
+  }
+  class NoCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
+    sessionsOf = () => [];
+    links = () => [];
+  }
+
+  const stateFile = path.join(dir, "forbidden-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "forbidden-settings.json") }], Contributions, FakeSurfaces, ElevatedHost, NoCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ terminals: { [w.project.id]: [{ id: "t1", title: "repo", cwd: dir, pane: "p1", startedAt: 1 }] } }));
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(check()).toBe(true);
+  };
+
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  expect(win.states[0]).toMatchObject({ bridge: { state: "forbidden" }, revive: null });
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  await until(() => win.posts.some((p) => p.type === "closed"));
+  expect(win.posts.at(-1)).toEqual({ type: "closed", cell: "c1", reason: expect.stringContaining("may not open its terminal host") });
+  win.spec.onMessage({ type: "refresh" });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(revives).toEqual([]);
+
+  // The host holding the pipe was ended: one starts, and the cell attaches again.
+  forbidden = false;
+  win.spec.onMessage({ type: "refresh" });
+  await until(() => win.posts.at(-1)?.type === "reattach");
+  expect(win.posts.at(-1)).toEqual({ type: "reattach", cell: "c1" });
+  expect(revives).toEqual([false]);
+});
+
 it("lists the assistant's conversations from a cache read when they change, never on a refresh; answers a prompt from a card; reads tails for the overview", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const events: [string, unknown][] = [];
@@ -1672,7 +1756,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   await settle();
   // The setting is there, on by default, and machine-local.
-  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, background: true, maxPaneMB: 50, keepDays: 7 } });
+  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: false, background: true, maxPaneMB: 50, keepDays: 7 } });
   // What the cells record, alone: panes with no cell on them are the next test's.
   w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
@@ -1820,6 +1904,7 @@ it("records a pane no cell shows by watching it, never taking it over; a cell ta
   const stateFile = path.join(dir, "background-state.json");
   const recordingsDir = path.join(dir, "background-recordings");
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "background-settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile, recordingsDir }]] });
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { ...w.ctx.settings.get().terminalRecording, enabled: true } });
   fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: null } } }));
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   const watching = () => streams.filter((s) => s.mode === "observe" && !s.closed);

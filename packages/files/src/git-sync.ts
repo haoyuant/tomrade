@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GitFolder, cleanRemote, execGit, type Git } from "@tomradex/git";
+import { GitFolder, SyncRecorder, cleanRemote, execGit, type Git } from "@tomradex/git";
+import { exchangeFailure, type ExchangeFailure, type ExchangeStep } from "./sync-failure.js";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
@@ -152,7 +153,9 @@ interface IndexEntry {
  * history. No checkout is made, so remote symlinks, attributes and hooks
  * cannot touch the filesystem; read-tree keeps every path outside the scope
  * exactly, and update-index changes only what is ours. Only the tip is
- * fetched: a monorepo's history stays where it is.
+ * fetched: a monorepo's history stays where it is. A scoped remote is fetched
+ * without blobs and then only the scope's are asked for, so a monorepo's
+ * other folders are never downloaded; a server without filters sends all.
  */
 const transportKey = (url: string, branch: string, directory: string): string => createHash("sha256").update(JSON.stringify([url, branch, directory])).digest("hex");
 
@@ -181,6 +184,23 @@ function adoptCredentialedKey(local: string, target: { url: string; branch: stri
   }
 }
 
+const exchanges = new Map<string, Promise<unknown>>();
+
+/**
+ * One exchange at a time per transport folder, across stores: a store
+ * reopened while its predecessor still fetches would otherwise run git beside
+ * it in the same folder and fail on its locks.
+ */
+export function exclusiveTransport<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const turn = (exchanges.get(dir) ?? Promise.resolve()).catch(() => undefined).then(run);
+  const settled = turn.catch(() => undefined);
+  exchanges.set(dir, settled);
+  void settled.then(() => {
+    if (exchanges.get(dir) === settled) exchanges.delete(dir);
+  });
+  return turn;
+}
+
 export class GitProjection {
   readonly dir: string;
   readonly folder: GitFolder;
@@ -198,20 +218,38 @@ export class GitProjection {
     adoptCredentialedKey(local, target, this.key);
   }
 
-  private run(args: string[], ok = false) {
-    return this.git(args, { cwd: this.dir, ok });
+  private run(args: string[], ok = false, onStderr?: (text: string) => void) {
+    return this.git(args, { cwd: this.dir, ok, onStderr });
   }
 
-  /** Bring the index to the remote's tip. False when the remote cannot be reached. */
-  async fetch(): Promise<boolean> {
+  /**
+   * What a git killed mid-exchange leaves behind — the app quit during a
+   * fetch, say — would fail every later one. Called inside exclusiveTransport,
+   * and one Tomrade owns a data folder, so no live git holds these.
+   */
+  private clearInterrupted(): void {
+    const git = path.join(this.dir, ".git");
+    for (const lock of ["shallow.lock", "index.lock", "HEAD.lock"]) fs.rmSync(path.join(git, lock), { force: true });
+    const pack = path.join(git, "objects", "pack");
+    if (fs.existsSync(pack)) for (const name of fs.readdirSync(pack)) if (name.startsWith("tmp_")) fs.rmSync(path.join(pack, name), { force: true });
+  }
+
+  /** Bring the index to the remote's tip; null once there, else the step git refused and why. */
+  async fetch(recorder = new SyncRecorder()): Promise<ExchangeFailure | null> {
     fs.mkdirSync(this.dir, { recursive: true });
+    this.clearInterrupted();
     if (!fs.existsSync(path.join(this.dir, ".git"))) await this.run(["init", "-q", "-b", this.target.branch]);
     await this.folder.ensureIdentity();
     await this.folder.setRemote(this.target.url);
-    const probe = await this.folder.probe(this.target.branch);
-    if (probe === "offline") return false;
-    if (probe === "exists") {
-      if ((await this.run(["fetch", "-q", "--depth", "1", "origin", this.target.branch], true)).code !== 0) return false;
+    recorder.step("reaching");
+    // Exit 2 is a reachable remote without the branch yet: where every project starts.
+    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true, recorder.stderr);
+    if (probe.code !== 0 && probe.code !== 2) return this.refused(recorder, "reach", probe.stderr);
+    if (probe.code === 0) {
+      recorder.step("fetching");
+      const filter = this.prefix ? ["--filter=blob:none"] : [];
+      const fetched = await this.run(["fetch", "--progress", "--depth", "1", ...filter, "origin", this.target.branch], true, recorder.stderr);
+      if (fetched.code !== 0) return this.refused(recorder, "fetch", fetched.stderr);
       await this.run(["update-ref", "HEAD", `refs/remotes/origin/${this.target.branch}`]);
       await this.run(["read-tree", "HEAD"]);
     } else {
@@ -228,7 +266,22 @@ export class GitProjection {
     for (const [p, e] of this.entries) {
       if ((this.prefix && this.prefix.startsWith(`${p}/`)) || (p.startsWith(this.prefix) && e.mode !== "100644" && e.mode !== "100755")) throw new Error(`Remote scope contains unsupported entry: ${p}`);
     }
-    return true;
+    return this.prefix ? this.fetchScopeBlobs() : null;
+  }
+
+  /** The scope's blobs a filtered fetch left out, in one request rather than one per read. */
+  private async fetchScopeBlobs(): Promise<ExchangeFailure | null> {
+    const head = await this.run(["rev-parse", "-q", "--verify", "HEAD"], true);
+    if (head.code !== 0) return null;
+    const ours = new Set([...this.listing().values()].map((e) => e.oid));
+    const objects = await this.run(["rev-list", "--objects", "--missing=print", "HEAD"]);
+    const wanted = objects.stdout.split("\n").filter((line) => line.startsWith("?") && ours.has(line.slice(1).trim())).map((line) => line.slice(1).trim());
+    if (!wanted.length) return null;
+    const fetched = await this.git(
+      ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "--stdin", "origin"],
+      { cwd: this.dir, ok: true, stdin: `${wanted.join("\n")}\n` },
+    );
+    return fetched.code === 0 ? null : exchangeFailure("fetch", fetched.stderr ?? "");
   }
 
   /** Every path in scope, relative to it, with what git has there. */
@@ -276,11 +329,32 @@ export class GitProjection {
     this.entries.set(full, { mode, oid: written });
   }
 
-  /** Commit what changed on top of the fetched tip and push, never forced. */
-  async push(): Promise<boolean> {
+  /** The tree the fetched tip holds (null on an empty remote) and the one a push would publish. */
+  async trees(): Promise<{ theirs: string | null; ours: string }> {
+    const theirs = await this.run(["rev-parse", "-q", "--verify", "HEAD^{tree}"], true);
+    // --missing-ok: checking every entry would download the blobs a filtered fetch left out.
+    const ours = await this.run(["write-tree", "--missing-ok"]);
+    return { theirs: theirs.code === 0 ? theirs.stdout.trim() : null, ours: ours.stdout.trim() };
+  }
+
+  /** Commit what changed on top of the fetched tip and push, never forced; null once it landed, else why not. */
+  async push(recorder = new SyncRecorder()): Promise<ExchangeFailure | null> {
+    recorder.step("pushing");
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
     const head = await this.run(["rev-parse", "--verify", "HEAD"], true);
-    if (changed.code !== 0 || head.code !== 0) await this.run(["-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "Synchronize shared files"]);
-    return this.folder.push(this.target.branch);
+    if (changed.code !== 0 || head.code !== 0) {
+      // Not `git commit`: it refreshes the index and so downloads the blobs a filtered fetch left out.
+      const tree = (await this.run(["write-tree", "--missing-ok"])).stdout.trim();
+      const parent = head.code === 0 ? ["-p", head.stdout.trim()] : [];
+      const commit = await this.run(["commit-tree", tree, ...parent, "-m", "Synchronize shared files"]);
+      await this.run(["update-ref", "HEAD", commit.stdout.trim()]);
+    }
+    const pushed = await this.run(["push", "--progress", "origin", `HEAD:refs/heads/${this.target.branch}`], true, recorder.stderr);
+    return pushed.code === 0 ? null : this.refused(recorder, "push", pushed.stderr);
+  }
+
+  private refused(recorder: SyncRecorder, step: ExchangeStep, stderr = ""): ExchangeFailure {
+    recorder.fail();
+    return exchangeFailure(step, stderr);
   }
 }

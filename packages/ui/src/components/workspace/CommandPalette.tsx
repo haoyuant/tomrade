@@ -2,10 +2,10 @@ import { useDeferredValue, useRef, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
-import { LAYOUTS } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
-import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
+import { isTicket, viewIcon } from "~/lib/domain";
+import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
 import { requestStart } from "~/lib/codeLink";
 import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
@@ -23,6 +23,7 @@ import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { askPanel } from "~/lib/panelRequests";
 import { openCapabilities } from "~/lib/capabilities";
+import { paletteFilter } from "~/lib/paletteFilter";
 import { PaletteSessions, PaletteStart, useLooseStart } from "./PaletteSessions";
 
 export interface PaletteActions {
@@ -66,6 +67,7 @@ export function CommandPalette(props: PaletteProps) {
 
 function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps) {
   const ws = useWorkspace();
+  const layouts = useLayoutOptions();
   const selectedId = useSelectedId();
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -109,17 +111,18 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     const group = c.group ?? t("commandPalette.pluginsGroupFallback");
     pluginGroups.set(group, [...(pluginGroups.get(group) ?? []), c]);
   }
+  // The palette unmounts as it closes, and mutate's own callbacks do not outlive it: the promise does.
   const runPlugin = (id: string) =>
-    runCommand.mutate(
-      { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } },
-      { onSuccess: (r) => {
+    void runCommand.mutateAsync({ id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } }).then(
+      (r) => {
         if (r.startDialog && selectedId && requestStart(selectedId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
         if (r.review) { dock?.setAiOpen(true); askPanel({ kind: "review", sessionId: r.review.sessionId, itemId: r.review.itemId ?? selectedId ?? undefined }); }
         if (r.settingsPane) openSettingsPane(r.settingsPane);
         if (r.opens) actions.openSurface(r.opens);
-      }, onError: (e) => toast(errorSpec(e)) }
+      },
+      (e) => toast(errorSpec(e))
     );
 
   const actionRows = [
@@ -133,7 +136,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     { label: t("commandPalette.undoLastWrite"), kb: keyLabel("undo"), run: actions.undo },
     { label: t("commandPalette.redoLastUndo"), kb: keyLabel("redo"), run: actions.redo },
     { label: t("commandPalette.history"), kb: undefined, run: actions.openHistory },
-    ...LAYOUTS.map((l) => ({ label: t("commandPalette.layoutAction", { layout: LAYOUT_LABEL[l].label }), kb: undefined, run: () => ws.setLayout(l) })),
+    ...layouts.map((l) => ({ label: t("commandPalette.layoutAction", { layout: l.label }), kb: undefined, run: () => ws.setLayout(l.id) })),
     ...(ws.filePath === null && !ws.routines ? [{ label: t("commandPalette.searchTickets"), kb: keyLabel("searchTickets"), run: actions.searchTickets }] : []),
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
@@ -155,6 +158,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
         })
     })),
     { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
+    { label: t("takeover.commandLabel"), kb: undefined, run: () => actions.openSurface("takeover") },
     { label: t("commandPalette.switchProject"), kb: keyLabel("switchProject"), run: actions.openProjectMenu },
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
     { label: t("commandPalette.settings"), kb: keyLabel("settings"), run: actions.openSettings },
@@ -170,6 +174,48 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     }))
   ];
 
+  const middleGroups = (
+    <>
+      <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
+        {ws.views.map((view) => (
+          <Command.Item key={view.id} value={`${view.name} ${layoutLabel(view.layout, layouts)}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
+            <Icon name={viewIcon(view.icon)} size={14} style={{ color: "var(--meta)" }} />
+            <span className="p-label">
+              {view.name} <span className="meta-txt">· {layoutLabel(view.layout, layouts)}</span>
+            </span>
+            <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+
+      <Command.Group heading={t("commandPalette.workstreamsGroup")} className="eyebrow palette-group">
+        {ws.boards.map((b) => (
+          <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
+            <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
+            <span className="p-label">{b.name}</span>
+            <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+
+      <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
+        {shownTickets.map((item) => (
+          <Command.Item
+            key={item.id}
+            value={`${item.key} ${item.title}`}
+            className="palette-row"
+            // the pane looks the issue up across the project, so opening it in place beats navigating away
+            onSelect={() => run(() => ws.select(item.id))}
+          >
+            <StatusMark status={item.status} size={14} />
+            <span className="p-label">{item.title}</span>
+            <span className="card-id">{item.key}</span>
+          </Command.Item>
+        ))}
+      </Command.Group>
+    </>
+  );
+
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -183,6 +229,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
           <RadixDialog.Title className="sr-only">{t("commandPalette.title")}</RadixDialog.Title>
           <Command
             loop
+            filter={paletteFilter}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isComposing(e)) return;
               shift.current = e.shiftKey;
@@ -221,45 +268,8 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
 
               {!startMode && (
               <>
-              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} onStart={() => setStartHere(true)} />}
-
-              <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
-                {ws.views.map((view) => (
-                  <Command.Item key={view.id} value={`${view.name} ${LAYOUT_LABEL[view.layout].label}`} className="palette-row" onSelect={() => run(() => ws.openView(view.id))}>
-                    <Icon name={viewIcon(view.icon)} size={14} style={{ color: "var(--meta)" }} />
-                    <span className="p-label">
-                      {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
-                    </span>
-                    <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
-
-              <Command.Group heading={t("commandPalette.workstreamsGroup")} className="eyebrow palette-group">
-                {ws.boards.map((b) => (
-                  <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
-                    <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
-                    <span className="p-label">{b.name}</span>
-                    <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
-
-              <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
-                {shownTickets.map((item) => (
-                  <Command.Item
-                    key={item.id}
-                    value={`${item.key} ${item.title}`}
-                    className="palette-row"
-                    // the pane looks the issue up across the project, so opening it in place beats navigating away
-                    onSelect={() => run(() => ws.select(item.id))}
-                  >
-                    <StatusMark status={item.status} size={14} />
-                    <span className="p-label">{item.title}</span>
-                    <span className="card-id">{item.key}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
+              {/* what ended is listed after the tickets: a ticket typed for is not pushed out of sight by old conversations */}
+              {dock ? <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} onStart={() => setStartHere(true)}>{middleGroups}</PaletteSessions> : middleGroups}
 
               {shownFiles.length > 0 && (
                 <Command.Group heading={t("notes.paletteFiles")} className="eyebrow palette-group">

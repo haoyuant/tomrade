@@ -91,6 +91,8 @@ export interface WorkspaceValue {
   closed: ClosedView;
   epics: Item[];
   epicNames: Map<string, string>;
+  /** Each epic's tag hue: open epics spread around the wheel; a closed one keeps a hue of its own. */
+  epicHues: Map<string, number>;
   labels: string[];
 
   /** The live draft — the render source of truth. Differs from `view` until saved. */
@@ -188,9 +190,35 @@ const useSelection = (): Selection => {
   return selection;
 };
 
+/** The golden angle: each next hue lands in the widest gap the earlier ones left. */
+const GOLDEN_ANGLE = 137.508;
+/** Epic hues keep clear of the reds, oranges and ambers that blocked, failing and upstream marks speak in. */
+const EPIC_HUE_FROM = 120;
+const EPIC_HUE_SPAN = 220;
+/** The first open epic starts at teal. */
+const EPIC_HUE_START = 40;
+
+/**
+ * Open epics, which the renderer always holds, take hues in key order a golden angle apart, so
+ * however few there are they read apart. A done or cancelled one, loaded only now and then,
+ * takes its hue from its key alone, so it does not shift the others' as pages load.
+ */
+function epicHueMap(epics: Item[]): Map<string, number> {
+  const hue = (n: number) => Math.round(EPIC_HUE_FROM + ((n * GOLDEN_ANGLE + EPIC_HUE_START) % EPIC_HUE_SPAN));
+  const open = epics.filter((e) => e.status !== "done" && e.status !== "cancelled").sort((a, b) => a.keyNum - b.keyNum);
+  const hues = new Map(epics.map((e) => [e.id, hue(e.keyNum)]));
+  open.forEach((e, i) => hues.set(e.id, hue(i)));
+  return hues;
+}
+
 export function useSelectedId(): string | null {
   const selection = useSelection();
   return useSyncExternalStore(selection.subscribe, selection.get);
+}
+
+/** Reads the open ticket when asked, without re-rendering when it changes. */
+export function useReadSelectedId(): () => string | null {
+  return useSelection().get;
 }
 
 /** Re-renders only when this ticket gains or loses the selection. */
@@ -364,6 +392,7 @@ export function WorkspaceProvider({
   const fieldById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
   const epics = useMemo(() => all.filter((i) => i.kind === "epic"), [all]);
   const epicNames = useMemo(() => new Map(epics.map((e) => [e.id, e.title])), [epics]);
+  const epicHues = useMemo(() => epicHueMap(epics), [epics]);
   const boardList = useMemo(() => boards.data ?? [], [boards.data]);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
 
@@ -493,6 +522,7 @@ export function WorkspaceProvider({
       closed,
       epics,
       epicNames,
+      epicHues,
       labels: labelList,
       query: live.query,
       setQuery,
@@ -544,6 +574,7 @@ export function WorkspaceProvider({
     all,
     epics,
     epicNames,
+    epicHues,
     progressMap,
     viewCounts,
     workstreamCounts,

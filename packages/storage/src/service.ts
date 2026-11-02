@@ -12,7 +12,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential } from "@tomradex/git";
+import { GitFolder, GitMissingError, SyncRecorder, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential, type PushResult, type SyncTrace } from "@tomradex/git";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
@@ -33,7 +33,6 @@ import {
   readArtifact,
   refreshSupportFiles,
   restoreLf,
-  serializeState,
   writeArtifact,
   type ExportOptions,
   type ProjectState
@@ -175,8 +174,14 @@ export class Storage extends Service implements StorageReader {
   private publishing = new Set<string>();
   /** Each project's folder and git work, one at a time; see `inTurn`. */
   private turns = new Map<string, Promise<void>>();
+  /** The turn running for a project, step by step; and what the last one that reached its remote did. */
+  private readonly recorders = new Map<string, SyncRecorder>();
+  private readonly traces = new Map<string, SyncTrace>();
   /** Why the folder's last commit or push failed, until one succeeds: the folder is ahead of git whatever the digests say. */
   private gitFailed = new Map<string, string>();
+  /** Why the last push was turned away or broke off, until one lands: the commits wait here, the status says so. */
+  private pushFailed = new Map<string, { state: "offline" | "error"; detail: string }>();
+  private hubPushFailed: { state: "offline" | "error"; detail: string } | null = null;
   private lastState = new Map<string, SyncState>();
   private lastStatus = new Map<string, StorageStatus>();
   /** Base snapshots for projects whose cache is in memory (tests). */
@@ -404,7 +409,7 @@ export class Storage extends Service implements StorageReader {
    * wait for the turn it holds.
    */
   private inTurn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
-    const turn = (this.turns.get(projectId) ?? Promise.resolve()).then(work);
+    const turn = (this.turns.get(projectId) ?? Promise.resolve()).then(() => this.recorded(projectId, work));
     const done = turn.then(
       () => undefined,
       () => undefined
@@ -414,6 +419,22 @@ export class Storage extends Service implements StorageReader {
       if (this.turns.get(projectId) === done) this.turns.delete(projectId);
     });
     return turn;
+  }
+
+  /** A turn's exchange with the remote, told to the window as it goes and kept for it to read once over. */
+  private async recorded<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    const recorder = new SyncRecorder((progress) => this.home.get("ipc")?.send("storage.progress", projectId, progress));
+    this.recorders.set(projectId, recorder);
+    try {
+      return await work();
+    } catch (error) {
+      recorder.fail();
+      throw error;
+    } finally {
+      this.recorders.delete(projectId);
+      const trace = recorder.finish();
+      if (recorder.located) this.traces.set(projectId, trace);
+    }
   }
 
   private quiet(projectId: string, ms = 1_500): void {
@@ -432,7 +453,7 @@ export class Storage extends Service implements StorageReader {
    * by whoever asks meanwhile. A status read takes the last answer while it is
    * fresh; an unreachable remote is asked again only after a growing wait.
    */
-  private askRemote(dir: string, branch: string, use: "status" | "act"): Promise<RemoteProbe> {
+  private askRemote(dir: string, branch: string, use: "status" | "act", recorder?: SyncRecorder): Promise<RemoteProbe> {
     const key = `${dir}\0${branch}`;
     let ask = this.remoteAsks.get(key);
     if (!ask) this.remoteAsks.set(key, (ask = { pending: null, probe: null, at: 0, quiet: 0, failures: 0, fetched: false }));
@@ -447,8 +468,13 @@ export class Storage extends Service implements StorageReader {
     current.pending = (async () => {
       const g = this.git(dir);
       const before = await g.tip(branch);
-      let probe = await g.probe(branch);
-      if (probe === "exists" && !(await g.fetch(branch))) probe = "offline";
+      recorder?.step("reaching");
+      let probe = await g.probe(branch, "origin", recorder?.stderr);
+      if (probe === "exists") {
+        recorder?.step("fetching");
+        if (!(await g.fetch(branch, "origin", recorder?.stderr))) probe = "offline";
+      }
+      if (probe === "offline") recorder?.fail();
       current.quiet = probe === "offline" ? current.quiet : (await g.tip(branch)) === before ? current.quiet + 1 : 0;
       current.failures = probe === "offline" ? current.failures + 1 : 0;
       if (probe === "offline") this.home.logger.info(`storage: cannot reach the remote of ${dir}; asking again in ${Math.round(this.retryAfter(current.failures) / 1000)} s`);
@@ -470,7 +496,9 @@ export class Storage extends Service implements StorageReader {
   private remember(projectId: string, status: StorageStatus): StorageStatus {
     this.lastState.set(projectId, status.state);
     this.lastStatus.set(projectId, status);
-    return status;
+    const trace = this.traces.get(projectId);
+    const progress = this.recorders.get(projectId)?.progress();
+    return { ...status, ...(trace ? { trace } : {}), ...(progress ? { progress } : {}) };
   }
 
   /** Moves whenever this device writes to the project: compare two readings to tell whether a call wrote. */
@@ -793,7 +821,12 @@ export class Storage extends Service implements StorageReader {
   }
 
   private exportFor(projectId: string, entry: CatalogProject, at = Date.now()): ProjectState {
-    return this.digests.export(projectId, this.db(projectId), { ...this.exportOptions(projectId, entry), checkpoint: this.checkpointOf(projectId), at });
+    return this.exportWithFiles(projectId, entry, at).state;
+  }
+
+  /** The export and, when the kept digest holds them, its state files' bytes, so a write does not serialize them again. */
+  private exportWithFiles(projectId: string, entry: CatalogProject, at = Date.now()): { state: ProjectState; files?: Map<string, Buffer> } {
+    return this.digests.exportFiles(projectId, this.db(projectId), { ...this.exportOptions(projectId, entry), checkpoint: this.checkpointOf(projectId), at });
   }
 
   /** The digest of what this machine would write now; the export already carries it, so it is not hashed twice. */
@@ -868,18 +901,14 @@ export class Storage extends Service implements StorageReader {
     return file === ":memory:" ? null : path.join(path.dirname(file), "published");
   }
 
-  private savePublished(projectId: string, state: ProjectState): void {
+  private savePublished(projectId: string, state: ProjectState, files?: Map<string, Buffer>): void {
     const dir = this.publishedDir(projectId);
     if (!dir) {
       this.publishedMem.set(projectId, state);
       return;
     }
-    fs.rmSync(dir, { recursive: true, force: true });
-    for (const [rel, body] of serializeState(state)) {
-      const file = path.join(dir, rel);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, body, "utf8");
-    }
+    // Only the files that changed are written; ones the state no longer has go.
+    writeArtifact(dir, state, { files });
   }
 
   loadPublished(projectId: string): ProjectState | null {
@@ -928,9 +957,10 @@ export class Storage extends Service implements StorageReader {
     // mid-sync, conflicted, from a newer build — is left as it is: written over,
     // another machine would take our snapshot for its own work undone.
     if (hasArtifact(dir) && reason !== "merge") {
-      const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
+      // Read again only when a file there changed since this machine last read or wrote it.
+      const { digest: onDisk, problem } = this.folderDigest(dir, this.verifies(projectId));
       if (problem) return this.gaveUp(projectId, "not written", problem);
-      if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) {
+      if (onDisk !== null && onDisk !== first.lastPublishedDigest) {
         await this.refreshInTurn(projectId);
         // A pull during the refresh may have brought in what this build cannot read.
         const after = hasArtifact(dir) ? this.readFolder(dir, this.verifies(projectId)).problem : undefined;
@@ -943,26 +973,29 @@ export class Storage extends Service implements StorageReader {
     const entry = this.mustEntry(projectId);
     const now = Date.now();
     const upTo = this.ownTop(projectId);
-    const state = this.exportFor(projectId, entry, now);
+    const { state, files } = this.exportWithFiles(projectId, entry, now);
     const digest = state.manifest.snapshot!.digest;
     this.publishing.add(projectId);
     this.quiet(projectId, 3_000);
     try {
-      if (digest !== entry.lastPublishedDigest || !hasArtifact(dir) || this.manifestChanged(dir, state)) {
-        writeArtifact(dir, state, { mcpUrl: this.mcpUrl(projectId) });
+      const writing = digest !== entry.lastPublishedDigest || !hasArtifact(dir) || this.manifestChanged(dir, state);
+      if (writing) {
+        writeArtifact(dir, state, { mcpUrl: this.mcpUrl(projectId), files });
         compactLog(dir, this.hub.deviceId, (state.manifest.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS) * DAY, now);
-        this.savePublished(projectId, state);
+        this.savePublished(projectId, state, files);
         this.hub.catalog.patchProject(projectId, { lastPublishedDigest: digest, lastSyncAt: now });
       } else {
         refreshSupportFiles(dir, { mcpUrl: this.mcpUrl(projectId) });
       }
       restoreLf(dir);
+      // What was just written needs no reading back to tell the folder's digest.
+      if (writing) this.folderSeen.set(dir, { stamp: artifactStamp(dir), verify: this.verifies(projectId), digest });
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
       // The folder is where the project is shared unless a remote is; then only a push counts.
       let delivered = true;
       try {
-        if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
+        if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(projectId, entry, summary) : this.pushDedicated(projectId, entry, summary));
         else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
       } catch (error) {
         // A hook or a signing key said no: the status says why, and the next reconcile tries again.
@@ -1003,13 +1036,18 @@ export class Storage extends Service implements StorageReader {
   /** Commit the folder, then bring the remote's news in before pushing ours out. */
   private async pushDedicated(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
+    const recorder = this.recorders.get(projectId);
+    recorder?.step("saving");
     await g.commit(summary);
+    this.pushFailed.delete(projectId);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
-    const probe = await this.askRemote(entry.dir!, remote.branch, "act");
+    recorder?.locate({ remote: remote.url, branch: remote.branch });
+    const probe = await this.askRemote(entry.dir!, remote.branch, "act", recorder);
     if (probe === "offline") return false; // the commit waits
     const counts = probe === "exists" ? await g.aheadBehind(remote.branch) : null;
     if (counts && counts.behind > 0) {
+      recorder?.step("merging");
       if (counts.ahead === 0) {
         await g.fastForward(remote.branch);
         this.absorbFolder(projectId);
@@ -1017,9 +1055,23 @@ export class Storage extends Service implements StorageReader {
         await this.mergeRemote(projectId, this.mustEntry(projectId), g, remote.branch);
       }
     }
-    await g.push(remote.branch);
+    recorder?.step("pushing");
+    if (!this.pushLanded(projectId, entry.dir!, remote.branch, await g.push(remote.branch, "origin", recorder?.stderr))) {
+      recorder?.fail();
+      return false;
+    }
     this.pushedTo(entry.dir!, remote.branch);
     return true;
+  }
+
+  /** A push turned away is no delivery: the commits stay for the next sync, the status and the log say why. */
+  private pushLanded(projectId: string, dir: string, branch: string, result: PushResult): boolean {
+    if (result.ok) return true;
+    const detail = `Push to ${branch} failed${result.detail ? `: ${result.detail}` : ""}`;
+    this.pushFailed.set(projectId, { state: result.reach === "offline" ? "offline" : "error", detail });
+    this.home.logger.warn(`storage: ${dir} not pushed — ${detail}`);
+    this.notify(projectId);
+    return false;
   }
 
   /**
@@ -1027,14 +1079,15 @@ export class Storage extends Service implements StorageReader {
    * there are any: the remote's news waits for the next launch, which merges
    * it, so a quit never waits on a fetch or a merge.
    */
-  private async pushOnLeaving(entry: CatalogProject, summary: string): Promise<boolean> {
+  private async pushOnLeaving(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
     const committed = await g.commit(summary);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
     // Against the last-known remote tip; without one, assume there is something to push.
-    if (committed || ((await g.aheadBehind(remote.branch))?.ahead ?? 1) > 0) await g.push(remote.branch);
-    return true;
+    if (!committed && ((await g.aheadBehind(remote.branch))?.ahead ?? 1) === 0) return true;
+    this.pushFailed.delete(projectId);
+    return this.pushLanded(projectId, entry.dir!, remote.branch, await g.push(remote.branch));
   }
 
   private async remoteOf(entry: CatalogProject): Promise<{ url: string; branch: string } | null> {
@@ -1252,8 +1305,11 @@ export class Storage extends Service implements StorageReader {
       const remote = await this.remoteOf(entry);
       if (remote) {
         const g = this.git(entry.dir);
-        if ((await this.askRemote(entry.dir, remote.branch, "act")) === "exists") {
+        const recorder = this.recorders.get(projectId);
+        recorder?.locate({ remote: remote.url, branch: remote.branch });
+        if ((await this.askRemote(entry.dir, remote.branch, "act", recorder)) === "exists") {
           const counts = await g.aheadBehind(remote.branch);
+          if (counts && counts.behind > 0) recorder?.step("merging");
           if (counts && counts.behind > 0 && counts.ahead === 0) await g.fastForward(remote.branch);
           else if (counts && counts.behind > 0) {
             await this.mergeRemote(projectId, entry, g, remote.branch);
@@ -1483,6 +1539,8 @@ export class Storage extends Service implements StorageReader {
     if (problem) return this.remember(projectId, { ...problem, location, lastSyncAt: entry.lastSyncAt });
     const failed = this.gitFailed.get(projectId);
     if (failed) return this.remember(projectId, { state: "error", location, detail: failed, lastSyncAt: entry.lastSyncAt });
+    const refused = this.pushFailed.get(projectId);
+    if (refused) return this.remember(projectId, { state: refused.state, location, detail: refused.detail, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
       localDirty = this.statusDigest(projectId, entry) !== entry.lastPublishedDigest;
@@ -1871,6 +1929,7 @@ export class Storage extends Service implements StorageReader {
     this.lastState.delete(projectId);
     this.publishedMem.delete(projectId);
     this.gitFailed.delete(projectId);
+    this.pushFailed.delete(projectId);
     this.digests.forget(projectId);
   }
 
@@ -1888,7 +1947,7 @@ export class Storage extends Service implements StorageReader {
     } else {
       await this.refresh(projectId);
       const status = await this.statusFor(projectId);
-      if (status.state === "ahead" || this.gitFailed.has(projectId)) await this.publish(projectId, "catch-up");
+      if (status.state === "ahead" || this.gitFailed.has(projectId) || this.pushFailed.has(projectId)) await this.publish(projectId, "catch-up");
       // A machine that never counted starts from a moment nothing is waiting.
       else if (status.state === "synced" && this.entry(projectId)?.syncedDeviceSeq === null) this.markSynced(projectId, this.ownTop(projectId));
     }
@@ -2050,6 +2109,7 @@ export class Storage extends Service implements StorageReader {
       const g = this.git(dir);
       const probe = await g.probe(remote.branch);
       if (probe === "offline") return { state: "offline", location, detail: `Cannot reach ${location}`, lastSyncAt: null };
+      if (this.hubPushFailed) return { ...this.hubPushFailed, location, lastSyncAt: null };
       if (probe === "absent") return { state: "ahead", location, detail: "Nothing published yet", lastSyncAt: null };
       await g.fetch(remote.branch);
       const counts = await g.aheadBehind(remote.branch);
@@ -2112,7 +2172,15 @@ export class Storage extends Service implements StorageReader {
         await g.commit("tomrade: hub");
       }
     }
-    if (probe !== "offline") await g.push(remote.branch);
+    this.hubPushFailed = null;
+    if (probe !== "offline") {
+      const pushed = await g.push(remote.branch);
+      if (!pushed.ok) {
+        const detail = `Push to ${remote.branch} failed${pushed.detail ? `: ${pushed.detail}` : ""}`;
+        this.hubPushFailed = { state: pushed.reach === "offline" ? "offline" : "error", detail };
+        this.home.logger.warn(`storage: the Hub ${dir} not pushed — ${detail}`);
+      }
+    }
     this.home.get("ipc")?.send("hub.changed");
     void this.restoreMissing();
     return this.hubStatus();

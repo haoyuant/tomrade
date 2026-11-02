@@ -18,6 +18,8 @@ export interface Screen {
   cursor: { x: number; y: number } | null;
   /** The modes the window's xterm needs to send what the program expects: arrow keys, pastes, focus, the cursor's shape. */
   modes: string;
+  /** On the alternate screen: a switch between the two is never taken for a scroll. */
+  alternate?: boolean;
 }
 
 const RESET = "\x1b[0m";
@@ -56,6 +58,29 @@ export function sgrOf(cell: IBufferCell): string {
   return `\x1b[${p.join(";")}m`;
 }
 
+const flagsOf = (cell: IBufferCell) =>
+  (cell.isBold() ? 1 : 0) | (cell.isDim() ? 2 : 0) | (cell.isItalic() ? 4 : 0) | (cell.isUnderline() ? 8 : 0) | (cell.isBlink() ? 16 : 0) | (cell.isInverse() ? 32 : 0) | (cell.isInvisible() ? 64 : 0) | (cell.isStrikethrough() ? 128 : 0) | (cell.isOverline() ? 256 : 0);
+
+/** Each cell's SGR along a row, built again only where the styling differs from the cell before: most runs share one. */
+function styler(): (cell: IBufferCell) => string {
+  let flags = -1;
+  let fgMode = -1;
+  let fg = -1;
+  let bgMode = -1;
+  let bg = -1;
+  let sgr = RESET;
+  return (cell) => {
+    const f = flagsOf(cell);
+    if (f === flags && cell.getFgColorMode() === fgMode && cell.getFgColor() === fg && cell.getBgColorMode() === bgMode && cell.getBgColor() === bg) return sgr;
+    flags = f;
+    fgMode = cell.getFgColorMode();
+    fg = cell.getFgColor();
+    bgMode = cell.getBgColorMode();
+    bg = cell.getBgColor();
+    return (sgr = sgrOf(cell));
+  };
+}
+
 /** One row as the ANSI that paints it from its first column, and how many columns that covers. */
 export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBufferCell): { text: string; width: number } {
   if (!line) return { text: "", width: 0 };
@@ -63,6 +88,7 @@ export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBu
   let width = 0;
   let style = RESET;
   let blanks = 0;
+  const styleOf = styler();
   for (let x = 0; x < cols; x++) {
     const c = line.getCell(x, cell);
     if (!c) break;
@@ -70,7 +96,7 @@ export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBu
     // The second half of a wide character: the first half painted it.
     if (w === 0) continue;
     const chars = c.getChars() || " ";
-    const sgr = sgrOf(c);
+    const sgr = styleOf(c);
     // Plain blanks wait: trailing ones are never sent, the row is cleared after it instead.
     if (chars === " " && sgr === RESET) {
       blanks++;
@@ -99,17 +125,129 @@ export function fullFrame(screen: Screen): string {
   return out + cursorOf(screen);
 }
 
-/** Paints only what changed from `before`; empty when nothing did. A screen of another size is painted whole. */
+// A row that fills its width is left as it is: clearing from its last column would take that column too.
+const paintRow = (screen: Screen, y: number) => `\x1b[${y + 1};1H${screen.rows[y]}${screen.widths[y]! < screen.width ? "\x1b[K" : ""}`;
+const paintCost = (screen: Screen, y: number) => screen.rows[y]!.length + String(y + 1).length + 4 + (screen.widths[y]! < screen.width ? 3 : 0);
+
+/** Rows `top`..`bottom` (inclusive) moved up `by`: what was below comes up, blank rows come in at the bottom. */
+export interface Scroll {
+  top: number;
+  bottom: number;
+  by: number;
+}
+
+/**
+ * Scrolls rows of the window's screen up, within a scroll region when it is not the whole screen, the region put back
+ * after. The rows that come in are blank in the default colors (hence the reset first); the window keeps no scrollback,
+ * so the rows that go leave nothing behind.
+ */
+function scrollBytes(s: Scroll, height: number): string {
+  if (s.top === 0 && s.bottom === height - 1) return `${RESET}\x1b[${s.by}S`;
+  return `${RESET}\x1b[${s.top + 1};${s.bottom + 1}r\x1b[${s.by}S\x1b[r`;
+}
+
+/** How many of the moves that most rows agree on are weighed: a log that scrolls agrees on one. */
+const CANDIDATES = 4;
+/** Where a repeated row is looked for: a screen of the same row over and over says nothing more after a few. */
+const PLACES = 16;
+
+/**
+ * The scroll that paints `after` over `before` in the fewest bytes, with the rows it leaves to paint; null when none
+ * saves any. A scroll is up by some rows, over the whole screen or one run of rows (an agent's input box stays put
+ * under its output). Rows are compared as they are painted, so the bytes it spares are counted exactly.
+ */
+export function scrollOf(before: Screen, after: Screen): Scroll | null {
+  const height = after.height;
+  if (height < 2 || before.height !== height || before.width !== after.width || !!before.alternate !== !!after.alternate) return null;
+  const ids = new Map<string, number>();
+  const idOf = (row: string) => {
+    let id = ids.get(row);
+    if (id === undefined) ids.set(row, (id = ids.size));
+    return id;
+  };
+  const was = before.rows.map(idOf);
+  const now = after.rows.map(idOf);
+  const blank = idOf("");
+  const equal = (y: number, p: number) => now[y] === was[p] && after.widths[y] === before.widths[p];
+  const cost: number[] = [];
+  // What painting each row costs as things are, without a scroll.
+  const stay: number[] = [];
+  for (let y = 0; y < height; y++) {
+    cost.push(paintCost(after, y));
+    stay.push(equal(y, y) ? 0 : cost[y]!);
+  }
+  // Each row that moved votes for how far.
+  const places = new Map<number, number[]>();
+  for (let p = 0; p < height; p++) {
+    if (was[p] === blank) continue;
+    const list = places.get(was[p]!) ?? [];
+    if (list.length < PLACES) list.push(p);
+    places.set(was[p]!, list);
+  }
+  const votes = new Map<number, number>();
+  for (let y = 0; y < height; y++) {
+    if (!stay[y] || now[y] === blank) continue;
+    for (const p of places.get(now[y]!) ?? []) if (p > y && equal(y, p)) votes.set(p - y, (votes.get(p - y) ?? 0) + 1);
+  }
+  const ks = [...votes].sort((a, b) => b[1] - a[1]).slice(0, CANDIDATES);
+  let best: Scroll | null = null;
+  let bestGain = 0;
+  for (const [k] of ks) {
+    // A row that moved up costs nothing if it is what the row shows now; a row that came in, nothing if it is blank.
+    const moved = (y: number) => stay[y]! - (equal(y, y + k) ? 0 : cost[y]!);
+    const fresh = (y: number) => stay[y]! - (now[y] === blank && after.widths[y] === 0 ? 0 : cost[y]!);
+    // The best run of moved rows ending at each row (its sum and where it starts), and the fresh rows' sums so far.
+    let run = -Infinity;
+    let runTop = 0;
+    const freshSum = [0];
+    for (let y = 0; y < height; y++) freshSum.push(freshSum[y]! + fresh(y));
+    for (let end = 0; end + k < height; end++) {
+      const d = moved(end);
+      if (run > 0) run += d;
+      else {
+        run = d;
+        runTop = end;
+      }
+      const bottom = end + k;
+      const s = { top: runTop, bottom, by: k };
+      const gain = run + freshSum[bottom + 1]! - freshSum[end + 1]! - scrollBytes(s, height).length;
+      if (gain > bestGain) {
+        bestGain = gain;
+        best = s;
+      }
+    }
+  }
+  return best;
+}
+
+/** The window's screen once `scroll` moved its rows. */
+function scrolled(screen: Screen, s: Scroll): Screen {
+  const rows = [...screen.rows];
+  const widths = [...screen.widths];
+  for (let y = s.top; y <= s.bottom; y++) {
+    const from = y + s.by;
+    rows[y] = from <= s.bottom ? screen.rows[from]! : "";
+    widths[y] = from <= s.bottom ? screen.widths[from]! : 0;
+  }
+  return { ...screen, rows, widths };
+}
+
+/**
+ * Paints only what changed from `before`; empty when nothing did. A screen of another size is painted whole. Output that
+ * scrolls is sent as the scroll and the rows it brings in, not as every row painted again.
+ */
 export function diffFrame(before: Screen, after: Screen): string {
   if (before.width !== after.width || before.height !== after.height) return fullFrame(after);
-  let rows = "";
-  after.rows.forEach((row, y) => {
-    if (row === before.rows[y] && after.widths[y] === before.widths[y]) return;
-    // A row that fills its width is left as it is: clearing from its last column would take that column too.
-    rows += `\x1b[${y + 1};1H${row}${after.widths[y]! < after.width ? "\x1b[K" : ""}`;
-  });
+  const scroll = scrollOf(before, after);
+  const shown = scroll ? scrolled(before, scroll) : before;
+  let rows = scroll ? scrollBytes(scroll, after.height) : "";
+  for (let y = 0; y < after.height; y++) {
+    if (after.rows[y] === shown.rows[y] && after.widths[y] === shown.widths[y]) continue;
+    rows += paintRow(after, y);
+  }
   const modes = after.modes !== before.modes ? after.modes : "";
-  const moved = after.cursor?.x !== before.cursor?.x || after.cursor?.y !== before.cursor?.y;
+  // A scroll region takes the cursor home.
+  const moved = !!scroll || after.cursor?.x !== before.cursor?.x || after.cursor?.y !== before.cursor?.y;
   if (!rows && !modes && !moved) return "";
   return `\x1b[?25l${modes}${rows}${cursorOf(after)}`;
 }

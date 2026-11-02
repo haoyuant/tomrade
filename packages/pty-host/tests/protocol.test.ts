@@ -75,6 +75,12 @@ describe("a row as the window paints it", () => {
     const row = renderRow(term.buffer.active.getLine(0), term.cols, term.buffer.active.getNullCell());
     expect(row.text).toBe("\x1b[0;38;5;208ma\x1b[0;38;5;208;48;2;1;2;3mb\x1b[0m");
   });
+
+  it("styles a cell anew when only its colour's kind or one attribute differs from the cell before", async () => {
+    const term = await written("\x1b[31ma\x1b[38;2;0;0;1mb\x1b[3mc\x1b[23md");
+    const row = renderRow(term.buffer.active.getLine(0), term.cols, term.buffer.active.getNullCell());
+    expect(row.text).toBe("\x1b[0;31ma\x1b[0;38;2;0;0;1mb\x1b[0;3;38;2;0;0;1mc\x1b[0;38;2;0;0;1md\x1b[0m");
+  });
 });
 
 const screen = (rows: string[], patch: Partial<Screen> = {}): Screen => ({ width: 10, height: rows.length, rows, widths: rows.map((r) => r.length), cursor: { x: 0, y: 0 }, modes: "M", ...patch });
@@ -117,12 +123,18 @@ describe("the shell a plain terminal runs", () => {
   it("is PowerShell 7 when it is on PATH", () => {
     const pwsh = "C:\\Program Files\\PowerShell\\7\\pwsh.EXE".toLowerCase();
     expect(defaultShell(env, (f) => f.toLowerCase() === pwsh).file.toLowerCase()).toBe(pwsh);
+    expect(defaultShell(env, (f) => f.toLowerCase() === pwsh).args).toEqual(["-NoLogo"]);
   });
 
   it("is Windows PowerShell otherwise", () => {
     const builtin = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-    expect(defaultShell(env, (f) => f === builtin)).toEqual({ file: builtin, args: ["-NoLogo"] });
+    expect(defaultShell(env, (f) => f === builtin)).toEqual({ file: builtin, args: ["-NoLogo", "-NoExit", "-Command", expect.stringContaining("Remove-Module PSReadLine")] });
     expect(defaultShell(env, () => false).file).toBe("powershell.exe");
+  });
+
+  it("looks for Windows PowerShell under C:\\Windows when SystemRoot is unset", () => {
+    const builtin = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    expect(defaultShell({ PATH: "C:\\Tools" }, (f) => f === builtin).file).toBe(builtin);
   });
 
   it("finds a command on PATH by Windows' own extensions", () => {

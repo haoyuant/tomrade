@@ -154,6 +154,55 @@ describe("the artifact", () => {
     importState(db, state, { registrations: ctx.db.registrations("project") });
     expect(db.prepare("SELECT body FROM plugin_local_sessions WHERE id = 's1'").get()).toEqual({ body: "running here" });
   });
+
+  it("imports by rewriting only the rows that changed, through swaps a unique index allows only at the end", async () => {
+    const { db, items, board, project } = await machine();
+    const [a, b, c, d] = ["Alpha", "Bravo", "Charlie", "Delta"].map((title) => items.create({ title, projectId: project.id, boardId: board.id, labels: ["ui"], by: "human" }));
+    items.create({ title: "Echo", projectId: project.id, boardId: board.id, labels: ["api"], by: "human" });
+    const rowid = (id: string) => (db.prepare("SELECT rowid AS r FROM items WHERE id = ?").get(id) as { r: number }).r;
+    const before = rowid(d.id);
+    const next = exportState(db, project.id);
+    const row = (id: string) => next.tables.items.find((r) => r.id === id)!;
+    row(b.id).title = "Bravo beacon";
+    [row(a.id).key_num, row(c.id).key_num] = [row(c.id).key_num, row(a.id).key_num];
+    const [ui, api] = next.tables.labels;
+    [ui.name, api.name] = [api.name, ui.name];
+    next.tables.items = next.tables.items.filter((r) => r.title !== "Echo");
+    next.tables.item_labels = next.tables.item_labels.filter((r) => next.tables.items.some((i) => i.id === r.item_id));
+
+    importState(db, next);
+    expect(exportState(db, project.id).tables).toEqual(next.tables);
+    expect(rowid(d.id)).toBe(before);
+    const found = db.prepare("SELECT i.id FROM items_fts f JOIN items i ON i.rowid = f.rowid WHERE items_fts MATCH 'beacon'").all();
+    expect(found).toEqual([{ id: b.id }]);
+  });
+
+  it("imports a plugin table row by row, keeps rows an additive namespace lacks, and replaces whole a table missing a column", async () => {
+    const { ctx, db, project } = await machine();
+    ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT, tag TEXT NOT NULL DEFAULT 'none')" }], {
+      tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
+    });
+    const registrations = ctx.db.registrations("project");
+    for (const id of ["n1", "n2", "n3"]) db.prepare("INSERT INTO plugin_demo_notes (id, project_id, body, tag) VALUES (?, ?, ?, 'kept')").run(id, project.id, `note ${id}`);
+    const rowid = (id: string) => (db.prepare("SELECT rowid AS r FROM plugin_demo_notes WHERE id = ?").get(id) as { r: number }).r;
+    const before = rowid("n3");
+    const notes = () => db.prepare("SELECT id, body, tag FROM plugin_demo_notes ORDER BY id").all();
+    const state = exportState(db, project.id, { registrations, exports: ["demo"] });
+    const note = (id: string, body: string) => ({ id, project_id: project.id, body, tag: "kept" });
+
+    state.plugins.demo.plugin_demo_notes = [note("n1", "edited"), note("n3", "note n3"), note("n4", "new")];
+    importState(db, state, { registrations });
+    expect(notes()).toEqual([{ id: "n1", body: "edited", tag: "kept" }, { id: "n3", body: "note n3", tag: "kept" }, { id: "n4", body: "new", tag: "kept" }]);
+    expect(rowid("n3")).toBe(before);
+
+    state.plugins.demo.plugin_demo_notes = [note("n5", "theirs")];
+    importState(db, state, { registrations, additive: ["demo"] });
+    expect(notes()).toHaveLength(4);
+
+    state.plugins.demo.plugin_demo_notes = [{ id: "n1", project_id: project.id, body: "edited" }];
+    importState(db, state, { registrations });
+    expect(notes()).toEqual([{ id: "n1", body: "edited", tag: "none" }]);
+  });
 });
 
 describe("the boot reconcile", () => {

@@ -6,6 +6,7 @@ import { Icon } from "~/components/icons";
 import { ConvoLines, useOpenLines, type ConvoLine, type ConvoSay } from "~/components/ConversationRead";
 import { ReplayPlayer, type RawSay } from "~/components/ReplayPlayer";
 import { Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { invoke } from "~/lib/api";
 import { findEngine, useUnarchiveThread } from "~/lib/agent";
 import { useStartTicket } from "~/lib/codeLink";
@@ -239,13 +240,11 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
                   <span className="ai-review-seg-title">{s.summary || s.title || ""}</span>
                   {s.from !== null && <span className="ai-review-seg-when">{s.to !== null && s.to !== s.from ? `${hhmm(s.from)}–${hhmm(s.to)}` : hhmm(s.from)}</span>}
                 </button>
-                {isOpen && (
-                  <div className="ai-review-seg-body cs-convo">
+                <Collapse open={isOpen} fade className="ai-review-seg-body cs-convo">
                     {s.lines.length ? <ConvoLines lines={s.lines} open={open} toggle={toggle} say={convoSay} coding={s.kind === "code"} /> : <p className="meta-txt dense">{t("review.nothingSaid")}</p>}
                     {s.kind === "code" && <span className="ai-review-work">{[t("codeSessions.convoSteps", { n: s.work.steps }), ...workParts(s.work, convoSay)].join(" · ")}</span>}
                     {facts && <span className="ai-review-work" data-testid="ai-review-seg-facts">{facts}</span>}
-                  </div>
-                )}
+                </Collapse>
               </div>
             );
           })}

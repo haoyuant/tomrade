@@ -56,4 +56,4 @@ export { CodexOptions, codexCanRun, codexEngineInfo, codexInstall, codexModel, c
 export { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 export { codexLentModel } from "./lend.js";
 export { codexMcpLink, codexUserFile } from "./mcp-link.js";
-export { codexRecord, codexRolloutTitle, findCodexRollout } from "./record.js";
+export { codexRecord, codexRolloutTitle, codexSessions, findCodexRollout } from "./record.js";

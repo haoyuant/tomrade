@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
 import { CLOSED_STATUSES, EMPTY_KEY, groupKeyOf, type ClosedStatus, type Item, type Patch } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
+import { Collapse } from "~/components/ui/collapse";
 import { isClosed } from "~/lib/closedWindow";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
@@ -466,7 +467,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
                       <span className="lane-count num">{n}</span>
                     </button>
                   )}
-                  {!shut && <div className="lane-cols">{columnKeys.map((col, i) => renderColumn(lane, col, i, false))}</div>}
+                  <Collapse open={!shut} fade className="lane-cols">{columnKeys.map((col, i) => renderColumn(lane, col, i, false))}</Collapse>
                 </section>
               );
             })}

@@ -283,12 +283,13 @@ export const background = {
       const runs = ctx.get("agent")?.activeRuns().length ?? 0;
       const w = words();
       const sessions = [...waitingItems(w), ...runningItems(w)];
-      const projects = hasTerminalWindow(ctx) ? terminalProjects(ctx) : [];
+      const terminal = hasTerminalWindow(ctx);
+      const projects = terminal ? terminalProjects(ctx) : [];
       const chord = terminalChord(ctx);
       return [
         ...sessions,
         ...(sessions.length ? [{ type: "separator" as const }] : []),
-        ...(hasTerminalWindow(ctx)
+        ...(terminal
           ? [{ label: w("newTerminalWindow"), ...(chord ? { accelerator: accelerator(chord), registerAccelerator: false } : {}), click: () => void openTerminal(ctx, null) }]
           : []),
         ...(projects.length ? [{ label: w("startInTerminal"), submenu: projects.map((p) => ({ label: p.name, click: () => void ctx.serial("codeLink/new-terminal", p.id) })) }] : []),

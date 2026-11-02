@@ -207,7 +207,9 @@ const OUT_OF_SCOPE_TOOLS = new Set([
   "remove_workstream",
   "update_dossier",
   "plan_and_apply",
-  "update_project_brief"
+  "update_project_brief",
+  "start_night_shift",
+  "stop_night_shift"
 ]);
 
 const bashCommand = (p: HookPayload): string => (p.tool_name === "Bash" && typeof p.tool_input?.command === "string" ? p.tool_input.command : "");

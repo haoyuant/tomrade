@@ -2,6 +2,7 @@ import { useIsMutating } from "@tanstack/react-query";
 import { useState } from "react";
 import type { FileEntry, FileListPreference, ListMode } from "@tomradex/files";
 import { Icon } from "~/components/icons";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesAgentIndex, useFilesAgentPolicy, useSetAgentRules } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
@@ -148,11 +149,9 @@ export function AgentPolicySettings({ projectId }: { projectId: string }) {
           </button>
         )}
       </div>
-      {open && (
-        <pre className="files-agent-preview" aria-label={t("files.agentIndexTitle")}>
-          {index.isLoading ? "…" : index.data ? index.data.markdown : t("files.agentIndexEmpty")}
-        </pre>
-      )}
+      <Collapse open={open} as="pre" className="files-agent-preview" aria-label={t("files.agentIndexTitle")}>
+        {index.isLoading ? "…" : index.data ? index.data.markdown : t("files.agentIndexEmpty")}
+      </Collapse>
     </div>
   );
 }

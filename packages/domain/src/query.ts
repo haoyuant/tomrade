@@ -3,11 +3,23 @@ import type { FieldValue, Item } from "./types.js";
 
 /**
  * How a view draws the backlog. Board and table group and sort; a graph draws
- * the edges a plugin contributes. A view is one layout plus one query.
+ * the edges a plugin contributes; a plugin layout is a page of the plugin's
+ * own, named `plugin:` and the layout's id. A view is one layout plus one query.
  */
-export type Layout = "board" | "table" | "graph";
+export type BuiltinLayout = "board" | "table" | "graph";
+export type PluginLayout = `plugin:${string}`;
+export type Layout = BuiltinLayout | PluginLayout;
 
-export const LAYOUTS: readonly Layout[] = ["board", "table", "graph"];
+export const LAYOUTS: readonly BuiltinLayout[] = ["board", "table", "graph"];
+const PLUGIN_LAYOUT = "plugin:";
+
+export const isBuiltinLayout = (layout: string): layout is BuiltinLayout => (LAYOUTS as readonly string[]).includes(layout);
+export const isPluginLayout = (layout: string): layout is PluginLayout => layout.startsWith(PLUGIN_LAYOUT) && layout.length > PLUGIN_LAYOUT.length;
+export const pluginLayout = (id: string): PluginLayout => `${PLUGIN_LAYOUT}${id}`;
+/** The contributed layout's id behind a `plugin:` layout. */
+export const pluginLayoutId = (layout: PluginLayout): string => layout.slice(PLUGIN_LAYOUT.length);
+/** A stored layout as a Layout: a plugin's is kept even when no plugin provides it right now; anything else is a board. */
+export const parseLayout = (raw: string): Layout => (isBuiltinLayout(raw) || isPluginLayout(raw) ? raw : "board");
 
 /**
  * `in` / `not-in` take values; a null value means "empty". `contains` is a

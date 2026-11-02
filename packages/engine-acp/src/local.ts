@@ -128,6 +128,7 @@ function acpAgentOf(spec: Written, locator: CliLocator, own: OwnAgent): AcpAgent
     cli: locator,
     install: spec.install,
     ...(spec.picks ? { picks: spec.picks } : {}),
+    ...(spec.nativeWebSearch ? { nativeWebSearch: true } : {}),
     options,
     permissionModes: acp.permissionModes,
     args: (_input, opts) => acp.args(opts),

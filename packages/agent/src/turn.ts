@@ -60,6 +60,13 @@ export interface RetryState {
   delayMs?: number;
 }
 
+/** A message sent into a running turn. Files come only to an engine that said `steersMedia`. */
+export interface SteerInput {
+  id: string;
+  text: string;
+  media?: import("./media.js").MediaContent[];
+}
+
 export interface TurnIO {
   media?: {
     read(id: string): import("./media.js").MediaContent;
@@ -100,16 +107,24 @@ export interface TurnIO {
   /** This engine's external session id from the previous turn, if it stored one. */
   resume?: string;
   /**
+   * This turn's agent takes files in a message sent mid-turn as it does in a prompt. Until an engine says so
+   * such a message is refused, and it waits for the next turn with its files.
+   */
+  steersMedia?(): void;
+  /**
    * Messages the person sent into this running turn, for an engine whose `steering` is `queue`. Call it where
    * the model reads next (between tool calls); what it returns enters the transcript there.
    */
   takeSteers?(): string[];
+  /** `takeSteers` with each message's files, for an engine that said `steersMedia`. */
+  takeSteerInputs?(): SteerInput[];
   /**
    * For an engine whose `steering` is `forward` (its agent keeps its own queue: pi, Codex, Claude Code): `forward`
-   * gets each message sent into this turn and resolves whether the agent took it. Call
+   * gets each message sent into this turn and resolves whether the agent took it. Call it once the agent's turn is
+   * under way: what was sent before then is held and handed over at that call. Call
    * `steered(id)` when the agent reads it; that is where it enters the transcript.
    */
-  steerTo?(forward: (steer: { id: string; text: string }) => Promise<boolean>): void;
+  steerTo?(forward: (steer: SteerInput) => Promise<boolean>): void;
   steered?(id: string): void;
   /**
    * For an engine that keeps its own session: the conversation so far, to lead the first prompt of a

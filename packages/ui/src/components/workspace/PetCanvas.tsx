@@ -16,8 +16,19 @@ export function PetCanvas({ animation, width, height, label, className }: { anim
     player.current = instance;
     const replay = () => instance.replay();
     motion.addEventListener("change", replay);
+    // A collapsed or scrolled-away panel and a hidden window draw nothing.
+    let intersecting = true;
+    const show = () => instance.show(intersecting && !document.hidden);
+    const seen = new IntersectionObserver((entries) => {
+      intersecting = entries.at(-1)!.isIntersecting;
+      show();
+    });
+    seen.observe(canvas);
+    document.addEventListener("visibilitychange", show);
     return () => {
       motion.removeEventListener("change", replay);
+      seen.disconnect();
+      document.removeEventListener("visibilitychange", show);
       instance.stop();
       player.current = null;
     };

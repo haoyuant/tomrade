@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
-import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
+import { APP_ICON_FILE, appIconHasBackground, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
+import { keepAwake } from "./keep-awake.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
 import { commandOnPath, openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
 import { hasTerminalWindow, installGlobalHotkey, launchAsk, openStartWindows, openTerminal } from "./terminal-entries.js";
@@ -19,12 +20,13 @@ import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
 import { askForMainWindow, provideMainWindow } from "./main-window.js";
 import { nodeRuntime } from "./node-runtime.js";
+import { registerPluginFilesScheme, servePluginFiles } from "./plugin-files.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { readShellEnvSoon } from "./shell-env.js";
 import { watchSeen } from "./seen.js";
 import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
-import { followSystemProxy } from "./system-proxy.js";
+import { followSystemProxy, readWindowsInternetSettings } from "./system-proxy.js";
 import { keepCommandPlaced } from "./tomrade-command.js";
 import { trustedKeys } from "./trust.js";
 import { TomradeWindows, type TabTarget } from "./windows.js";
@@ -72,6 +74,8 @@ if (primary) {
 
 // Everything under the app's own roots resolves as usual; anything else is an extension.
 registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
+// A plugin's layout is served from its package on a scheme of its own, declared before the app is ready.
+registerPluginFilesScheme();
 
 let splash: BrowserWindow | null = null;
 
@@ -120,17 +124,20 @@ app.whenReady().then(async () => {
   // Read now, taken in below: nothing before that point starts a command that needs it.
   const adoptShellEnv = readShellEnvSoon();
   // Until the main window opens; a start at login has nobody waiting for one.
-  if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(appIconPath(appIcon));
+  const splashIcon = { file: appIconPath(appIcon), plate: !appIconHasBackground(appIcon) };
+  if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(splashIcon);
   // Before anything reads a secret: a keyring that asks the person first would hold the start without a word.
   await openKeyring(() => {
-    if (splash) splashWaitsForKeyring(splash, appIconPath(appIcon));
+    if (splash) splashWaitsForKeyring(splash, splashIcon);
   });
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
   const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(appDir, "vendor/npm"), runtime: nodeRuntime(), agentsDir: path.join(machine.userData, "agents") });
   // After it, so a proxy the shell sets stands.
-  await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
+  const systemProxy = await followSystemProxy((url) => session.defaultSession.resolveProxy(url), {
+    windowsSettings: process.platform === "win32" ? readWindowsInternetSettings : undefined
+  });
 
   // Plugins and their switches belong to the machine; projects and settings to the account last signed in.
   const accounts = new AccountFolders(machine);
@@ -195,12 +202,17 @@ app.whenReady().then(async () => {
   const { ctx, dump } = booted;
   if (shellProblem) ctx.logger("shell-env").warn(shellProblem);
   if (borrowed.problem) ctx.logger("borrowed-node").warn(borrowed.problem);
+  // Which proxy the git and agent processes go through, or that they go direct.
+  const proxyLog = ctx.logger("proxy");
+  systemProxy.tell((line) => proxyLog.info(line));
 
   if (argv.includes("--dump-config")) {
     process.stdout.write(dump());
     app.exit(0);
     return;
   }
+  const uiIndex = app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html");
+  servePluginFiles(ctx, path.join(path.dirname(uiIndex), "plugin-layout-shell.html"));
 
   app.on("before-quit", (event) => {
     if (quitApproved()) return;
@@ -211,6 +223,7 @@ app.whenReady().then(async () => {
   ctx.settings.register(SESSIONS_SECTION);
   installGlobalHotkey(ctx);
   watchSeen(ctx);
+  keepAwake(ctx);
   // A window shown at the `tomrade` command's word comes in front of the terminal it was typed in.
   ctx.on("desktop/activate", () => {
     if (process.platform === "darwin") app.focus({ steal: true });
@@ -245,7 +258,7 @@ app.whenReady().then(async () => {
     {
       preload: path.join(here, "../preload.cjs"),
       // A packaged build carries the renderer beside dist/; a checkout builds it in packages/ui.
-      uiIndex: app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html"),
+      uiIndex,
       icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
     },

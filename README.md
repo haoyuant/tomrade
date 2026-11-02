@@ -45,6 +45,8 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 
 **🗣️ From a sentence to a pull request.** Talk, plan, apply, build. Describe what you want in plain words and the assistant asks what it needs to know. It drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch, reading and updating the ticket as it works. *Approval queue: none. Vibes: immaculate.*
 
+**🌙 Auto run. Go to bed.** The agent reads the project and the backlog and lays out a plan on the dependency graph: what to run, what to leave for a person, which dependencies are missing. You pick the nodes, give any of them its own agent and merge setting or let work rules choose (docs tickets on a cheaper model, say), say whether they run in terminal panes you can watch or in background sessions, and set the limits: how many at once, how much to spend, how many failures in a row before it stops. Let it run until everything is done or stuck, or choose a night shift with a time limit. Tomrade works through the tickets in dependency order. A failure stays with its ticket and whatever depends on it, when an agent runs out of quota the next available agent takes the ticket on its branch (or it waits, if you said so), and nothing merges unless you said so and its checks pass. You hear about every step. When an agent finds a problem outside its ticket it files one, a second model decides whether it joins the run, and what joins is marked on the plan, up to a limit. Afterwards a report says which pull request to review first, how each delivery measures up against its ticket, and what is waiting for you.
+
 **⏪ No approval queue. Just undo.** *Approval queues? In this economy?* Agents write straight to the backlog, so nothing waits on you. Every run is grouped and attributed, and when one gets creative (renames "Fix login" to "Rewrite auth from scratch", marks all 14 tickets Urgent), a single click puts all of it back. It never happened. History shows who changed what, run by run.
 
 **🖥️ The terminal, right next to the board.** *Alt-Tab cardio: cancelled.* Run Claude Code, Codex or a plain shell in Tomrade's own Terminal window, one click from the backlog.
@@ -156,7 +158,7 @@ Free to use, on macOS, Windows and Linux. Get the installer for your system from
 |---|---|---|
 | macOS 12+ (Apple silicon or Intel) | `.dmg` | Signed and notarized. Drag it to Applications and go. |
 | Windows 10 / 11, 64-bit | `.exe` | Not code-signed yet, so SmartScreen will clutch its pearls: **More info → Run anyway**. Smart App Control blocks unsigned apps outright; read the [download page](https://tomrade.com/download) first. |
-| Linux, x86-64 | `.AppImage` | `chmod +x` and run. No `libfuse2` needed; where FUSE is missing altogether, run it with `--appimage-extract-and-run`. |
+| Linux, x86-64 or arm64 | `.AppImage` | `chmod +x` and run. No `libfuse2` needed; where FUSE is missing altogether, run it with `--appimage-extract-and-run`. |
 
 An installed copy checks for updates and installs one only when you say so. The interface speaks English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français and Русский.
 

@@ -93,7 +93,8 @@
 .tbl-title-text { min-width: 0; overflow-wrap: anywhere; }
 .tbl-dim { color: var(--meta); font-size: var(--text-sm); }
 .tbl-prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); }
-.tbl-cell .fsel, .tbl-cell .fval { margin-inline-start: 0; }
+.tbl-cell .fset { --fsel-shift: 0px; }
+.tbl-cell .fval { margin-inline-start: 0; }
 .tbl-cell .labset { flex-wrap: nowrap; }
 /* a group heading spans every column and reads like a lane head */
 .tbl-group .tbl-cell {
@@ -190,4 +191,19 @@
 .epic-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .epic-chip-n { flex-shrink: 0; font-size: var(--text-xs); color: var(--meta); }
 .epic-chip-more { background: transparent; border-style: dashed; color: var(--meta); }
+.epic-peek {
+  position: fixed; z-index: 60; pointer-events: none;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+}
+.epic-peek-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.epic-peek-head .epic-glyph { color: var(--meta); }
+.epic-peek-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); overflow-wrap: anywhere; }
+.epic-peek-body {
+  font-size: var(--text-sm); color: var(--fg-2); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.epic-peek-foot { font-size: var(--text-xs); color: var(--meta); }
 .board-region .card { transition: opacity var(--motion-fast) var(--ease-standard); }

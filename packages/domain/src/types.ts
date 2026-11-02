@@ -304,7 +304,10 @@ export interface CreateViewInput {
 
 export type ViewPatch = Partial<Pick<View, "name" | "icon" | "layout" | "query" | "rank">>;
 
-export type BuiltInTheme = "light" | "dark" | "matcha" | "dawn";
+export const BUILT_IN_THEMES = ["light", "dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "sakura"] as const;
+export type BuiltInTheme = (typeof BUILT_IN_THEMES)[number];
+/** Built-in themes since retired, each read as the one closest to it, so a setting that still names one keeps working. */
+export const RETIRED_THEMES: Readonly<Record<string, BuiltInTheme>> = { neon: "dark" };
 export type ThemePreference = "system" | BuiltInTheme | `custom:${string}`;
 
 export const THEME_TOKEN_NAMES = ["bg", "surface", "surface-warm", "fg", "fg-2", "muted", "meta", "border", "border-soft", "accent", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as const;
@@ -322,6 +325,12 @@ export interface CustomTheme {
   icon: "i-sun" | "i-moon" | "i-leaf" | "i-tag" | "i-bug" | "i-board" | "i-stack" | "i-sliders";
   tokens: Record<ThemeTokenName, string>;
   fonts: Record<ThemeTypographyName, string>;
+  /**
+   * A picture fills the window behind panes this opaque, blurred by `frost` pixels; `terminalVeil`,
+   * once the Terminal window has a picture of its own, is its panes' opacity. The pictures stay on
+   * the machine they were chosen on.
+   */
+  backdrop?: { veil: number; frost?: number; terminalVeil?: number };
 }
 export type ThemeAutomationMode = "none" | "system" | "schedule" | "shuffle";
 export interface ThemeScheduleRule { start: string; end: string; theme: Exclude<ThemePreference, "system">; }

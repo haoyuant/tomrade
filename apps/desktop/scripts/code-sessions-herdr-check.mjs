@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
       };
       return stream;
     };
-    ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" }, terminalRecording: { ...ctx.settings.get().terminalRecording, enabled: true } });
     const project = ctx.projects.create({ name: "代码会话检查", keyPrefix: "CSC" });
     const board = ctx.boards.list(project.id)[0];
     const cwd = fs.mkdtempSync(path.join(work, "repo-"));
@@ -1026,6 +1026,14 @@ app.whenReady().then(async () => {
     check("底部一行写着沿用的按键", keyLabels.every((k) => keysText.includes(k)), keysText);
     check("按键栏写「按键和现在一样」「新加的只有 ⌘K」", keysText.includes("按键和现在一样") && keysText.includes("新加的只有"), keysText);
 
+    // At the footer's right end, "显示异常？" opens a card on focus; its button builds every terminal anew on the same pane.
+    await tjs(`document.querySelectorAll('.cs-term-host .xterm').forEach((x) => x.dataset.before = '1'); document.querySelector('.cs-redraw-ask').focus(); true`);
+    const redrawCard = await tjs(`(() => { const card = document.querySelector('.cs-redraw-card'); return document.querySelector('.cs-redraw-ask')?.textContent === '显示异常？' && getComputedStyle(card).display !== 'none' && card.textContent.includes('重新绘制终端'); })()`);
+    const termsBefore = await tjs(`document.querySelectorAll('.cs-term-host .xterm').length`);
+    await tjs(`document.querySelector('.cs-redraw-card button').click(); true`);
+    const redrawn = await wait(async () => tjs(`(() => { const xs = [...document.querySelectorAll('.cs-term-host .xterm')]; return xs.length === ${termsBefore} && xs.every((x) => !x.dataset.before) && !document.querySelector('.cs-term-closed'); })()`), 5000);
+    check("底部右下角「显示异常？」悬浮说明，点「重新绘制终端」重建每个终端且不断开", redrawCard && termsBefore > 0 && redrawn, JSON.stringify({ redrawCard, termsBefore, redrawn }));
+
     // An assistant conversation, the built-in kind: listed as a card with no pane; opening it brings the app window up on it.
     const opens = [];
     ctx.on("desktop/open", (target) => opens.push(target));
@@ -1238,7 +1246,8 @@ app.whenReady().then(async () => {
     const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
     check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
     const startsIn = await tjs(`${goneCell}?.querySelector('[data-testid=cs-new-terminal-where]')?.value`);
-    check("目录默认是这个会话的 worktree", startsIn === worktree, startsIn);
+    // Ended, its branch's worktree is done with: the folder goes back to the project's repo (TOM-842).
+    check("目录默认是项目的主 repo，不是这个会话的 worktree", startsIn === repoDir, startsIn);
     const order = await tjs(`(() => { const box = ${goneCell}.querySelector('.cs-new-terminal'); const a = box.querySelector('select').getBoundingClientRect(); const b = box.querySelector('[data-testid=cs-new-terminal]').getBoundingClientRect(); return b.top >= a.bottom; })()`);
     const boxed = await tjs(`(() => { const s = getComputedStyle(${goneCell}.querySelector('select')); return s.borderTopStyle !== 'none' && parseFloat(s.borderTopWidth) > 0; })()`);
     check("目录下拉框有边框，「新终端」在它下方", order && boxed);
@@ -1253,8 +1262,8 @@ app.whenReady().then(async () => {
     // Followed by the cell's own id, not its place: other cells may come and go while herdr opens the pane.
     const goneId = await tjs(`${goneCell}.closest('.cs-cell').dataset.cell`);
     await tjs(`${goneCell}.querySelector('[data-testid=cs-new-terminal]').click(); true`);
-    const took = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 20000);
-    check("在那里开的新终端占了这个格子，目录就是 worktree", took);
+    const took = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && (() => { const name = cell.querySelector('.cs-cell-name').textContent; return name.includes(${JSON.stringify(repoDir)}) && !name.includes(${JSON.stringify(wtDir)}); })(); })()`), 20000);
+    check("在那里开的新终端占了这个格子，目录就是主 repo", took);
     if (!took) {
       // What the cell showed instead, for TOM-404's last flaky step.
       const seen = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return cell ? { terminal: cell.dataset.cellTerminal ?? null, xterm: !!cell.querySelector('.xterm'), name: cell.querySelector('.cs-cell-name')?.textContent ?? null, body: cell.textContent.slice(0, 200) } : null; })()`);

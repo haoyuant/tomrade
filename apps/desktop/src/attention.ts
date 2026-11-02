@@ -6,7 +6,10 @@ import type { SettingsSection } from "@tomradex/settings";
 import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
-import type { ImReminder } from "@tomradex/im";
+import type {} from "@tomradex/night-shift";
+import type { ImConfirm, ImReminder } from "@tomradex/im";
+import type {} from "@tomradex/pr-feedback";
+import type {} from "@tomradex/watchdog";
 import { showMainWindow, whenLoaded } from "./main-window.js";
 import { PhonePush, type FetchLike, type PushFailure, type PushRequest, type PushTarget } from "./push.js";
 import { DESKTOP_WORDS, type DesktopWords } from "./words.js";
@@ -19,7 +22,8 @@ export interface AttentionEntry {
   threadId: string | null;
   itemId: string | null;
   itemKey: string | null;
-  kind: "permission" | "question" | "waiting" | "stuck";
+  /** `suspect`: it still runs, and only seems to get nowhere (the watchdog's word, not the agent's). */
+  kind: "permission" | "question" | "waiting" | "stuck" | "suspect";
   /** Who is waiting: the coding agent's name, or null for the assistant. */
   who: string | null;
   /** The question, or what the agent last said. */
@@ -302,6 +306,19 @@ export function remindAway(prefs: NotificationPrefs, note: AttentionNote, im: Im
   im?.remind({ projectId: note.entry.projectId, threadId: note.entry.threadId, kind: note.entry.kind, title: note.title, body: note.body });
 }
 
+export interface ImAnnounceable { announce(n: { key: string; title: string; body: string }): boolean }
+
+/** News that belongs to no conversation reaches an IM the same way, for someone who chose it. */
+export function announceAway(prefs: NotificationPrefs, key: string, notice: { title: string; body: string }, im: ImAnnounceable | undefined): void {
+  if (prefs.away === "im") im?.announce({ key, ...notice });
+}
+
+/** A run's steps while the person is away: each to the IM they chose, and only what stopped a ticket to a phone. */
+export function tellShiftSteps(prefs: NotificationPrefs, notices: { key: string; title: string; body: string }[], stuck: { title: string; body: string } | null, im: ImAnnounceable | undefined): { title: string; body: string } | null {
+  for (const { key, ...notice } of notices) announceAway(prefs, `night-shift:${key}`, notice, im);
+  return stuck && prefs.away === "push" && pushTargets(prefs).length ? stuck : null;
+}
+
 /**
  * What a phone gets: the ticket key and the event on the first line, the ticket's
  * own title and how long it waited under it. The agent's words only when asked —
@@ -398,6 +415,24 @@ export const attention = {
           });
         }
       }
+      // pull request feedback that could not, or may not, go to the agent by itself
+      for (const notice of ctx.get("prFeedback")?.notices() ?? []) {
+        const key = `pr:${notice.key}`;
+        out.set(key, {
+          key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "waiting",
+          who: engineTitle(notice.agent), text: clip(notice.text), sessionId: notice.sessionId
+        });
+      }
+      // what the watchdog suspects of a run; a wait of its own already says more
+      for (const notice of ctx.get("watchdog")?.notices() ?? []) {
+        const key = `thread:${notice.threadId}`;
+        if (out.has(key)) continue;
+        const sessionId = codeLink?.sessionsOf(notice.projectId, undefined, { live: true, threadId: notice.threadId })[0]?.id;
+        out.set(key, {
+          key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "suspect",
+          who: notice.itemId ? engineTitle(notice.engine) : null, text: clip(notice.text), ...(sessionId ? { sessionId } : {})
+        });
+      }
       return [...out.values()].sort((x, y) => x.key.localeCompare(y.key));
     };
 
@@ -447,6 +482,36 @@ export const attention = {
       }
     });
 
+    // What a night shift came to reaches a phone or a chat the way anything else does while the person is away.
+    ctx.on("nightShift/briefed", (shift, notice) => {
+      const away = prefsOf();
+      try {
+        announceAway(away, `night-shift:${shift.id}`, notice, ctx.get("im") as ImAnnounceable | undefined);
+      } catch (e) {
+        ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
+      }
+      if (away.away === "push" && pushTargets(away).length) void phone.send(pushTargets(away), notice).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
+    });
+
+    // An agent's request for a run reaches the person wherever they are; their press there is the only answer it takes.
+    ctx.on("nightShift/proposed", (proposal, ask) => {
+      try {
+        (ctx.get("im") as { confirm(n: ImConfirm): boolean } | undefined)?.confirm({ ...ask, key: `night-shift:${proposal.id}`, body: proposal.text });
+      } catch (e) {
+        ctx.logger.warn(`couldn't ask over IM: ${(e as Error).message}`);
+      }
+    });
+
+    ctx.on("nightShift/step", (_shift, notices, stuck) => {
+      const away = prefsOf();
+      try {
+        const toPhone = tellShiftSteps(away, notices, stuck, ctx.get("im") as ImAnnounceable | undefined);
+        if (toPhone) void phone.send(pushTargets(away), toPhone).catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
+      } catch (e) {
+        ctx.logger.warn(`couldn't tell IM: ${(e as Error).message}`);
+      }
+    });
+
     const refresh = () => {
       timer = undefined;
       const now = Date.now();
@@ -491,6 +556,8 @@ export const attention = {
       teller.lifted({ key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null });
     });
     ctx.on("codeLink/changed", schedule);
+    ctx.on("prFeedback/changed", schedule);
+    ctx.on("watchdog/changed", schedule);
     ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);
     ctx.on("attention/open", (target) => void open(target));

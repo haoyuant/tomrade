@@ -145,6 +145,8 @@ export interface RunView {
   endedAt: number | null;
   /** A run the app's closing interrupted (`stop: "interrupted"`): when the person waved that away; null while it still waits on them. */
   dismissedAt?: number | null;
+  /** Running on another machine, as its last sync said: this one shows it, never drives or settles it. */
+  elsewhere?: boolean;
   metrics?: import("./evaluation.js").TurnMetrics | null;
 }
 
@@ -165,7 +167,8 @@ export type UserInput =
 
 export interface PendingView {
   threadId: string;
-  kind: "ask" | "workflow" | "permission";
+  /** `switch`: Tomrade asks whether another engine takes over from one stopped by a limit; no engine waits for the answer. */
+  kind: "ask" | "workflow" | "permission" | "switch";
   workflow: string | null;
   question: { id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean };
   accepts: "options" | "text";

@@ -58,6 +58,19 @@ describe("a dedicated repository", () => {
     expect(Object.keys((provider!.schema as { properties: Record<string, unknown> }).properties)).toEqual(["remote", "branch"]);
   });
 
+  it("keeps what the last sync did, where it went and each step, for the person to read", async () => {
+    const a = await machine("trace");
+    const remote = bareRemote();
+    a.items.create({ title: "Traced", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    await a.storage.sync(a.project.id);
+    const status = await a.storage.statusFor(a.project.id);
+    expect(status.progress).toBeUndefined();
+    expect(status.trace).toMatchObject({ remote, branch: "main" });
+    expect(status.trace!.steps.map((s) => s.step)).toEqual(expect.arrayContaining(["reaching", "fetching"]));
+    expect(status.trace!.steps.every((s) => s.ok)).toBe(true);
+  });
+
   it("binds the project's own folder to a remote, pushes, and a second machine clones it", async () => {
     const a = await machine("a");
     const remote = bareRemote();
@@ -246,6 +259,38 @@ describe("a dedicated repository", () => {
     expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
   });
 
+  it("a push the remote turns away is no delivery: the status says why, the count stays, and the next sync pushes", async () => {
+    const a = await machine("rejected");
+    const remote = bareRemote();
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const head = git(["rev-parse", "main"], remote);
+    const said: string[] = [];
+    a.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void said.push(`${m.type} ${String(m.args[0])}`) } as never);
+    const hook = path.join(remote, "hooks", "pre-receive");
+    fs.writeFileSync(hook, "#!/bin/sh\necho 'pushes are frozen' >&2\nexit 1\n", { mode: 0o755 });
+
+    a.items.create({ title: "Turned away", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    const status = await a.storage.publish(a.project.id);
+    expect(status.state).toBe("error");
+    expect(status.detail).toMatch(/pushes are frozen/);
+    expect(status.detail).toMatch(/pre-receive hook declined/);
+    expect(git(["rev-parse", "main"], remote)).toBe(head);
+    expect(a.storage.pending(a.project.id)?.count).toBe(1);
+    expect(said.some((l) => l.startsWith("warn") && l.includes("not pushed") && l.includes("pushes are frozen"))).toBe(true);
+
+    // On the way out too: the quit dialog still hears of what did not go.
+    a.items.create({ title: "Still waiting", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.flushAll("quit");
+    expect(git(["rev-parse", "main"], remote)).toBe(head);
+    expect(a.storage.pendingAll()).toEqual([{ projectId: a.project.id, name: a.project.name, count: 2 }]);
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("error");
+
+    fs.rmSync(hook);
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    expect(a.storage.pending(a.project.id)?.count).toBe(0);
+    expect(git(["show", "main:.tomrade/state/items.jsonl"], remote)).toContain("Still waiting");
+  });
+
   it("never records a repository inside the folder, and drops one an earlier commit recorded", async () => {
     const a = await machine("embedded");
     const remote = bareRemote();
@@ -426,6 +471,28 @@ describe("the Hub as a repository", () => {
     expect(await b.storage.attachAll()).toEqual([a.project.id]);
     expect(b.items.list({ projectId: a.project.id }).map((i) => i.title)).toEqual(["Shared work"]);
     expect((await b.storage.hubInfo()).attachable).toEqual([]);
+  });
+
+  it("a Hub push the remote turns away is not taken for one that landed", async () => {
+    const a = await machine("hub-rejected");
+    const hubRemote = bareRemote();
+    expect((await a.storage.bindHub("git", { remote: hubRemote, branch: "main" })).state).toBe("synced");
+    const head = git(["rev-parse", "main"], hubRemote);
+    const said: string[] = [];
+    a.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void said.push(`${m.type} ${String(m.args[0])}`) } as never);
+    const hook = path.join(hubRemote, "hooks", "pre-receive");
+    fs.writeFileSync(hook, "#!/bin/sh\necho 'hub is read-only' >&2\nexit 1\n", { mode: 0o755 });
+
+    a.projects.create({ name: "Another" });
+    const status = await a.storage.syncHub();
+    expect(status.state).toBe("error");
+    expect(status.detail).toMatch(/hub is read-only/);
+    expect(git(["rev-parse", "main"], hubRemote)).toBe(head);
+    expect(said.some((l) => l.startsWith("warn") && l.includes("Hub") && l.includes("hub is read-only"))).toBe(true);
+
+    fs.rmSync(hook);
+    expect((await a.storage.syncHub()).state).toBe("synced");
+    expect(JSON.parse(git(["show", "main:hub.json"], hubRemote)).projects.map((p: { name: string }) => p.name)).toContain("Another");
   });
 });
 

@@ -198,6 +198,36 @@ it("hands a borrowed local agent no permission mode of the built-in pi's, which 
   } finally { await done(); }
 });
 
+it("starts a borrowed agent's first turn in the mode picked before it, under that agent's own name", async () => {
+  const noModel: EngineAvailability = { ok: false, need: "model", reason: "no model" };
+  const modes = (values: string[]) => ({ default: values[0]!, choices: values.map((value) => ({ value, label: value })) });
+  const { ctx, project, turns, done } = await setup(noModel, noModel, modes(["full-access", "ask", "read-only"]));
+  try {
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => { finish = resolve; });
+    ctx.agent.engine({
+      id: "claude-code", title: "Claude Code", author: "ai:claude-code", capabilities: ["backlog", "code", "general"],
+      permissionModes: modes(["default", "bypassPermissions", "acceptEdits"]),
+      available: async () => ({ ok: true }),
+      async turn(input, io) {
+        turns.push({ engine: "claude-code", input });
+        // what the CLI says it started in
+        io.permissionMode?.(input.permissionMode ?? "default");
+        await held;
+        return { stop: "end" };
+      }
+    });
+    const chat = ctx.agent.newThread(project.id);
+    ctx.agent.setPermissionMode(project.id, chat.id, "full-access");
+    const { runId } = ctx.agent.send(project.id, chat.id, { kind: "text", text: "what is open?" });
+    await expect.poll(() => turns.at(-1)?.engine).toBe("claude-code");
+    expect(turns.at(-1)!.input.permissionMode).toBe("bypassPermissions");
+    expect(ctx.agent.thread(project.id, chat.id)).toMatchObject({ activePermissionMode: "full-access", thread: { permissionMode: "full-access" } });
+    finish();
+    await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).toBe("done");
+  } finally { await done(); }
+});
+
 it("keeps the in-app part while it can run, a local agent signed in or not", async () => {
   const { ctx, project, turns, done } = await setup();
   try {
@@ -241,5 +271,18 @@ it("hands a conversation to the loop when the built-in pi cannot run the model t
     expect(asked.at(-1)).toMatchObject({ profile: "local" });
     await say({ profile: "cloud" });
     expect(turns.at(-1)).toMatchObject({ engine: "pi-builtin", input: { options: { profile: "cloud" } } });
+  } finally { await done(); }
+});
+
+it("takes the pictures a borrowed local agent takes while no model is connected, and the in-app part's again once one is", async () => {
+  const noModel: EngineAvailability = { ok: false, need: "model", reason: "no model" };
+  const { ctx, done } = await setup(noModel, noModel);
+  try {
+    ctx.agent.engine({ id: "claude-code", title: "Claude Code", author: "ai:claude-code", capabilities: ["backlog", "code", "general"], media: () => ({ input: ["image/png", "image/jpeg"], output: [] }), available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }) });
+    await ctx.agent.engineViews();
+    expect(ctx.agent.mediaFor("tomrade").input).toEqual(["image/png", "image/jpeg"]);
+    noModel.ok = true;
+    await ctx.agent.engineViews();
+    expect(ctx.agent.mediaFor("tomrade").input).toEqual([]);
   } finally { await done(); }
 });

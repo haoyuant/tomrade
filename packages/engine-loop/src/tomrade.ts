@@ -26,6 +26,16 @@ const TomradeOptions = z.looseObject({ profile: z.string().optional(), effort: z
 /** A borrowed agent's session is stored marked as its own, so no other part is handed it to resume. */
 const borrowedSession = (id: string) => `@${id}:`;
 
+/** One permission under the names different agents give it: Claude Code calls full access bypassPermissions, and asking default. */
+const SAME_MODE = [["full-access", "bypassPermissions"], ["ask", "default"]];
+
+/** `mode` under the name `modes` gives it, if they have it at all. */
+const modeIn = (mode: string | undefined, modes: Engine["permissionModes"]): string | undefined => {
+  const has = (value: string) => !!modes?.choices.some((choice) => choice.value === value);
+  if (!mode || has(mode)) return mode;
+  return SAME_MODE.find((names) => names.includes(mode))?.find(has);
+};
+
 /**
  * One choice for the in-app agent. A thread's purpose is fixed when it is made,
  * so a thread stays with one part and its history with it.
@@ -35,6 +45,8 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
   const own = [config.backlog].flat();
   const ownPart = () => own.map(part).find(Boolean);
   const either = () => ownPart() ?? part(config.work);
+  // Who held, or would hold, a backlog conversation when last asked: what it takes in is what this engine takes.
+  let holder: { engine: Engine; borrowed: boolean } | undefined;
   const words = () => LOOP_WORDS(ctx.settings.locale?.());
   const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability | null> => {
     if (!engine) return null;
@@ -67,6 +79,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     const borrowed = await borrowable();
     return borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false };
   };
+  const hold = (held: { engine: Engine | undefined; borrowed: boolean }) => { holder = held.engine ? { engine: held.engine, borrowed: held.borrowed } : undefined; };
   return {
     id: "tomrade",
     title: "Tomrade",
@@ -94,19 +107,23 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       },
       picks: () => either()?.local?.picks?.() ?? []
     },
-    media: (options) => either()?.media?.(options) ?? { input: [], output: [] },
+    // A signed-in agent holding the conversation for want of a model sees its pictures with its own eyes.
+    media: (options) => (holder?.borrowed ? holder.engine.media?.(optionsFor(holder.engine, options, true)) : either()?.media?.(options)) ?? { input: [], output: [] },
     async available(opts): Promise<EngineAvailability> {
       const [work, ...backlogs] = await Promise.all([config.work, ...own].map((id) => runs(part(id), opts)));
       const backlog = backlogs.find((state) => state?.ok) ?? backlogs.find(Boolean);
+      const borrowed = backlog?.ok ? undefined : await borrowable(opts);
+      hold(borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false });
       if (work?.ok) return { ok: true };
       // Why tickets cannot go to the built-in pi stays said, so setup can name it.
-      if (backlog?.ok || (await borrowable(opts))) return { ok: true, capabilities: ["backlog"], ...(work?.reason ? { reason: work.reason } : {}) };
+      if (backlog?.ok || borrowed) return { ok: true, capabilities: ["backlog"], ...(work?.reason ? { reason: work.reason } : {}) };
       const state = backlog ?? work ?? { ok: false, need: "service", reason: "No in-app agent is installed" };
       // With the built-in pi switched off, there is no ticket work to wait for.
       return work ? state : { ...state, capabilities: ["backlog"] };
     },
     async turn(input, io) {
       const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart(input.options) : { engine: part(config.work), borrowed: false };
+      if (input.purpose === "backlog") hold({ engine, borrowed });
       if (!engine) return { stop: "error", error: "No in-app agent is installed for this kind of work" };
       const options = optionsFor(engine, input.options, borrowed);
       const turnInput: TurnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };
@@ -115,9 +132,11 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
         const resume = io.resume?.startsWith("@") ? undefined : io.resume;
         return engine.turn(turnInput, resume === io.resume ? io : { ...io, resume });
       }
-      // The mode was picked from the work part's choices; a borrowed agent only takes one of its own.
-      const own = engine.permissionModes?.choices.some((choice) => choice.value === input.permissionMode);
-      if (!own) delete turnInput.permissionMode;
+      // The mode was picked from the work part's choices; a borrowed agent only takes one of its own, under its own name.
+      const theirs = modeIn(input.permissionMode, engine.permissionModes);
+      if (theirs) turnInput.permissionMode = theirs;
+      else delete turnInput.permissionMode;
+      const ours = part(config.work)?.permissionModes;
       const mark = borrowedSession(engine.id);
       const resume = io.resume?.startsWith(mark) ? io.resume.slice(mark.length) : undefined;
       if (!resume)
@@ -125,9 +144,13 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
           type: "note",
           text: words()("holding", { engine: engine.title })
         });
-      // a mode picked mid-turn reaches it only when it is one of its own
-      const modeTo = io.modeTo && ((apply: (mode: string) => Promise<boolean>) => io.modeTo!((mode) => engine.permissionModes?.choices.some((choice) => choice.value === mode) ? apply(mode) : Promise.resolve(false)));
-      const result = await engine.turn(turnInput, { ...io, resume, ...(modeTo ? { modeTo } : {}) });
+      // a mode picked mid-turn reaches it only when it is one of its own; the mode it reports is shown under the name it was picked by
+      const modeTo = io.modeTo && ((apply: (mode: string) => Promise<boolean>) => io.modeTo!((mode) => {
+        const same = modeIn(mode, engine.permissionModes);
+        return same ? apply(same) : Promise.resolve(false);
+      }));
+      const permissionMode = io.permissionMode && ((mode: string) => io.permissionMode!(modeIn(mode, ours) ?? mode));
+      const result = await engine.turn(turnInput, { ...io, resume, ...(modeTo ? { modeTo } : {}), ...(permissionMode ? { permissionMode } : {}) });
       return result.resume ? { ...result, resume: mark + result.resume } : result;
     }
   };

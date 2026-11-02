@@ -12,6 +12,14 @@ it("grants no windows unless the manifest says so, and shows a window as a reaso
   expect(riskOf(manifest({ window: true, exec: true }))).toEqual({ level: "high", reasons: ["exec", "window"] });
 });
 
+it("names a layout drawn inside Tomrade's window as high risk, and grants it only when the manifest says so", () => {
+  expect(manifest().permissions.renderer).toBe(false);
+  const native = manifest({ renderer: true, why: { renderer: "Draws the timeline with the app's own popovers." } });
+  expect(native.permissions.renderer).toBe(true);
+  expect(riskOf(native)).toEqual({ level: "high", reasons: ["renderer"] });
+  expect(ManifestSchema.parse({ id: "someone/demo", version: "1.0.0", title: "Demo", license: "MIT", engines: { sdk: "^0.2.31" }, contributes: { layouts: ["demo.timeline"] } }).contributes.layouts).toEqual(["demo.timeline"]);
+});
+
 const full = (fields: Record<string, unknown>) => ({ id: "someone/deep", version: "1.0.0", title: "Deep", license: "MIT", engines: { sdk: "^0.2.13", tomrade: ">=0.13.0 <0.14.0" }, context: "full", ...fields });
 
 it("takes a full-mode plugin that names its Tomrade versions, labels it high risk, and holds rows to full mode", () => {

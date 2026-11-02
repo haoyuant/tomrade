@@ -18,6 +18,10 @@ export interface WindowChrome {
   trafficLights: boolean;
   /** App-wide prompts land in this window; the shell brings it forward. Absent from an older shell. */
   lead?: boolean;
+  /** The window wears the system's frosted material (Glass on macOS and Windows 11): the page leaves its own background off. */
+  frosted?: boolean;
+  /** Chromium composites without the GPU: the page keeps its lights still. Absent from an older shell. */
+  softwareCompositing?: boolean;
 }
 
 declare module "@tomradex/ipc" {

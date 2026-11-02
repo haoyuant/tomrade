@@ -25,6 +25,7 @@ const check = (name, cond, detail) => {
   if (!cond && detail !== undefined) console.log(`  saw ${JSON.stringify(detail)}`);
 };
 const LINES = ["step one", "step two", "all done"];
+const PICTURES = { input: ["image/png"], output: [] };
 
 const run = async () => {
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]] });
@@ -38,6 +39,7 @@ const run = async () => {
     id: "slow",
     title: "Slow",
     author: "ai:slow",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn(_input, io) {
       await sleep(600);
@@ -55,14 +57,33 @@ const run = async () => {
     title: "Steerable",
     author: "ai:steerable",
     steering: "queue",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn(_input, io) {
+      io.steersMedia();
       for (let i = 0; i < 4; i++) {
         await sleep(800);
-        const heard = io.takeSteers();
-        if (heard.length) io.emit({ type: "text", text: `heard: ${heard.join(" + ")}` });
+        const heard = io.takeSteerInputs();
+        const files = heard.flatMap((s) => s.media ?? []).map((m) => m.name);
+        if (heard.length) io.emit({ type: "text", text: `heard: ${heard.map((s) => s.text).join(" + ")}${files.length ? ` with ${files.join(", ")}` : ""}` });
       }
       io.emit({ type: "text", text: "steady" });
+      return { stop: "end" };
+    }
+  });
+  // an agent that queues steers itself and takes them only once it has started up, as Claude Code does
+  ctx.agent.engine({
+    id: "cold",
+    title: "Cold",
+    author: "ai:cold",
+    steering: "forward",
+    available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      await sleep(1200);
+      const heard = [];
+      io.steerTo(async (steer) => { setTimeout(() => { io.steered(steer.id); heard.push(steer.text); }, 300); return true; });
+      await sleep(1500);
+      io.emit({ type: "text", text: heard.length ? `heard: ${heard.join(" + ")}` : "steady" });
       return { stop: "end" };
     }
   });
@@ -71,6 +92,7 @@ const run = async () => {
     title: "Deaf",
     author: "ai:deaf",
     steering: "queue",
+    media: () => PICTURES,
     available: async () => ({ ok: true }),
     async turn() {
       await sleep(1200);
@@ -151,7 +173,10 @@ const run = async () => {
       return true; })()`);
     await sleep(300);
     return $(`({ panel: Math.round(document.querySelector('aside.ai').getBoundingClientRect().width), window: innerWidth,
-      board: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().width ?? -1) })`);
+      board: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().width ?? -1),
+      panelLeft: Math.round(document.querySelector('aside.ai').getBoundingClientRect().left),
+      boardRight: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().right ?? Infinity),
+      barRight: Math.round(document.querySelector('.query-bar')?.getBoundingClientRect().right ?? Infinity) })`);
   };
   win.setSize(2000, 900);
   await sleep(800);
@@ -161,6 +186,11 @@ const run = async () => {
   await sleep(800);
   sized = await dragPanel(2000);
   check("on a narrower window it gives way, and the board keeps a column", sized.board >= 361 && sized.panel <= Math.round(sized.window * 0.6) + 1, sized);
+  // TOM-797: the window's column once grew to the titlebar's width and slid the board, query bar and all, under the panel
+  win.setSize(1440, 900);
+  await sleep(800);
+  sized = await dragPanel(2000);
+  check("dragged all the way at 1440, the board and its query bar end where the panel begins", sized.boardRight <= sized.panelLeft && sized.barRight <= sized.panelLeft, sized);
   // the steps below see the panel as it opens by default
   await $(`localStorage.removeItem("tomrade.ai.width"); document.querySelector('aside.ai').style.width = ''; true`);
   await sleep(300);
@@ -338,7 +368,7 @@ const run = async () => {
     await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
     await sleep(300);
     // through the panel's own menu, so what it shows is what runs
-    const title = { steerable: "Steerable", deaf: "Deaf", slow: "Slow" }[id];
+    const title = { steerable: "Steerable", cold: "Cold", deaf: "Deaf", slow: "Slow" }[id];
     await press(`[...document.querySelectorAll('.ai-knobs .chip-btn')].at(-1)`);
     await sleep(400);
     await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(title)})`);
@@ -368,6 +398,16 @@ const run = async () => {
   await sleep(2500);
   check("all of it was one run", ctx.agent.store.runs(alpha.id, steerThread).length === 1);
 
+  steerThread = await onEngine("cold");
+  await send("paint it");
+  await sleep(300);
+  await setDraft("start blue");
+  await steerKey();
+  await sleep(150);
+  check("⌘Enter while the agent starts up is held for it, not refused", (await queued()).length === 0 && (await $(`document.querySelector('.ai-queued.is-steering')?.textContent ?? ''`)).includes("start blue") && !(await $(`document.body.textContent.includes("can't take messages mid-turn")`)));
+  await sleep(2800);
+  check("and it reaches the agent once it is up, in the same run", (await agentSaid()).includes("heard: start blue") && (await $(`!!document.querySelector('.ai-scroll .turn-user.is-steer')`)) && ctx.agent.store.runs(alpha.id, steerThread).length === 1, await agentSaid());
+
   steerThread = await onEngine("deaf");
   await send("one");
   await sleep(300);
@@ -390,6 +430,60 @@ const run = async () => {
   await sleep(4200);
   check("it then goes out after the turn", (await asked()).includes("queue me instead"));
   await sleep(4000);
+
+  // ── attachments while a run works: queued with the message, or steered in with it ──
+  const fileScript = (name, type) => `(() => { const data = new DataTransfer(); data.items.add(new File([Uint8Array.of(137, 80, 78, 71)], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} })); return data; })()`;
+  const paste = (name, type = "image/png") => $(`document.querySelector('.ai-input').dispatchEvent(new ClipboardEvent('paste', { clipboardData: ${fileScript(name, type)}, bubbles: true, cancelable: true }));true`);
+  const drop = (name, type = "image/png") => $(`document.querySelector('.ai-foot').dispatchEvent(new DragEvent('drop', { dataTransfer: ${fileScript(name, type)}, bubbles: true, cancelable: true }));true`);
+  // the composer's file chips, not the context chips beside them
+  const attached = () => $(`[...document.querySelectorAll('.ai-foot .tag > button[aria-label^="Remove "]')].map((b) => b.getAttribute('aria-label').slice(7))`);
+  const sentFiles = (thread, text) => ctx.agent.thread(alpha.id, thread).messages.filter((m) => m.role === "user" && m.block.type === "text" && m.block.text === text).flatMap((m) => m.block.attachments ?? []).map((m) => m.name);
+  let fileThread = await onEngine("slow");
+  await send("working");
+  await sleep(300);
+  check("the attach button stays open while a run works", await $(`!document.querySelector('.ai-composer > .btn-icon').disabled`));
+  await paste("pasted.png");
+  await drop("dropped.png");
+  await sleep(150);
+  check("a picture pasted or dropped while a run works lands in the composer", (await attached()).join("|") === "pasted.png|dropped.png", await attached());
+  await paste("notes.txt", "text/plain");
+  await sleep(150);
+  check("a kind the agent cannot take still says so", /does not support this attachment/.test(await $(`document.querySelector('.ai-foot .ai-error')?.textContent ?? ''`)), await $(`document.querySelector('.ai-foot .ai-error')?.textContent ?? ''`));
+  await setDraft("with pictures");
+  await key({});
+  await sleep(200);
+  q = await queued();
+  check("Enter queues the message with its pictures, and the row says so", q.length === 1 && q[0].text === "with pictures" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "2 attached" && !(await attached()).length, q);
+  await until(() => sentFiles(fileThread, "with pictures").length > 0, 60);
+  check("once the turn ends the pictures go out with the message", sentFiles(fileThread, "with pictures").join("|") === "pasted.png|dropped.png", sentFiles(fileThread, "with pictures"));
+  await until(async () => !(await panel()).working, 60);
+
+  fileThread = await onEngine("steerable");
+  await send("paint it again");
+  await sleep(300);
+  await paste("blue.png");
+  await sleep(100);
+  await setDraft("like this");
+  await steerKey();
+  await until(async () => (await agentSaid()).includes("heard: like this with blue.png"), 30);
+  check("a steer with a picture reaches the running turn when the agent takes them", (await agentSaid()).includes("heard: like this with blue.png") && !(await attached()).length && (await queued()).length === 0, await agentSaid());
+  check("and the picture stays with the line in the transcript", sentFiles(fileThread, "like this").join("|") === "blue.png");
+  await until(async () => !(await panel()).working, 60);
+  check("all of it one run", ctx.agent.store.runs(alpha.id, fileThread).length === 1);
+
+  fileThread = await onEngine("deaf");
+  await send("cannot see");
+  await sleep(200);
+  await paste("kept.png");
+  await sleep(100);
+  await setDraft("look anyway");
+  await steerKey();
+  await sleep(300);
+  q = await queued();
+  check("an agent that takes no picture mid-turn gets the message queued, with a word about it", q.length === 1 && q[0].text === "look anyway" && (await $(`document.querySelector('.ai-queued .q-files')?.textContent ?? ''`)) === "1 attached" && (await $(`document.body.textContent.includes("can't take pictures mid-turn")`)), q);
+  await until(() => sentFiles(fileThread, "look anyway").length > 0, 40);
+  check("and the picture goes out with it after the turn", sentFiles(fileThread, "look anyway").join("|") === "kept.png", sentFiles(fileThread, "look anyway"));
+  await until(async () => !(await panel()).working, 40);
 
   // ── ↑ brings back what was sent ──────────────────────────────────────
   await onEngine("slow");
@@ -751,6 +845,32 @@ const run = async () => {
       current: document.querySelector('.ai .sbar [aria-current="true"]')?.getAttribute('aria-label') ?? document.querySelector('.ai .sbar [aria-current="true"]')?.textContent ?? null }; })()`);
   let view = await sessionView();
   check("picking a terminal session in another app opens it in the panel, read-only: no pane to read, type there instead", view?.id === pane.id && !view.show && /iTerm/.test(view.note ?? "") && view.strip.length === 0 && shown.length === 0, view);
+  // Files dragged in from outside, onto one spot of the page: a real file, which has a path, or one a page made, which has none.
+  const droppedShot = path.join(work, "拖入 截图(1).png");
+  fs.writeFileSync(droppedShot, "png");
+  await $(`(() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'drop-probe'; i.style.display = 'none'; document.body.append(i); return true; })()`);
+  win.webContents.debugger.attach("1.3");
+  const { root: pageRoot } = await win.webContents.debugger.sendCommand("DOM.getDocument");
+  const { nodeId: probeNode } = await win.webContents.debugger.sendCommand("DOM.querySelector", { nodeId: pageRoot.nodeId, selector: "#drop-probe" });
+  await win.webContents.debugger.sendCommand("DOM.setFileInputFiles", { nodeId: probeNode, files: [droppedShot] });
+  win.webContents.debugger.detach();
+  const dropOn = (target, what = "real") => $(`(() => {
+    const to = ${target};
+    const data = new DataTransfer();
+    if (${JSON.stringify(what)} === "real") data.items.add(document.getElementById('drop-probe').files[0]);
+    else if (${JSON.stringify(what)} === "page") data.items.add(new File(['x'], 'from-a-page.png', { type: 'image/png' }));
+    else data.setData('text/plain', 'words');
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data });
+    const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data });
+    to.dispatchEvent(over);
+    to.dispatchEvent(drop);
+    return { over: over.defaultPrevented, drop: drop.defaultPrevented };
+  })()`);
+  const toasts = () => $(`[...document.querySelectorAll('.toast-stack .toast-body')].map((t) => t.textContent)`);
+  const outside = await dropOn(`document.querySelector('.ai-session-convo')`);
+  await sleep(300);
+  const outsideSaid = await toasts();
+  check("a file dropped on a session in another app stays in the window and says why it went nowhere", outside.over && outside.drop && outsideSaid.some((t) => /iTerm/.test(t)), { outside, outsideSaid });
   check("and the bar marks it as the open one", /Record pane output/.test(view?.current ?? ""), view?.current);
   await flip();
   await sleep(300);
@@ -885,6 +1005,22 @@ const run = async () => {
   await sleep(400);
   view = await sessionView();
   check("what is said in the panel is typed into the pane, with Enter, and nothing attaches to it", typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.text === "hello from the panel" && typed.at(-1)?.keys?.join() === "enter" && view?.input === "", typed.at(-1));
+  const sentBefore = typed.length;
+  const onInput = await dropOn(`document.querySelector('.ai-session-foot .ai-input')`);
+  await until(() => typed.length > sentBefore, 20);
+  const fromInput = typed.at(-1);
+  check("a file dropped on the input goes to the pane as its escaped path, a paste without Enter, and the input keeps the keyboard", onInput.drop && typed.length === sentBefore + 1 && fromInput.paneId === "w1:p1" && fromInput.paste === true && !fromInput.keys && fromInput.text.endsWith("/拖入\\ 截图\\(1\\).png ") && (await $(`document.activeElement === document.querySelector('.ai-session-foot .ai-input')`)), fromInput);
+  await dropOn(`document.querySelector('.ai-session-convo')`);
+  await until(() => typed.length > sentBefore + 1, 20);
+  check("so does one dropped on the conversation", typed.at(-1)?.text === fromInput.text && typed.at(-1)?.paste === true, typed.at(-1));
+  const typedThen = typed.length;
+  await dropOn(`document.querySelector('.ai-session-convo')`, "page");
+  await sleep(300);
+  check("a file with no path on disk sends nothing and says so", typed.length === typedThen && (await toasts()).includes("The terminal didn't take it."), await toasts());
+  const elsewhereDrop = await dropOn(`document.body`);
+  const wordsDrop = await dropOn(`document.body`, "text");
+  check("a file dropped where nothing takes it stays in the window; a drag of words is left alone", elsewhereDrop.over && elsewhereDrop.drop && !wordsDrop.over && !wordsDrop.drop && typed.length === typedThen, { elsewhereDrop, wordsDrop });
+  await $(`document.getElementById('drop-probe').remove();true`);
   await press(`document.querySelector('[data-testid="ai-strip"]')`);
   await sleep(1300);
   view = await sessionView();
@@ -1399,8 +1535,13 @@ const run = async () => {
   const runCommand = ctx.contributions.run.bind(ctx.contributions);
   ctx.contributions.run = async (id, scope) => (id === "code-sessions.open" ? (opened.push(scope.projectId), {}) : runCommand(id, scope));
   check("the title bar offers the Terminal window", await $(`!!document.querySelector('[data-testid="titlebar-terminal"]')`));
-  const terminalDoor = await $(`(() => { const b = document.querySelector('[data-testid="titlebar-terminal"]'); const shown = (n) => !!n && getComputedStyle(n).display !== 'none'; return { label: shown(b?.querySelector('.lbl')) ? b.querySelector('.lbl').textContent : null, key: shown(b?.querySelector('.kbd')) ? b.querySelector('.kbd').textContent : null, wide: innerWidth > 1100 }; })()`);
-  check("its button names the window and its key while the bar has room", !terminalDoor.wide || (terminalDoor.label === "Terminal window" && /T$/.test(terminalDoor.key ?? "")), terminalDoor);
+  const barSize = win.getSize();
+  win.setSize(1900, 900);
+  await sleep(400);
+  const terminalDoor = await $(`(() => { const b = document.querySelector('[data-testid="titlebar-terminal"]'); const shown = (n) => !!n && getComputedStyle(n).display !== 'none'; return { label: shown(b?.querySelector('.lbl')) ? b.querySelector('.lbl').textContent : null, key: shown(b?.querySelector('.kbd')) ? b.querySelector('.kbd').textContent : null }; })()`);
+  check("its button names the window and its key while the bar has room", terminalDoor.label === "Terminal window" && /T$/.test(terminalDoor.key ?? ""), terminalDoor);
+  win.setSize(...barSize);
+  await sleep(400);
   await press(`document.querySelector('[data-testid="titlebar-terminal"]')`);
   await sleep(400);
   check("its button opens this project's Terminal window", opened.length === 1 && opened[0] === alpha.id, opened);

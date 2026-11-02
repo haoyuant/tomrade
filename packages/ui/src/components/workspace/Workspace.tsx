@@ -1,8 +1,10 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
+import { TakeoverDialog } from "~/components/dialogs/TakeoverDialog";
+import { NightShiftDialog } from "~/components/dialogs/NightShiftDialog";
 import { FeedbackDialog } from "~/components/dialogs/FeedbackDialog";
 import { AnnouncementsDialog } from "~/components/dialogs/AnnouncementNotice";
 import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
@@ -33,14 +35,16 @@ import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { TabStrip } from "./TabStrip";
 import { Table } from "./Table";
+import { PluginLayoutRegion } from "./PluginLayout";
 import { EpicStrip } from "./EpicStrip";
 import { TitleBar, ViewHead } from "./TitleBar";
+import { TakeoverBanner } from "./TakeoverBanner";
 import { UnplacedRepoBanner } from "./UnplacedRepoBanner";
 import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
 import { hitChord, isBare, type CommandId } from "~/lib/keybindings";
 import { isCancelKey } from "~/lib/keys";
 
-// Opening a ticket re-renders this screen for its detail pane; the regions beside it hold still.
+// Opening a ticket re-renders DetailRegion alone; this screen and the regions in it hold still.
 const SidebarRegion = memo(Sidebar);
 const ViewHeadRegion = memo(ViewHead);
 const QueryBarRegion = memo(QueryBar);
@@ -48,7 +52,8 @@ const BoardRegion = memo(Board);
 const TableRegion = memo(Table);
 const GraphRegion = memo(GraphView);
 const EpicStripRegion = memo(EpicStrip);
-import { useSelectedId, useWorkspace } from "./context";
+import { isBuiltinLayout } from "@tomradex/domain";
+import { useReadSelectedId, useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
 import { askPanel, onStartPalette } from "~/lib/panelRequests";
 import { useTryHost } from "~/lib/capabilities";
@@ -93,9 +98,77 @@ function FirstLesson() {
   return null;
 }
 
-export function Workspace() {
+/**
+ * The open ticket's pane, and what the global panel is told is in view. The
+ * only part of the screen that follows the selection.
+ */
+function DetailRegion({ expanded, setExpanded, onDelete, openSettings, openRepositories, openProjectSettings }: {
+  expanded: boolean;
+  setExpanded: Dispatch<SetStateAction<boolean>>;
+  onDelete: (id: string) => void;
+  openSettings: (engineId?: string) => void;
+  openRepositories: () => void;
+  openProjectSettings: () => void;
+}) {
   const ws = useWorkspace();
   const selectedId = useSelectedId();
+  const { t } = useI18n();
+  const { setAiOpen } = useAgentDock();
+  // An old done ticket opened by key or from a link may be outside what the window holds.
+  const selected = useHeldItem(ws.project.id, ws.items, selectedId).item ?? null;
+
+  // What the global panel should know while this screen is up: chips select
+  // into the sidebar detail, and "this" means the open detail, then the view.
+  const binding = useMemo<ScreenBinding>(
+    () => ({
+      openIssue: ws.select,
+      openSettings,
+      focus: [
+        ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
+        ws.filePath !== null
+          ? { kind: "file", id: ws.filePath || "/", title: ws.filePath ? ws.filePath.slice(ws.filePath.lastIndexOf("/") + 1) : t("files.home") }
+          : ws.routines
+            ? { kind: "routines", id: "routines", title: t("templates.title") }
+            : { kind: "view", id: ws.view.id, title: ws.view.name }
+      ],
+      boardId: ws.workstream?.id ?? null,
+      onOpenRepositories: openRepositories
+    }),
+    // rebuilt when what it names changes, not on every refetch or render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath, ws.routines]
+  );
+  useScreenBinding(binding);
+
+  // Opening the detail below the three-pane floor rails the assistant, so
+  // every pane stays in normal flow and nothing ever overlaps.
+  // keyed on the selection, not the item object: a write re-creates the object
+  // and would re-rail a panel the user had just re-opened
+  useEffect(() => {
+    if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
+  }, [selectedId, expanded, setAiOpen]);
+
+  if (!selected) return null;
+  return (
+    <Surface feature="backlog.issue">
+    <DetailPane
+      item={selected}
+      expanded={expanded}
+      onToggleExpand={() => setExpanded((v) => !v)}
+      onClose={() => {
+        setExpanded(false);
+        ws.select(null);
+      }}
+      onDelete={() => onDelete(selected.id)}
+      onOpenRepositories={openProjectSettings}
+    />
+    </Surface>
+  );
+}
+
+export function Workspace() {
+  const ws = useWorkspace();
+  const readSelectedId = useReadSelectedId();
   usePlaybookConflictNotice(ws.project.id);
   // The sample teaches the graph with a ticket of its own; elsewhere, the first dependency points at it.
   useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
@@ -111,7 +184,7 @@ export function Workspace() {
   const navigate = useNavigate();
 
   const { setAiOpen, showThread } = useAgentDock();
-  const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
+  const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey, { swap: true });
   // The note search lives in the sidebar: asking for it, from anywhere, unfolds the sidebar.
   const searchFocus = useNotesSearchState().focus;
   useEffect(() => {
@@ -135,12 +208,16 @@ export function Workspace() {
   const [inbox, setInbox] = useState(false);
   const [feedback, setFeedback] = useState(false);
   const [announcements, setAnnouncements] = useState(false);
+  const [nightShift, setNightShift] = useState(false);
+  const [takeover, setTakeover] = useState(false);
   /** A renderer surface a plugin names: a status item's, a sidebar module's, a command's result. */
   const openSurface = useCallback((surface: string) => {
     if (surface === "code-inbox") setCodeInbox(true);
     else if (surface === "inbox") setInbox(true);
     else if (surface === "feedback") setFeedback(true);
     else if (surface === "announcements") setAnnouncements(true);
+    else if (surface === "night-shift") setNightShift(true);
+    else if (surface === "takeover") setTakeover(true);
     else if (surface.startsWith("settings:")) setSettings(surface.slice("settings:".length));
   }, []);
   const runCommand = useRunCommand(ws.project.id);
@@ -163,35 +240,12 @@ export function Workspace() {
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  // An old done ticket opened by key or from a link may be outside what the window holds.
-  const selected = useHeldItem(ws.project.id, ws.items, selectedId).item ?? null;
   const deleteTarget = useHeldItem(ws.project.id, ws.items, deleting).item ?? null;
-
-  // What the global panel should know while this screen is up: chips select
-  // into the sidebar detail, and "this" means the open detail, then the view.
-  const binding = useMemo<ScreenBinding>(
-    () => ({
-      openIssue: ws.select,
-      openSettings: (engineId) => {
-        setSettingsEngine(engineId);
-        setSettings("assistant");
-      },
-      focus: [
-        ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
-        ws.filePath !== null
-          ? { kind: "file", id: ws.filePath || "/", title: ws.filePath ? ws.filePath.slice(ws.filePath.lastIndexOf("/") + 1) : t("files.home") }
-          : ws.routines
-            ? { kind: "routines", id: "routines", title: t("templates.title") }
-            : { kind: "view", id: ws.view.id, title: ws.view.name }
-      ],
-      boardId: ws.workstream?.id ?? null,
-      onOpenRepositories: () => setProjectSettings("repositories")
-    }),
-    // rebuilt when what it names changes, not on every refetch or render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath, ws.routines]
-  );
-  useScreenBinding(binding);
+  const openAssistantSettings = useCallback((engineId?: string) => {
+    setSettingsEngine(engineId);
+    setSettings("assistant");
+  }, []);
+  const openRepositories = useCallback(() => setProjectSettings("repositories"), []);
 
   // The sheet is rendered from a live lookup, so an agent deleting the issue out
   // from under it unmounts the dialog without ever calling onOpenChange — and a
@@ -237,15 +291,7 @@ export function Workspace() {
   const openViewSettings = useCallback(() => setViewSettings(true), []);
   const runRedo = useCallback(() => runStep("redo"), [runStep]);
 
-  // Opening the detail below the three-pane floor rails the assistant, so
-  // every pane stays in normal flow and nothing ever overlaps.
-  // keyed on the selection, not the item object: a write re-creates the object
-  // and would re-rail a panel the user had just re-opened
-  useEffect(() => {
-    if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
-  }, [selectedId, expanded, setAiOpen]);
-
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || nightShift || takeover || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -339,6 +385,7 @@ export function Workspace() {
         // Radix and the inline composers consume Escape first; defaultPrevented
         // is how an inner layer says it already handled it
         // innermost first: an expanded detail collapses before it closes
+        const selectedId = readSelectedId();
         if (expanded) setExpanded(false);
         else if (selectedId) {
           // closing the pane from inside it gives focus back to the card it came from
@@ -350,7 +397,7 @@ export function Workspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [anyOverlay, expanded, runUndo, runRedo, ws, selectedId, setSideOpen]);
+  }, [anyOverlay, expanded, runUndo, runRedo, ws, readSelectedId, setSideOpen]);
 
   return (
     <div className="app">
@@ -360,6 +407,7 @@ export function Workspace() {
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
         onOpenUsage={() => setSettings("usage")}
+        onOpenNightShift={() => setNightShift(true)}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
@@ -377,12 +425,13 @@ export function Workspace() {
               <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
             </Surface>
           ) : (
-            <Surface feature={ws.layout === "graph" ? "backlog.graph" : ws.layout === "table" ? "backlog.table" : "backlog.board"}>
+            <Surface feature={ws.layout === "graph" ? "backlog.graph" : ws.layout === "table" ? "backlog.table" : ws.layout === "board" ? "backlog.board" : "backlog.plugin"}>
             <section className="board-region" data-layout={ws.layout}>
               <ViewHeadRegion onOpenViewSettings={openViewSettings} onOpenFields={openFieldsList} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
               {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
               <UnplacedRepoBanner projectId={ws.project.id} onOpenRepositories={() => setProjectSettings("repositories")} />
+              <TakeoverBanner projectId={ws.project.id} onOpen={() => setTakeover(true)} />
               {ws.itemsError ? (
                 <div className="items-error" role="alert">
                   <p>{t("workspace.itemsReadFailed")}</p>
@@ -391,6 +440,8 @@ export function Workspace() {
                     {t("common.tryAgain")}
                   </button>
                 </div>
+              ) : !isBuiltinLayout(ws.layout) ? (
+                <PluginLayoutRegion layout={ws.layout} />
               ) : ws.layout === "graph" ? (
                 <GraphRegion />
               ) : ws.layout === "table" ? (
@@ -406,21 +457,14 @@ export function Workspace() {
           )}
         </div>
 
-        {selected && (
-          <Surface feature="backlog.issue">
-          <DetailPane
-            item={selected}
-            expanded={expanded}
-            onToggleExpand={() => setExpanded((v) => !v)}
-            onClose={() => {
-              setExpanded(false);
-              ws.select(null);
-            }}
-            onDelete={() => setDeleting(selected.id)}
-            onOpenRepositories={openProjectSettings}
-          />
-          </Surface>
-        )}
+        <DetailRegion
+          expanded={expanded}
+          setExpanded={setExpanded}
+          onDelete={setDeleting}
+          openSettings={openAssistantSettings}
+          openRepositories={openRepositories}
+          openProjectSettings={openProjectSettings}
+        />
       </div>
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={openSurface}>
@@ -492,6 +536,17 @@ export function Workspace() {
         }}
       />
       <AnnouncementsDialog open={announcements} onOpenChange={setAnnouncements} />
+      <TakeoverDialog projectId={ws.project.id} open={takeover} onOpenChange={setTakeover} />
+      {nightShift && (
+        <NightShiftDialog
+          projectId={ws.project.id}
+          onClose={() => setNightShift(false)}
+          onOpenIssue={(id) => {
+            setNightShift(false);
+            ws.select(id);
+          }}
+        />
+      )}
       <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog

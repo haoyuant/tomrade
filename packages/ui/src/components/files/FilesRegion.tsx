@@ -38,6 +38,8 @@ import { FileView } from "./FileView";
 import { FileViewer } from "~/components/onDemand";
 import { FolderView } from "./FolderView";
 import { stateOf } from "./state";
+import { stepLabel } from "~/components/ui/SyncActivity";
+import { useSyncProgress } from "~/lib/syncProgress";
 import { useNoteActions } from "./useNoteActions";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
 
@@ -172,6 +174,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const pinned = search.id && search.v ? { fileId: search.id, versionId: search.v } : null;
   const tree = useFilesTree(projectId);
   const status = useFilesStatus(projectId);
+  const progress = useSyncProgress("files.progress", projectId, status.data?.progress);
   const syncActions = useSyncActions(projectId);
   const agentActions = useAgentActions(projectId);
   const info = useFilesInfo(projectId);
@@ -379,11 +382,11 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         </div>
         <Spacer />
         <Tag tone={state.tone} title={status.data?.detail ?? state.hint}>
-          {state.label}
+          {progress ? stepLabel(t, progress.step) : state.label}
         </Tag>
         <button type="button" className="btn btn-ghost files-sync" title={t("files.sync")} aria-label={t("files.sync")} disabled={sync.isPending || stateKey === "unavailable"} onClick={syncNow}>
           <Icon name="i-sync" size={13} />
-          {sync.isPending || stateKey === "syncing" ? t("files.syncing") : t("files.sync")}
+          {sync.isPending || stateKey === "syncing" || progress ? t("files.syncing") : t("files.sync")}
         </button>
         <div className="files-dir-actions">
           {isDir && (

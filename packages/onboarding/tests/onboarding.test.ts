@@ -40,7 +40,7 @@ describe("the sample project", () => {
 
     const [tour, more, example] = boards.list(project.id);
     expect([tour.name, more.name, example.name]).toEqual([words.tour, words.more, words.example]);
-    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["看板", "最近更新", words.path]);
+    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["看板", "最近更新", "按状态", "按需求组", "按优先级", "按工作流", words.path]);
     const path_ = views.listForProject(project.id).find((v) => v.name === words.path)!;
     expect(path_).toMatchObject({ layout: "graph", query: { graph: "deps", filter: [{ field: "board", op: "in", values: [tour.id, more.id] }] } });
 

@@ -9,6 +9,7 @@ import { DeliveryStore } from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/fields";
 import type {} from "@tomradex/oplog";
+import type {} from "@tomradex/storage";
 import type {} from "@tomradex/ipc";
 import { writeContext } from "@tomradex/write";
 import { languageName, type Author, type Item, type Patch, type UndoRunResult } from "@tomradex/domain";
@@ -16,18 +17,18 @@ import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
-import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
+import { AgentStore, MIGRATIONS, TABLES, TAKEN_OVER, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { RULES_MAX_CHARS, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
+import { RULES_MAX_CHARS, afterInterruption, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
 import type { AgentPolicy } from "./hooks.js";
-import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
+import type { CliCheck, Engine, EngineAvailability, EngineCapability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
 import { normalizeEngine } from "./engine-shape.js";
 import { PANEL_SURFACES, type AgentEvent, type Block, type CardView, type FocusRef, type ParkView, type PendingView, type RunView, type ThreadMessage, type ThreadSummary, type ThreadSurface, type UserInput } from "./thread.js";
-import type { OpenDependency, RetryState, TurnInput, TurnIO, TurnResult } from "./turn.js";
+import type { OpenDependency, RetryState, SteerInput, TurnInput, TurnIO, TurnResult } from "./turn.js";
 import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEntry, type PlaybookSource, type Suspended, type TurnFollowUp, type WorkflowIO, type WorkflowSpec } from "./workflow.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
-import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
+import { limitCause, untilLabel, type LimitCause } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
 import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
@@ -181,6 +182,8 @@ declare module "@tomradex/ipc" {
     "agent.dismissInterrupted": (projectId: string, threadId: string) => boolean;
     /** Continues a conversation the app's closing interrupted: one message in it saying to go on from where it stopped. */
     "agent.continueInterrupted": (projectId: string, threadId: string) => { runId: string };
+    /** Stops the turn another machine is running in this conversation, so this machine can go on with it; false when none is. */
+    "agent.takeOver": (projectId: string, threadId: string) => boolean;
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
@@ -195,7 +198,7 @@ declare module "@tomradex/ipc" {
     "agent.pendings": (projectId: string) => PendingView[];
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
-    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
+    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string, attachments?: MediaRef[]) => Promise<boolean>;
     "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     /** `fresh` looks for each engine's CLI again instead of answering from a recent probe. */
@@ -284,13 +287,29 @@ interface RunCtx {
   /** Stores a stretch of retries still open when the turn ends. */
   settleRetry: (recovered: boolean) => void;
   /** Sent into this turn and not yet handed to the model. */
-  steers: { id: string; text: string }[];
+  steers: { id: string; text: string; attachments?: MediaRef[] }[];
+  /** The turn's engine said it takes files in a steer. */
+  steersMedia: boolean;
   /** Where the engine's agent takes them instead, when it queues them itself. */
-  forward: ((steer: { id: string; text: string }) => Promise<boolean>) | null;
+  forward: ((steer: SteerInput) => Promise<boolean>) | null;
+  /** Sent before the engine could take them; handed over once it calls `steerTo`. */
+  held: RunCtx["steers"];
   /** How the running engine takes a mode picked mid-turn (`io.modeTo`). */
   mode: ((mode: string) => Promise<boolean>) | null;
 }
 
+
+/**
+ * Runs with a controller in this process, whichever Agent instance holds it: one started after a restart or
+ * on a file opened again settles only what nobody owns. Kept on globalThis so a second copy of this module shares it.
+ */
+const LIVE_RUNS: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("tomradex.agent.liveRuns")] ??= new Set<string>()) as Set<string>;
+
+/** What a waiting `switch` question holds: the engine it offers and the run that stopped. */
+interface SwitchOffer {
+  to: string;
+  runId: string;
+}
 
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
@@ -399,16 +418,20 @@ export class Agent extends Service implements AgentReader {
 
   [Service.init]() {
     this.ctx.db.migrate("agent", MIGRATIONS, { tables: TABLES });
-    this.store = new AgentStore(this.ctx.db, (id) => this.answering(id));
+    this.store = new AgentStore(this.ctx.db, (id) => this.answering(id), () => this.ctx.get("hub")?.deviceId ?? null);
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
-    // every project file that is open now and in each one opened later.
+    // every project file that is open now and in each one opened later. One still driven here is not touched.
     const reconcile = (projectId: string) => {
-      const interrupted = this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }));
+      const interrupted = this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }), (runId) => LIVE_RUNS.has(runId));
       for (const threadId of interrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
     };
     for (const projectId of this.ctx.db.openIds()) reconcile(projectId);
     this.ctx.on("db/opened", reconcile);
+    // Another machine took over a conversation this one is running: the turn here stops, and stays taken over.
+    this.ctx.on("storage/imported", (projectId) => {
+      for (const rc of this.activeById.values()) if (rc.projectId === projectId && this.store.run(projectId, rc.run.id)?.stop === TAKEN_OVER) rc.abort.abort();
+    });
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
     this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
     // A project closing (removed from this machine) stops the runs working in it.
@@ -492,21 +515,19 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.dismissInterrupted", (projectId, threadId) => ctx.agent.dismissInterrupted(projectId, threadId));
       ctx.ipc.handle("agent.continueInterrupted", (projectId, threadId) => ctx.agent.continueInterrupted(projectId, threadId));
+      ctx.ipc.handle("agent.takeOver", (projectId, threadId) => ctx.agent.takeOver(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
       ctx.ipc.handle("agent.toBackground", (projectId, threadId) => ctx.agent.toBackground(projectId, threadId));
       ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
       ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));
-      ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => {
-        const engineId = ctx.agent.answering(asked);
-        return ctx.agent.engines.get(engineId)?.media?.(options ?? ctx.agent.settingsOf().engines[engineId]) ?? { input: [], output: [] };
-      });
+      ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => ctx.agent.mediaFor(asked, options));
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
-      ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
+      ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text, attachments) => ctx.agent.steer(projectId, threadId, steerId, text, attachments));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
       ctx.ipc.handle("agent.engines", (opts) => ctx.agent.engineViews(opts?.fresh));
@@ -537,9 +558,28 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.recommendPlaybook", (projectId, input) => ctx.agent.recommendPlaybook(projectId, input));
     });
+    // Torn down (a restart, a reload) mid-run: each run stops and is settled here, never left going behind the next instance.
     return () => {
-      for (const rc of this.activeById.values()) rc.abort.abort();
+      for (const rc of [...this.activeById.values()]) this.interruptOwned(rc);
     };
+  }
+
+  private interruptOwned(rc: RunCtx): void {
+    rc.abort.abort();
+    this.activeByThread.delete(rc.threadId);
+    this.activeById.delete(rc.run.id);
+    this.limitTries.delete(rc.run.id);
+    LIVE_RUNS.delete(rc.run.id);
+    try {
+      if (!this.store.isOpen(rc.projectId)) return;
+      const w = this.words();
+      const run = this.store.interruptRun(rc.projectId, rc.run.id, w("restartInterrupted"), (title) => w("backgroundInterrupted", { title }));
+      if (!run) return;
+      this.broadcast(rc.threadId, { type: "done", run });
+      this.ctx.emit("agent/interrupted-changed", rc.projectId, rc.threadId);
+    } catch (error) {
+      this.ctx.logger.warn(`could not settle run ${rc.run.id}: ${errorMessage(error)}`);
+    }
   }
 
   // ── registries ─────────────────────────────────────────────────────────────
@@ -553,6 +593,12 @@ export class Agent extends Service implements AgentReader {
   /** The registered engine that answers for an id: the id itself, or the engine that includes it. */
   answering(id: string): string {
     return [...this.engines.values()].find((e) => e.includes?.includes(id))?.id ?? id;
+  }
+
+  /** What a conversation on `asked` (an engine or one it took in) may attach and get back, under these options or its saved ones. */
+  mediaFor(asked: string, options?: unknown) {
+    const engineId = this.answering(asked);
+    return this.engines.get(engineId)?.media?.(options ?? this.settingsOf().engines[engineId]) ?? { input: [], output: [] };
   }
 
   /** The engines a person chooses between: none that another engine took in. */
@@ -848,6 +894,16 @@ export class Agent extends Service implements AgentReader {
     return usageSummary(runs, { days, now, titles });
   }
 
+  /** What finished runs on these tickets cost since `since`: the sum engines reported, and how many runs reported nothing. */
+  spentOn(projectId: string, itemIds: string[], since: number): { usd: number; unpriced: number } {
+    if (!itemIds.length || !this.ctx.db.has(projectId)) return { usd: 0, unpriced: 0 };
+    const rows = this.ctx.db
+      .for(projectId)
+      .prepare(`SELECT r.cost_usd AS cost FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE r.started_at >= ? AND r.status <> 'running' AND t.item_id IN (${itemIds.map(() => "?").join(", ")})`)
+      .all(since, ...itemIds) as { cost: number | null }[];
+    return { usd: rows.reduce((sum, r) => sum + (r.cost ?? 0), 0), unpriced: rows.filter((r) => r.cost === null).length };
+  }
+
   /** `<project folder>/.tomrade/rules.md`: text beside the project's playbooks and decisions, travelling with it. */
   rulesFile(projectId: string): string | null {
     const dir = contract(this.ctx, "storage")?.artifactDirFor(projectId);
@@ -943,6 +999,24 @@ export class Agent extends Service implements AgentReader {
   /** The engines that may take a code turn — a local coding agent, never the in-app model. */
   codeEngines(): Engine[] {
     return this.allEngines().filter((e) => e.capabilities?.includes("code"));
+  }
+
+  /**
+   * The first engine that can take over from `limited` right now, in the order `Starter.pickEngine` tries
+   * them; several when the work has stopped on more than one. `capability`: what the work needs. `terminal`:
+   * the work runs in a terminal rather than the panel.
+   */
+  async nextEngine(limited: string | readonly string[], need: { capability?: EngineCapability; terminal?: boolean } = {}): Promise<Engine | null> {
+    const { capability = "backlog", terminal = false } = need;
+    const stopped = new Set([limited].flat().map((id) => this.answering(id)));
+    for (const engine of this.allEngines()) {
+      // A literal engine only follows its script: it cannot carry on someone else's work.
+      if (stopped.has(engine.id) || engine.literal || !(engine.capabilities ?? ["backlog"]).includes(capability)) continue;
+      if (engine.terminal?.mode === (terminal ? "none" : "only")) continue;
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: errorMessage(err) }));
+      if (state.ok && (!state.capabilities || state.capabilities.includes(capability))) return engine;
+    }
+    return null;
   }
 
   private generalStarts = new Set<string>();
@@ -1127,6 +1201,18 @@ export class Agent extends Service implements AgentReader {
   continueInterrupted(projectId: string, threadId: string): { runId: string } {
     if (!this.store.interruptedRun(projectId, threadId)) throw new Error("this conversation was not interrupted");
     return this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterInterrupt") });
+  }
+
+  /**
+   * Stops the turn another machine is running in this conversation, so this machine can go on with it. Only on
+   * the person's word: that machine's agent keeps working until it hears. False when no other machine runs it.
+   */
+  takeOver(projectId: string, threadId: string): boolean {
+    const running = this.store.runningElsewhere(projectId, threadId);
+    const view = running && this.store.takeOverRun(projectId, running.id, this.words()("takenOver"));
+    if (!view) return false;
+    this.broadcast(threadId, { type: "done", run: view });
+    return true;
   }
 
   /** Does `change`, and says so when it changed whether the thread is left interrupted. */
@@ -1356,6 +1442,7 @@ export class Agent extends Service implements AgentReader {
     }
     // Overrides belong to the engine they were picked for.
     this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null, options: null });
+    this.store.setSwitchDeclined(projectId, threadId, null);
     const thread = this.store.thread(projectId, threadId)!;
     this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words()("engineSwitched", { title: this.engines.get(engineId)?.title ?? engineId }) }, null);
     return thread;
@@ -1451,6 +1538,8 @@ export class Agent extends Service implements AgentReader {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words()("archivedReadOnly"));
+    // Two machines on one conversation would each resume the other's session: this one goes on only once it took over.
+    if (!this.activeByThread.has(threadId) && this.store.runningElsewhere(projectId, threadId)) throw new Error(this.words()("runningElsewhere"));
     const ticket = thread.itemId && !thread.execution && !this.activeByThread.has(threadId) ? this.itemOf(projectId, thread.itemId) : null;
     // A done ticket's conversation changes nothing until the ticket is reopened.
     if (ticket?.status === "done") throw new Error(this.words()("reopenToContinue", { key: ticket.key }));
@@ -1477,15 +1566,19 @@ export class Agent extends Service implements AgentReader {
     // Another plugin may hold the thread's session elsewhere (its CLI resuming it in a terminal): a second process on it is refused.
     const refused = this.ctx.bail("agent/before-send", thread);
     if (refused) throw new Error(refused);
+    const waiting = this.store.pending(projectId, threadId);
+    if (waiting?.kind === "switch") {
+      const answered = this.answerSwitch(thread, waiting, input, record);
+      if (answered) return answered;
+    }
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
-    if (input.kind === "text" && (input.attachments?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
-    const attachments = input.kind === "text" ? input.attachments?.map(ref => this.media().reference(projectId, threadId, ref.id)) : undefined;
-    const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
-    for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
+    const attachments = input.kind === "text" ? this.attached(thread, engine, input.attachments) : undefined;
     if (input.kind === "text") input = { ...input, attachments };
     const wasInterrupted = !!this.store.interruptedRun(projectId, threadId);
+    // An engine that matches what is typed (no model, the troubleshooter's words) reads it as sent; so does an answer to a waiting question.
+    const recovering = wasInterrupted && !engine.literal && thread.surface !== "doctor" && !this.store.pending(projectId, threadId);
     const { msg, run } = this.store.transaction(projectId, () => {
       const msg = this.store.appendMessage(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
       if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
@@ -1503,22 +1596,47 @@ export class Agent extends Service implements AgentReader {
     const rc = this.makeRunCtx(run, thread, engine);
     this.activeByThread.set(threadId, rc);
     this.activeById.set(run.id, rc);
+    LIVE_RUNS.add(run.id);
     this.broadcast(threadId, { type: "run", run });
     this.ctx.emit("agent/run-started", run, thread);
     // a new run is the interruption's answer: the conversation goes on
     if (wasInterrupted) this.ctx.emit("agent/interrupted-changed", projectId, threadId);
-    void this.drive(rc, input);
+    void this.drive(rc, input, recovering);
     return { runId: run.id };
   }
 
+  /** The stored files a message names, each one the thread's agent takes. */
+  private attached(thread: ThreadSummary, engine: Engine, refs: MediaRef[] | undefined): MediaRef[] | undefined {
+    if ((refs?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
+    const attachments = refs?.map(ref => this.media().reference(thread.projectId, thread.id, ref.id));
+    const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
+    for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
+    return attachments;
+  }
+
+  private steerInput(projectId: string, threadId: string, steer: RunCtx["steers"][number]): SteerInput {
+    const { attachments, ...input } = steer;
+    return attachments ? { ...input, media: attachments.map((ref) => this.readMedia(projectId, threadId, ref.id)) } : input;
+  }
+
   /** A message for the running turn: held until the engine reaches a point where the model reads it. */
-  async steer(projectId: string, threadId: string, steerId: string, text: string): Promise<boolean> {
+  async steer(projectId: string, threadId: string, steerId: string, text: string, attachments?: MediaRef[]): Promise<boolean> {
     const rc = this.activeByThread.get(threadId);
-    if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || !text.trim()) return false;
-    const steer = { id: steerId, text: text.trim() };
+    if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || (!text.trim() && !attachments?.length)) return false;
+    // before a forwarding engine starts taking steers it has not yet said whether it takes files either
+    const starting = !rc.forward && rc.engine.steering === "forward";
+    if (attachments?.length && !rc.steersMedia && !starting) return false;
+    const refs = this.attached(rc.thread, rc.engine, attachments);
+    const steer = { id: steerId, text: text.trim(), ...(refs?.length ? { attachments: refs } : {}) };
     rc.steers.push(steer);
-    if (!rc.forward) return true;
-    const taken = await rc.forward(steer).catch(() => false);
+    if (rc.forward) return this.handOver(rc, steer);
+    // an agent that queues them itself takes it once its turn is under way (steerTo)
+    if (starting) rc.held.push(steer);
+    return true;
+  }
+
+  private async handOver(rc: RunCtx, steer: RunCtx["steers"][number]): Promise<boolean> {
+    const taken = await rc.forward!(this.steerInput(rc.projectId, rc.threadId, steer)).catch(() => false);
     const at = rc.steers.indexOf(steer);
     if (!taken && at >= 0) rc.steers.splice(at, 1);
     return taken;
@@ -1544,6 +1662,7 @@ export class Agent extends Service implements AgentReader {
     const projectId = this.store.projectOfRun(runId);
     const run = projectId ? this.store.run(projectId, runId) : null;
     if (!projectId || !run || run.status !== "running") return false;
+    if (run.elsewhere) throw new Error(this.words()("cancelElsewhere"));
     const changes = this.store.changesOf(projectId, runId) + this.ctx.oplog.runChanges(projectId, runId).length;
     const view = this.store.endRun(projectId, runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
     this.broadcast(run.threadId, { type: "done", run: view });
@@ -1640,6 +1759,15 @@ export class Agent extends Service implements AgentReader {
     const clock = { timedOut: false, limitMs: wall.left };
     const partial = { text: "" };
     const steers: RunCtx["steers"] = [];
+    const placeSteer = (s: RunCtx["steers"][number]) =>
+      this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id, ...(s.attachments ? { attachments: s.attachments } : {}) }, run.id);
+    const takeSteerInputs = () => {
+      if (abort.signal.aborted) return [];
+      return steers.splice(0).map((s) => {
+        placeSteer(s);
+        return this.steerInput(thread.projectId, thread.id, s);
+      });
+    };
     const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => { clock.timedOut = true; abort.abort(); }, Math.max(0, wall.left)); };
     const holdClock = () => { clearTimeout(wall.timer); wall.left -= Date.now() - wall.since; };
     runClock();
@@ -1807,22 +1935,26 @@ export class Agent extends Service implements AgentReader {
       signal: abort.signal,
       resume: this.resumeOf(thread, engine),
       recap: () => conversationRecap(this.store.messages(thread.projectId, thread.id)),
-      takeSteers: () => {
-        if (abort.signal.aborted) return [];
-        const taken = steers.splice(0);
-        for (const s of taken) this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
-        return taken.map((s) => s.text);
+      steersMedia: () => { rc.steersMedia = true; },
+      takeSteers: () => takeSteerInputs().map((s) => s.text),
+      takeSteerInputs,
+      steerTo: (forward) => {
+        rc.forward = forward;
+        for (const steer of rc.held.splice(0)) {
+          // files it turned out not to take wait for the next turn with them, as one refused at once would
+          if (steer.attachments && !rc.steersMedia) rc.steers.splice(rc.steers.indexOf(steer), 1);
+          else void this.handOver(rc, steer);
+        }
       },
-      steerTo: (forward) => { rc.forward = forward; },
       modeTo: (apply) => { rc.mode = apply; },
       steered: (id) => {
         const at = steers.findIndex((s) => s.id === id);
         if (at < 0) return;
         const [s] = steers.splice(at, 1);
-        this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
+        placeSteer(s);
       }
     };
-    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, forward: null, mode: null };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, steersMedia: false, forward: null, held: [], mode: null };
     return rc;
   }
 
@@ -1847,7 +1979,7 @@ export class Agent extends Service implements AgentReader {
     });
   }
 
-  private async drive(rc: RunCtx, input: UserInput): Promise<void> {
+  private async drive(rc: RunCtx, input: UserInput, recovering: boolean): Promise<void> {
     let result: TurnResult | null = null;
     try {
       const routed = await this.routePending(rc, input);
@@ -1878,6 +2010,7 @@ export class Agent extends Service implements AgentReader {
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const project = contract(this.ctx, "projects")?.get(rc.projectId);
       const rules = this.rules(rc.projectId);
+      const messages = this.store.messages(rc.projectId, rc.threadId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
@@ -1886,9 +2019,8 @@ export class Agent extends Service implements AgentReader {
         execution: rc.thread.execution ?? undefined,
         permissionMode: selectedMode,
         ticket: this.ticketOf(rc.thread),
-        input,
+        ...(recovering ? afterInterruption(input, messages) : { input, messages }),
         ...(rules ? { rules } : {}),
-        messages: this.store.messages(rc.projectId, rc.threadId),
         cards: this.store.cards(rc.projectId, rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,
@@ -2030,15 +2162,22 @@ export class Agent extends Service implements AgentReader {
 
   private finish(rc: RunCtx, result: TurnResult): void {
     rc.abort.abort();
+    // Settled already, as its instance was torn down.
+    if (this.activeById.get(rc.run.id) !== rc) return;
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    LIVE_RUNS.delete(rc.run.id);
     // Its project closed under it (removed, or the app quitting) and took the file along: there is nowhere to write how it ended.
     if (!this.ctx.db.has(rc.projectId)) return;
+    // Another machine took the conversation over while this turn ran: it ends taken over, as that machine's note says.
+    const stored = this.store.run(rc.projectId, rc.run.id);
+    const takenOver = stored?.stop === TAKEN_OVER;
+    if (takenOver) result = { ...result, stop: "cancelled", error: stored.error ?? undefined };
     // A run cut short keeps what it had already said, marked as unfinished, and says why it ended.
     if ((result.stop === "cancelled" || result.stop === "error") && rc.partial.text.trim()) {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "text", text: `${rc.partial.text.trim()} …` }, rc.run.id);
     }
-    if (result.stop === "cancelled") {
+    if (result.stop === "cancelled" && !takenOver) {
       const w = this.words();
       const duration = rc.clock.limitMs >= 60_000 ? w("minutes", { n: Math.round(rc.clock.limitMs / 60_000) }) : w("seconds", { n: Math.round(rc.clock.limitMs / 1000) });
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w("timeLimit", { duration, hint: rc.thread.itemId ? "" : w("raiseTimeLimit") }) : w("stopped") }, rc.run.id);
@@ -2062,9 +2201,10 @@ export class Agent extends Service implements AgentReader {
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
     const tries = this.limitTries.get(rc.run.id) ?? 0;
     this.limitTries.delete(rc.run.id);
-    const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
-    const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
-    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
+    const cause = status === "error" ? limitCause(result) : null;
+    const park = cause?.kind === "wait" ? this.park(rc.projectId, rc.threadId, { until: cause.until, runId: rc.run.id, attempt: tries + 1 }) : null;
+    if (status === "done") this.store.setSwitchDeclined(rc.projectId, rc.threadId, null);
+    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: takenOver ? TAKEN_OVER : result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
     // what it said last, kept with the thread once the turn is over — never while it streams
     const lastText = this.store.lastText(rc.projectId, rc.threadId, rc.run.id);
     if (lastText) this.store.setSaid(rc.projectId, rc.threadId, firstSentence(lastText));
@@ -2074,6 +2214,63 @@ export class Agent extends Service implements AgentReader {
     this.ctx.emit("agent/run-ended", run, thread);
     // once per run, here and nowhere else: a background conversation's conclusion lands in the one it reports to
     if (thread.parentId) this.relayToParent(rc, run, thread);
+    if (cause && (thread.surface === "assistant" || thread.surface === "code")) {
+      void this.offerSwitch(thread, rc, cause, park).catch((err: unknown) => this.ctx.logger.warn(`switch offer failed: ${errorMessage(err)}`));
+    }
+  }
+
+  /** Asks in the thread whether the next engine takes over: only when one can, and never again once the person said no. */
+  private async offerSwitch(thread: ThreadSummary, rc: RunCtx, cause: LimitCause, park: ParkView | null): Promise<void> {
+    const { projectId, id: threadId } = thread;
+    if (this.store.switchDeclined(projectId, threadId) === rc.engine.id) return;
+    if (this.ctx.bail("agent/before-switch-offer", thread)) return;
+    const capability: EngineCapability = thread.execution ? "general" : thread.itemId || thread.parentId ? "code" : "backlog";
+    const next = await this.nextEngine(rc.engine.id, { capability });
+    if (!next || !this.ctx.db.has(projectId)) return;
+    // Looking took a moment: the thread may have gone on, or its limit lifted, meanwhile.
+    if (this.activeByThread.has(threadId) || this.store.pending(projectId, threadId) || this.store.thread(projectId, threadId)?.engine !== rc.engine.id) return;
+    if (park && !this.store.parked(projectId, threadId)) return;
+    const w = this.words();
+    const names = { from: rc.engine.title, to: next.title };
+    const text = cause.kind === "balance"
+      ? w("switchAskBalance", names)
+      : w("switchAskLimit", { ...names, lifts: park?.known ? w("limitLiftsAt", { when: untilLabel(park.until, w.locale) }) : "" });
+    const question = { id: randomUUID(), text, options: [w("switchYes", { to: next.title }), w(cause.kind === "balance" ? "switchStay" : "switchWait")] };
+    const offer: SwitchOffer = { to: next.id, runId: rc.run.id };
+    this.store.setPending(projectId, threadId, { kind: "switch", workflow: null, step: null, state: offer, question, accepts: "options", waiveRule: null, waiveOn: [] });
+    this.appendAndBroadcast(projectId, threadId, "agent", { type: "question", ...question }, rc.run.id);
+    this.broadcast(threadId, { type: "pending", pending: this.pendingView(this.store.pending(projectId, threadId)!) });
+  }
+
+  private dropSwitchOffer(projectId: string, threadId: string): void {
+    if (this.store.pending(projectId, threadId)?.kind !== "switch") return;
+    this.store.clearPending(projectId, threadId);
+    this.broadcast(threadId, { type: "pending", pending: null });
+  }
+
+  /** The person's word on an offer to switch engines; null when what came is something else, and the offer lapses for it. */
+  private answerSwitch(thread: ThreadSummary, waiting: PendingRecord, input: UserInput, record: (runId: string) => void): { runId: string } | null {
+    const { projectId, id: threadId } = thread;
+    const said = input.kind === "answer" ? input.value : input.text.trim();
+    const [yes, no] = waiting.question.options ?? [];
+    const offer = waiting.state as SwitchOffer;
+    this.dropSwitchOffer(projectId, threadId);
+    if (said === no) {
+      // A wait stays parked and goes on by itself; no run starts here, so the answer belongs to the run that stopped.
+      this.store.setSwitchDeclined(projectId, threadId, thread.engine);
+      this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text: no! }, offer.runId);
+      record(offer.runId);
+      return { runId: offer.runId };
+    }
+    if (said !== yes) return null;
+    const from = this.engines.get(thread.engine)?.title ?? thread.engine;
+    const to = this.engines.get(offer.to);
+    // A session it kept from earlier on this thread stops before what happened since; a new one gets all of it as a recap.
+    for (const id of [offer.to, ...(to?.includes ?? [])]) this.store.setExternal(projectId, threadId, id, null);
+    this.setEngine(projectId, threadId, offer.to);
+    const started = this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterSwitch", { from, to: to?.title ?? offer.to }) });
+    record(started.runId);
+    return started;
   }
 
   /** The thread waiting for a usage limit to lift, if it is. */
@@ -2135,6 +2332,8 @@ export class Agent extends Service implements AgentReader {
     const park = this.store.parked(projectId, threadId);
     if (!park) return;
     this.store.unpark(projectId, threadId);
+    // With the limit gone there is nothing left to move away from.
+    this.dropSwitchOffer(projectId, threadId);
     const thread = this.store.thread(projectId, threadId);
     if (!thread || this.activeByThread.has(threadId)) return;
     if (park.resume && this.settingsOf().resumeAfterLimit !== false) {

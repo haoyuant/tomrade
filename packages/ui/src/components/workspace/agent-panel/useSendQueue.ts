@@ -9,7 +9,7 @@ import type { Queued } from "./blocks";
  * Messages written while a run works: queued per thread, in memory, to go out once a turn ends
  * well — or sent into the running turn when the engine steers.
  */
-export function useSendQueue({ projectId, threadId, engine, currentEngineId, runningRun, messages, busy, held, caughtUp, sending, doSend }: {
+export function useSendQueue({ projectId, threadId, engine, currentEngineId, runningRun, messages, busy, held, caughtUp, sending, doSend, steerFiles }: {
   projectId: string;
   threadId: string | null;
   engine: EngineView | undefined;
@@ -23,6 +23,8 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
   caughtUp: boolean;
   sending: RefObject<boolean>;
   doSend: (text: string, queued: Queued) => Promise<boolean>;
+  /** Into the running turn with what it attaches, uploaded first; false means it was not taken. */
+  steerFiles: (inThread: string, entry: Queued) => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -35,14 +37,14 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
   const steeringNow = useMemo(() => (threadId ? (steering[threadId] ?? []) : []), [threadId, steering]);
 
   const steer = async (inThread: string, entry: Queued) => {
-    const taken = !!engine?.steers && await invoke("agent.steer", projectId, inThread, entry.id, entry.text).catch(() => false);
+    const taken = !!engine?.steers && await (entry.attachments?.length ? steerFiles(inThread, entry) : invoke("agent.steer", projectId, inThread, entry.id, entry.text)).catch(() => false);
     if (taken) {
       setSteering((prev) => ({ ...prev, [inThread]: [...(prev[inThread] ?? []), entry] }));
       editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
       return;
     }
     if (!(queues[inThread] ?? []).some((x) => x.id === entry.id)) editQueue(inThread, (q) => [...q, entry]);
-    toast({ body: t("agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
+    toast({ body: t(entry.attachments?.length && engine?.steers ? "agentPanel.steerFilesQueued" : "agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
   };
   const steeredIds = useMemo(() => new Set((messages ?? []).flatMap((m) => (m.block.type === "text" && m.block.steerId ? [m.block.steerId] : []))), [messages]);
   useEffect(() => {
@@ -58,14 +60,14 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
 
   const sendQueued = async (inThread: string, entry: Queued) => {
     editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
-    // a send that did not go keeps its place at the head
-    if (!(await doSend(entry.text, entry))) editQueue(inThread, (q) => [entry, ...q.filter((x) => x.id !== entry.id)]);
+    // a send that did not go keeps its place at the head, for the person to try again
+    if (!(await doSend(entry.text, entry))) editQueue(inThread, (q) => [{ ...entry, stuck: true }, ...q.filter((x) => x.id !== entry.id)]);
   };
   const sendQueuedRef = useRef(sendQueued);
   sendQueuedRef.current = sendQueued;
   // Waiting messages go on only after a turn that ended well.
   useEffect(() => {
-    if (!threadId || !queue.length || busy || held || !caughtUp || sending.current) return;
+    if (!threadId || !queue.length || queue[0].stuck || busy || held || !caughtUp || sending.current) return;
     void sendQueuedRef.current(threadId, queue[0]);
   }, [threadId, queue, busy, held, caughtUp, sending]);
 

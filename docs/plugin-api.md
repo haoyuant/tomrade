@@ -68,8 +68,12 @@ not a sandbox.** What the system does guarantee:
   project. An extension that claims `"human"` outside a person's call is
   refused by the write policy, which also keeps purge out of its reach.
 - **Everything it registers carries its namespace**: tools, commands, badges,
-  status items, sections, graphs, settings sections, playbooks, surfaces, and
-  `plugin_<namespace>_*` tables. Two extensions cannot share one.
+  status items, sections, graphs, layouts, settings sections, playbooks,
+  surfaces, and `plugin_<namespace>_*` tables. Two extensions cannot share one.
+- A [layout](#layouts) runs in a sandboxed frame unless the manifest grants
+  `permissions.renderer`, which lets it run inside Tomrade's own window with
+  everything the renderer reaches; every install and build dialog lists that
+  as high risk, and the person decides.
 - Every tool call passes `tools/pre-execute`, and every write `write/pre-commit`:
   a policy there — the app's own or an extension's gate — can refuse it, and a
   tool policy can change its arguments or answer in the tool's place.
@@ -118,7 +122,7 @@ returns is disposed when the service goes.
 | `db` | `migrate(steps, { scope, tables })` for `plugin_<namespace>_*`; `all`, `get`, `run`, `batch` (one transaction) against a project id or `"hub"`; `isOpen` |
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
-| `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
+| `contributions` | `command`, `badge`, `statusItem`, `section`, `graph`, `sidebarModule`; SDK 0.2.31: `layout` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send; SDK 0.2.25 takes `setup.download` and `setup.desktop`; SDK 0.2.26 takes `{ npm: package }` installers and `setup.signInRun`, which the app runs itself as one-click setup; SDK 0.2.27 takes `{ archive: { url, file, platform } }` installers, a zip the app downloads and unpacks itself |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
@@ -458,8 +462,9 @@ exported for a provider that wants the same behaviour over its own `ChatModel`.
 Keep optional fields in a schema forgiving (`.catch(undefined)`), so a cosmetic
 slip does not cost the whole document.
 
-While no profile is configured, a plugin can **lend** a model for the worker
-role: `ctx.llm.lend({ id, title, rank, ready, model })` returns its withdrawal
+A plugin can **lend** a model for the worker role, which answers while no
+profile is configured and whenever the worker fails:
+`ctx.llm.lend({ id, title, rank, ready, model })` returns its withdrawal
 (wrap it in `ctx.effect`). The Claude Code, WorkBuddy (CodeBuddy), Codex and
 Gemini CLI engines lend their signed-in CLI this way — one prompt, no tools, no
 session — so planning works with a subscription and no API key. Automatic asks
@@ -469,11 +474,22 @@ status command can build its lent model with `cliLentModel` from
 `@tomradex/engine-kit`: it learns the sign-in from one tiny prompt and
 from each call, and `llm.lenders` shows it as still checking (`ready: null`)
 meanwhile. The person can also pick a lent model for the
-worker over a profile (`roles.worker: "lent:<id>"`); a picked one that is not
-ready makes the call fail with the reason, never a silent switch. At most
-`LENT_CONCURRENCY` lent calls run at once. `ctx.llm.worker()` says who answers worker calls
-(`via: "profile" | "lent"`); `ready()` still answers for profiles only, because
-a lent model has no tools to run the loop engine with.
+worker over a profile (`roles.worker: "lent:<id>"`). At most `LENT_CONCURRENCY`
+lent calls run at once.
+
+The worker the person picked or Automatic chose goes first. When it fails, is
+not ready, or runs out of credit, the first ready lent model other than the one
+that failed answers instead, and a `warn` line says so; its usage counts for the
+model that answered. A failed profile is left alone for `WORKER_COOLDOWN_MS`
+while an agent can answer, until settings change. Nothing moves to another
+profile, which would spend a key the person did not pick. Neither a cancelled
+call, a call out of its caller's time (`signal`, `timeoutMs`), nor an answer that
+fails the schema moves on, and the stand-in gets only the time left. When nobody
+can answer, the error is the worker's own.
+
+`ctx.llm.worker()` says who would answer now (`via: "profile" | "lent"`), the
+stand-in included; `ready()` still answers for profiles only, because a lent
+model has no tools to run the loop engine with.
 
 Quick setup lives in the same plugin, so the UI knows no provider: `llm.providers`
 lists the well-known ones in the reader's order, `llm.guess` reads a pasted key's
@@ -940,7 +956,10 @@ What an engine is beyond its turns is said in a few grouped options:
   reads next (`io.takeSteers()`); `forward`: its agent keeps its own queue,
   each is handed over through `io.steerTo(forward)` and placed in the
   transcript when the agent reads it (`io.steered(id)`). Absent, the panel
-  queues them until the turn ends.
+  queues them until the turn ends. A message with files reaches the turn only
+  once the engine calls `io.steersMedia()`: the files come on `steer.media`, or
+  from `io.takeSteerInputs()` under `queue`; otherwise the message waits for
+  the next turn, files included.
 - **`local: { checkCli?, setup?, picks?, mcpLink?, commands?, diagnostics? }`**:
   the agent's own setup on this machine — whether a file is its CLI, its
   install and sign-in commands, its quick picks, its user-level connection to
@@ -1306,6 +1325,10 @@ await ctx.agent.localAgent({
   for a refused turn). Absent: an agent with no ACP that Tomrade starts only in
   a terminal (`terminal: { mode: "only" }`), handed the ticket and heard over its user-level
   MCP connection; `picks` are its Model and Effort picks.
+- **`nativeWebSearch`** (SDK 0.2.32) says it searches and reads the web with
+  tools of its own: its ACP sessions are told to use those first, and
+  Tomrade's `web_search` and `web_fetch`, which stay available, only when
+  those fail or are unavailable.
 - **`mcpLink`** is the agent's own user-level connection to Tomrade, shown and
   switched in Settings → Assistant: either `{ status, connect, disconnect }`
   the plugin manages (each answers the link's state), or `{ cli: { file,
@@ -2278,6 +2301,61 @@ dragging between cards and deleting an arrow write `Item.blocks` patches
 through the ordinary guarded path. `@tomradex/deps-graph` is the shipped
 example — the Dependencies graph plus a `blocked` badge for issues waiting on
 unfinished work.
+
+### Layouts
+
+SDK 0.2.31. A **layout** is a page of the plugin's own in the backlog, beside
+Board, Table and Graph: the switcher offers it with its title and icon, a view
+saves it as `layout: "plugin:<id>"`, and the title bar, query bar and detail
+pane stay around it. The plugin ships one ES module whose default export is a
+`LayoutModule`:
+
+```ts
+// in apply()
+ctx.contributions.layout({ id: "hello.timeline", title: { en: "Timeline", zh: "时间线" }, icon: "i-grid", module: "dist/timeline.js" });
+
+// dist/timeline.js — framework-free here; bundle React or anything else if you like
+export default {
+  mount(root, api) {
+    const draw = (state) => { root.textContent = state.items.map((i) => i.key).join(" "); };
+    draw(api.state);
+    const stop = api.onChange((state, changed) => { if (changed.has("items") || changed.has("selectedId")) draw(state); });
+    root.onclick = () => api.select(api.state.items[0]?.id ?? null);
+    return { unmount: () => { stop(); root.onclick = null; } };
+  }
+};
+```
+
+`api.state` is `{ projectId, items, fields, query, selectedId, look }`: the
+view's tickets after its filter, search and sort, in order; the project's
+fields; the view's query; the ticket open in the detail pane; and the look —
+`{ theme, dark, tokens, locale }`, the theme's CSS variables as the window
+computes them. `onChange` hears one coalesced change per frame with the keys
+that differ; an unchanged ticket keeps its object across changes, so `===`
+tells what moved. `select(id)` opens a ticket (null closes), `update(id,
+patch)` patches one as the person — undoable, and refused where any write
+would be. `mount` returns `{ unmount }`, called when the region goes away.
+
+`module` is a file inside the plugin's package, served by the app on
+`tomrade-plugin://<publisher>/<name>/<path>` — the module's own relative
+imports, stylesheets and images resolve there, and nothing outside the package
+is reachable. `render` picks how it runs:
+
+- `"sandbox"` (the default): a frame on the plugin's own origin
+  (`tomrade-plugin://<publisher>`), out of the window's reach and with none of
+  its bridges — no forms, popups or navigation either — wearing the look's
+  tokens on its root element; the api crosses a `MessagePort`, so tickets
+  travel as deltas and calls come back answered. Needs no permission.
+- `"native"`: the module is imported into Tomrade's own window and mounted on
+  a root element in the backlog region — the same data, the same thread, the
+  window's popovers and theme for free, and everything the renderer reaches.
+  It needs `permissions.renderer` (with `why.renderer`); registration without
+  it is refused, and the install, store and build-confirm dialogs name it as
+  high risk. There is no sandbox here by design.
+
+The same module runs either way: the api has the same shape, and only the
+manifest says which. A view whose layout's plugin is off keeps its layout and
+shows a notice naming it; nothing is rewritten.
 
 ## Channels
 

@@ -50,6 +50,7 @@ export const keys = {
   background: ["background"] as const,
   webSearch: ["webSearch"] as const,
   appIcon: ["appIcon"] as const,
+  themeImage: (themeId: string, slot: string) => ["themeImage", themeId, slot] as const,
   updates: ["updates"] as const,
   hub: ["hub"] as const,
   hubRemote: ["storage", "hub"] as const,
@@ -72,6 +73,7 @@ export const keys = {
   sections: (projectId: string, itemId: string) => ["contributions", "sections", projectId, itemId] as const,
   sidebarModules: (projectId: string) => ["contributions", "sidebar", projectId] as const,
   graphs: ["contributions", "graphs"] as const,
+  layouts: ["contributions", "layouts"] as const,
   graphEdgesAll: (projectId: string) => ["contributions", "graph", projectId] as const,
   graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const,
   assistantAccessories: ["contributions", "assistant-accessories"] as const,
@@ -207,6 +209,20 @@ export const keys = {
     list: (projectId: string) => ["schedules", projectId, "list"] as const,
     runs: (projectId: string, templateId: string) => ["schedules", projectId, "runs", templateId] as const,
     suggestions: (locale: string) => ["schedules", "suggestions", locale] as const
+  },
+
+  takeover: {
+    offer: (projectId: string) => ["takeover", projectId, "offer"] as const
+  },
+
+  nightShift: {
+    all: (projectId: string) => ["nightShift", projectId] as const,
+    current: (projectId: string) => ["nightShift", projectId, "current"] as const,
+    last: (projectId: string) => ["nightShift", projectId, "last"] as const,
+    plan: (projectId: string) => ["nightShift", projectId, "plan"] as const,
+    proposal: (projectId: string) => ["nightShift", projectId, "proposal"] as const,
+    rules: (projectId: string) => ["nightShift", projectId, "rules"] as const,
+    ruleMatches: (projectId: string) => ["nightShift", projectId, "ruleMatches"] as const
   },
 
   community: {

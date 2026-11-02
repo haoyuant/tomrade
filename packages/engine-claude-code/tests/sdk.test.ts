@@ -6,7 +6,7 @@ import os from "node:os";
 import { createClaudeCodeEngine } from "../src/index.js";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import type { TurnInput, TurnIO } from "@tomradex/agent";
+import type { SteerInput, TurnInput, TurnIO } from "@tomradex/agent";
 
 // The fake CLI appends a line per message while it runs, so a read can land after the file is created but before
 // its first write, or mid-line: only newline-terminated lines are finished.
@@ -123,7 +123,7 @@ it("reports the SDK's retries, drops the failed attempt from the live count, and
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
 
-it("steers a running turn through the SDK's input queue, waits out a steer that missed the turn, and drops unread ones on a stop", async () => {
+it("steers a running turn at once through the SDK's input queue, cutting a running tool but not an MCP call in flight, waits out the CLI turn it starts, and drops unread ones on a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-steer-"));
   const log = path.join(dir, "requests.jsonl");
   const bin = path.join(dir, "claude");
@@ -136,25 +136,36 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "TOOL_STEER" }, messages: [], cards: [], brief: null, pending: null,
     options: { command: bin }, env: { TOMRADE_TEST_LOG: log } };
   const order: string[] = [];
-  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  let forward: ((steer: SteerInput) => Promise<boolean>) | undefined;
+  let steersMedia = false;
   const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
-    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+    steersMedia: () => { steersMedia = true; }, steerTo: (fn) => { forward = fn; takenAfter.push(requests().filter((r) => r.type === "user").length); }, steered: (id) => order.push(`steered:${id}`) };
+  // how many messages the CLI had when the engine began taking steers
+  const takenAfter: number[] = [];
   const requests = () => logged(log);
   const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
   try {
-    // while a tool runs: joins the same CLI turn, placed after the tool's result
+    // while a tool runs: the tool is cut, and the steer runs as the CLI's next turn within this one
     let turn = engine.turn(input, io);
     await when(() => order.includes("trace") || requests().some((r) => r.type === "user"));
     await new Promise((r) => setTimeout(r, 100));
-    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    expect(steersMedia).toBe(true);
+    expect(await forward!({ id: "s1", text: "make it blue", media: [{ id: "m1", name: "shot.png", mime: "image/png", size: 3, base64: "cG5n" }] })).toBe(true);
     let result = await turn;
     expect(result.stop, result.error).toBe("end");
     expect(order).toEqual(["trace", "steered:s1", "agent:took: make it blue"]);
-    const steer = requests().filter((r) => r.type === "user").at(-1);
-    expect(steer).toMatchObject({ priority: "next" });
-    expect(steer.message.content).toMatch(/^make it blue\n\n\(Sent while you were working/);
+    // the cut CLI turn and the steer's own count as this one run
+    expect(result.costUsd).toBeCloseTo(0.04);
+    // only once the CLI was answering the prompt: a "now" message before then is answered ahead of it
+    expect(takenAfter[0]).toBe(1);
+    const sent = requests().filter((r) => r.type === "user" || r.request?.subtype === "interrupt");
+    expect(sent.slice(-2).map((r) => r.type === "user" ? r.priority : "interrupt")).toEqual(["interrupt", "now"]);
+    expect(sent.at(-1).message.content).toEqual([
+      { type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "cG5n" } }
+    ]);
     expect(await forward!({ id: "late", text: "too late" })).toBe(false);
 
     // during the last reply: the CLI answers it in a turn of its own, which this turn waits for
@@ -168,11 +179,36 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
     expect(order).toEqual(["agent:first answer", "steered:s2", "agent:only the addition: end with an emoji"]);
     expect(result.costUsd).toBeCloseTo(0.04);
 
+    // while a reply streams: it is cut mid-word, kept marked as unfinished, and the steer runs as the CLI's next turn
+    order.length = 0;
+    input.input = { kind: "text", text: "STREAM_STEER" }; io.resume = result.resume;
+    turn = engine.turn(input, io);
+    await when(() => takenAfter.length === 3);
+    expect(await forward!({ id: "s4", text: "make it short" })).toBe(true);
+    result = await turn;
+    expect(result.stop, result.error).toBe("end");
+    expect(order).toEqual(["agent:A kanban board is a vis …", "steered:s4", "agent:only the addition: make it short"]);
+    expect(requests().filter((r) => r.type === "user").at(-1).message.content).toMatch(/do not finish a word or sentence it cut off/);
+
     // the next turn is not disturbed by what came before
     order.length = 0;
     input.input = { kind: "text", text: "hello" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(order).toEqual(["agent:hello"]);
+
+    // while an MCP call is out: "now" would drop its result though the call goes on to the end, so the steer waits for it
+    order.length = 0;
+    input.input = { kind: "text", text: "MCP_STEER" };
+    turn = engine.turn(input, io);
+    await when(() => requests().some((r) => r.type === "user" && JSON.stringify(r).includes("MCP_STEER")));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await forward!({ id: "s4", text: "say it twice" })).toBe(true);
+    result = await turn;
+    expect(result.stop, result.error).toBe("end");
+    expect(order).toEqual(["steered:s4", "agent:only the addition: say it twice"]);
+    const marks = requests();
+    expect(marks.some((r) => r.dropped)).toBe(false);
+    expect(marks.findIndex((r) => r.returned)).toBeLessThan(marks.findIndex((r) => r.type === "user" && r.priority === "now" && JSON.stringify(r).includes("say it twice")));
 
     // a stop with a steer still unread ends the process rather than leave it queued to run
     const abort = new AbortController(); io.signal = abort.signal;

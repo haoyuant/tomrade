@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CLOSED_STATUSES, LAYOUTS, repoPathLabel, type Layout } from "@tomradex/domain";
+import { CLOSED_STATUSES, repoPathLabel } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
-import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
+import { FIELD_LABEL, viewIcon } from "~/lib/domain";
+import { layoutLabel, useLayoutOptions } from "~/lib/layouts";
+import { subscribe } from "~/lib/api";
 import { useRepoStates } from "~/lib/codeLink";
+import { useNightShift, useShiftOffered, useShiftProposal } from "~/lib/nightShift";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
@@ -16,6 +19,35 @@ import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
 
+/** The door to a night shift, in a project with a repository to work in. While one runs it says how far along it is, and who it is waiting for. */
+function NightShiftButton({ projectId, onOpen }: { projectId: string; onOpen: () => void }) {
+  const { t } = useI18n();
+  const offered = useShiftOffered(projectId);
+  const going = useNightShift(projectId);
+  const asked = useShiftProposal(projectId).data;
+  const shift = going.data;
+  const toast = useToast();
+  useEffect(() => subscribe("nightShift.proposed", (id) => {
+    if (id === projectId) toast({ body: t("nightShift.askedToast"), actions: [{ label: t("nightShift.askedReview"), run: onOpen }] });
+  }), [projectId, toast, t, onOpen]);
+  useEffect(() => subscribe("nightShift.step", (id, notices) => {
+    const last = notices.at(-1);
+    if (id === projectId && last) toast({ body: `${last.title}: ${last.body}` });
+  }), [projectId, toast]);
+  if (!offered) return null;
+  const delivered = shift ? shift.counts.delivered + shift.counts.done : 0;
+  const waiting = shift?.counts["needs-you"] ?? 0;
+  const label = asked ? t("nightShift.askedToast") : !shift ? t("nightShift.start") : [t("nightShift.going", { done: delivered, total: shift.tickets.length }), ...(waiting ? [t("nightShift.needsYou", { n: waiting })] : [])].join(" · ");
+  return (
+    <button type="button" className={`btn btn-ghost no-drag titlebar-night-shift${shift ? " is-going" : ""}`} aria-haspopup="dialog" onClick={onOpen} title={label} aria-label={label} data-testid="titlebar-night-shift">
+      <Icon name="i-moon" size={15} />
+      <span className="lbl">{t("nightShift.title")}</span>
+      {shift && <span className="num">{delivered}/{shift.tickets.length}</span>}
+      {(waiting > 0 || asked) && <span className="titlebar-night-shift-waiting num" data-testid="titlebar-night-shift-waiting">{waiting || 1}</span>}
+    </button>
+  );
+}
+
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
  * two controls, separated by a hairline rather than a slash.
@@ -25,6 +57,7 @@ export function TitleBar({
   onNewIssue,
   onOpenSettings,
   onOpenUsage,
+  onOpenNightShift,
   projectMenuOpen,
   setProjectMenuOpen
 }: {
@@ -32,12 +65,14 @@ export function TitleBar({
   onNewIssue: () => void;
   onOpenSettings: () => void;
   onOpenUsage: () => void;
+  onOpenNightShift: () => void;
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
   const { project, projects, view, views, items, filePath, routines } = useWorkspace();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const layouts = useLayoutOptions();
   const open = items.filter((i) => i.kind !== "epic" && i.status !== "done" && i.status !== "cancelled").length;
   const openTerminal = useOpenTerminalWindow(project.id);
 
@@ -95,6 +130,7 @@ export function TitleBar({
         <Icon name="i-plus" size={14} />
         {t("titleBar.newButton")}
       </button>
+      <NightShiftButton projectId={project.id} onOpen={onOpenNightShift} />
       {openTerminal && (
         <button type="button" className="btn btn-ghost no-drag titlebar-terminal" onClick={openTerminal} title={t("titleBar.terminalWindowTitle")} aria-label={t("titleBar.terminalWindow")} data-testid="titlebar-terminal">
           <Icon name="i-terminal" size={15} />
@@ -191,6 +227,7 @@ const READINESS_KEY = { empty: "codeLink.readiness_empty", scaffolded: "codeLink
 export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }: { onOpenViewSettings: () => void; onOpenFields: () => void; onEditWorkstream: (boardId: string) => void }) {
   const ws = useWorkspace();
   const { t, tx } = useI18n();
+  const layouts = useLayoutOptions();
   const repos = useRepos(ws.project.id);
   // Old done and cancelled tickets the board has not loaded still belong to the view.
   const shownCount = ws.visible.length + CLOSED_STATUSES.reduce((n, status) => n + ws.closed.hidden(status), 0);
@@ -235,7 +272,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
               key={v.id}
               checked={v.id === ws.view.id}
               name={v.name}
-              sub={LAYOUT_LABEL[v.layout].label}
+              sub={layoutLabel(v.layout, layouts)}
               mark={<Icon name={viewIcon(v.icon)} size={13} />}
               count={ws.viewCounts[v.id]}
               onSelect={() => {
@@ -296,17 +333,17 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
       </div>
       <Spacer />
       <div className="seg quiet layout-seg" role="group" aria-label={t("titleBar.layoutAria")}>
-        {LAYOUTS.map((l: Layout) => (
+        {layouts.map((l) => (
           <button
-            key={l}
+            key={l.id}
             type="button"
-            data-layout={l}
-            aria-pressed={ws.layout === l}
-            title={t("titleBar.layoutTitle", { layout: LAYOUT_LABEL[l].label })}
-            onClick={() => ws.layout !== l && ws.setLayout(l)}
+            data-layout={l.id}
+            aria-pressed={ws.layout === l.id}
+            title={t("titleBar.layoutTitle", { layout: l.label })}
+            onClick={() => ws.layout !== l.id && ws.setLayout(l.id)}
           >
-            <Icon className="ico" name={LAYOUT_LABEL[l].icon} size={13} />
-            <span className="seg-lbl">{LAYOUT_LABEL[l].label}</span>
+            <Icon className="ico" name={l.icon} size={13} />
+            <span className="seg-lbl">{l.label}</span>
           </button>
         ))}
       </div>
@@ -332,7 +369,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
             </button>
           }
         >
-          <MenuHead title={ws.view.name} aside={LAYOUT_LABEL[ws.view.layout].label} />
+          <MenuHead title={ws.view.name} aside={layoutLabel(ws.view.layout, layouts)} />
           <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("titleBar.renameView")} onSelect={() => setEditRequest((n) => n + 1)} />
           <MenuActionItem
             icon={<Icon name="i-stack" size={13} />}

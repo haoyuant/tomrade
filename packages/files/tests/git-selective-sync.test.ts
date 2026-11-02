@@ -125,6 +125,31 @@ describe("selective Git projection", { timeout: 30000 }, () => {
     expect(run(remote, "ls-tree", "-r", "main").split("\n").filter((line) => !line.includes("\tproject-files/")).join("\n")).toBe(before);
   });
 
+  it("downloads only the scope's blobs from a server with filters, and still publishes siblings unchanged", async () => {
+    const remote = bare();
+    run(remote, "config", "uploadpack.allowFilter", "true");
+    const seed = path.join(root, `seed-${serial++}`);
+    run(root, "clone", "-q", remote, seed);
+    run(seed, "config", "user.email", "test@example.com"); run(seed, "config", "user.name", "Test");
+    fs.mkdirSync(path.join(seed, "code")); fs.mkdirSync(path.join(seed, "project-files"));
+    fs.writeFileSync(path.join(seed, "code", "big.bin"), "OUTSIDE-SCOPE".repeat(1000));
+    fs.writeFileSync(path.join(seed, "project-files", "seeded.txt"), "seeded\n");
+    run(seed, "add", "-A"); run(seed, "commit", "-qm", "code"); run(seed, "push", "-q", "origin", "main");
+    const before = run(remote, "ls-tree", "-r", "main").split("\n").filter((line) => !line.includes("\tproject-files/")).join("\n");
+    const outside = run(remote, "rev-parse", "main:code/big.bin").trim();
+    const a = await open(target(`file://${remote}`, "project-files"));
+    const transport = path.join(a.dir, ".git", "files-sync", "transport");
+    const missing = () => run(path.join(transport, fs.readdirSync(transport)[0]!), "rev-list", "--objects", "--missing=print", "HEAD").split("\n").filter((line) => line.startsWith("?")).map((line) => line.slice(1));
+    expect(await a.read("seeded.txt")).toMatchObject({ body: "seeded\n" });
+    expect(missing()).toEqual([outside]);
+    await a.write("notes.txt", text("notes\n"));
+    expect((await a.sync()).state).toBe("synced");
+    expect(missing()).toEqual([outside]);
+    expect(run(remote, "ls-tree", "-r", "main").split("\n").filter((line) => !line.includes("\tproject-files/")).join("\n")).toBe(before);
+    expect(run(remote, "show", "main:project-files/notes.txt")).toBe("notes\n");
+    run(remote, "fsck", "--no-progress");
+  });
+
   it("shares persistent folder rules, preserves explicit descendants and carries move rules but not copy rules", async () => {
     const remote = bare(); const a = await open(target(remote));
     await a.setSyncRules([""], "local");

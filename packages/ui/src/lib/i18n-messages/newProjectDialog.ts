@@ -21,7 +21,7 @@ export const newProjectDialog = {
     defaultViewsBullet: "The default views: {{views}}",
     // The names the backend seeds a project with in this language (packages/db seed.ts).
     mainName: "Main",
-    defaultViewNames: "Backlog · Recently updated",
+    defaultViewNames: "Backlog · Recently updated · tables by status, epic, priority and workstream",
     cancel: "Cancel",
     createProject: "Create project"
   },
@@ -46,7 +46,7 @@ export const newProjectDialog = {
     mainBoardBullet: "一个 {{main}} 工作流——每个工单都归于其下的内置字段",
     defaultViewsBullet: "默认视图：{{views}}",
     mainName: "主线",
-    defaultViewNames: "看板 · 最近更新",
+    defaultViewNames: "看板 · 最近更新 · 按状态、需求组、优先级、工作流分组的表格",
     cancel: "取消",
     createProject: "创建项目"
   }

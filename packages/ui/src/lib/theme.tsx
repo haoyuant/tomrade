@@ -1,18 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type AppSettings, type BuiltInTheme, type CustomTheme, type ThemeAutomation, type ThemePreference } from "@tomradex/domain";
+import { RETIRED_THEMES, THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type AppSettings, type BuiltInTheme, type CustomTheme, type ThemeAutomation, type ThemePreference } from "@tomradex/domain";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useI18n, type MessageKey } from "./i18n";
 import { sendSurfaceLook } from "./surface-look";
+import { backdropFills } from "@tomradex/theme-image/colors";
+import { useThemeImageUrl } from "./theme-image";
+import { useFrosted } from "./frost";
+import { Motes, skyOf } from "~/components/Motes";
 
 export type ResolvedTheme = BuiltInTheme;
-export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" }[] = [
+export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" | "i-stack" | "i-monitor" }[] = [
+  { value: "sunrise", labelKey: "theme.sunrise", icon: "i-sun" }, { value: "daybreak", labelKey: "theme.daybreak", icon: "i-moon" }, { value: "glass", labelKey: "theme.glass", icon: "i-stack" },
+  { value: "sakura", labelKey: "theme.sakura", icon: "i-leaf" },
   { value: "dawn", labelKey: "theme.dawn", icon: "i-sun" },
   { value: "light", labelKey: "theme.paper", icon: "i-sun" }, { value: "dark", labelKey: "theme.ink", icon: "i-moon" }, { value: "matcha", labelKey: "theme.matcha", icon: "i-leaf" }
 ];
 /** Built-ins offered by the command palette; automatic switching lives in Appearance settings. */
 export const THEME_OPTIONS = BUILT_IN_THEME_OPTIONS;
-const AUTOMATION_DEFAULT: ThemeAutomation = { mode: "none", defaultTheme: "dawn", schedule: [], shuffleMinutes: 60 };
+const AUTOMATION_DEFAULT: ThemeAutomation = { mode: "none", defaultTheme: "sunrise", schedule: [], shuffleMinutes: 60 };
 
 interface ThemeContext {
   preference: ThemePreference;
@@ -25,7 +31,7 @@ interface ThemeContext {
   /** Deletes the theme and returns the way back: the theme at its place, with the preference and automation that named it. */
   deleteCustomTheme: (id: string) => () => void;
 }
-const Ctx = createContext<ThemeContext>({ preference: "dawn", theme: "dawn", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => () => {} });
+const Ctx = createContext<ThemeContext>({ preference: "sunrise", theme: "sunrise", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => () => {} });
 const mq = () => window.matchMedia("(prefers-color-scheme: dark)");
 
 export function cssColorToHex(value: string): string {
@@ -35,9 +41,9 @@ export function cssColorToHex(value: string): string {
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, "0")).join("")}`;
 }
-const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
+const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] => ["sunrise", "daybreak", "glass", "sakura", "dawn", "light", "dark", "matcha", ...themes.map(theme => theme.id)];
 function activePreference(manual: ThemePreference, automation: ThemeAutomation, themes: CustomTheme[], now = new Date()): Exclude<ThemePreference, "system"> {
-  const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "dawn";
+  const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "sunrise";
   if (automation.mode === "none") return manual === "system" ? fallback : manual;
   if (automation.mode === "system") return mq().matches ? "dark" : "light";
   if (automation.mode === "schedule") {
@@ -53,34 +59,51 @@ function activePreference(manual: ThemePreference, automation: ThemeAutomation, 
   return pool[Math.abs((bucket * 1103515245 + 12345) | 0) % pool.length] ?? fallback;
 }
 function resolve(preference: Exclude<ThemePreference, "system">, customThemes: CustomTheme[]): { base: BuiltInTheme; custom?: CustomTheme } {
-  if (preference.startsWith("custom:")) { const custom = customThemes.find(theme => theme.id === preference); return custom ? { base: custom.base, custom } : { base: "dawn" }; }
-  return { base: preference as BuiltInTheme };
+  // A retired built-in still named by a setting saved before it went paints as the one closest to it.
+  const builtIn = (name: string) => RETIRED_THEMES[name] ?? name as BuiltInTheme;
+  if (preference.startsWith("custom:")) { const custom = customThemes.find(theme => theme.id === preference); return custom ? { base: builtIn(custom.base), custom } : { base: "sunrise" }; }
+  return { base: builtIn(preference) };
 }
-function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean): void {
+const BACKDROP_VARS = ["backdrop-image", "backdrop-shell", "backdrop-pane", "backdrop-tile", "backdrop-float"];
+function paint(base: BuiltInTheme, custom: CustomTheme | undefined, animate: boolean, picture: string | null): void {
   const root = document.documentElement, id = custom?.id ?? base;
   if (animate && root.dataset.themeId !== id) root.classList.add("theme-transition");
-  root.classList.remove("dark", "matcha", "dawn"); if (base !== "light") root.classList.add(base);
-  for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES]) root.style.removeProperty(`--${name}`);
+  root.classList.remove("dark", "matcha", "dawn", "sunrise", "daybreak", "glass", "sakura", "backdrop"); if (base !== "light") root.classList.add(base);
+  for (const name of [...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES, ...BACKDROP_VARS]) root.style.removeProperty(`--${name}`);
   if (custom) for (const [name, value] of Object.entries({ ...custom.tokens, ...custom.fonts })) root.style.setProperty(`--${name}`, value);
+  // Without its picture on this machine, the theme is its colours on solid panes.
+  if (custom?.backdrop && picture) {
+    root.classList.add("backdrop");
+    root.style.setProperty("--backdrop-image", `url("${picture}")`);
+    for (const [name, value] of Object.entries(backdropFills(custom.tokens, custom.backdrop.veil))) root.style.setProperty(`--${name}`, value);
+  }
   root.dataset.themeId = id; if (animate) window.setTimeout(() => root.classList.remove("theme-transition"), 650);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const settings = useSettings(), save = useSaveSettings(), qc = useQueryClient();
-  const preference = settings.data?.theme ?? "dawn";
+  const preference = settings.data?.theme ?? "sunrise";
   const customThemes = useMemo(() => (settings.data?.customThemes ?? []) as CustomTheme[], [settings.data?.customThemes]);
   const automation = useMemo(() => ({ ...AUTOMATION_DEFAULT, ...((settings.data?.themeAutomation ?? {}) as Partial<ThemeAutomation>) }), [settings.data?.themeAutomation]);
+  const performanceMode = settings.data?.performanceMode === true;
+  // Decorative motion reads this off <html>; the stylesheets stop it.
+  useEffect(() => { document.documentElement.toggleAttribute("data-performance", performanceMode); }, [performanceMode]);
+  const unifiedSky = settings.data?.unifiedSky === true;
+  useEffect(() => { document.documentElement.toggleAttribute("data-unified-sky", unifiedSky); }, [unifiedSky]);
   const [clock, setClock] = useState(0);
   const active = activePreference(preference, automation, customThemes);
   const resolved = resolve(active, customThemes);
   const [theme, setTheme] = useState<ResolvedTheme>(resolved.base);
   const { locale, t } = useI18n();
+  const picture = useFrosted(useThemeImageUrl(resolved.custom?.backdrop ? resolved.custom.id : null), resolved.custom?.backdrop?.frost ?? 0);
   useEffect(() => {
-    const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true); };
+    const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true, picture); };
     apply();
-  }, [preference, customThemes, automation, active]);
+  }, [preference, customThemes, automation, active, picture]);
   // Plugin windows match the app: told after each paint, and when the language changes.
-  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale), [active, customThemes, locale, theme]);
+  const backdrop = resolved.custom?.backdrop;
+  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale, theme === "glass", backdrop && { veil: backdrop.veil, frost: backdrop.frost ?? 0, terminalVeil: backdrop.terminalVeil }, theme, performanceMode),
+    [active, customThemes, locale, theme, backdrop, performanceMode]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);
@@ -106,7 +129,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (current) save.mutate({ ...current, theme: id, themeAutomation: { ...automation, mode: "none" }, customThemes: [...customThemes, created] }, { onSuccess: () => onCreated?.(created) });
   }, [customThemes, qc, save, resolved.base, automation, t]);
   const deleteCustomTheme = useCallback((id: string) => {
-    const fallback = automation.defaultTheme === id ? "dawn" : automation.defaultTheme;
+    const fallback = automation.defaultTheme === id ? "sunrise" : automation.defaultTheme;
     const schedule = automation.schedule.filter(rule => rule.theme !== id);
     mutate({ customThemes: customThemes.filter(theme => theme.id !== id), theme: preference === id ? fallback : preference, themeAutomation: { ...automation, defaultTheme: fallback, schedule } });
     const index = customThemes.findIndex(theme => theme.id === id), deleted = customThemes[index];
@@ -118,6 +141,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [automation, customThemes, mutate, preference, qc]);
   const value = useMemo(() => ({ preference: active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme }), [active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme]);
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  const sky = skyOf(theme, !!picture);
+  return <Ctx.Provider value={value}>{children}{sky ? <Motes sky={sky} /> : null}</Ctx.Provider>;
 }
 export const useTheme = () => useContext(Ctx);

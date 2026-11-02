@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineUsage, UsageDay, UsageTotals } from "@tomradex/agent";
 import type { WorkerPurposeUsage, WorkerUsage, WorkerUsageDay, WorkerUsageTotals } from "@tomradex/llm";
@@ -18,6 +18,9 @@ const CHART_COLORS = [
   "var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)",
   "var(--chart-6)", "var(--chart-7)", "var(--chart-8)", "var(--chart-9)", "var(--chart-10)"
 ];
+
+/** A mark's series colour; the stylesheet lights it into the theme's gradient. */
+const series = (index: number): CSSProperties => ({ "--series": CHART_COLORS[index % CHART_COLORS.length] }) as CSSProperties;
 
 const number = (n: number): string => n.toLocaleString();
 
@@ -156,13 +159,12 @@ function EngineShares({ engines }: { engines: EngineUsage[] }) {
   const tokenTotal = engines.reduce((sum, e) => sum + e.inputTokens + e.outputTokens, 0);
   const spendTotal = engines.reduce((sum, e) => sum + (e.costUsd ?? 0), 0);
   const share = (value: number, total: number) => (total > 0 ? (value / total) * 100 : 0);
-  const color = (index: number) => CHART_COLORS[index % CHART_COLORS.length];
   const bar = (value: (e: EngineUsage) => number, total: number) => (
     total > 0 ? (
       <div className="usage-share">
         {engines.map((e, i) => {
           const pct = share(value(e), total);
-          return pct > 0 ? <span key={e.engine} className="usage-share-seg" style={{ width: `${pct}%`, background: color(i) }} title={`${e.title} · ${Math.round(pct)}%`} /> : null;
+          return pct > 0 ? <span key={e.engine} className="usage-share-seg" style={{ ...series(i), width: `${pct}%` }} title={`${e.title} · ${Math.round(pct)}%`} /> : null;
         })}
       </div>
     ) : <p className="meta-txt">{t("usage.chartShareNone")}</p>
@@ -176,7 +178,7 @@ function EngineShares({ engines }: { engines: EngineUsage[] }) {
       <div className="usage-engine-legend">
         {engines.map((e, i) => (
           <span key={e.engine} className="usage-engine-key">
-            <i className="usage-swatch" style={{ background: color(i) }} />
+            <i className="usage-swatch" style={series(i)} />
             <span className="usage-engine-name" title={e.title}>{e.title}</span>
             <span className="usage-engine-values">
               {t("usage.engineShareValues", {
@@ -213,7 +215,7 @@ function UsageTable({ rows, totals }: { rows: EngineUsage[]; totals: UsageTotals
           {rows.map((r, i) => (
             <tr key={r.engine} data-engine={r.engine}>
               <td>
-                <span className="usage-engine"><i className="usage-swatch" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />{r.title}</span>
+                <span className="usage-engine"><i className="usage-swatch" style={series(i)} />{r.title}</span>
                 {r.models.length > 0 && <span className="usage-cell-sub">{r.models.map((m) => `${m.model} · ${number(m.runs)}`).join(" · ")}</span>}
               </td>
               <td className="num">{number(r.runs)}{(r.failedRuns > 0 || r.cancelledRuns > 0) && <span className="usage-cell-sub">{[r.failedRuns ? t("usage.failedCount", { n: r.failedRuns }) : "", r.cancelledRuns ? t("usage.cancelledCount", { n: r.cancelledRuns }) : ""].filter(Boolean).join(" · ")}</span>}</td>
@@ -250,6 +252,7 @@ const PURPOSES: Record<string, MessageKey> = {
   dependencies: "usage.purposeDependencies",
   inbox: "usage.purposeInbox",
   playbook: "usage.purposePlaybook",
+  "night-shift": "usage.purposeNightShift",
   branch: "usage.purposeBranch"
 };
 
@@ -368,6 +371,7 @@ function WorkerSection({ days }: { days: number }) {
   const range = worker.data?.range;
   return (
     <>
+      <hr className="rule" />
       <SectionHead title={t("usage.workerTitle")}>{t("usage.workerLede")}</SectionHead>
       <div className="panel usage-dashboard" data-testid="worker-usage">
         {worker.isLoading && <p className="meta-txt">{t("usage.loading")}</p>}

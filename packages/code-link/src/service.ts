@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { Engine, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
+import type { Engine, EngineCapability, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -31,17 +31,17 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
-import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
-import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
 import { Sessions, END_AFTER_MS, type SessionChange, type SessionMoment } from "./sessions.js";
 import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
-import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
+import { Starter, type StartGate, type StartOptions, type StartResult, type StartMode } from "./start.js";
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionFilter, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
@@ -53,8 +53,8 @@ import { registerTools } from "./tools.js";
 import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
 import { ghRow, probeGh, type GhStatus } from "./gh.js";
 
-export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-export { compareUrl, MERGE_COMMAND, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult } from "./landing.js";
+export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
+export { compareUrl, MERGE_COMMAND, rollupChecks, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult, type PrChecks } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
 export { lastSaid } from "./herdr-bridge.js";
@@ -131,7 +131,9 @@ export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone"
 export interface StartBatchRequest {
   itemIds: string[];
   /** The conversation that asked: where each ticket's delivery is reported back. */
-  requestedBy: string;
+  requestedBy?: string;
+  /** Where the sessions run; background sessions unless said. */
+  mode?: StartMode;
   engine?: string;
   options?: Record<string, unknown>;
   permissionMode?: string;
@@ -258,10 +260,14 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
+    /** Files dropped on the session: their paths pasted into its pane, as a drop on its cell does. */
+    "codeLink.sessionDrop": (projectId: string, sessionId: string, paths: string[]) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
     /** A folder's trust on the session's pane answered: the cursor moved to trusting it or leaving, then Enter. */
     "codeLink.sessionTrust": (projectId: string, sessionId: string, which: "trust" | "exit") => AnswerResult;
+    /** One of the choices of the question the session asks, picked on its pane's menu: the cursor moved to it, then Enter. */
+    "codeLink.sessionChoose": (projectId: string, sessionId: string, choice: string) => AnswerResult;
     "codeLink.sessionEscape": (projectId: string, sessionId: string) => boolean;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
@@ -810,8 +816,10 @@ export class CodeLink extends Service implements CodeLinkReader {
       });
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
+      ctx.ipc.handle("codeLink.sessionDrop", (projectId, sessionId, paths) => ctx.codeLink.sessionDrop(projectId, sessionId, paths));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionTrust", (projectId, sessionId, which) => ctx.codeLink.sessionTrust(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionChoose", (projectId, sessionId, choice) => ctx.codeLink.sessionChoose(projectId, sessionId, choice));
       ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
@@ -906,6 +914,11 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   unlinked(projectId: string): UnlinkedBranch[] {
     return this.scans.unlinkedByProject.get(projectId) ?? [];
+  }
+
+  /** What the last scan found ahead of the default branch with no ticket holding it. */
+  unmerged(projectId: string): UnmergedBranch[] {
+    return this.scans.unmergedByProject.get(projectId) ?? [];
   }
 
   repoStates(projectId: string): RepoStateView[] {
@@ -1112,6 +1125,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.panel.say(projectId, sessionId, text);
   }
 
+  /** Files dropped on a terminal session: their paths pasted into its pane; false when they could not go. */
+  sessionDrop(projectId: string, sessionId: string, paths: string[]): Promise<boolean> {
+    return this.panel.drop(projectId, sessionId, paths);
+  }
+
   /** Esc in a terminal session's pane, as pressed at its keyboard; false when it could not go. */
   sessionEscape(projectId: string, sessionId: string): Promise<boolean> {
     return this.panel.escape(projectId, sessionId);
@@ -1125,6 +1143,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** A folder's trust on a terminal session's pane answered from its card; see `SessionPanel.trust`. */
   sessionTrust(projectId: string, sessionId: string, which: "trust" | "exit"): Promise<AnswerResult> {
     return this.panel.trust(projectId, sessionId, which);
+  }
+
+  /** A question's choice picked on a terminal session's pane from its card; see `SessionPanel.choose`. */
+  sessionChoose(projectId: string, sessionId: string, choice: string): Promise<AnswerResult> {
+    return this.panel.choose(projectId, sessionId, choice);
   }
 
   /**
@@ -1430,6 +1453,12 @@ export class CodeLink extends Service implements CodeLinkReader {
     return true;
   }
 
+  /** The engine a ticket can go on with now, past those it stopped on; null when none can. */
+  async nextEngine(stopped: readonly string[], need: { capability: EngineCapability; terminal: boolean }): Promise<string | null> {
+    const agent = this.ctx.get("agent");
+    return agent ? ((await this.starter.takeOver(agent, stopped, need))?.id ?? null) : null;
+  }
+
   /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */
   private withinStartTimeout(projectId: string, itemId: string, started: Promise<StartResult>): Promise<StartResult> {
     const ms = this.config.startTimeoutMs;
@@ -1588,8 +1617,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.connections.letGo(projectId, connection, sessionId, itemId);
   }
 
-  /** A branch that names no ticket becomes one, linked from the start. */
-  adoptBranch(projectId: string, repoId: string, branch: string): Item {
+  /** A branch that names no ticket becomes one, linked from the start. `rescan: false` leaves the scan to a caller adopting several. */
+  adoptBranch(projectId: string, repoId: string, branch: string, opts: { title?: string; body?: string; rescan?: boolean } = {}): Item {
     const repo = this.ctx.repos.get(projectId, repoId);
     if (!repo) throw new Error(`unknown repository ${repoId}`);
     const name = branch.trim().replace(/^origin\//, "");
@@ -1603,14 +1632,18 @@ export class CodeLink extends Service implements CodeLinkReader {
         .join(" ")
         .replace(/[-_]+/g, " ")
         .trim() || name;
-    const item = this.ctx.items.create({ projectId, boardId: board.id, title: words.charAt(0).toUpperCase() + words.slice(1), status: "todo", by: "human" });
+    const item = this.ctx.items.create({ projectId, boardId: board.id, title: opts.title?.trim() || words.charAt(0).toUpperCase() + words.slice(1), ...(opts.body ? { body: opts.body } : {}), status: "todo", by: "human" });
     this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: name }, { source: "manual", lastSeenAt: Date.now() });
     this.scans.unlinkedByProject.set(
       projectId,
       this.unlinked(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
     );
+    this.scans.unmergedByProject.set(
+      projectId,
+      this.unmerged(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
+    );
     this.notify(projectId);
-    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${errorMessage(err)}`));
+    if (opts.rescan !== false) void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${errorMessage(err)}`));
     return item;
   }
 
@@ -1715,6 +1748,16 @@ export class CodeLink extends Service implements CodeLinkReader {
     return result;
   }
 
+  /** What the ticket's pull request's checks say right now; read, not waited for. */
+  prChecks(projectId: string, itemId: string): Promise<PrChecks> {
+    return this.landing.prChecks(projectId, itemId);
+  }
+
+  /** What the ticket's delivery changed, for a report on it. */
+  deliveryDiff(projectId: string, itemId: string, maxBytes?: number): Promise<{ stat: string; patch: string; lines: number } | null> {
+    return this.landing.deliveryDiff(projectId, itemId, maxBytes);
+  }
+
   /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */
   private mergeCardId(itemId: string, delivery: number): string {
     return `merge-${itemId}-${delivery}`;
@@ -1792,8 +1835,9 @@ export class CodeLink extends Service implements CodeLinkReader {
    * A merge that a conflict stood in the way of: the ticket's own session is sent back, from the conversation,
    * to bring its branch up to date and hand over again — the card then offers the merge once more. Sent with
    * the merge wish the session had, so a merge the person asked for up front still happens by itself.
+   * `how` says how it runs, for a caller whose tickets do not run in the background: a terminal agent goes on in its pane.
    */
-  async resolveMerge(projectId: string, itemId: string, requestedBy: string): Promise<StartBatchEntry> {
+  async resolveMerge(projectId: string, itemId: string, requestedBy: string | null, how: Pick<StartBatchRequest, "mode" | "engine" | "options" | "permissionMode"> = {}): Promise<StartBatchEntry> {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
     const link = primaryOf(this.currentLinks(projectId, itemId).filter((l) => l.branch));
@@ -1811,7 +1855,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     const talked = this.mergeThreadsOf(projectId, itemId);
     const resolving = talked && this.mergeCard(projectId, item, "resolving");
     if (talked && resolving) this.placeMergeCard(projectId, item, talked, resolving, true);
-    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], requestedBy, task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}) });
+    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], ...(requestedBy ? { requestedBy } : {}), task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}), ...how });
     if (!entry!.ok) {
       const refused = talked && this.mergeCard(projectId, item, "refused", entry!.message ?? `${item.key} could not be started`, "refused");
       if (talked && refused) this.placeMergeCard(projectId, item, talked, refused, true);
@@ -1842,7 +1886,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     return { choose: true, reason: reasons.filter((r, at, all) => all.indexOf(r) === at).join(" · ") || "no coding agent is ready" };
   }
 
-  /** Start each ticket headless with the one configuration, one after another, and show each outcome on the asking card, when there is one, as it comes. */
+  /** Start each ticket with the one configuration, headless unless the request says, one after another, and show each outcome on the asking card, when there is one, as it comes. */
   async startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]> {
     const results: StartBatchEntry[] = [];
     const seen = new Set<string>();
@@ -1860,14 +1904,14 @@ export class CodeLink extends Service implements CodeLinkReader {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) return { itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` };
     const opts: StartOptions = {
-      mode: "run",
+      mode: request.mode ?? "run",
       ...(request.engine ? { engine: request.engine } : {}),
       ...(request.options ? { options: request.options } : {}),
       ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
       ...(request.allowBlocked ? { allowBlocked: true } : {}),
       ...(request.task?.trim() ? { message: request.task.trim() } : {}),
       ...(request.autoMerge ? { autoMerge: true } : {}),
-      requestedBy: request.requestedBy
+      ...(request.requestedBy ? { requestedBy: request.requestedBy } : {})
     };
     try {
       const started = await this.start(projectId, item.id, opts);
@@ -1882,7 +1926,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   private showStarted(projectId: string, request: StartBatchRequest, results: StartBatchEntry[]): void {
     const agent = this.ctx.get("agent");
-    if (agent && request.cardId) {
+    if (agent && request.cardId && request.requestedBy) {
       const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
       const data = (before?.data ?? {}) as Partial<StartBatchCard>;
       const tickets = [...(data.tickets ?? []), ...results.filter((r) => !data.tickets?.some((t) => t.itemId === r.itemId)).map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }))];

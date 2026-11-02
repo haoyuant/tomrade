@@ -11,7 +11,13 @@ describe("boards (workstreams)", () => {
   it("a new project has one workstream and the default views", async () => {
     const { boards, views, project } = await fresh();
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
-    expect(views.listForProject(project.id).map((v) => `${v.name}:${v.layout}`)).toEqual(["Backlog:board", "Recently updated:table"]);
+    expect(views.listForProject(project.id).map((v) => `${v.name}:${v.layout}`)).toEqual(["Backlog:board", "Recently updated:table", "By status:table", "By epic:table", "By priority:table", "By workstream:table"]);
+    const byEpic = views.listForProject(project.id).find((v) => v.name === "By epic")!;
+    expect(byEpic.query.groupBy).toBe("epic");
+    expect(byEpic.query.sortBy).toEqual([
+      { field: "priority", dir: "asc" },
+      { field: "updated", dir: "desc" }
+    ]);
   });
 
   it("creating a workstream is undoable and creates no views", async () => {
@@ -105,6 +111,13 @@ describe("views", () => {
     expect(v.query.filter).toEqual([{ field: "labels", op: "in", values: ["bug"] }]);
     expect(v.query.sortBy).toEqual([{ field: "priority", dir: "asc" }]);
     expect(views.listForProject(project.id).at(-1)?.id).toBe(v.id);
+  });
+
+  it("keeps a plugin's layout as stored, so the view survives its plugin being off", async () => {
+    const { views, project } = await fresh();
+    const v = views.create({ projectId: project.id, name: "Timeline", icon: "i-board", layout: "plugin:demo.timeline", query: {} });
+    expect(views.get(project.id, v.id)?.layout).toBe("plugin:demo.timeline");
+    expect(views.update(project.id, v.id, { layout: "table" }).layout).toBe("table");
   });
 
   it("update rewrites layout, query and name; the change is undoable", async () => {

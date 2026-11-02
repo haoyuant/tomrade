@@ -25,6 +25,7 @@ export type {
   Project,
   SortKey,
   View,
+  ViewQuery,
   WorkType
 } from "@tomradex/domain";
 
@@ -35,3 +36,4 @@ export * from "./terminals.js";
 export * from "./local-agents.js";
 export { CLI_HOOK_COVERAGE, CLI_HOOK_EVENTS } from "./cli-hooks.js";
 export * from "./im-markdown.js";
+export * from "./layout.js";

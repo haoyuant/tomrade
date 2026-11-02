@@ -30,6 +30,8 @@ interface TableSpec {
   columns: readonly string[];
   /** WHERE clause over `@projectId`. */
   scope: string;
+  /** The rows an import replaces, where wider than `scope`. */
+  owns?: string;
   /** Deterministic ordering — the artifact must be byte-identical for identical data. */
   order: string;
 }
@@ -75,6 +77,7 @@ export const TABLES: readonly TableSpec[] = [
     // Both ends inside the project: an edge across projects has no home in one project's artifact.
     // The unary + keeps SQLite from probing the key once per pair of items (~25 ms on 650 items).
     scope: `from_item_id IN (${ITEMS_OF}) AND +to_item_id IN (${ITEMS_OF})`,
+    owns: `from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`,
     order: "from_item_id, to_item_id, kind"
   },
   { name: "view_item_rank", columns: ["view_id", "item_id", "rank"], scope: `view_id IN (${VIEWS_OF})`, order: "view_id, item_id" }
@@ -231,19 +234,18 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
 }
 
 /** The export, with each part's rows as lines: the bytes its digest was taken over. */
-export function exportParts(db: StateDb, projectId: string, opts: ExportOptions = {}): { state: ProjectState; parts: StatePart[]; lines: Map<string, { rowid: number | null; line: Buffer }[]> } {
-  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
-  if (!project) throw new Error(`Project ${projectId} not found`);
+export function exportParts(db: StateDb, projectId: string, opts: ExportOptions = {}): { state: ProjectState; parts: StatePart[]; lines: Map<string, { rowid: number | null; row: Record<string, unknown>; line: Buffer }[]> } {
+  const project = projectRow(db, projectId);
   const tables: Record<string, Record<string, unknown>[]> = {};
   const plugins: ProjectState["plugins"] = {};
   const parts = stateParts(db, projectId, opts);
-  const lines = new Map<string, { rowid: number | null; line: Buffer }[]>();
+  const lines = new Map<string, { rowid: number | null; row: Record<string, unknown>; line: Buffer }[]>();
   for (const part of parts) {
     const read = readPart(db, projectId, part);
     const rows = read.map((r) => r.row);
     if (part.namespace) (plugins[part.namespace] ??= {})[part.table] = rows;
     else tables[part.table] = rows;
-    lines.set(part.file, read.map((r) => ({ rowid: r.rowid, line: lineOf(r.row) })));
+    lines.set(part.file, read.map((r) => ({ rowid: r.rowid, row: r.row, line: lineOf(r.row) })));
   }
   const hashed = new Map<string, readonly Uint8Array[]>([...lines].map(([file, rows]) => [file, rows.map((r) => r.line)]));
   for (const [namespace, byTable] of Object.entries(opts.carry ?? {})) {
@@ -251,17 +253,28 @@ export function exportParts(db: StateDb, projectId: string, opts: ExportOptions 
     plugins[namespace] = byTable;
     for (const [table, rows] of Object.entries(byTable)) hashed.set(path.join(ARTIFACT_DIR, PLUGINS_DIR, namespace, `${table}.jsonl`), rows.map(lineOf));
   }
-  const manifest: ProjectManifest = {
+  const state: ProjectState = { manifest: manifestOf(project, opts, digestLines(hashed)), tables, plugins };
+  return { state, parts, lines };
+}
+
+/** The manifest an export writes, over the project's row and the state files' digest. */
+export function manifestOf(project: Record<string, unknown>, opts: ExportOptions, digest: string): ProjectManifest {
+  return {
     v: 2,
     schemaVersion: CORE_SCHEMA_VERSION,
     project: pick(project, PROJECT_COLUMNS),
     ...(opts.repo ? { repo: opts.repo } : {}),
     exports: [...(opts.exports ?? [])].sort(),
-    logWindowDays: opts.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS
+    logWindowDays: opts.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS,
+    snapshot: { digest, at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} }
   };
-  const state: ProjectState = { manifest, tables, plugins };
-  state.manifest.snapshot = { digest: digestLines(hashed), at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} };
-  return { state, parts, lines };
+}
+
+/** The project's own row, as the manifest names it. */
+export function projectRow(db: Queryable, projectId: string): Record<string, unknown> {
+  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
+  if (!project) throw new Error(`Project ${projectId} not found`);
+  return project;
 }
 
 const jsonl = (rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
@@ -285,7 +298,12 @@ export function stateFiles(state: ProjectState): Map<string, string> {
  * folder. Deterministic: identical data produces identical bytes.
  */
 export function serializeState(state: ProjectState, opts: { mcpUrl?: string | null } = {}): Map<string, string> {
-  const files = stateFiles(state);
+  return artifactFiles(state, opts) as Map<string, string>;
+}
+
+/** `serializeState`, taking the state files' bytes as given when the export already has them. */
+function artifactFiles(state: ProjectState, opts: { mcpUrl?: string | null; files?: ReadonlyMap<string, Body> }): Map<string, Body> {
+  const files = new Map<string, Body>(opts.files ?? stateFiles(state));
   files.set(path.join(ARTIFACT_DIR, MANIFEST), JSON.stringify(state.manifest, null, 2) + "\n");
   for (const [rel, body] of supportFiles(opts)) files.set(rel, body);
   return files;
@@ -367,14 +385,38 @@ export function digestLines(files: Map<string, readonly Uint8Array[]>): string {
   return hash.digest("hex");
 }
 
-function writeIfChanged(file: string, body: string): boolean {
+type Body = string | Uint8Array;
+
+/**
+ * Per path: the file as this process last wrote or read it — its stat, and the body when it wrote one. While the stat
+ * holds, the file is not read again: a body it already wrote is not compared, and one it found in LF is not checked.
+ */
+const known = new Map<string, { size: number; mtimeMs: number; ino: number; body?: Body }>();
+
+function knownAs(file: string, body?: Body): void {
+  const stat = fs.statSync(file, { throwIfNoEntry: false });
+  if (stat) known.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, ino: stat.ino, body });
+  else known.delete(file);
+}
+
+function unchanged(file: string): boolean {
+  const seen = known.get(file);
+  const stat = seen && fs.statSync(file, { throwIfNoEntry: false });
+  return !!stat && stat.size === seen.size && stat.mtimeMs === seen.mtimeMs && stat.ino === seen.ino;
+}
+
+function writeIfChanged(file: string, body: Body): boolean {
+  if (known.get(file)?.body === body && unchanged(file)) return false;
+  let same = false;
   try {
-    if (fs.readFileSync(file, "utf8") === body) return false;
+    const disk = fs.readFileSync(file);
+    same = typeof body === "string" ? disk.toString("utf8") === body : disk.equals(body);
   } catch {
     // absent
   }
-  writeFileAtomic(file, body);
-  return true;
+  if (!same) writeFileAtomic(file, body);
+  knownAs(file, body);
+  return !same;
 }
 
 const listFiles = (dir: string): string[] => {
@@ -387,8 +429,8 @@ const listFiles = (dir: string): string[] => {
  * manifest last, so a reader never sees a manifest describing files that are
  * not there yet. Returns true when anything on disk actually changed.
  */
-export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?: string | null } = {}): boolean {
-  const files = serializeState(state, opts);
+export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?: string | null; files?: ReadonlyMap<string, Body> } = {}): boolean {
+  const files = artifactFiles(state, opts);
   const manifestRel = path.join(ARTIFACT_DIR, MANIFEST);
   let changed = false;
   for (const [rel, body] of files) {
@@ -402,6 +444,7 @@ export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?:
       const rel = path.relative(dir, file);
       if (!files.has(rel) && !rel.endsWith(".tmp")) {
         fs.rmSync(file, { force: true });
+        known.delete(file);
         changed = true;
         // A namespace no longer exported leaves no empty folder behind.
         for (let parent = path.dirname(file); parent !== base && fs.existsSync(parent) && !fs.readdirSync(parent).length; parent = path.dirname(parent)) fs.rmdirSync(parent);
@@ -424,15 +467,18 @@ export function restoreLf(dir: string): boolean {
   const files = [path.join(base, MANIFEST), ...[STATE_DIR, PLUGINS_DIR, LOG_DIR].flatMap((sub) => listFiles(path.join(base, sub)).filter((f) => f.endsWith(".jsonl")))];
   let changed = false;
   for (const file of files) {
+    if (unchanged(file)) continue;
     let body: string;
     try {
       body = fs.readFileSync(file, "utf8");
     } catch {
       continue;
     }
-    if (!body.includes("\r\n")) continue;
-    writeFileAtomic(file, lf(body), { mkdir: false });
-    changed = true;
+    if (body.includes("\r\n")) {
+      writeFileAtomic(file, lf(body), { mkdir: false });
+      changed = true;
+    }
+    knownAs(file);
   }
   return changed;
 }
@@ -589,20 +635,6 @@ export function readClone(dir: string): { state: ProjectState; fill: Map<string,
 export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[]; additive?: string[] } = {}): void {
   const projectId = projectIdOf(state);
   db.transaction(() => {
-    // Each sweep scopes through a table a later one empties, so dependents go first.
-    db.prepare(`DELETE FROM view_item_rank WHERE view_id IN (${VIEWS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM item_labels WHERE item_id IN (${ITEMS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM item_values WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
-    db.prepare(`DELETE FROM field_options WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
-    db.prepare("DELETE FROM fields WHERE project_id = @projectId").run({ projectId });
-    db.prepare(`DELETE FROM item_relations WHERE from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`).run({ projectId });
-    db.prepare("DELETE FROM views WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM items WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM deliveries WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM labels WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM boards WHERE project_id = @projectId").run({ projectId });
-    db.prepare("DELETE FROM repos WHERE project_id = @projectId").run({ projectId });
-
     const project = pick(state.manifest.project, PROJECT_COLUMNS);
     const existing = db.prepare("SELECT next_key_num, archived FROM projects WHERE id = @projectId").get({ projectId }) as { next_key_num: number; archived: number } | undefined;
     db.prepare(
@@ -611,7 +643,8 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, key_prefix = excluded.key_prefix, created_at = excluded.created_at, updated_at = excluded.updated_at`
     ).run({ ...project, archived: existing?.archived ?? 0, updated_at: Date.now() });
 
-    for (const spec of TABLES) {
+    // Each table owns its rows through one listed before it, so dependents go first, while that one still holds the old rows.
+    for (const spec of [...TABLES].reverse()) {
       let rows = state.tables[spec.name] ?? [];
       if (spec.name === "deliveries" && !rows.length) {
         rows = state.plugins?.code_link?.plugin_code_link_deliveries ?? [];
@@ -619,9 +652,13 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
       }
       // An artifact from before views belonged to the project has rows nothing can place; the project gets the defaults instead.
       if (spec.name === "views") rows = rows.filter((r) => typeof r.layout === "string" && r.project_id === projectId);
-      if (!rows.length) continue;
+      const owned = { where: spec.owns ?? spec.scope, params: { projectId } };
+      const picked = rows.map((row) => pick(row, spec.columns));
+      if (picked.length && replaceChanged(db, spec.name, spec.columns, picked, { owned, insert: "INSERT" })) continue;
+      db.prepare(`DELETE FROM ${spec.name} WHERE ${owned.where}`).run(owned.params);
+      if (!picked.length) continue;
       const stmt = db.prepare(`INSERT INTO ${spec.name} (${spec.columns.join(", ")}) VALUES (${spec.columns.map((c) => `@${c}`).join(", ")})`);
-      for (const row of rows) stmt.run(pick(row, spec.columns));
+      for (const row of picked) stmt.run(row);
     }
     if (!db.prepare("SELECT 1 FROM views WHERE project_id = @projectId LIMIT 1").get({ projectId })) seedDefaultViews(db, projectId, Date.now());
 
@@ -630,6 +667,44 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
 
     writePlugins(db, state.plugins ?? {}, opts.registrations ?? [], opts.additive ?? []);
   });
+}
+
+/**
+ * Bring the rows `owned` selects in `table` to `rows`, touching only those that differ: an unchanged row fires no
+ * trigger, so a ticket nobody edited is not indexed for search again. Every changed row goes out before any comes
+ * back in, so a unique index (one active delivery, one key per ticket) never holds two at once. `keep` leaves rows
+ * missing from `rows` in place. False when the table cannot be matched row by row; the caller replaces it whole.
+ */
+function replaceChanged(
+  db: StateDb,
+  table: string,
+  columns: readonly string[],
+  rows: Record<string, unknown>[],
+  opts: { insert: "INSERT" | "INSERT OR REPLACE"; owned?: { where: string; params: Record<string, unknown> }; keep?: boolean }
+): boolean {
+  const key = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; pk: number }[])
+    .filter((c) => c.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((c) => c.name);
+  if (!key.length || !key.every((c) => columns.includes(c))) return false;
+  const keyOf = (row: Record<string, unknown>) => JSON.stringify(key.map((c) => row[c]));
+  const incoming = new Map(rows.map((row) => [keyOf(row), row]));
+  // Two rows with one key fail a plain INSERT, as a whole replace always has.
+  if (opts.insert === "INSERT" && incoming.size < rows.length) return false;
+  const select = `SELECT ${columns.join(", ")} FROM ${table}${opts.owned ? ` WHERE ${opts.owned.where}` : ""}`;
+  const present = (opts.owned ? db.prepare(select).all(opts.owned.params) : db.prepare(select).all()) as Record<string, unknown>[];
+  const out: Record<string, unknown>[] = [];
+  for (const row of present) {
+    const id = keyOf(row);
+    const next = incoming.get(id);
+    if (next && columns.every((c) => row[c] === next[c])) incoming.delete(id);
+    else if (next || !opts.keep) out.push(row);
+  }
+  const remove = db.prepare(`DELETE FROM ${table} WHERE ${key.map((c) => `${c} = @${c}`).join(" AND ")}`);
+  for (const row of out) remove.run(pick(row, key));
+  const insert = db.prepare(`${opts.insert} INTO ${table} (${columns.join(", ")}) VALUES (${columns.map((c) => `@${c}`).join(", ")})`);
+  for (const row of incoming.values()) insert.run(row);
+  return true;
 }
 
 /** Replace the tables of the plugins registered here with the given rows; the rest are not this machine's to read. */
@@ -653,11 +728,15 @@ function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registratio
       } catch {
         continue;
       }
-      if (!additive.includes(ns)) db.prepare(`DELETE FROM ${table}`).run();
-      if (!rows.length) continue;
+      const keep = additive.includes(ns);
       const cols = columns.filter((c) => rows.some((r) => c in r));
+      const picked = rows.map((row) => pick(row, cols));
+      // A column no row names takes its default on a replace; matched in place, the row would keep the old value.
+      if (picked.length && cols.length === columns.length && replaceChanged(db, table, cols, picked, { insert: "INSERT OR REPLACE", keep })) continue;
+      if (!keep) db.prepare(`DELETE FROM ${table}`).run();
+      if (!picked.length) continue;
       const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => `@${c}`).join(", ")})`);
-      for (const row of rows) stmt.run(pick(row, cols));
+      for (const row of picked) stmt.run(row);
     }
   }
 }

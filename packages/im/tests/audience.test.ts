@@ -116,6 +116,18 @@ describe("who sees what in IM", () => {
     await expect.poll(() => w.to("dm-owner").some(t => t.includes("already handled")), { timeout: 5000 }).toBe(true);
   });
 
+  it("tells of a suspected run in the direct chat, with no buttons to answer", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    const desk = w.ctx.agent.newThread(w.project.id, "test", null, { title: "Deploy" });
+    expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "suspect", title: "Test may be stuck", body: "No activity for 16 min." })).toBe(true);
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**Test may be stuck**")), { timeout: 5000 }).toBeDefined();
+    const told = w.delivered.find(d => d.content.text.startsWith("**Test may be stuck**"))!;
+    expect(told.content.text).toBe("**Test may be stuck**\nNo activity for 16 min.");
+    expect(told.content.actions ?? []).toEqual([]);
+  });
+
   it("doesn't remind where the conversation already shows the question", async () => {
     const w = await boot();
     await w.receive(dm("d1", "ask"));
@@ -134,6 +146,33 @@ describe("who sees what in IM", () => {
     w.ctx.agent.send(w.project.id, desk.id, { kind: "text", text: "ask" });
     await expect.poll(() => w.ctx.agent.thread(w.project.id, desk.id).pending?.kind).toBe("permission");
     expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "permission", title: "Test needs your approval", body: "" })).toBe(false);
+  });
+
+  it("announces in the paired person's direct chat, once, and never in a group they are in", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    await w.receive(group("g1", "hi all"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hi all");
+    const heardInGroup = w.delivered.filter(d => d.address.conversationId === "room").length;
+    const notice = { key: "night-shift:s1", title: "Your night shift is done", body: "2 to review, 1 merged, 0 need you" };
+    expect(w.ctx.im.announce(notice)).toBe(true);
+    expect(w.ctx.im.announce(notice)).toBe(true);
+    await expect.poll(() => w.delivered.filter(d => d.content.text.startsWith("**Your night shift is done**")).length, { timeout: 5000 }).toBe(1);
+    const said = w.delivered.find(d => d.content.text.startsWith("**Your night shift is done**"))!;
+    expect(said.address.conversationId).toBe("dm-owner");
+    expect(said.content.text).toBe("**Your night shift is done**\n2 to review, 1 merged, 0 need you");
+    expect(said.content.actions ?? []).toEqual([]);
+    expect(w.delivered.filter(d => d.address.conversationId === "room")).toHaveLength(heardInGroup);
+  });
+
+  it("announces nothing to a chat that turned reminders off, or to nobody paired", async () => {
+    const off = await boot({}, { notify: { attention: false } });
+    await off.receive(dm("d1", "hello"));
+    await expect.poll(() => off.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    expect(off.ctx.im.announce({ key: "k", title: "t", body: "" })).toBe(false);
+    const nobody = await boot({ identities: [] });
+    expect(nobody.ctx.im.announce({ key: "k", title: "t", body: "" })).toBe(false);
   });
 
   it("follows what every conversation hears unless the conversation chose for itself", async () => {
@@ -192,5 +231,48 @@ describe("who sees what in IM", () => {
     expect(w.to("room")).toEqual([]);
     await w.ctx.fiber.dispose();
     expect(w.to("dm-owner").at(-1)).toMatch(/^Tomrade is going offline/);
+  });
+});
+
+describe("a yes only the person can give", () => {
+  const asked = (answers: boolean[], result = "Started") => ({ key: "night-shift:p1", title: "An agent asks", body: "2 tickets", yes: "Start it", no: "Don't", answer: (yes: boolean) => (answers.push(yes), result) });
+
+  it("goes to the paired person's direct chat with buttons, and their press is the answer", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    await w.receive(group("g1", "hi all"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hi all");
+    const heardInGroup = w.delivered.filter(d => d.address.conversationId === "room").length;
+    const answers: boolean[] = [];
+    expect(w.ctx.im.confirm(asked(answers))).toBe(true);
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**An agent asks**")), { timeout: 5000 }).toBeTruthy();
+    const card = w.delivered.find(d => d.content.text.startsWith("**An agent asks**"))!;
+    expect(card.address.conversationId).toBe("dm-owner");
+    expect(w.delivered.filter(d => d.address.conversationId === "room")).toHaveLength(heardInGroup);
+    expect(answers).toEqual([]);
+    await w.receive(press("p1", card.content.actions![0]!.token, "dm-owner"));
+    await expect.poll(() => answers, { timeout: 5000 }).toEqual([true]);
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Started");
+  });
+
+  it("takes No as no, and a second press answers nothing", async () => {
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    const answers: boolean[] = [];
+    w.ctx.im.confirm(asked(answers, "Not started"));
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**An agent asks**")), { timeout: 5000 }).toBeTruthy();
+    const card = w.delivered.find(d => d.content.text.startsWith("**An agent asks**"))!;
+    await w.receive(press("p1", card.content.actions![1]!.token, "dm-owner"));
+    await expect.poll(() => answers, { timeout: 5000 }).toEqual([false]);
+    await w.receive(press("p2", card.content.actions![0]!.token, "dm-owner"));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(answers).toEqual([false]);
+  });
+
+  it("reaches nobody when nobody is paired", async () => {
+    const nobody = await boot({ identities: [] });
+    expect(nobody.ctx.im.confirm(asked([]))).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
-import { SectionHead } from "~/components/ui/atoms";
 import { useAppIconStatus, useSetAppIcon, type AppIcon } from "~/lib/app-icon";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { AppearanceGroupHead } from "./AppearanceGroupHead";
 import { ScopeTag } from "./ScopeTag";
 
 const CHOICES: { icon: AppIcon; label: MessageKey; note: MessageKey; image: string }[] = [
@@ -28,10 +28,9 @@ export function AppIconSection() {
 
   return (
     <>
-      <hr className="rule" />
-      <SectionHead title={t("settingsDialog.appIconTitle")} aside={<ScopeTag scope="machine" />}>
+      <AppearanceGroupHead title={t("settingsDialog.appIconTitle")} aside={<ScopeTag scope="machine" />}>
         {t("settingsDialog.appIconLede")}
-      </SectionHead>
+      </AppearanceGroupHead>
       <div className="app-icon-grid" role="radiogroup" aria-label={t("settingsDialog.appIconTitle")}>
         {CHOICES.map((choice) => (
           <button
@@ -52,6 +51,7 @@ export function AppIconSection() {
           </button>
         ))}
       </div>
+      <hr className="rule" />
     </>
   );
 }

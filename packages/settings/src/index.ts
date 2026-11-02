@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { englishWords, installWords, isLanguageTag, languageTag, pickLanguage, type AppSettings, type Dictionaries, type LanguageTag } from "@tomradex/domain";
+import { BUILT_IN_THEMES, RETIRED_THEMES, englishWords, installWords, isLanguageTag, languageTag, pickLanguage, type AppSettings, type Dictionaries, type LanguageTag } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import { agentAccess } from "./agent.js";
@@ -161,11 +161,15 @@ export interface UserSettingsStore {
   write(file: UserSettingsFile): void;
 }
 
+/** A theme retired since a setting named it saves as the one closest to it, rather than being refused. */
+const retired = (value: unknown) => typeof value === "string" ? RETIRED_THEMES[value] ?? value : value;
+const themeName = (also: string[] = []) => z.preprocess(retired, z.string().refine(v => [...also, ...BUILT_IN_THEMES].includes(v) || /^custom:[a-z0-9-]+$/.test(v)));
+
 const THEME: SettingsSection<AppSettings["theme"]> = {
   id: "theme",
   title: "Appearance",
-  schema: z.string().refine(v => ["system", "light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)).describe('"system", "light", "dark", "matcha", "dawn", or a custom theme\'s id ("custom:…").') as z.ZodType<AppSettings["theme"]>,
-  defaults: "dawn",
+  schema: themeName(["system"]).describe(`"system", ${BUILT_IN_THEMES.map(name => `"${name}"`).join(", ")}, or a custom theme's id ("custom:…").`) as z.ZodType<AppSettings["theme"]>,
+  defaults: "sunrise",
   order: 0,
   scope: "user",
   agent: "write"
@@ -192,7 +196,8 @@ const CUSTOM_THEMES: SettingsSection<unknown[]> = {
   id: "customThemes", title: "Custom themes", description: "Hub-synchronized custom colours and fonts.",
   schema: z.array(z.object({
     id: z.string().regex(/^custom:[a-z0-9-]+$/), name: z.string().trim().min(1).max(64),
-    base: z.enum(["light", "dark", "matcha", "dawn"]), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial()
+    base: z.preprocess(retired, z.enum(BUILT_IN_THEMES)), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial(),
+    backdrop: z.object({ veil: z.number().min(0.3).max(0.98), frost: z.number().min(0).max(40).optional(), terminalVeil: z.number().min(0.3).max(0.98).optional() }).optional()
   })).max(32),
   defaults: [], order: 0.5, scope: "user", agent: "write"
 };
@@ -200,11 +205,23 @@ const THEME_AUTOMATION: SettingsSection<unknown> = {
   id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching.", scope: "user", order: 0.25, agent: "write",
   schema: z.object({
     mode: z.enum(["none", "system", "schedule", "shuffle"]),
-    defaultTheme: z.string().refine(v => ["light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)),
-    schedule: z.array(z.object({ start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default("23:59"), theme: z.string().refine(v => ["light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)) }).refine(rule => rule.start !== rule.end, "A time range needs different start and end times.")).max(24),
+    defaultTheme: themeName(),
+    schedule: z.array(z.object({ start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default("23:59"), theme: themeName() }).refine(rule => rule.start !== rule.end, "A time range needs different start and end times.")).max(24),
     shuffleMinutes: z.number().int().min(1).max(10080)
   }),
-  defaults: { mode: "none", defaultTheme: "dawn", schedule: [], shuffleMinutes: 60 }
+  defaults: { mode: "none", defaultTheme: "sunrise", schedule: [], shuffleMinutes: 60 }
+};
+
+const PERFORMANCE_MODE: SettingsSection<boolean> = {
+  id: "performanceMode", title: "Performance mode",
+  description: "On this machine, stop decorative animation such as the Sunrise and Daybreak themes' moving light, to spare the GPU and the battery.",
+  schema: z.boolean(), defaults: false, order: 0.75, scope: "machine", agent: "write"
+};
+
+const UNIFIED_SKY: SettingsSection<boolean> = {
+  id: "unifiedSky", title: "One sky",
+  description: "In the Sunrise and Daybreak themes, let the sidebar, the board, the assistant and the sessions share one sky instead of each having its own background.",
+  schema: z.boolean(), defaults: false, order: 0.76, scope: "user", agent: "write"
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -323,6 +340,8 @@ export class Settings extends Service implements SettingsReader {
     this.register(THEME);
     this.register(THEME_AUTOMATION);
     this.register(CUSTOM_THEMES);
+    this.register(PERFORMANCE_MODE);
+    this.register(UNIFIED_SKY);
     this.register(LANGUAGE);
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());

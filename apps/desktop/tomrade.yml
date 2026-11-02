@@ -77,6 +77,10 @@ modules:
     title: Notes
   - id: schedules
     title: Routines
+  - id: nightShift
+    title: Night shift
+  - id: prFeedback
+    title: PR feedback
   - id: pet
     title: Pet
   - id: alerts
@@ -449,6 +453,22 @@ plugins:
   # the project; schedules run on this machine while Tomrade is open.
   - id: schedules
     name: "@tomradex/schedules"
+  # A night shift: a batch of tickets worked through by dependency, in terminal
+  # panes or background sessions, within limits. Runs on this machine only.
+  - id: night-shift
+    name: "@tomradex/night-shift"
+  # Reads what a repository already holds (unmerged branches, idle worktrees,
+  # issues and, with leave, local agent sessions) into a draft a person ticks.
+  - id: takeover
+    name: "@tomradex/takeover"
+  # Failed CI, reviews and people's comments on a ticket's open pull request go
+  # back to the agent working it. Off until Settings says so; runs on this machine.
+  - id: pr-feedback
+    name: "@tomradex/pr-feedback"
+  # Tells the person when a run seems stuck, repeats itself or goes nowhere. It
+  # only tells: a run is never stopped or changed.
+  - id: watchdog
+    name: "@tomradex/watchdog"
   # The project's files: a folder tree beside the backlog, every save a
   # version, shared through a remote the project names. Optional — tickets keep
   # only versioned references, which read as unavailable without it.
@@ -520,6 +540,12 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
+  # The pictures behind custom themes stay on this machine; an assistant
+  # conversation reads one into the theme's colours.
+  - id: theme-image
+    name: "@tomradex/theme-image"
+    config:
+      dir: "${userData}/theme-images"
   # A Terminal window per project, its herdr terminals and code sessions side
   # by side. On from the start; without herdr the window offers to install it.
   - id: code-sessions

@@ -35,7 +35,7 @@ describe("keybindings", () => {
   });
 
   it("knows the chords the renderer writes", () => {
-    for (const ok of ["Mod+K", "Mod+Shift+Z", "Ctrl+Tab", "Ctrl+Shift+Tab", "?", "/", "Mod+,", "Mod+Enter", "Alt+ArrowLeft", "N", "Mod+1", "F5", "Mod+["]) expect(CHORD.test(ok), ok).toBe(true);
+    for (const ok of ["Mod+K", "Mod+Shift+Z", "Ctrl+Tab", "Ctrl+Shift+Tab", "?", "/", "Mod+,", "Mod+Enter", "Alt+ArrowLeft", "N", "Mod+1", "F5", "Mod+[", "Ctrl+Insert", "Shift+Insert"]) expect(CHORD.test(ok), ok).toBe(true);
     for (const bad of ["", "Mod", "Mod+Shift", "k", "Cmd+K", "Mod+KK", "Shift+Mod+"]) expect(CHORD.test(bad), bad).toBe(false);
   });
 });

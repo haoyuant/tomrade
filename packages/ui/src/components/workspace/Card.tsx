@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from "react";
+import { memo, useCallback, useRef, type CSSProperties } from "react";
 import { CHECKED, type Board, type FieldDef, type Item } from "@tomradex/domain";
 import type { Badge } from "@tomradex/contributions";
 import { Icon, type IconId } from "~/components/icons";
@@ -60,7 +60,7 @@ const NO_MARKS: Badge[] = [];
  */
 export function Card(props: CardProps) {
   const { item } = props;
-  const { boards, query, epicNames, badges, fieldById } = useWorkspace();
+  const { boards, query, epicNames, epicHues, badges, fieldById } = useWorkspace();
   const selected = useIsSelected(item.id);
   // a start under way from its page or ⌘K: read from memory, no query per card
   const starting = useStartingFor(item.id);
@@ -82,6 +82,7 @@ export function Card(props: CardProps) {
       starting={starting?.agent ?? null}
       owner={!grouped("board") && !pinnedBoard ? boards.find((b) => b.id === item.boardId) : undefined}
       epicName={item.parentId && !grouped("epic") ? epicNames.get(item.parentId) : undefined}
+      epicHue={item.parentId ? epicHues.get(item.parentId) : undefined}
       fields={query.fields}
       fieldById={fieldById}
       onOpen={onOpen}
@@ -99,6 +100,7 @@ const CardFace = memo(function CardFace({
   starting,
   owner,
   epicName,
+  epicHue,
   fields,
   fieldById,
   onOpen,
@@ -113,6 +115,7 @@ const CardFace = memo(function CardFace({
   starting: string | null;
   owner: Board | undefined;
   epicName: string | undefined;
+  epicHue: number | undefined;
   fields: string[];
   fieldById: Map<string, FieldDef>;
   onOpen: () => void;
@@ -181,7 +184,12 @@ const CardFace = memo(function CardFace({
         )}
         {(epicName || item.labels.length > 0 || tags.length > 0 || customs.length > 0) && (
           <span className="card-foot">
-            {epicName && <span className="card-epic">{epicName}</span>}
+            {epicName && (
+              <span className="tag card-epic" title={epicName} style={epicHue === undefined ? undefined : ({ "--epic-hue": epicHue } as CSSProperties)}>
+                <Icon name="i-stack" size={11} aria-hidden />
+                <span className="card-epic-name">{epicName}</span>
+              </span>
+            )}
             {item.labels.map((l) => (
               <Tag key={l} tone="neutral">
                 {l}

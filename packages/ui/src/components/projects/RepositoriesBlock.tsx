@@ -53,6 +53,20 @@ export function useChooseRepoFolder(projectId: string) {
   return { choose, busy: picking || add.isPending };
 }
 
+/** A new repository serves the one workstream that has none, when there is exactly one: said, and changed below it. */
+export function useLinkLoneWorkstream(projectId: string) {
+  const { t } = useI18n();
+  const boards = useBoards(projectId);
+  const updateBoard = useUpdateBoard(projectId);
+  const toast = useToast();
+  return (repo: Repo) => {
+    const unlinked = (boards.data ?? []).filter((b) => !b.repoId);
+    if (unlinked.length !== 1) return;
+    const board = unlinked[0]!;
+    updateBoard.mutate({ id: board.id, patch: { repoId: repo.id, repoPath: "" } }, { onSuccess: () => toast({ body: t("repositories.linkedToast", { repo: repo.name, board: board.name }) }) });
+  };
+}
+
 /**
  * The code a project's workstreams stand for. The URL is a project row and
  * travels; the checkout is this machine's alone and is verified against the
@@ -66,17 +80,9 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   const states = useRepoStates(projectId);
   const create = useCreateRepo(projectId);
   const folder = useChooseRepoFolder(projectId);
-  const updateBoard = useUpdateBoard(projectId);
   const toast = useToast();
   const [url, setUrl] = useState("");
-
-  // A new repository serves the one workstream that has none, when there is exactly one: said, and changed below it.
-  const autoLink = (repo: Repo) => {
-    const unlinked = (boards.data ?? []).filter((b) => !b.repoId);
-    if (unlinked.length !== 1) return;
-    const board = unlinked[0]!;
-    updateBoard.mutate({ id: board.id, patch: { repoId: repo.id, repoPath: "" } }, { onSuccess: () => toast({ body: t("repositories.linkedToast", { repo: repo.name, board: board.name }) }) });
-  };
+  const autoLink = useLinkLoneWorkstream(projectId);
 
   const add = () => {
     const remote = url.trim();

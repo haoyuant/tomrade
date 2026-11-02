@@ -174,6 +174,16 @@ const osLine = (): string => {
   return `${name} ${system ?? os.release()} ${process.arch}`;
 };
 
+/**
+ * The proxy git, the agents and fetch go through (the desktop sets it from the
+ * system proxy), without its password; "none" when they connect directly.
+ */
+export function proxyFact(env: NodeJS.ProcessEnv = process.env): string {
+  const name = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].find((k) => env[k]);
+  if (name) return `${env[name]!.replace(/\/\/[^@/\s]*@/, "//")} (${name})`;
+  return env.TOMRADE_SOCKS_PROXY ? `none (SOCKS proxy ${env.TOMRADE_SOCKS_PROXY} not followed)` : "none";
+}
+
 /** Digits, hex runs and paths vary between two people hitting the same thing; the rest says what it is. */
 export function fingerprint(engine: string | null | undefined, error: string | undefined, issue?: string): string {
   if (issue) return `issue:${issue}`;
@@ -645,8 +655,7 @@ export class Doctor extends Service implements DoctorChecks {
         id: "app",
         title: (w) => w("checkApp"),
         async run() {
-          const proxy = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"].filter((k) => process.env[k]).join(",");
-          return { state: "ok", line: doctor.words()("appLine", { version: doctor.config.version, os: osLine() }), facts: { proxy: proxy || "none", arch: process.arch } };
+          return { state: "ok", line: doctor.words()("appLine", { version: doctor.config.version, os: osLine() }), facts: { proxy: proxyFact(), arch: process.arch } };
         }
       },
       {

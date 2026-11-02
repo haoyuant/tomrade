@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../agent" },
+    { "path": "../code-link" },
+    { "path": "../db" },
+    { "path": "../domain" },
+    { "path": "../github" },
+    { "path": "../hub" },
+    { "path": "../items" },
+    { "path": "../repos" },
+    { "path": "../settings" }
+  ]
+}

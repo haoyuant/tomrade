@@ -246,6 +246,22 @@ describe("the host", () => {
     await vi.waitFor(() => expect(pty.written).toBe("go on\r"));
   });
 
+  it("sends a paste in the markers only to a program that asked for them, as herdr does", async () => {
+    const { pipe } = await hostOn();
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    const pty = FakePty.last!;
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "/tmp/a.png ", paste: true });
+    await vi.waitFor(() => expect(pty.written).toBe("/tmp/a.png "));
+    pty.written = "";
+    pty.print("\x1b[?2004hready");
+    await vi.waitFor(async () => expect(await hostCall(pipe, "pane.read", { pane_id, lines: 1 })).toEqual({ text: "ready" }));
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "/tmp/a.png ", paste: true });
+    await vi.waitFor(() => expect(pty.written).toBe("\x1b[200~/tmp/a.png \x1b[201~"));
+    pty.written = "";
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "typed" });
+    await vi.waitFor(() => expect(pty.written).toBe("typed"));
+  });
+
   it("presses keys by herdr's names after the text, and refuses a name it does not know before typing anything", async () => {
     const { pipe } = await hostOn();
     const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
@@ -322,6 +338,24 @@ describe("what runs in the host's panes", () => {
     expect(scan).toHaveBeenCalledTimes(1);
     FakePty.last!.print("\x1b]0;a title\x07");
     await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not read the table again while only an agent's spinner turns in the title", async () => {
+    const scan = vi.fn(async () => table());
+    const { host, pipe } = await hostOn({ scan, scanTiming: timing });
+    await hostCall(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await host.settled();
+    const pty = FakePty.last!;
+    pty.print("\x1b]0;⠂ Fixing the parser\x07");
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+    await host.settled();
+    pty.print("\x1b]0;⠐ Fixing the parser\x07");
+    pty.print("\x1b]0;✳ Fixing the parser\x07");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await host.settled();
+    expect(scan).toHaveBeenCalledTimes(2);
+    pty.print("\x1b]0;⠂ Writing the tests\x07");
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(3));
   });
 
   it("answers from the table it has while a slow scan runs, runs one scan at a time, and keeps the table when one fails", async () => {

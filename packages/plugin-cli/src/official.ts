@@ -83,6 +83,7 @@ export function officialProblems(dir: string, manifest: Manifest): string[] {
   if (p.fs === "any" && !p.why?.fs) out.push('permissions.fs "any" needs permissions.why.fs');
   if (p.exec && !p.why?.exec) out.push("permissions.exec needs permissions.why.exec");
   if (p.window && !p.why?.window) out.push("permissions.window needs permissions.why.window");
+  if (p.renderer && !p.why?.renderer) out.push("permissions.renderer needs permissions.why.renderer");
   if (manifest.context === "full" && !p.why?.full) out.push('"context": "full" needs permissions.why.full');
   return out;
 }

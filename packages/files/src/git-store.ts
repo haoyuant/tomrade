@@ -2,10 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
-import { GitFolder, execGit, type Git } from "@tomradex/git";
+import { GitFolder, SyncRecorder, execGit, type Git, type SyncProgress, type SyncTrace } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
+import type { ExchangeFailure } from "./sync-failure.js";
 import {
   FileChangedError,
   FileMovedOnError,
@@ -23,6 +24,7 @@ import {
   type FileSearchResult,
   type FilesAgentPolicy,
   type FilesStatus,
+  type FilesSyncFailure,
   type FilesSyncPolicy,
   type ListMode,
   type PathPolicy,
@@ -43,6 +45,8 @@ export const TREE_LIMIT = 20_000;
 export const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
+/** Pushes in a row that put back what the remote had just undone, before sharing stops to wait. */
+const FLIP_ROUNDS = 3;
 
 export interface GitRemoteTarget {
   url: string;
@@ -64,6 +68,8 @@ export interface GitStoreOptions {
   location: string | null;
   warn(message: string): void;
   onChange(paths?: string[]): void;
+  /** A sync with the remote moved on a step, or its transfer did; null once it ended. Paced, never a flood. */
+  onProgress?(progress: SyncProgress | null): void;
   watch?: boolean;
   /** Outside edits are saved this long after the last one. */
   settleMs?: number;
@@ -121,6 +127,15 @@ export function parseLedger(text: string): Ledger {
   return { byId, byPath };
 }
 
+/** Whether a ledger publishes exactly the ids, paths and stamps `lines` would. */
+function sameLedger(lines: LedgerLine[], ledger: Ledger): boolean {
+  const live = [...ledger.byId].filter(([, v]) => v.path !== null);
+  return live.length === lines.length && lines.every((line) => {
+    const theirs = ledger.byId.get(line.id);
+    return theirs?.path === line.path && theirs.at === line.at;
+  });
+}
+
 export function contentOf(rel: string, bytes: Buffer, fileId: string | null, versionId: string | null): FileContent {
   const mime = mimeOf(rel);
   const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length, hash: sha256(bytes) };
@@ -170,7 +185,12 @@ export class GitFileStore implements FileStore {
   private syncing = false;
   private syncQueue: Promise<FilesStatus> | null = null;
   private lastSyncAt: number | null = null;
-  private problem: { state: "offline" | "error"; detail: string } | null = null;
+  private problem: { state: "offline" | "error"; detail?: string; failure?: FilesSyncFailure } | null = null;
+  private recorder: SyncRecorder | null = null;
+  /** The last exchange with the remote, kept until the next one. */
+  private trace: SyncTrace | null = null;
+  /** The trees the last push replaced and published, and how many syncs in a row found the remote back at the replaced one. */
+  private flip = { replaced: null as string | null, published: "", rounds: 0 };
   private ensured = false;
   private closed = false;
   private chain: Promise<unknown> = Promise.resolve();
@@ -964,12 +984,13 @@ export class GitFileStore implements FileStore {
   async status(): Promise<FilesStatus> {
     const conflicts = this.closed ? 0 : (await this.unmergedPaths()).length;
     const head = this.closed ? null : await this.head();
-    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head };
+    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head, ...(this.trace ? { trace: this.trace } : {}) };
     if (this.closed) return { ...base, state: "unavailable" };
-    if (this.syncing) return { ...base, state: "syncing" };
+    const progress = this.recorder?.progress();
+    if (this.syncing) return { ...base, state: "syncing", ...(progress ? { progress } : {}) };
     if (conflicts) return { ...base, state: "conflicted", detail: conflicts === 1 ? "1 file needs a decision" : `${conflicts} files need a decision` };
     if (!this.opts.remote) return { ...base, state: "local" };
-    if (this.problem) return { ...base, state: this.problem.state, detail: this.problem.detail };
+    if (this.problem) return { ...base, ...this.problem };
     const ahead = this.policyDirty || this.agentsDirty || head !== this.syncedHead;
     return { ...base, ahead: ahead ? 1 : 0, state: ahead ? "ahead" : "synced" };
   }
@@ -1003,13 +1024,18 @@ export class GitFileStore implements FileStore {
     let told = !!this.opts.remote && !quiet;
     const headBefore = this.syncedHead;
     const problemBefore = JSON.stringify(this.problem);
+    // Only an exchange with a remote has steps worth following; a local save is over at once.
+    const recorder = this.opts.remote ? new SyncRecorder((progress) => this.opts.onProgress?.(progress)) : null;
+    this.recorder = recorder;
     this.syncing = true;
     if (told) this.opts.onChange();
     try {
+      recorder?.step("saving");
       if (await this.locked(() => this.commitAll("Saved"))) told = true;
-      if (!this.opts.remote) return;
+      if (!this.opts.remote || !recorder) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
+      recorder.locate({ remote: remote.url, branch: this.branch, directory: remote.directory });
       if (separateWorlds(boundDirectory(this.dir), remoteDirectory(remote.directory))) throw new Error(DIRECTORY_CHANGED);
       const project = (await this.opts.projectRepository?.()) ?? null;
       if (collidesWithProject(remote, project)) throw new ProjectRepositoryError(project!.folder);
@@ -1018,36 +1044,60 @@ export class GitFileStore implements FileStore {
         this.ensured = true;
       }
       const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
-      if (!(await projection.fetch())) {
-        this.problem = { state: "offline", detail: "Could not reach the remote" };
-        return;
-      }
-      const snapshot = await this.locked(() => this.reconcile(projection));
-      if (!snapshot) return;
-      if (!(await projection.push())) {
-        this.problem = { state: "error", detail: "The remote moved on; will retry" };
-        return;
-      }
-      await this.locked(async () => {
-        this.syncState.baseline = snapshot.baseline;
-        this.syncState.policy = snapshot.policy;
-        this.syncState.agents = snapshot.agents;
-        this.syncState.head = snapshot.head;
-        this.saveSyncState();
-        this.syncedHead = snapshot.head;
-        this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
-        this.agentsDirty = JSON.stringify(this.agents) !== JSON.stringify(snapshot.agents);
+      await exclusiveTransport(projection.dir, async () => {
+        const unfetched = await projection.fetch(recorder);
+        if (unfetched) return this.failed(unfetched);
+        recorder.step("merging");
+        const snapshot = await this.locked(() => this.reconcile(projection));
+        if (!snapshot) return;
+        if (this.undoing(await projection.trees())) {
+          this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
+          return;
+        }
+        const unpushed = await projection.push(recorder);
+        if (unpushed) return this.failed(unpushed);
+        await this.locked(async () => {
+          this.syncState.baseline = snapshot.baseline;
+          this.syncState.policy = snapshot.policy;
+          this.syncState.agents = snapshot.agents;
+          this.syncState.head = snapshot.head;
+          this.saveSyncState();
+          this.syncedHead = snapshot.head;
+          this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
+          this.agentsDirty = JSON.stringify(this.agents) !== JSON.stringify(snapshot.agents);
+        });
+        this.problem = null;
+        this.lastSyncAt = Date.now();
       });
-      this.problem = null;
-      this.lastSyncAt = Date.now();
     } catch (error) {
+      recorder?.fail();
       this.problem = { state: "error", detail: errorMessage(error) };
       told = true;
     } finally {
+      if (recorder) this.trace = recorder.finish();
+      this.recorder = null;
       this.syncing = false;
       if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
       if (told) this.opts.onChange();
     }
+  }
+
+  /** Only a remote out of reach is offline; every refusal goes to the log with what git said. */
+  private failed({ step, failure, said }: ExchangeFailure): void {
+    this.problem = { state: failure === "network" ? "offline" : "error", failure, ...(said ? { detail: said } : {}) };
+    this.opts.warn(`sync: ${step} failed (${failure})${said ? `: ${said}` : ""}`);
+  }
+
+  /**
+   * Publishing the same tree over the same tree again and again means another
+   * machine keeps putting back what this one replaced: neither will settle, and
+   * each round is a commit on a branch people share.
+   */
+  private undoing({ theirs, ours }: { theirs: string | null; ours: string }): boolean {
+    if (theirs === ours) return false;
+    if (theirs === this.flip.replaced && ours === this.flip.published) this.flip.rounds++;
+    else this.flip = { replaced: theirs, published: ours, rounds: 1 };
+    return this.flip.rounds > FLIP_ROUNDS;
   }
 
   /**
@@ -1179,12 +1229,16 @@ export class GitFileStore implements FileStore {
       baseline[p] = projection.oid(p)!;
       const fileId = ledger.byPath.get(p);
       if (!fileId) continue;
-      lines.push({ id: fileId, path: p, at: ledger.byId.get(fileId)!.at });
+      // Each machine stamps an id when it first records it, so the same id carries a different `at` on each;
+      // publishing our own would undo the other machine's line on every sync, and its sync would undo ours.
+      const at = remoteIds.byPath.get(p) === fileId ? remoteIds.byId.get(fileId)!.at : ledger.byId.get(fileId)!.at;
+      lines.push({ id: fileId, path: p, at });
       const versionId = await this.versionOf(p);
       if (versionId && !this.record({ fileId, versionId })) await this.archive({ fileId, versionId, path: p }, null);
     }
     for (const p of remoteOids.keys()) if (!outgoing.has(p)) await projection.write(p, null);
-    await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
+    // Lines in another order say the same; rewriting them would only start another round.
+    if (!sameLedger(lines, remoteIds)) await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
     await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify({ v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy)));
     await this.exportRecords(projection, selected);
     return { baseline, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };

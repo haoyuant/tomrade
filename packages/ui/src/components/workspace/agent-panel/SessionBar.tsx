@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement }
 import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { FoldChevron } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
@@ -16,7 +17,7 @@ import { askText, doingText } from "~/lib/terminalSession";
 
 export type BarMode = "rail" | "cards";
 /** What a card answers with: a terminal session's permission prompt or a folder's trust, or an assistant question by one of its choices. */
-export type CardAnswer = { which: "allow" | "deny" } | { trust: "trust" | "exit" } | { questionId: string; value: string };
+export type CardAnswer = { which: "allow" | "deny" } | { trust: "trust" | "exit" } | { choice: string } | { questionId: string; value: string };
 
 /** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
 const CHOICES_SHOWN = 3;
@@ -127,7 +128,8 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "wait" ? t("sessionBar.waitedFor", { d: spanLabel(now - r.at, t) }) : r.status === "run" ? t("sessionBar.ranFor", { d: spanLabel(now - r.startedAt, t) }) : r.status === "done" ? rangeLabel(r.startedAt, r.at) : timeAgo(r.at);
   const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
   // A waiting card answers in place: Allow (or Deny, with no under the cursor) for a prompt on a terminal's screen, a
-  // question's choices for a conversation; "look first" opens it. Nothing to press here leaves only the card.
+  // question's choices for a conversation or for a terminal whose screen shows its menu; "look first" opens it. A
+  // terminal asking what nothing here can answer still offers the look; nothing asked leaves only the card.
   const answer = (r: BarRow, reply: CardAnswer) => () => {
     if (answering.has(r.key)) return;
     setAnswering((keys) => new Set(keys).add(r.key));
@@ -138,8 +140,8 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     const sending = answering.has(r.key);
     const pending = r.threadId ? pendings.get(r.threadId) : undefined;
     // a question with choices takes one as its answer, whether or not it also takes words; several at once are picked where it opens
-    const choices = pending && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
-    if (!r.prompt && !choices.length) return null;
+    const choices = (pending ? (!pending.question.multiple && pending.question.options) || [] : r.prompt === "choice" ? (r.ask?.options ?? []) : []).slice(0, CHOICES_SHOWN);
+    if (!r.prompt && !choices.length && !r.ask) return null;
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
       <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} aria-busy={sending || undefined} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
@@ -153,8 +155,8 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           )}
           {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" disabled={sending} onClick={answer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
           {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" disabled={sending} onClick={answer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
-          {pending && choices.map((choice, i) => (
-            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="sbar-choice" disabled={sending} onClick={answer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
+          {choices.map((choice, i) => (
+            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="sbar-choice" disabled={sending} onClick={answer(r, pending ? { questionId: pending.question.id, value: choice } : { choice })}>{choice}</button>
           ))}
           <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-look" onClick={() => onPick(r)}>{t("sessionBar.lookFirst")}</button>
         </span>
@@ -313,7 +315,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
               <FoldChevron open={endedOpen} label={t("sessionBar.justEnded", { n: ended.length })} testId="sbar-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
               <span className="meta-txt dense">{t("sessionBar.justEnded", { n: ended.length })}</span>
             </span>
-            {endedOpen && ended.map(card)}
+            <Collapse open={endedOpen} className="sbar-ended-list">{ended.map(card)}</Collapse>
           </div>
         )}
         {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}

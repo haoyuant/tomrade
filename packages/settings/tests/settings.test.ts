@@ -16,13 +16,13 @@ describe("settings", () => {
   it("returns defaults for registered sections and persists what is set", async () => {
     const p = file();
     const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
-    expect(ctx.settings.get().theme).toBe("dawn");
+    expect(ctx.settings.get().theme).toBe("sunrise");
     expect(ctx.settings.get().language).toBe("system");
-    expect(ctx.settings.get().themeAutomation.defaultTheme).toBe("dawn");
+    expect(ctx.settings.get().themeAutomation.defaultTheme).toBe("sunrise");
     const changes: string[] = [];
     ctx.on("settings/changed", (next, previous) => changes.push(`${previous.theme}->${next.theme}`));
     ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
-    expect(changes).toEqual(["dawn->dark"]);
+    expect(changes).toEqual(["sunrise->dark"]);
     expect(JSON.parse(fs.readFileSync(p, "utf8")).theme).toBe("dark");
 
     const reopened = await fresh({ plugins: [[Settings, { path: p }]] });
@@ -41,6 +41,17 @@ describe("settings", () => {
     expect(reopened.ctx.settings.get().themeAutomation).toMatchObject({
       defaultTheme: "dawn", schedule: [{ theme: "dawn" }]
     });
+  });
+
+  it("a retired theme a saved setting still names saves as the one closest to it", async () => {
+    const p = file();
+    fs.writeFileSync(p, JSON.stringify({ theme: "neon" }));
+    const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
+    ctx.settings.set({ ...ctx.settings.get(), themeAutomation: {
+      mode: "schedule", defaultTheme: "neon", shuffleMinutes: 60, schedule: [{ start: "20:00", end: "06:00", theme: "neon" }]
+    } });
+    expect(ctx.settings.get().theme).toBe("dark");
+    expect(ctx.settings.get().themeAutomation).toMatchObject({ defaultTheme: "dark", schedule: [{ theme: "dark" }] });
   });
 
   it("a plugin section gets defaults under stored values, validation, and a JSON-schema card", async () => {
@@ -65,7 +76,7 @@ describe("settings", () => {
 
     await fiber.dispose();
     // closedWindow is the items service's, which fresh() boots
-    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "language", "closedWindow"]);
+    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "closedWindow"]);
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 

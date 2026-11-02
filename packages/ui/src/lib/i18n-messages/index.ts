@@ -51,6 +51,7 @@ import { statusBar } from "./statusBar";
 import { table } from "./table";
 import { epics } from "./epics";
 import { storageBlock } from "./storageBlock";
+import { syncActivity } from "./syncActivity";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
 import { toast } from "./toast";
@@ -64,6 +65,7 @@ import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
+import { pluginLayout } from "./pluginLayout";
 import { history } from "./history";
 import { hubSetup } from "./hubSetup";
 import { hubPane } from "./hubPane";
@@ -71,6 +73,8 @@ import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 import { feedback, inbox } from "./inbox";
+import { nightShift } from "./nightShift";
+import { takeover } from "./takeover";
 import { errors } from "./errors";
 import { domain } from "./domain";
 import { ledger } from "./ledger";
@@ -126,6 +130,7 @@ export const en = {
   newProjectDialog: newProjectDialog.en,
   projectSettingsDialog: projectSettingsDialog.en,
   storageBlock: storageBlock.en,
+  syncActivity: syncActivity.en,
 
   titleBar: titleBar.en,
   sidebar: sidebar.en,
@@ -138,6 +143,7 @@ export const en = {
   table: table.en,
   epics: epics.en,
   graphView: graphView.en,
+  pluginLayout: pluginLayout.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
 
@@ -155,6 +161,8 @@ export const en = {
   notes: notes.en,
   history: history.en,
   inbox: inbox.en,
+  nightShift: nightShift.en,
+  takeover: takeover.en,
   feedback: feedback.en,
   errors: errors.en,
   domain: domain.en,
@@ -211,6 +219,7 @@ export const zh: typeof en = {
   newProjectDialog: newProjectDialog.zh,
   projectSettingsDialog: projectSettingsDialog.zh,
   storageBlock: storageBlock.zh,
+  syncActivity: syncActivity.zh,
 
   titleBar: titleBar.zh,
   sidebar: sidebar.zh,
@@ -223,6 +232,7 @@ export const zh: typeof en = {
   table: table.zh,
   epics: epics.zh,
   graphView: graphView.zh,
+  pluginLayout: pluginLayout.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,
 
@@ -240,6 +250,8 @@ export const zh: typeof en = {
   notes: notes.zh,
   history: history.zh,
   inbox: inbox.zh,
+  nightShift: nightShift.zh,
+  takeover: takeover.zh,
   feedback: feedback.zh,
   errors: errors.zh,
   domain: domain.zh,

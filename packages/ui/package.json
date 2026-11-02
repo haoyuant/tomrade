@@ -7,7 +7,8 @@
   "description": "React UI (TanStack Router + Query, Tailwind v4, Radix). Talks to the main process through the typed channel contract and renders plugin contributions as data.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc -p tsconfig.json --noEmit",
+    "build": "vite build && vite build -c vite.shell.config.ts && tsc -p tsconfig.json --noEmit",
+    "build:shell": "vite build -c vite.shell.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",
+    "@tomradex/theme-image": "workspace:*",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/addon-serialize": "0.13.0",
     "@xterm/addon-web-links": "0.11.0",
@@ -50,6 +52,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dompurify": "3.4.15",
+    "html-to-image": "1.11.11",
     "marked": "18.0.13",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -87,6 +90,8 @@
     "@tomradex/plugin-studio": "workspace:*",
     "@tomradex/plugins": "workspace:*",
     "@tomradex/projects": "workspace:*",
+    "@tomradex/night-shift": "workspace:*",
+    "@tomradex/takeover": "workspace:*",
     "@tomradex/schedules": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",

@@ -18,6 +18,11 @@ import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
 import "./styles/app.css";
 import "./styles/layouts.css";
+import "./styles/sunrise.css";
+import "./styles/glass.css";
+import "./styles/sakura.css";
+import "./styles/backdrop.css";
+import "./styles/motion.css";
 
 // Local SQLite over IPC: refetching on focus buys nothing, invalidation is explicit.
 const queryClient = createQueryClient({ queries: { refetchOnWindowFocus: false, staleTime: 30_000 } });
@@ -27,6 +32,13 @@ watchWindowChrome();
 
 // A sheet's scroll lock would otherwise swallow the wheel over an open select's list.
 letOpenSelectsScroll();
+
+// A file dropped where nothing takes it must not open in a window of its own; the views that take files are reached first.
+for (const type of ["dragover", "drop"] as const) {
+  document.addEventListener(type, (e) => {
+    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+  });
+}
 
 // A plugin loading or unloading changes what the palette, cards and status bar show.
 if (window.tomrade) {

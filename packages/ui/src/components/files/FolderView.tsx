@@ -1,9 +1,10 @@
-import { useState, type DragEvent, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, type SyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, AgentSelect, type AgentActions } from "./AgentPolicy";
 import { Tag } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
 import { agoLabel } from "~/lib/domain";
@@ -36,7 +37,7 @@ function SharingCard({ projectId, status, state, onOpenSharing }: { projectId: s
         </button>
       </div>
       <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-        {status?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status), detail: status.detail }) : state.hint}
+        {status?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status), detail: status.detail }) : hintOf(t, state, status)}
       </p>
       <SyncScopeSummary projectId={projectId} />
     </div>
@@ -51,6 +52,10 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
   const resolveAll = useResolveAllConflicts(projectId);
   // every file at once, and synced straight away: said out loud before it happens
   const [confirming, setConfirming] = useState<ConflictChoice | null>(null);
+  // the panel keeps its words while it folds away
+  const lastChoice = useRef<ConflictChoice>("ours");
+  if (confirming) lastChoice.current = confirming;
+  const choice = confirming ?? lastChoice.current;
   const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onSuccess: () => setConfirming(null), onError: (error) => toast(errorSpec(error)) });
   return (
     <div className="stack-3 files-conflict-list" data-testid="conflict-list">
@@ -64,17 +69,15 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
           {t("files.keepAllTheirs")}
         </button>
       </div>
-      {confirming && (
-        <div className="row files-conflict-confirm" role="alert" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
-          <p className="meta-txt" style={{ margin: 0, flex: 1 }}>{t(confirming === "ours" ? "files.keepAllMineConfirm" : "files.keepAllTheirsConfirm", { n: conflicts.length })}</p>
-          <button type="button" className="btn btn-danger" disabled={resolveAll.isPending} onClick={() => all(confirming)}>
-            {t(confirming === "ours" ? "files.keepAllMine" : "files.keepAllTheirs")}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(null)}>
-            {t("common.cancel")}
-          </button>
-        </div>
-      )}
+      <Collapse open={confirming !== null} className="row files-conflict-confirm" role="alert" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
+        <p className="meta-txt" style={{ margin: 0, flex: 1 }}>{t(choice === "ours" ? "files.keepAllMineConfirm" : "files.keepAllTheirsConfirm", { n: conflicts.length })}</p>
+        <button type="button" className="btn btn-danger" disabled={resolveAll.isPending} onClick={() => all(choice)}>
+          {t(choice === "ours" ? "files.keepAllMine" : "files.keepAllTheirs")}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => setConfirming(null)}>
+          {t("common.cancel")}
+        </button>
+      </Collapse>
       <div className="stack-1">
         {conflicts.map((c) => (
           <button key={c.path} type="button" className="menu-row" data-file={c.path} onClick={() => openFile(c.path)}>

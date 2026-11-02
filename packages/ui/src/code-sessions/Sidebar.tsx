@@ -4,12 +4,13 @@ import type { ReviewRow } from "@tomradex/code-link";
 import type { ClosedTerminalRow, LayoutPreset, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon } from "~/components/icons";
 import { FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { ReviewList, type ReviewSource, type ReviewWords } from "~/components/workspace/agent-panel/ReviewList";
 import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
 import { keys } from "~/lib/queries";
 import { historyList, historySaid, onHistoryChanged, send } from "./bridge";
-import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitle, rowWhen, saidClass, statusWord, whereOf } from "./cards";
+import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitle, rowWhen, saidClass, statusWord, whereOf, type SessionReply } from "./cards";
 import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
@@ -28,7 +29,7 @@ const shortOf = (r: HereRow, name: string): string => {
 
 /** `cells`: the number of the cell that shows each row, by row or session id. */
 type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, number>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
-type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void };
+type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
 const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
@@ -60,12 +61,12 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
 }
 
 /** What ran in a pane before what it shows now, oldest first: each opens in a pane as an ended session. */
-function PaneTimeline({ past, locale, selected, onPick }: { past: SessionRow[]; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
+function PaneTimeline({ open, past, locale, selected, onPick }: { open: boolean; past: SessionRow[]; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
   const say = useSay();
   const day = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   return (
-    <ol className="cs-list cs-timeline fold-row-body" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
+    <Collapse as="ol" open={open} className="cs-list cs-timeline fold-row-body" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
       {past.map((s) => (
         <li key={s.id}>
           <button type="button" className="cs-row" data-status="done" data-ended aria-current={selected.has(s.id) ? "true" : undefined} title={say("pickHint", { mod: MOD })} onClick={(e) => onPick(s, besideClick(e))}>
@@ -78,7 +79,7 @@ function PaneTimeline({ past, locale, selected, onPick }: { past: SessionRow[]; 
           </button>
         </li>
       ))}
-    </ol>
+    </Collapse>
   );
 }
 
@@ -119,7 +120,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
   };
   const timeline = (r: HereRow) => {
     const at = paneOf(r);
-    return at && unfolded.has(at) && pastOf(r).length ? <PaneTimeline past={pastOf(r)} locale={locale} selected={selected} onPick={picks.onSession} /> : null;
+    return at && pastOf(r).length ? <PaneTimeline open={unfolded.has(at)} past={pastOf(r)} locale={locale} selected={selected} onPick={picks.onSession} /> : null;
   };
   const open = (r: HereRow, e: React.MouseEvent) => (r.kind === "terminal" ? picks.onTerminal(r.terminal, besideClick(e)) : r.kind === "session" ? picks.onSession(r.session, besideClick(e)) : picks.onThread(r.thread));
   /** `lead`: the row speaks for its pane (alone on it), so the pane's history folds from it. */
@@ -212,7 +213,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
             <FoldChevron open={endedOpen} label={say("justEnded", { n: ended.length })} testId="cs-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
             <span className="cs-bundle-head">{say("justEnded", { n: ended.length })}</span>
           </span>
-          {endedOpen && <ul className="cs-list">{ended.map((r) => item(r, false))}</ul>}
+          <Collapse as="ul" open={endedOpen} className="cs-list">{ended.map((r) => item(r, false))}</Collapse>
         </li>
       )}
     </ul>
@@ -236,7 +237,7 @@ function OutsideGroup({ sessions, open, onToggle, list }: { sessions: SessionRow
           </span>
         )}
       </button>
-      {open && list}
+      {list}
     </div>
   );
 }
@@ -466,7 +467,7 @@ type SidebarProps = {
   onTerminal: (t: TerminalRow, beside?: boolean) => void;
   onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
-  onAnswer: (s: SessionRow, which: "allow" | "deny") => Promise<void> | void;
+  onAnswer: (s: SessionRow, reply: SessionReply) => Promise<void> | void;
   onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void;
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
@@ -494,13 +495,13 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
   const foldLabel = `${say(folded ? "unfold" : "fold")} (${keyLabel("fold")})`;
   if (folded) return <Rail ref={ref} rows={rows.here} waiting={waiting} marks={marks} picks={picks} foldLabel={foldLabel} onFold={onFold} />;
   const awayList = (
-    <ul className="cs-list">
+    <Collapse as="ul" open={outsideOpen} fade className="cs-list">
       {rows.away.map((s) => (
         <li key={s.id}>
           <AwayCard s={s} active={marks.active} selected={marks.selected} onPick={onPick} />
         </li>
       ))}
-    </ul>
+    </Collapse>
   );
   return (
     <aside ref={ref} className="cs-side" data-mode="cards" aria-label={say("bar")}>

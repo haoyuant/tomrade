@@ -2,6 +2,7 @@
 // loaded before cordis itself declares a NEW module instead of augmenting it.
 import type {} from "cordis";
 export { Files, FilesConfig, LOCAL_BACKEND, folderName } from "./service.js";
+export type { SyncProgress, SyncStep, SyncStepRecord, SyncTrace, SyncTransfer } from "@tomradex/git";
 export { BINARY_LIMIT, GitFileStore, IDS_DIR, IDS_FILE, normalizeRel, parseLedger, type GitRemoteTarget, type GitStoreOptions, type Ledger } from "./git-store.js";
 export { createGitBackend, type GitBackendOptions } from "./git-backend.js";
 export { buildAgentIndex, estimateTokens, formatSize, shortDate, type AgentIndex, type AgentIndexInput } from "./agent-index.js";
@@ -30,6 +31,7 @@ export {
   type FilesInfo,
   type FilesStatus,
   type FilesSyncState,
+  type FilesSyncFailure,
   type FilesSyncPolicy,
   type FileSyncPreference,
   type FilesAgentPolicy,

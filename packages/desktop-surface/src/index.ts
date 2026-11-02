@@ -22,6 +22,17 @@ export interface SurfaceLook {
   /** `--name` → value, the app's theme variables as the main window computes them. */
   tokens: Record<string, string>;
   locale: string;
+  /**
+   * The main window asks for the system's frosted material (Glass); the shell answers whether this
+   * window wears it, and a page under it leaves its own background off. Absent from an older shell.
+   */
+  frosted?: boolean;
+  /** A custom theme made from pictures: its panes' opacity and frost; `terminalVeil` once the Terminal window has a picture of its own. */
+  backdrop?: { veil: number; frost: number; terminalVeil?: number };
+  /** The built-in theme itself, or under a custom one: a window can draw that theme's own light. */
+  base?: string;
+  /** Decorative motion stays still: performance mode, or a shell compositing without the GPU. */
+  still?: boolean;
 }
 
 export interface DesktopSurfaceSpec {
@@ -38,6 +49,11 @@ export interface DesktopSurfaceSpec {
   /** Windows only. */
   minWidth?: number;
   minHeight?: number;
+  /**
+   * `window` only: its page keeps a draggable strip `env(titlebar-area-height)` tall at its top. Where a window has to be
+   * born frameless to wear Glass's frost (Windows 10), only such a window wears it; the caption buttons sit over the strip.
+   */
+  captionStrip?: boolean;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   /** Allow keyboard input; defaults to false for passive widgets. */

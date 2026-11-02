@@ -104,8 +104,44 @@ export function trustOnScreen(screen: string): TrustPrompt | null {
   return { options, selected, trust, exit };
 }
 
-/** The keys that put the cursor on an option of a trust prompt: arrows from where it is. Enter is pressed apart, once the screen shows it there. */
-export function arrowsTo(prompt: TrustPrompt, target: number): string[] {
+/** The footer under a question's menu: "Enter to select · ↑/↓ to navigate · Esc to cancel". */
+const SELECT_FOOTER = /\benter to select\b/i;
+/** A numbered option of that menu: the cursor's mark or not, its number, its words. */
+const NUMBERED = /^(?:([❯›▶➤→>●])\s*)?(\d+)[.)]\s+(\S.*?)\s*$/;
+
+/** A question's menu on a pane's screen: its numbered options top to bottom, and the one under the cursor. */
+export interface ChoicePrompt {
+  options: string[];
+  selected: number;
+}
+
+/**
+ * The menu an agent asks its question with (Claude Code's and CodeBuddy's AskUserQuestion), read from a pane's last
+ * lines: only when its numbered options begin with exactly the choices its hook told of, in that order, and one of
+ * them is under the cursor. A description under an option is skipped; the menu's own extras ("Type something.") may
+ * follow. Null for anything else — a wrapped or clipped label included — so a key is never pressed on a guess.
+ */
+export function choiceOnScreen(screen: string, choices: string[]): ChoicePrompt | null {
+  const lines = screen.split("\n").map((l) => l.replace(EDGE, ""));
+  let footer = -1;
+  for (let i = lines.length - 1; i >= 0 && footer < 0; i--) if (SELECT_FOOTER.test(lines[i]!)) footer = i;
+  if (footer < 0 || !choices.length) return null;
+  const found: { marked: boolean; text: string }[] = [];
+  let expect: number | null = null;
+  for (let i = footer - 1; i >= 0 && expect !== 0; i--) {
+    const [, mark, number, text] = NUMBERED.exec(lines[i]!) ?? [];
+    if (!number || !text) continue;
+    if (expect !== null && Number(number) !== expect) return null;
+    expect = Number(number) - 1;
+    found.unshift({ marked: !!mark, text });
+  }
+  if (expect !== 0 || found.length < choices.length || choices.some((c, i) => found[i]!.text !== c)) return null;
+  const marked = found.flatMap((o, i) => (o.marked ? [i] : []));
+  return marked.length === 1 ? { options: found.map((o) => o.text), selected: marked[0]! } : null;
+}
+
+/** The keys that put the cursor on an option of a menu (a trust prompt, a question's): arrows from where it is. Enter is pressed apart, once the screen shows it there. */
+export function arrowsTo(prompt: { selected: number }, target: number): string[] {
   const steps = target - prompt.selected;
   return Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? "down" : "up"));
 }

@@ -3,7 +3,7 @@
  * key — "Mod+Shift+Z", "Ctrl+Tab", "?". `Mod` is ⌘ on a Mac and Ctrl elsewhere.
  * Kept free of imports: the renderer checks imported files against it too.
  */
-export const CHORD = /^(?:(?:Mod|Ctrl|Alt|Shift)\+)*(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Home|End|PageUp|PageDown|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|[!-/:-@[-`{-~])$/;
+export const CHORD = /^(?:(?:Mod|Ctrl|Alt|Shift)\+)*(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Insert|Home|End|PageUp|PageDown|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|[!-/:-@[-`{-~])$/;
 
 /**
  * Each command's keys until the person rebinds them, by command id. The
@@ -32,5 +32,9 @@ export const DEFAULT_KEYS = {
   backlogTab: ["Mod+1"],
   searchTickets: ["Mod+F", "/"],
   readWrite: ["Mod+E"],
-  saveBody: ["Mod+Enter"]
+  saveBody: ["Mod+Enter"],
+  // In the Terminal window. Ctrl+C copies only a selection, else it is the shell's interrupt; Ctrl+V stays the
+  // program's (agents paste images on it), and ⌘V on a Mac is the Edit menu's.
+  terminalCopy: ["Mod+C", "Mod+Shift+C", "Ctrl+Insert"],
+  terminalPaste: ["Mod+Shift+V", "Shift+Insert"]
 } satisfies Record<string, string[]>;

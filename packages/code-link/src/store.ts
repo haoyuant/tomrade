@@ -324,13 +324,15 @@ export interface SessionCursor {
 }
 /**
  * What a waiting session asks the person: a tool's permission — to run a command, to change a file, to use another
- * tool — or a question. `detail` is the command or the file, clipped; null when its hooks did not say.
+ * tool — or a question. `detail` is the command, the file or the question, clipped; null when its hooks did not say.
  */
 export interface SessionAsk {
   kind: "permission" | "question";
   tool: string | null;
   action: "run" | "edit" | "use" | null;
   detail: string | null;
+  /** A question's choices, top to bottom as its menu lists them: only for one question that takes one of them. */
+  options?: string[];
 }
 
 /** `error`: the agent stopped on its own account (rate limit, auth) and is not working; the process may still be there. */
@@ -783,6 +785,11 @@ export class CodeLinkStore {
       ? (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND item_id = ? ORDER BY delivery ASC, created_at ASC").all(projectId, itemId) as LinkRow[])
       : (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? ORDER BY item_id, delivery ASC, created_at ASC").all(projectId) as LinkRow[]);
     return rows.map(toLink);
+  }
+
+  /** Links with a pull request not known to have ended, said in the query: most of the table settled long ago. */
+  openPulls(projectId: string): CodeLinkView[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND merged_sha IS NULL AND (pr_state IS NULL OR pr_state = 'open') AND (pr_url IS NOT NULL OR pr_number IS NOT NULL)").all(projectId) as LinkRow[]).map(toLink);
   }
 
   linksForRepo(projectId: string, repoId: string): CodeLinkView[] {

@@ -14,7 +14,7 @@ vi.mock("electron", () => ({
   }
 }));
 vi.mock("../src/main-window.js", () => ({ showMainWindow: () => null, whenLoaded: () => {} }));
-import { allowOf, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { allowOf, announceAway, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, tellShiftSteps, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -191,6 +191,43 @@ it("reminds in IM only when that is where the person chose to be reminded", () =
   expect(() => remindAway({ ...NOTIFICATIONS_SECTION.defaults }, note, undefined)).not.toThrow();
 });
 
+it("sends news that belongs to no conversation to IM only for someone who chose IM", () => {
+  const told: unknown[] = [];
+  const im = { announce: (n: unknown) => (told.push(n), true) };
+  const notice = { title: "Your night shift is done", body: "2 to review, 1 merged, 0 need you" };
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, "night-shift:s1", notice, im);
+  expect(told).toEqual([{ key: "night-shift:s1", ...notice }]);
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "push" }, "night-shift:s2", notice, im);
+  announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "none" }, "night-shift:s3", notice, im);
+  expect(told).toHaveLength(1);
+  // No IM running: nothing to do, and nothing breaks.
+  expect(() => announceAway({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, "night-shift:s4", notice, undefined)).not.toThrow();
+});
+
+describe("an auto run's steps", () => {
+  const step = { key: "s:a:started:1", title: "TOM-1 Fix it", body: "Started" };
+  const stuck = { title: "Your auto run needs you", body: "1 need you, 0 of 1 delivered" };
+  const targets = { ...NOTIFICATIONS_SECTION.defaults, away: "push" as const, pushBarkCredential: "https://api.day.app/key" };
+
+  it("each goes to the IM of someone who chose it, under a key of its own", () => {
+    const told: unknown[] = [];
+    expect(tellShiftSteps({ ...NOTIFICATIONS_SECTION.defaults, away: "im" }, [step], stuck, { announce: (n) => (told.push(n), true) })).toBeNull();
+    expect(told).toEqual([{ key: "night-shift:s:a:started:1", title: "TOM-1 Fix it", body: "Started" }]);
+  });
+
+  it("a phone hears only what stopped a ticket", () => {
+    const told: unknown[] = [];
+    const im = { announce: (n: unknown) => (told.push(n), true) };
+    expect(tellShiftSteps(targets, [step], null, im)).toBeNull();
+    expect(tellShiftSteps(targets, [step], stuck, im)).toEqual(stuck);
+    expect(told).toEqual([]);
+  });
+
+  it("nobody who chose neither hears anything", () => {
+    expect(tellShiftSteps({ ...NOTIFICATIONS_SECTION.defaults, away: "none" }, [step], stuck, undefined)).toBeNull();
+  });
+});
+
 describe("the attention row", () => {
   type Listener = (...args: unknown[]) => unknown;
   const disposers: (() => void)[] = [];
@@ -199,7 +236,10 @@ describe("the attention row", () => {
     shown.length = 0;
   });
   const start = () => {
-    const state = { sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined, interrupted: [] as { id: string; itemId: string | null; engine: string; error: string }[] };
+    const state = {
+      sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined, interrupted: [] as { id: string; itemId: string | null; engine: string; error: string }[],
+      suspected: [] as { projectId: string; threadId: string; itemId: string | null; engine: string; text: string }[]
+    };
     const listeners = new Map<string, Listener>();
     const sent: unknown[][] = [];
     const revealed: unknown[][] = [];
@@ -207,7 +247,8 @@ describe("the attention row", () => {
       codeLink: { sessionsOf: () => state.sessions, showSession: async (...args: unknown[]) => (revealed.push(args), true) },
       db: { openIds: () => ["p"] },
       terminals: { kind: "herdr" },
-      herdr: { clientAttached: async () => state.client }
+      herdr: { clientAttached: async () => state.client },
+      watchdog: { notices: () => state.suspected }
     };
     const ctx = {
       settings: { register: () => {}, locale: () => "en", get: () => ({}) },
@@ -262,6 +303,36 @@ describe("the attention row", () => {
     expect(listed()).toEqual([]);
   });
 
+  it("lists a run the watchdog suspects as that, says so in its own words, and drops it when it no longer is", async () => {
+    const { state, listeners, sent } = start();
+    const listed = () => (sent.filter(([channel]) => channel === "attention.changed").at(-1)?.[1] ?? []) as AttentionEntry[];
+    await vi.advanceTimersByTimeAsync(300);
+    state.suspected = [{ projectId: "p", threadId: "t", itemId: null, engine: "claude", text: "No activity for 16 min." }];
+    listeners.get("watchdog/changed")!();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([expect.objectContaining({ key: "thread:t", threadId: "t", kind: "suspect", who: null, text: "No activity for 16 min." })]);
+    expect(shown).toEqual(["The assistant may be stuck"]);
+    state.suspected = [];
+    listeners.get("watchdog/changed")!();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([]);
+  });
+
+  it("lets a real wait speak for a conversation the watchdog also suspects, and opens a background run by its session", async () => {
+    const { state, listeners, sent } = start();
+    const listed = () => (sent.filter(([channel]) => channel === "attention.changed").at(-1)?.[1] ?? []) as AttentionEntry[];
+    await vi.advanceTimersByTimeAsync(300);
+    state.sessions = [{ id: "s1", state: "waiting", threadId: "t", itemIds: [], agent: "claude", activity: "Allow?", summary: null, herdrPane: null }];
+    state.suspected = [{ projectId: "p", threadId: "t", itemId: null, engine: "claude", text: "No activity." }];
+    listeners.get("watchdog/changed")!();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([expect.objectContaining({ key: "thread:t", kind: "waiting" })]);
+    state.sessions = [{ id: "s1", state: "running", threadId: "t", itemIds: [], agent: "claude", activity: null, summary: null, herdrPane: null }];
+    listeners.get("watchdog/changed")!();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([expect.objectContaining({ key: "thread:t", kind: "suspect", sessionId: "s1" })]);
+  });
+
   it("opens a terminal session in its cell while its Terminal window is open, and in the main window's panel otherwise", async () => {
     const { state, listeners, sent, revealed } = start();
     const target = { projectId: "p", threadId: null, itemId: "i", sessionId: "s1" };
@@ -280,6 +351,17 @@ describe("the attention row", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(revealed).toHaveLength(1);
   });
+});
+
+it("tells of a suspected run under the same switch as a stopped one, once", () => {
+  const { teller, told, state } = setup();
+  teller.update([]);
+  teller.update([entry("thread:a", "suspect")]);
+  teller.update([entry("thread:a", "suspect", { text: "No activity for 17 min." })]);
+  expect(told.map((note) => note.title)).toEqual(["Claude Code may be stuck"]);
+  state.prefs = { ...state.prefs, stopped: false };
+  teller.update([entry("thread:b", "suspect")]);
+  expect(told).toHaveLength(1);
 });
 
 it("shows Tomrade's notification unless herdr shows it to an attached client", async () => {

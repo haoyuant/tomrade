@@ -5,12 +5,15 @@ import { move } from "@dnd-kit/helpers";
 import { repoPathLabel, type Board, type Repo, type View } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { Hint } from "~/components/ui/hint";
 import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
 import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
 import { viewIcon } from "~/lib/domain";
+import { GROUPED_TABLE_PRESETS, groupedTableQuery } from "~/lib/viewPresets";
 import { useI18n } from "~/lib/i18n";
+import { useShiftOffered } from "~/lib/nightShift";
 import { normalizeRemote } from "~/lib/remotes";
 import { useCreateBoard, useCreateView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -110,6 +113,11 @@ function NewViewRow() {
   const undoWrite = useToastUndo(project.id);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const presets = useRef<HTMLDivElement | null>(null);
+  // The row sits at the foot of a long list: bring the presets under it into sight.
+  useEffect(() => {
+    if (editing) presets.current?.scrollIntoView({ block: "nearest" });
+  }, [editing]);
 
   if (!editing) {
     return (
@@ -120,26 +128,46 @@ function NewViewRow() {
     );
   }
 
+  const make = (input: Parameters<typeof create.mutate>[0]) =>
+    create.mutate(input, {
+      onSuccess: (view) => {
+        setEditing(false);
+        openView(view.id);
+        toast({
+          body: <>{tx("sidebar.createdViewToast", { name: <span className="num">{view.name}</span> })}</>,
+          onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
+        });
+      },
+      onError: (err) => toast(errorSpec(err))
+    });
+
   const commit = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return setEditing(false);
-    create.mutate(
-      { name: trimmed, icon: "i-board", layout: "board", query: { columnBy: "status" } },
-      {
-        onSuccess: (view) => {
-          setEditing(false);
-          openView(view.id);
-          toast({
-            body: <>{tx("sidebar.createdViewToast", { name: <span className="num">{trimmed}</span> })}</>,
-            onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
-          });
-        },
-        onError: (err) => toast(errorSpec(err))
-      }
-    );
+    make({ name: trimmed, icon: "i-board", layout: "board", query: { columnBy: "status" } });
   };
 
-  return <InlineNameRow icon="i-board" ariaLabel={t("sidebar.newViewNameAria")} placeholder={t("sidebar.viewNamePlaceholder")} onCommit={commit} onCancel={() => setEditing(false)} />;
+  return (
+    <>
+      <InlineNameRow icon="i-board" ariaLabel={t("sidebar.newViewNameAria")} placeholder={t("sidebar.viewNamePlaceholder")} onCommit={commit} onCancel={() => setEditing(false)} />
+      <div ref={presets} className="side-presets" role="group" aria-label={t("sidebar.presetsLabel")}>
+        <span className="side-presets-label">{t("sidebar.presetsLabel")}</span>
+        {GROUPED_TABLE_PRESETS.map((p) => (
+          <button
+            type="button"
+            key={p.groupBy}
+            className="side-row side-add"
+            // Keeps the name field focused: its blur would close this row before the click lands.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => make({ name: t(p.name), icon: p.icon, layout: "table", query: groupedTableQuery(p.groupBy) })}
+          >
+            <Icon className="ico" name={p.icon} size={14} />
+            <span className="side-name">{t(p.name)}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
 }
 
 /**
@@ -279,8 +307,20 @@ function BacklogHead() {
   );
 }
 
-/** The backlog's saved views and the workstreams it is split into (its fields open from the view head). */
-function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
+function AutoRunRow({ onOpen }: { onOpen: () => void }) {
+  const { t } = useI18n();
+  const { project } = useWorkspace();
+  if (!useShiftOffered(project.id)) return null;
+  return (
+    <button type="button" className="side-row side-auto-run" aria-haspopup="dialog" data-testid="sidebar-auto-run" onClick={onOpen}>
+      <Icon className="ico" name="i-moon" size={15} />
+      <span className="side-name">{t("nightShift.title")}</span>
+    </button>
+  );
+}
+
+/** The backlog's saved views, the workstreams it is split into (its fields open from the view head), and the way to run it. */
+function BacklogBody({ onOpenFields, onOpenSurface }: { onOpenFields: (fieldId?: string, boardId?: string) => void; onOpenSurface: (surface: string) => void }) {
   const { t } = useI18n();
   const { project, boards } = useWorkspace();
   const repos = useRepos(project.id);
@@ -315,7 +355,7 @@ function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardI
             <Icon name="i-sliders" size={13} />
           </button>
         </div>
-        {helpOpen && <WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} />}
+        <Collapse open={helpOpen} className="side-ws-help-fold"><WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} /></Collapse>
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {boards.map((b) => (
             <WorkstreamRow key={b.id} board={b} repo={repoOf(b)} onEdit={() => editWorkstream(b.id)} />
@@ -324,6 +364,7 @@ function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardI
         <NewWorkstreamRow onEdit={editWorkstream} />
         {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
       </div>
+      <AutoRunRow onOpen={() => onOpenSurface("night-shift")} />
     </>
   );
 }
@@ -387,7 +428,7 @@ function ModuleList({ onOpenFields, onOpenTemplates, onOpenSurface }: { onOpenFi
         undefined,
         "side-routines"
       );
-    if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} />, "side-backlog");
+    if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} onOpenSurface={onOpenSurface} />, "side-backlog");
     const module = contributed.find((m) => `plugin:${m.id}` === id);
     if (!module) return null;
     return shell(id, index, module.title, <PluginModuleHead module={module} projectId={project.id} onOpen={onOpenSurface} />, module.rows ? <PluginModuleBody module={module} projectId={project.id} /> : undefined, "side-plugin");
@@ -461,6 +502,16 @@ export function Sidebar({
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [width]);
+
+  // the assistant's max-width leaves the board its floor beside this width, so it must be the one drawn
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement.style;
+    root.setProperty("--sidebar-w", `${width}px`);
+    return () => {
+      root.removeProperty("--sidebar-w");
+    };
+  }, [open, width]);
 
   if (!open) {
     return (

@@ -4,7 +4,7 @@
  * Tomrade — "The Ledger" · kami (紙 / 纸) bound to a desktop app shell.
  *
  * Single source of truth for the three themes. Tokens are declared once
- * here (:root / .dark / .matcha / .dawn); every component consumes var(--*).
+ * here (:root / .dark / .matcha / .dawn / .sunrise / .daybreak / .glass / .sakura); every component consumes var(--*).
  * No raw hex exists outside the token blocks.
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -269,6 +269,257 @@ html[data-traffic-lights="on"] {
   --focus-ring: 0 0 0 2px var(--accent-active);
 }
 
+/* Sunrise and Daybreak — the dawn poster's sun, out of the paper: sans type,
+   a lilac sky over an apricot horizon, vermilion running into gold. Their
+   lights and gradients live in styles/sunrise.css. */
+.sunrise, .daybreak, .glass {
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+.sunrise {
+  --bg: #f6f3f8;
+  --surface: #fffdfd;
+  --surface-warm: #efe8f1;
+  --fg: #241b3a;
+  --fg-2: #3a3052;
+  --muted: #554a6b;
+  --meta: #6a5f80;
+  --border: #e3dae8;
+  --border-soft: #ece5ef;
+  --border-input: #9187a3;
+  --accent: #c93a24;
+  --accent-on: #fffaf6;
+  --accent-light: #e0573a;
+  --accent-hover: var(--accent);
+  --accent-active: #a52d1a;
+  --success: #2f7a4f;
+  --warn: #9a6a00;
+  --danger: #b8233f;
+
+  /* the sunrise sky in order: sun, gold, lilac, twilight — validated for CVD on the surface */
+  --chart-1: #c93a24;
+  --chart-2: #b98208;
+  --chart-3: #7a5fd6;
+  --chart-4: #34499c;
+  --chart-5: #c2407e;
+  --chart-6: #2a86c8;
+  --chart-7: #a2582a;
+  --chart-8: #009488;
+  --chart-9: #9a4fb0;
+  --chart-10: #6f7a12;
+  --tag-bg-faint: #fdf1ed;
+  --tag-bg-soft: #fbe5de;
+  --tag-bg-base: #f6d4c9;
+  --tag-bg-strong: #f2c8bb;
+  --tag-fg: #a52d1a;
+  --elev-raised: 0 1px 2px rgba(60, 30, 80, 0.06), 0 8px 24px -8px rgba(60, 30, 80, 0.18);
+  --focus-ring: 0 0 0 2px var(--accent-active), 0 0 12px rgba(201, 58, 36, 0.35);
+
+  --sun-red: #e0482c;
+  --sun-gold: #f2a43a;
+  --sun-sky: #b9a8ec;
+  --sun-glow: rgba(201, 58, 36, 0.32);
+  --sun-haze: rgba(255, 166, 102, 0.26);
+  --sun-sky-haze: rgba(185, 168, 236, 0.20);
+  --sun-btn-from: #bf2e28;
+  --sun-btn-to: #d2511d;
+  --sun-sheen: rgba(255, 226, 170, 0.45);
+  --sun-card-light: rgba(242, 164, 58, 0.03);
+}
+.daybreak {
+  --bg: #120f24;
+  --surface: #1d1934;
+  --surface-warm: #282344;
+  --fg: #f3eefa;
+  --fg-2: #d9d1ea;
+  --muted: #bdb3d3;
+  --meta: #a49ac0;
+  --border: #342e54;
+  --border-soft: #2a2547;
+  --border-input: #6f6794;
+  --accent: #ff8a5c;
+  --accent-on: #1b1026;
+  --accent-light: #ffab7d;
+  --accent-hover: var(--accent);
+  --accent-active: #ffa476;        /* hover LIGHTENS on dark: contrast must rise */
+  --success: #6fdc9a;
+  --warn: #ffd166;
+  --danger: #ff6b81;
+
+  /* Sunrise's order at night: sun, gold, lilac, twilight — validated for CVD on the surface */
+  --chart-1: #ff8a5c;
+  --chart-2: #fec84b;
+  --chart-3: #b48df4;
+  --chart-4: #4777d2;
+  --chart-5: #f589b6;
+  --chart-6: #73edfa;
+  --chart-7: #ca7d44;
+  --chart-8: #6ed889;
+  --chart-9: #bc6ece;
+  --chart-10: #c8d563;
+  --tag-bg-faint: #221c3a;
+  --tag-bg-soft: #2b2143;
+  --tag-bg-base: #3a2a4f;
+  --tag-bg-strong: #443057;
+  --tag-fg: #ffb999;
+  --elev-raised: 0 10px 30px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 138, 92, 0.05);
+  --focus-ring: 0 0 0 2px var(--accent-active), 0 0 14px rgba(255, 138, 92, 0.45);
+
+  --sun-red: #ff6a4d;
+  --sun-gold: #ffc457;
+  --sun-sky: #6d5bd0;
+  --sun-glow: rgba(255, 122, 89, 0.38);
+  --sun-haze: rgba(255, 112, 80, 0.20);
+  --sun-sky-haze: rgba(109, 91, 208, 0.22);
+  --sun-btn-from: #ff7a59;
+  --sun-btn-to: #ffb347;
+  --sun-sheen: rgba(255, 240, 210, 0.55);
+  --sun-star: rgba(255, 244, 230, 0.82);
+  --sun-card-light: rgba(255, 255, 255, 0.035);
+}
+
+/* Glass — smoked glass over a room seen out of focus. The tokens stay opaque
+   (what the glass looks like on average), so the terminal, plugin windows and
+   a custom theme made from it read solid colours; the translucent panes, the
+   room behind them and the blur on what floats live in styles/glass.css. */
+.glass {
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --bg: #2b2826;
+  --surface: #36322f;
+  --surface-warm: #433f3b;
+  --fg: #f6f3ef;
+  --fg-2: #dfd9d3;
+  --muted: #c3bbb3;
+  --meta: #aaa198;
+  --border: #4b4642;
+  --border-soft: #403c38;
+  --border-input: #807770;
+  --accent: #ff8656;
+  --accent-on: #1e130d;
+  --accent-light: #ffa57f;
+  --accent-hover: var(--accent);
+  --accent-active: #ffa070;        /* hover LIGHTENS on dark: contrast must rise */
+  --success: #62d273;
+  --warn: #f6b74a;
+  --danger: #ff6467;
+
+  --chart-1: #ff8656;
+  --chart-2: #62d273;
+  --chart-3: #f6b74a;
+  --chart-4: #a99cff;
+  --chart-5: #5cc8d8;
+  --chart-6: #ff6467;
+  --chart-7: #7aa8ff;
+  --chart-8: #d8a57a;
+  --chart-9: #9c958f;
+  --chart-10: #e88ac0;
+  --tag-bg-faint: #34302d;
+  --tag-bg-soft: #3b3632;
+  --tag-bg-base: #4b423b;
+  --tag-bg-strong: #554940;
+  --tag-fg: #ffb898;
+  --elev-raised: 0 14px 36px -12px rgba(0, 0, 0, 0.6);
+  --focus-ring: 0 0 0 2px var(--accent), 0 0 0 5px rgba(255, 134, 86, 0.2);
+
+  /* the room: window light from the top left, a blue chair, a lamp low on the right, mullions out of focus */
+  --glass-room:
+    radial-gradient(ellipse 50% 46% at 14% 4%, rgba(255, 238, 216, 0.42), transparent 70%),
+    radial-gradient(ellipse 38% 34% at 86% 0%, rgba(206, 220, 242, 0.22), transparent 70%),
+    radial-gradient(ellipse 44% 40% at 96% 98%, rgba(255, 132, 72, 0.40), transparent 70%),
+    radial-gradient(ellipse 30% 44% at 0% 76%, rgba(80, 116, 184, 0.50), transparent 72%),
+    radial-gradient(ellipse 26% 22% at 34% 104%, rgba(222, 180, 90, 0.26), transparent 70%),
+    radial-gradient(ellipse 22% 30% at 60% 40%, rgba(255, 246, 232, 0.08), transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0, rgba(0, 0, 0, 0.30) 52px, transparent 104px, transparent 248px),
+    linear-gradient(180deg, #4a4541 0%, #24211f 50%, #36312d 100%);
+  --glass-shell: rgba(40, 37, 35, 0.48);
+  --glass-pane: rgba(52, 48, 45, 0.34);
+  --glass-tile: rgba(255, 255, 255, 0.065);
+  --glass-tile-hover: rgba(255, 255, 255, 0.095);
+  --glass-tile-on: rgba(255, 255, 255, 0.12);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-edge-strong: rgba(255, 255, 255, 0.16);
+  --glass-sheen: rgba(255, 255, 255, 0.08);
+  --glass-float: rgba(50, 46, 43, 0.74);
+  --glass-scrim: rgba(14, 12, 11, 0.5);
+  --glass-btn-from: #c9441e;
+  --glass-btn-to: #e25e2b;
+  --glass-btn-on: #ffffff;
+  --glass-glow: rgba(226, 94, 43, 0.45);
+}
+/* Frosted by the system (Glass on macOS and Windows 11): the window's material is the room, so the panes only tint it,
+   dark enough to read on a light desktop too; what sits over scrolling content keeps a near-solid fill. */
+.glass[data-frosted] {
+  --glass-shell: rgba(28, 26, 24, 0.40);
+  --glass-pane: rgba(36, 33, 31, 0.18);
+  --glass-sticky: rgba(34, 31, 29, 0.9);
+  --glass-float: rgba(44, 40, 37, 0.62);
+}
+
+/* Sakura — blush paper, plum ink, petals on the air. Its scene and petals
+   live in styles/sakura.css. */
+.sakura {
+  --font-display: "Hiragino Mincho ProN", "Songti SC", "Noto Serif CJK SC", "Yu Mincho", "SimSun", Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --bg: #fbf3f4;
+  --surface: #fffbfb;
+  --surface-warm: #f6e6e9;
+  --fg: #3a2230;
+  --fg-2: #523545;
+  --muted: #64465a;
+  --meta: #7a5a6e;
+  --border: #ecd5db;
+  --border-soft: #f2e2e6;
+  --border-input: #a07c8b;
+  --accent: #b5285a;
+  --accent-on: #fffafb;
+  --accent-light: #d0477a;
+  --accent-hover: var(--accent);
+  --accent-active: #921d47;
+  --success: #4f7f3a;
+  --warn: #a56a00;
+  --danger: #c2302f;
+
+  --chart-1: #b5285a;
+  --chart-2: #4f7f3a;
+  --chart-3: #a56a00;
+  --chart-4: #7a4fb0;
+  --chart-5: #2f7f86;
+  --chart-6: #c2302f;
+  --chart-7: #3f6fb0;
+  --chart-8: #a2582a;
+  --chart-9: #8a6a7a;
+  --chart-10: #d0477a;
+  --tag-bg-faint: #fdeef2;
+  --tag-bg-soft: #fbe2ea;
+  --tag-bg-base: #f7cfdc;
+  --tag-bg-strong: #f2c0d0;
+  --tag-fg: #921d47;
+  --elev-raised: 0 1px 2px rgba(120, 40, 70, 0.06), 0 10px 26px -10px rgba(181, 40, 90, 0.24);
+  --focus-ring: 0 0 0 2px var(--accent-active), 0 0 0 5px rgba(181, 40, 90, 0.15);
+
+  --sakura-air: linear-gradient(165deg, #fdf6f7 0%, #fbeff2 45%, #f8e9ee 100%);
+  --sakura-glow: radial-gradient(ellipse 50% 40% at 92% 6%, rgba(246, 184, 202, 0.38), transparent 70%), radial-gradient(ellipse 40% 36% at 4% 100%, rgba(206, 226, 196, 0.32), transparent 70%);
+  --sakura-petal-a: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath transform='rotate(15 10 10)' d='M10 2.2l1.3 1.9 1.6-1.4c2.6 2.7 2.9 8.2-2.9 13.3C4.2 10.9 4.5 5.4 7.1 2.7z' fill='%23f4aec2'/%3E%3C/svg%3E");
+  --sakura-petal-b: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath transform='rotate(-40 10 10)' d='M10 2.2l1.3 1.9 1.6-1.4c2.6 2.7 2.9 8.2-2.9 13.3C4.2 10.9 4.5 5.4 7.1 2.7z' fill='%23f7c3d2'/%3E%3C/svg%3E");
+  --sakura-petal-c: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath transform='rotate(75 10 10)' d='M10 2.2l1.3 1.9 1.6-1.4c2.6 2.7 2.9 8.2-2.9 13.3C4.2 10.9 4.5 5.4 7.1 2.7z' fill='%23eea0b8'/%3E%3C/svg%3E");
+  --sakura-blossom: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='%23f6b8ca'%3E%3Cpath transform='rotate(0 20 20)' d='M20 4.5l1.6 2.4 2-1.7c3.2 3.4 3.6 9.6-3.6 14.8-7.2-5.2-6.8-11.4-3.6-14.8z'/%3E%3Cpath transform='rotate(72 20 20)' d='M20 4.5l1.6 2.4 2-1.7c3.2 3.4 3.6 9.6-3.6 14.8-7.2-5.2-6.8-11.4-3.6-14.8z'/%3E%3Cpath transform='rotate(144 20 20)' d='M20 4.5l1.6 2.4 2-1.7c3.2 3.4 3.6 9.6-3.6 14.8-7.2-5.2-6.8-11.4-3.6-14.8z'/%3E%3Cpath transform='rotate(216 20 20)' d='M20 4.5l1.6 2.4 2-1.7c3.2 3.4 3.6 9.6-3.6 14.8-7.2-5.2-6.8-11.4-3.6-14.8z'/%3E%3Cpath transform='rotate(288 20 20)' d='M20 4.5l1.6 2.4 2-1.7c3.2 3.4 3.6 9.6-3.6 14.8-7.2-5.2-6.8-11.4-3.6-14.8z'/%3E%3C/g%3E%3Ccircle cx='20' cy='20' r='3' fill='%23e07a9a'/%3E%3Cg fill='%23b5285a'%3E%3Ccircle cx='20' cy='15.6' r='.9'/%3E%3Ccircle cx='24.2' cy='18.6' r='.9'/%3E%3Ccircle cx='22.6' cy='23.6' r='.9'/%3E%3Ccircle cx='17.4' cy='23.6' r='.9'/%3E%3Ccircle cx='15.8' cy='18.6' r='.9'/%3E%3C/g%3E%3C/svg%3E");
+  --sakura-branch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 200'%3E%3Cg fill='none' stroke='%237a4a52' stroke-linecap='round'%3E%3Cpath d='M320 18C262 26 214 52 168 96S92 168 40 186' stroke-width='5'/%3E%3Cpath d='M214 60c-6-18-2-34 10-46M150 112c-20-4-36 2-48 16M246 36c10 10 26 14 44 10' stroke-width='3'/%3E%3C/g%3E%3Cg fill='%23f6b8ca'%3E%3Ccircle cx='224' cy='14' r='9'/%3E%3Ccircle cx='190' cy='76' r='11'/%3E%3Ccircle cx='102' cy='128' r='9'/%3E%3Ccircle cx='132' cy='120' r='7'/%3E%3Ccircle cx='290' cy='46' r='8'/%3E%3Ccircle cx='60' cy='176' r='7'/%3E%3C/g%3E%3Cg fill='%23e07a9a'%3E%3Ccircle cx='224' cy='14' r='2.5'/%3E%3Ccircle cx='190' cy='76' r='3'/%3E%3Ccircle cx='102' cy='128' r='2.5'/%3E%3Ccircle cx='290' cy='46' r='2.2'/%3E%3C/g%3E%3C/svg%3E");
+  --sakura-shell: rgba(255, 249, 250, 0.72);
+  --sakura-pane: rgba(255, 251, 251, 0.5);
+  --sakura-ink: #b5285a;
+  --sakura-pink: #f4aec2;
+  --sakura-btn-from: #b5285a;
+  --sakura-btn-to: #c93a6c;
+  --sakura-glow-btn: rgba(181, 40, 90, 0.32);
+}
+
 /* Tailwind utilities resolve straight to the tokens above, so a theme class
    on <html> reaches bg-surface / text-meta / border-border with no rebuild.
    shadcn's names are aliased on the same line they are needed:
@@ -321,6 +572,10 @@ html[data-traffic-lights="on"] {
  * [hidden]{display:none}. This keeps the attribute authoritative. */
 [hidden] { display: none !important; }
 html, body, #root { height: 100%; }
+/* Frosted on Windows 10 the window has no frame: its caption buttons sit over this strip, which moves the window as
+   the title bar did. No height elsewhere. */
+.caption-strip { height: env(titlebar-area-height, 0px); -webkit-app-region: drag; }
+#root { height: calc(100% - env(titlebar-area-height, 0px)); }
 body {
   margin: 0;
   background: var(--bg);
@@ -381,6 +636,8 @@ strong { font-weight: var(--font-weight-medium); }
 .app {
   display: grid;
   grid-template-rows: var(--titlebar-h) minmax(0, 1fr) var(--statusbar-h);
+  /* an auto column would grow to the titlebar's widest row and push the board under the assistant */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 .titlebar {
@@ -389,11 +646,13 @@ strong { font-weight: var(--font-weight-medium); }
   padding-left: var(--traffic-inset); padding-right: var(--space-3);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  /* its width depends on the assistant beside it, so what it shows follows the bar, not the window */
+  container: titlebar / inline-size;
 }
 .no-drag { -webkit-app-region: no-drag; }
 .crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .crumb-sep { color: var(--meta); font-size: var(--text-sm); }
-.crumb-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); white-space: nowrap; }
+.crumb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); white-space: nowrap; }
 /* home sits before the breadcrumb, so a hairline — not a slash — separates
    "leave this project" from "which project" */
 .title-sep { width: 1px; height: 17px; flex-shrink: 0; background: var(--border); margin: 0 -3px; }
@@ -409,9 +668,15 @@ strong { font-weight: var(--font-weight-medium); }
 /* the wrap spans the full titlebar height so the menu drops from the header
    edge, not from the middle of the button */
 #projWrap { display: flex; align-items: center; align-self: stretch; }
-/* the Terminal window's door names itself and its key while the bar has room, an icon alone when narrow */
-@media (max-width: 1100px) {
-  .titlebar-terminal .lbl, .titlebar-terminal .kbd { display: none; }
+/* the bar gives up room in steps: the keys, a running shift's name (its moon and progress say it), the Terminal window's name, then a night shift's */
+@container titlebar (max-width: 960px) { .titlebar .kbd { display: none; } }
+@container titlebar (max-width: 830px) { .titlebar-night-shift.is-going .lbl { display: none; } }
+@container titlebar (max-width: 775px) { .titlebar-terminal .lbl { display: none; } }
+@container titlebar (max-width: 700px) { .titlebar-night-shift .lbl { display: none; } }
+.titlebar-night-shift.is-going { color: var(--accent); }
+.titlebar-night-shift-waiting {
+  min-width: 16px; padding: 0 4px; border-radius: 8px; text-align: center;
+  font-size: var(--text-xs); line-height: 16px; color: var(--bg); background: var(--warn);
 }
 #projMenu { top: calc(100% + 6px); z-index: 55; }
 
@@ -468,6 +733,8 @@ strong { font-weight: var(--font-weight-medium); }
 .side-row[aria-current="true"] .side-count { color: var(--muted); }
 .side-add { color: var(--muted); font-size: var(--text-sm); }
 .side-add:hover { color: var(--fg); }
+.side-presets { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.side-presets-label { padding: 4px var(--space-2) 2px 12px; font-size: var(--text-xs); color: var(--meta); }
 
 /* A sidebar row is a VIEW — one saved way of looking at the project's backlog,
  * whatever its layout. Workstreams are a field, not a place, so they live in
@@ -554,10 +821,11 @@ strong { font-weight: var(--font-weight-medium); }
 .side-ws-container:hover .side-count { visibility: hidden; }
 .side-ws-help {
   display: flex; flex-direction: column; gap: var(--space-2);
-  margin: 2px 0 var(--space-2); padding: 10px 10px 8px;
+  padding: 10px 10px 8px;
   border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border);
   font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2);
 }
+.side-ws-help-fold { margin: 2px 0 var(--space-2); }
 .side-ws-help-head { display: flex; align-items: center; }
 .side-ws-help-head strong { color: var(--fg); font-family: var(--font-display); font-size: var(--text-sm); }
 .side-ws-help-head .btn-icon { width: 20px; height: 20px; color: var(--meta); }
@@ -653,6 +921,8 @@ strong { font-weight: var(--font-weight-medium); }
 .view-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .view-name { font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: var(--radius-sm); cursor: text; }
 .view-name:hover { background: var(--surface-warm); }
+/* A view's name in the header stays on its line: short of room it ends in an ellipsis, not a cut second line. */
+.view-title > .inline-edit.view-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .view-name:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .view-name-input { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 1px 5px; margin: 0 -6px; min-width: 12ch; }
 .view-name-input:focus { outline: none; box-shadow: var(--focus-ring); }
@@ -859,8 +1129,11 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .board-scroll-area[data-has-more="true"] { padding-bottom: 48px; }
 .board-scroll-fade {
-  position: absolute; top: 0; right: 0; bottom: 48px; width: 32px;
+  position: absolute; top: 0; right: 0; bottom: 0; width: 32px;
   background: linear-gradient(to right, transparent, var(--bg));
+  /* feathered at both ends, so it leaves no edge against the bars above and below */
+  --feather: min(96px, 30%);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--feather), #000 calc(100% - var(--feather)), transparent);
   pointer-events: none;
 }
 .board-scroll-hint {
@@ -952,10 +1225,10 @@ strong { font-weight: var(--font-weight-medium); }
 .state-mark.is-ok { border-color: var(--success); background: var(--success); }
 .state-mark.is-warn { border-color: var(--warn); background: var(--warn); }
 .sect-runner { position: absolute; left: 0; right: 0; bottom: -7px; height: 2px; overflow: hidden; border-radius: 1px; background: var(--border-soft); }
-.sect-runner::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.sect-runner::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
 @keyframes state-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @keyframes state-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-@keyframes sect-run { 0% { left: -40%; } 100% { left: 100%; } }
+@keyframes sect-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 @media (prefers-reduced-motion: reduce) {
   .state-mark.is-live, .state-mark.is-waiting { animation: none; }
   .sect-runner::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
@@ -1017,20 +1290,24 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .card-foot { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
 .card-date { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--meta); }
-/* Epic is structural context, not an attribute — it appears on almost every
- * card, so it earns quiet text rather than a tinted chip. Draining it frees
- * the accent budget for the provenance tick, the only mark that must be seen. */
+/* The workstream is quiet text: it rarely tells cards in one view apart. */
 .card-board {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
   color: var(--meta); max-width: 96px; overflow: hidden; white-space: nowrap;
 }
 .card-board svg { color: var(--meta); flex-shrink: 0; }
-.card-epic {
-  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
-  color: var(--meta); min-width: 0; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* An epic's tag wears the epic's own hue, so a glance groups its cards (in the graph
+ * above all). Soft tints, mixed into the theme's own text and surface: legible in
+ * every theme, and quieter than the accent the provenance tick and the focus use. */
+.tag.card-epic {
+  --epic: oklch(0.62 0.13 var(--epic-hue, 250));
+  gap: 3px; min-width: 0; max-width: 100%;
+  color: color-mix(in oklch, var(--epic) 50%, var(--fg));
+  background: color-mix(in oklch, var(--epic) 14%, var(--surface));
 }
+.tag.card-epic > svg { flex: none; }
+.card-epic-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── status dot — shape-coded, not colour-coded ─────────────────────── */
 .sdot { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
@@ -1142,6 +1419,15 @@ strong { font-weight: var(--font-weight-medium); }
   font-family: var(--font-display); font-size: 14px; line-height: 1.4;
 }
 .input::placeholder, .textarea::placeholder { color: var(--meta); }
+/* Chromium's own stepper stays a white box under a dark theme. It keeps its halves for clicks; only the drawing is ours. */
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; margin-left: var(--space-1); cursor: pointer;
+  background: var(--meta);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath d='M3 8l3-3 3 3M3 12l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 20px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath d='M3 8l3-3 3 3M3 12l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 20px no-repeat;
+}
+input[type="number"]::-webkit-inner-spin-button:hover { background: var(--fg); }
 .start-problem { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
 .start-problem-lead { margin: 0; color: var(--fg); font-size: var(--text-sm); }
 .start-problem-detail { margin: 0; overflow-wrap: anywhere; }
@@ -1152,7 +1438,7 @@ strong { font-weight: var(--font-weight-medium); }
 .start-progress-step { flex: 1 1 12em; min-width: 0; color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
 .start-progress-head > .num { flex: none; white-space: nowrap; }
 .start-progress-bar { position: relative; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
-.start-progress-bar > span { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
+.start-progress-bar > span { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
 .start-progress-steps { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--meta); }
 .start-progress-steps li[data-state="done"] { color: var(--fg); }
 .start-progress-steps li[data-state="done"]::before { content: "\2713  "; }
@@ -1284,17 +1570,20 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 
 /* ─── detail pane ────────────────────────────────────────────────────── */
 .detail {
-  /* the pane yields width to the board before the board starts clipping */
-  width: var(--detail-w); flex-shrink: 1; min-width: 316px;
+  /* the pane yields width to the board before the board starts clipping, never so far that its head clips */
+  width: var(--detail-w); flex-shrink: 1; min-width: min-content;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--bg); border-left: 1px solid var(--border);
 }
-.detail-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.detail-head { display: flex; align-items: center; gap: var(--space-2); min-width: 316px; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+/* a long workstream name gives way before the pane widens for it */
+.detail-head > .tag { min-width: 0; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The body wraps to whatever width the head sets: it never widens the pane itself. */
+.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; contain: inline-size; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .detail-title { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
-.field-row { display: grid; grid-template-columns: 92px 1fr; gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.field-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
 .field-row dt { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); padding-top: 2px; }
-.field-row dd { margin: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.field-row dd { margin: 0; min-width: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 /* activity ledger — provenance vocabulary carried into the detail pane */
 .ledger { display: flex; flex-direction: column; }
@@ -1397,11 +1686,16 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
  * renders inside a Radix dialog when the pane is expanded, and an OS menu
  * neither fights that focus trap nor gets clipped by the overlay, which
  * establishes a containing block with its own `overflow: hidden`. */
-.fset { position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+/* --fsel-shift pulls the select's hover box out past the text column so its
+   text lines up with the plain values above it. It is a relative offset, not
+   a negative margin: Chromium takes a flex item's negative margin out of the
+   select's own width, which clipped a two-character name to one and an
+   ellipsis (TOM-836). */
+.fset { --fsel-shift: 5px; position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
 .fsel {
   appearance: none; -webkit-appearance: none;
   max-width: 100%; min-width: 0;
-  margin-inline-start: -5px; padding: 2px 19px 2px 5px;
+  position: relative; inset-inline-start: calc(-1 * var(--fsel-shift)); padding: 2px 19px 2px 5px;
   font-family: var(--font-display); font-size: 14px; line-height: 1.4;
   color: inherit; background: transparent;
   border: 1px solid transparent; border-radius: var(--radius-sm);
@@ -1415,7 +1709,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* the chevron is the affordance, so it appears with the hover state and
    never occupies width the resting field has to reserve */
 .fchev {
-  position: absolute; right: 4px; color: var(--meta); pointer-events: none;
+  position: absolute; right: calc(4px + var(--fsel-shift)); color: var(--meta); pointer-events: none;
   opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .fset:hover .fchev, .fsel:focus-visible ~ .fchev { opacity: 1; }
@@ -1561,6 +1855,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
    rows always render, so following the bottom lands on real heights. */
 .ai-scroll > :is(.turn, .trace-fold):not(:nth-last-child(-n + 12)) { content-visibility: auto; contain-intrinsic-size: auto 4em; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
+.ai-foot > .fold-box { --collapse-gap: var(--space-2); }
 /* A conversation read back from an agent's record: the Terminal window's ended cells and the assistant panel's terminal sessions draw its rows alike. */
 .cs-convo-top { margin: 0; align-self: center; color: var(--meta); font-size: var(--text-xs); }
 /* Lines off screen are neither laid out nor painted until scrolled to: a long record stays quick. */
@@ -1739,7 +2034,9 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .agent-note .note-thread { color: var(--muted); }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
 /* The last few to end, below a rule so they never read as still going. */
-.sbar-ended { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+.sbar-ended { display: flex; flex-direction: column; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+/* its own margin, not the parent's gap, so the list folds without leaving a gap behind */
+.sbar-ended-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }
 .sbar-peek-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--fg); }
@@ -1751,10 +2048,11 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .sbar.is-cards { width: 280px; }
 .sbar-head { display: flex; align-items: center; gap: var(--space-1); height: var(--titlebar-h); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sbar-head-title { flex: 1; font-size: var(--text-sm); }
-.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2); flex-shrink: 0; }
+.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2) var(--space-2) 6px; flex-shrink: 0; }
 .sbar-filter { border: 1px solid var(--border-input); border-radius: 999px; background: transparent; color: var(--muted); font-size: 11px; line-height: 20px; padding: 0 8px; cursor: pointer; }
 .sbar-filter[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
-.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 0 var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
+/* 2px on top, taken from the filters' padding: the scroll box clips at its edge, and the open card's ring is drawn outside its border */
+.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 2px var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
 .sbar-card { text-align: left; width: 100%; min-width: 0; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); color: var(--fg); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font-size: var(--text-sm); }
 .sbar-card:hover { border-color: var(--border-input); }
 .sbar-card[data-status="wait"] { border-color: var(--warn); }
@@ -1830,6 +2128,7 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .ai-queued .q-state { flex-shrink: 0; font-size: 11px; color: var(--accent); }
 .ai-queued[data-held] .q-state { color: var(--meta); }
 .ai-queued .q-text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-queued .q-files { flex-shrink: 0; font-size: 11px; color: var(--meta); }
 .ai-queued .q-edit { flex: 1; min-width: 0; resize: none; font-size: var(--text-sm); }
 /* the slash menu sits just above the composer */
 .slash-menu { display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-raised); }
@@ -1885,6 +2184,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
   --usage-plot-height: 152px;
   --usage-plot-gap: var(--space-1);
   --usage-share-height: 14px;
+  /* what a mark's far end lifts toward; Sunrise and Daybreak light it with the sun's gold */
+  --usage-sheen: var(--surface);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -1922,19 +2223,25 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .usage-col.is-empty::before { content: ""; height: 1px; background: var(--border); }
 .usage-seg { display: block; width: 100%; min-height: 1px; }
 .usage-seg + .usage-seg { box-shadow: inset 0 1px 0 var(--surface); }
-.usage-seg.tok-new, .usage-swatch.tok-new { background: var(--chart-1); }
-.usage-seg.tok-read, .usage-swatch.tok-read { background: var(--chart-2); }
-.usage-seg.tok-write, .usage-swatch.tok-write { background: var(--chart-3); }
-.usage-seg.tok-out, .usage-swatch.tok-out { background: var(--chart-4); }
-.usage-seg.spend { background: var(--chart-1); }
-.usage-seg.calls { background: var(--chart-2); }
-.usage-seg.calls-failed { background: var(--danger); }
+/* Every mark keeps its series colour at the baseline and lifts toward the sheen at its far end. */
+.usage-seg, .usage-swatch, .usage-share-seg, .usage-purpose-fill, .usage-purpose-fail {
+  --series-base: var(--series, var(--meta));
+  --series-lit: color-mix(in oklab, var(--series-base) 70%, var(--usage-sheen));
+  background: linear-gradient(to top, var(--series-base), var(--series-lit));
+}
+.usage-share-seg, .usage-purpose-fill, .usage-purpose-fail { background: linear-gradient(to right, var(--series-base), var(--series-lit)); }
+.usage-swatch { background: linear-gradient(135deg, var(--series-lit), var(--series-base)); }
+.usage-dashboard :is(.tok-new, .spend) { --series: var(--chart-1); }
+.usage-dashboard :is(.tok-read, .calls, .usage-purpose-fill) { --series: var(--chart-2); }
+.usage-dashboard .tok-write { --series: var(--chart-3); }
+.usage-dashboard .tok-out { --series: var(--chart-4); }
+.usage-dashboard :is(.calls-failed, .usage-purpose-fail) { --series: var(--danger); }
 .usage-flag { position: absolute; top: 0; left: 50%; transform: translate(-50%, -5px); width: 5px; height: 5px; border: 1px solid var(--warn); border-radius: 50%; background: var(--surface); }
 .usage-labels { display: grid; gap: var(--usage-plot-gap); padding-top: var(--space-2); }
 .usage-labels span { overflow: visible; white-space: nowrap; text-align: center; font-size: var(--text-xs); color: var(--meta); }
 .usage-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 .usage-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--fg-2); }
-.usage-swatch { flex: none; width: 9px; height: 9px; border-radius: var(--radius-xs); background: var(--meta); }
+.usage-swatch { flex: none; width: 9px; height: 9px; border-radius: var(--radius-xs); }
 
 .usage-shares { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3) var(--space-4); }
 .usage-share-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--meta); }
@@ -1954,8 +2261,7 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .usage-purpose-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .usage-purpose-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-4); font-size: var(--text-xs); color: var(--fg-2); }
 .usage-purpose-track { display: flex; height: 10px; border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-warm); }
-.usage-purpose-fill { height: 100%; background: var(--chart-2); }
-.usage-purpose-fail { height: 100%; background: var(--danger); }
+.usage-purpose-fill, .usage-purpose-fail { height: 100%; }
 .usage-purpose-count { text-align: right; color: var(--fg); }
 
 .usage-table-wrap { overflow-x: auto; }
@@ -2072,6 +2378,19 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
   white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-xs);
 }
 .ai-error-details .btn { color: var(--meta); }
+
+/* A sync as it runs, and what the last one did, folded until asked for. */
+.sync-activity { margin-top: var(--space-2); }
+.sync-activity .fold { margin-top: var(--space-1); }
+.sync-running { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sync-transfer { font-variant-numeric: tabular-nums; }
+.sync-failed { color: var(--danger); }
+.sync-details { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(--space-3); margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--fg-2); }
+.sync-details dt { color: var(--meta); }
+.sync-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sync-steps { margin: 0; padding-left: 1.2em; }
+.sync-steps li[data-ok="false"] { color: var(--danger); }
+.sync-output { margin: 0; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-xs); }
 /* the pending line reads as unresolved without animating — nothing here
    loops, so reduced-motion needs no special case */
 .ai-pending { color: var(--meta); font-size: 14px; line-height: var(--leading-dense); }
@@ -2314,14 +2633,15 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 }
 .proj-new:hover { background: var(--surface-warm); border-color: var(--meta); color: var(--fg); }
 /* A project in the account that is not on this computer yet: the card's
-   shape, drawn as a placeholder, with the step under way as a running rule. */
-.proj-restore { background: transparent; border-style: dashed; }
+   shape, drawn as a placeholder, with the step under way as a running rule.
+   A fainter surface, not none: over a picture or a tinted page its text must still read. */
+.proj-restore { background: color-mix(in srgb, var(--surface) 55%, transparent); border-style: dashed; }
 .proj-restore:hover { box-shadow: none; border-color: var(--border); }
 .proj-restore[data-restore="restoring"], .proj-restore[data-restore="queued"] { background: var(--surface); }
 .restore-body { overflow-wrap: anywhere; }
 .restore-hint { margin-top: var(--space-2); overflow-wrap: anywhere; }
 .restore-progress { position: relative; height: 2px; margin-top: var(--space-4); overflow: hidden; border-radius: 1px; background: var(--border-soft); }
-.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
 .restore-foot { align-items: center; }
 .restore-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .restore-actions { flex: none; }
@@ -2343,6 +2663,18 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: var(--space-4); overflow: hidden;
 }
+/* A preview is the way to pick its theme: the picked one wears its own accent as a ring. */
+button.mode { display: block; width: 100%; text-align: left; font: inherit; color: var(--fg); cursor: pointer; transition: box-shadow var(--motion-fast), border-color var(--motion-fast); }
+button.mode:hover { border-color: var(--accent); }
+button.mode[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.mode.mode-make {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); min-height: 200px;
+  text-align: center; background: transparent; border-style: dashed; color: var(--muted);
+}
+.mode.mode-make:hover, .mode.mode-make[aria-expanded="true"] { color: var(--fg); border-color: var(--accent); }
+.mode-make-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); }
+.mode-make-note { font-size: var(--text-xs); line-height: 1.45; max-width: 22ch; }
 .mode.paper-preview {
   --bg: #f5f4ed; --surface: #faf9f5; --surface-warm: #e8e6dc;
   --fg: #141413; --fg-2: #3d3d3a; --muted: #504e49; --meta: #6b6a64;
@@ -2378,6 +2710,42 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .token-font-field { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: var(--space-3); color: var(--muted); }
 .theme-selection-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; width: 100%; }
 .theme-selection-actions { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; flex-shrink: 0; }
+.theme-picture-status { font-size: var(--text-xs); color: var(--muted); margin-right: var(--space-2); }
+.theme-picture { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-5); padding: var(--space-4); }
+.theme-picture-missing { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+/* Label, slider, value: three columns, so every slider starts and ends at the same place. */
+.picture-sliders { display: grid; grid-template-columns: max-content minmax(140px, 1fr) 5ch; align-items: center; gap: var(--space-3) var(--space-4); align-content: start; min-width: 300px; flex: 1; }
+.picture-sliders > .theme-picture-veil { display: contents; }
+.picture-sliders > :not(.theme-picture-veil) { grid-column: 1 / -1; }
+.picture-sliders .theme-picture-veil > span:first-child { color: var(--muted); font-size: var(--text-sm); }
+.picture-sliders .theme-picture-veil > .num { text-align: right; color: var(--muted); font-size: var(--text-sm); }
+.picture-sliders input[type="range"] { width: 100%; min-width: 0; max-width: none; margin: 0; }
+.picture-sliders .picture-who { grid-column: 2 / -1; justify-self: start; }
+.picture-form { display: flex; flex-wrap: wrap; gap: var(--space-5); margin-top: var(--space-3); padding: var(--space-4); }
+/* the fold carries the gap above the form, so it opens and closes with it */
+.picture-form-fold { margin-top: var(--space-3); }
+.picture-form-fold > .picture-form { margin-top: 0; }
+.picture-form-slots { display: flex; align-items: flex-start; gap: var(--space-4); flex-shrink: 0; }
+.picture-form-hint { margin: 0; font-size: var(--text-xs); color: var(--muted); max-width: 52ch; }
+.picture-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+.picture-slot { display: grid; gap: 8px; justify-items: start; align-content: start; width: 168px; }
+.picture-slot-label { font-size: var(--text-xs); color: var(--muted); }
+.picture-slot-optional { color: var(--meta); }
+.picture-slot-frame {
+  width: 168px; aspect-ratio: 16 / 10; padding: 0; overflow: hidden; cursor: pointer;
+  border: 1px dashed var(--border-input); border-radius: var(--radius-md); background: var(--surface); color: var(--muted);
+}
+.picture-slot-frame:hover:not(:disabled) { border-color: var(--accent); color: var(--fg); }
+.picture-slot-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.picture-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 100%; font-size: var(--text-xs); }
+.picture-slot-box { position: relative; }
+.picture-slot-clear {
+  position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; cursor: pointer;
+  border: 0; border-radius: 999px; background: color-mix(in srgb, black 55%, transparent); color: white;
+}
+.picture-slot-clear:hover:not(:disabled) { background: color-mix(in srgb, black 75%, transparent); }
+.theme-picture-veil { display: flex; align-items: center; gap: var(--space-3); color: var(--muted); font-size: var(--text-sm); width: 100%; }
+.theme-picture-veil input { flex: 1; min-width: 80px; max-width: 280px; accent-color: var(--accent); }
 .theme-custom-controls { position: relative; display: grid; grid-template-columns: 28px minmax(180px, 260px) 28px; align-items: center; gap: var(--space-2); width: fit-content; margin-top: var(--space-3); padding: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--elev-raised); }
 .theme-custom-controls::before { content: ""; position: absolute; top: -5px; left: 18px; width: 8px; height: 8px; background: var(--surface); border-left: 1px solid var(--border); border-top: 1px solid var(--border); transform: rotate(45deg); }
 .theme-option { position: relative; }
@@ -2391,9 +2759,14 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .icon-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); cursor: pointer; }
 .icon-btn:hover, .icon-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--tag-bg-faint); }
 .icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
-.theme-automation { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--border-soft); display: grid; gap: var(--space-3); }
+.theme-automation { display: grid; gap: var(--space-3); }
 .appearance-theme-heading, .theme-automation-row { display: grid; justify-items: start; gap: var(--space-3); min-width: 0; }
+/* Appearance has one pane heading (.sec-head); every section under it wears this one smaller head */
+.appearance-group-head { margin-bottom: var(--space-3); }
+.sec-head + .appearance-group-head { margin-top: var(--space-5); }
+.appearance-group-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .appearance-group-title { margin: 0; color: var(--fg); font-family: var(--font-display); font-size: var(--text-md); line-height: var(--leading-tight); font-weight: var(--font-weight-medium); }
+.appearance-group-lede { margin-top: var(--space-1); font-size: var(--text-sm); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
 .appearance-theme-heading .theme-switch, .theme-automation-row .theme-switch { max-width: 100%; width: fit-content; }
 
 /* ─── app icon · the image the Dock wears ──
@@ -2449,12 +2822,14 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   overflow: hidden; display: flex; flex-direction: column; max-height: 60vh;
 }
 .palette-input {
-  width: 100%; padding: var(--space-4); border: 0; border-bottom: 1px solid var(--border);
+  width: 100%; flex-shrink: 0; padding: var(--space-4); border: 0; border-bottom: 1px solid var(--border);
   background: transparent; color: var(--fg);
   font-family: var(--font-display); font-size: var(--text-md);
 }
 .palette-input:focus { outline: none; }
-.palette-list { overflow-y: auto; padding: var(--space-2); scrollbar-width: thin; }
+/* cmdk's root sits between the box and the list: without these the list is never bounded, and is cut off unscrolled */
+.palette > [cmdk-root] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.palette-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-2); scrollbar-width: thin; }
 .palette-group { padding: var(--space-3) var(--space-3) var(--space-1); }
 .palette-row {
   display: flex; align-items: center; gap: var(--space-3);
@@ -2537,6 +2912,9 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   font-size: var(--text-sm); line-height: var(--leading-dense);
 }
 .banner .b-mark { color: var(--warn); flex-shrink: 0; }
+/* The message takes the width; short of room, the actions wrap below it rather than squeezing it to a word a line. */
+.banner { flex-wrap: wrap; }
+.banner > span { flex: 1 1 22ch; min-width: 0; }
 
 /* ─── theme switcher ─────────────────────────────────────────────────── */
 .theme-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-warm); border-radius: var(--radius-md); box-shadow: var(--elev-ring); }
@@ -2868,6 +3246,10 @@ button.kref { cursor: pointer; }
 
 /* ─── dependency graph (board region in graph mode) ──────────────────── */
 .graph-region { position: relative; flex: 1; min-height: 0; }
+/* A plugin's layout fills the region as the graph does; native it draws into the root, sandboxed into a frame of its own. */
+.plugin-layout-region { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.plugin-layout-root { flex: 1; min-height: 0; overflow: auto; }
+.plugin-layout-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: transparent; }
 .graph-region .react-flow__node { cursor: grab; }
 .graph-region .react-flow__node:active { cursor: grabbing; }
 .gnode { position: relative; }
@@ -2881,6 +3263,32 @@ button.kref { cursor: pointer; }
 .graph-region .react-flow__handle:hover { border-color: var(--accent); }
 .graph-region .react-flow__edge { cursor: pointer; }
 .graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
+.graph-region .react-flow__edge.selected .edge-arrow { fill: var(--accent) !important; }
+/* the card under the pointer, or the selected one, lights what it waits on (amber) and what waits on it (blue); everything else steps back.
+   Rings, lines, arrowheads and the dimming all fade: quickly into a focus, so it answers the pointer,
+   and slowly out of one, so letting go reads as one soft shift. A state's own duration is the way into it. */
+.graph-region { --graph-fade: 280ms; }
+.graph-region :is(.react-flow__node, .react-flow__edge):is(.is-focus, .is-up, .is-down, .is-dim) { --graph-fade: 120ms; }
+.graph-region .react-flow__node, .graph-region .react-flow__edge { transition: opacity var(--graph-fade) var(--ease-standard); }
+.graph-region .react-flow__node .card {
+  transition: box-shadow var(--graph-fade) var(--ease-standard), border-color var(--graph-fade) var(--ease-standard);
+}
+.graph-region .react-flow__edge-path {
+  transition: stroke var(--graph-fade) var(--ease-standard), stroke-width var(--graph-fade) var(--ease-standard);
+}
+.graph-region .edge-arrow { pointer-events: none; transition: fill var(--graph-fade) var(--ease-standard); }
+.graph-region .react-flow__node.is-dim { opacity: 0.32; }
+.graph-region .react-flow__edge.is-dim { opacity: 0.22; }
+.graph-region .react-flow__node.is-focus .card { box-shadow: var(--focus-ring); }
+.graph-region .react-flow__node.is-up .card, .graph-region .react-flow__node.is-down .card { box-shadow: 0 0 0 2px var(--ring, var(--accent)); }
+/* an open dependency carries a dot from the blocker to what it blocks; it fades in rather than popping */
+.graph-region .edge-flow { pointer-events: none; animation: graph-fade-in var(--graph-fade) var(--ease-standard) both; }
+@keyframes graph-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .graph-region .edge-flow { display: none; }
+  .graph-region .react-flow__node, .graph-region .react-flow__edge, .graph-region .react-flow__node .card,
+  .graph-region .react-flow__edge-path, .graph-region .edge-arrow { transition: none; }
+}
 .graph-region .react-flow__connectionline { stroke: var(--accent); }
 .graph-empty { position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none; }
 .graph-foot {
@@ -2889,6 +3297,9 @@ button.kref { cursor: pointer; }
   pointer-events: none;
 }
 .graph-foot > * { pointer-events: auto; }
+.graph-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-actions { display: flex; flex: none; gap: var(--space-1); }
+.graph-actions .btn { padding: 4px 8px; white-space: nowrap; background: var(--surface); }
 
 /* dependency chips in the field strips: a label chip that opens an issue */
 .lab.dep { padding-left: 5px; }
@@ -2912,6 +3323,8 @@ button.kref { cursor: pointer; }
 .side-label-btn[aria-current="true"] .side-label,
 .side-label-btn[aria-expanded="true"] .side-label { color: var(--fg); }
 .side-file-row-container { position: relative; display: flex; align-items: center; border-radius: var(--radius-sm); }
+/* a folder's rows sit in the list as if they were its own rows */
+.side-file-branch { display: flex; flex-direction: column; gap: 1px; }
 .side-file-row-container .side-row { flex: 1; }
 .side-file-row-container.is-drag-over { background: var(--tag-bg-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .side-files-list.is-drag-over { background: var(--tag-bg-faint); box-shadow: inset 0 0 0 1px var(--border); border-radius: var(--radius-sm); }
@@ -3113,7 +3526,11 @@ button.kref { cursor: pointer; }
 .fold-head:hover { color: var(--accent); }
 .fold-head:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .fold-body { margin-top: var(--space-3); }
-.plug-fold.folded .sec-head { margin-bottom: 0; }
+/* the gap under the head belongs to the body, so it folds away with it */
+.plug-fold > .sec-head, #settingsSheet .plug-fold > .sec-head { margin-bottom: 0; }
+.plug-fold-body { margin-top: var(--space-4); }
+.plug-fold-lede { margin-top: 4px; }
+#settingsSheet .plug-fold-body { margin-top: var(--space-3); }
 .plug-fold-head { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; }
 .plug-fold-head:disabled { cursor: default; }
 .plug-fold-head:hover:not(:disabled) .sec-title { color: var(--accent); }
@@ -3260,3 +3677,96 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 }
 .keys-note .ico, .keys-note svg { color: var(--warn); flex-shrink: 0; }
 .keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }
+
+/* Night shift */
+.palette.modal.sheet-plan {
+  container-type: size;
+  width: min(1280px, calc(100vw - 64px)); height: var(--overlay-max-h);
+  min-width: min(640px, calc(100vw - 64px)); max-width: calc(100vw - 64px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
+}
+.night-shift-pick { max-height: 240px; overflow-y: auto; }
+.plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.plan-tools .btn .num { margin-left: 6px; color: var(--meta); }
+/* the sheet's own height less what stands above the graph, so it opens filling the view */
+.plan-graph { flex: none; height: clamp(340px, calc(100cqh - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
+/* the plan draws the board's graph: what it adds is a tick, a settings button, a note under the card, and where a run stands */
+.plan-canvas { position: absolute; inset: 0; }
+.plan-graph .react-flow__node, .plan-graph .gnode .card { cursor: pointer; }
+/* a card's paint containment would clip the ring around it */
+.plan-graph .card { content-visibility: visible; }
+.plan-node .card { border-color: var(--border); }
+.plan-node:not(.is-chosen):not([data-state]) .card { opacity: 0.72; }
+.plan-node.is-chosen .card { border-color: var(--accent); }
+.plan-node-check {
+  position: absolute; top: -7px; left: -7px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px;
+  border: 1px solid var(--border); border-radius: 5px; color: var(--bg); background: var(--surface);
+}
+.plan-node.is-chosen .plan-node-check { border-color: var(--accent); background: var(--accent); }
+.plan-node[data-state="queued"] .card, .plan-node[data-state="skipped"] .card { border-color: var(--border); }
+.plan-node[data-state="running"] .card, .plan-node[data-state="limited"] .card { border-color: var(--accent); }
+.plan-node[data-state="delivered"] .card, .plan-node[data-state="done"] .card { border-color: var(--success); }
+.plan-node[data-state="needs-you"] .card { border-color: var(--warn); }
+.plan-node[data-state="failed"] .card { border-color: var(--danger); }
+/* editing a run: the canvas lights up, what could join stands faded, and the change gathers in one card above it */
+.plan-graph { transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard); }
+.plan-graph.is-editing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 32px -10px var(--accent); }
+.plan-graph .plan-node[data-draft="ghost"]:not(.is-chosen) .card { border-style: dashed; opacity: 0.5; transition: opacity var(--motion-fast) var(--ease-standard); }
+.plan-graph .plan-node[data-draft="ghost"]:not(.is-chosen):hover .card { opacity: 0.9; }
+.plan-node[data-draft="add"] .card { border-style: dashed; border-color: var(--accent); }
+.plan-node[data-draft="remove"] .card { border-color: var(--danger); opacity: 0.62; }
+.plan-node[data-draft="remove"] .card-title { text-decoration: line-through; }
+.plan-node[data-draft="remove"] .plan-node-sub { color: var(--danger); }
+.plan-diff {
+  position: sticky; top: 0; z-index: 6;
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+  box-shadow: 0 10px 24px -14px color-mix(in oklch, var(--fg) 40%, transparent);
+}
+.plan-diff-head { display: flex; align-items: center; gap: var(--space-2); }
+.plan-diff .start-warning, .plan-diff .meta-txt { margin: 0; }
+.plan-impact { overflow-wrap: anywhere; }
+.plan-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: var(--text-xs); color: var(--fg-2); background: var(--tag-bg-faint); }
+.plan-chip.is-add { color: var(--bg); background: var(--accent); }
+.plan-chip.is-remove { color: var(--bg); background: var(--danger); }
+/* one soft ring: a pseudo-element's opacity and scale, so nothing repaints a frame at a time */
+.plan-node[data-state="running"] .card::after, .plan-node[data-fresh] .card::after {
+  content: ""; position: absolute; inset: -4px; border-radius: calc(var(--radius-md) + 4px); pointer-events: none;
+  border: 2px solid var(--accent); opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-performance], [data-software-compositing]) .plan-diff { animation: plan-diff-in 220ms var(--ease-standard) both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-state="running"] .card::after { animation: plan-alive 2.2s ease-in-out infinite alternate; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-fresh] { animation: plan-join 460ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-fresh] .card::after { animation: plan-ripple 900ms ease-out 120ms both; }
+  :root:not([data-performance], [data-software-compositing]) .plan-node[data-draft="leaving"] { animation: plan-leave 420ms var(--ease-standard) both; }
+}
+.plan-node[data-draft="leaving"] { opacity: 0; }
+@keyframes plan-diff-in { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes plan-alive { from { opacity: 0.08; } to { opacity: 0.62; } }
+@keyframes plan-join { from { opacity: 0; transform: scale(0.82); } }
+@keyframes plan-ripple { from { opacity: 0.8; transform: scale(1); } to { opacity: 0; transform: scale(1.09); } }
+@keyframes plan-leave { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
+.plan-asked-config { display: flex; flex-direction: column; gap: 2px; margin: 0; padding-left: var(--space-4); color: var(--fg-2); }
+.plan-timeline { display: flex; flex-direction: column; gap: var(--space-1); max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.plan-timeline li { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
+.plan-timeline time { flex-shrink: 0; }
+.plan-view { align-self: flex-start; }
+.plan-view button { display: inline-flex; align-items: center; gap: 6px; }
+.plan-node[data-added] .card { border-style: dashed; border-width: 2px; }
+.plan-node-added { margin-right: 4px; padding: 0 5px; border-radius: 4px; font-size: var(--text-xs); color: var(--bg); background: var(--accent); }
+.plan-node-cfg { position: absolute; top: -9px; right: -9px; z-index: 1; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; color: var(--meta); background: var(--surface); }
+.plan-config, .plan-rule { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.plan-config-head, .plan-rule-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.plan-config-head > .cfg-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.plan-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); align-items: end; }
+.plan-rule-head .input { flex: 1; min-width: 0; }
+.plan-rules { display: flex; flex-direction: column; gap: var(--space-2); }
+.plan-node-sub { display: block; margin-top: 4px; padding: 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--meta); }
+.night-shift-mode { align-self: flex-start; }
+.night-shift-mode button { display: inline-flex; align-items: center; gap: 6px; }
+.night-shift-pick .cfg-row { flex-wrap: wrap; }
+.night-shift-pick .cfg-name { min-width: 0; overflow-wrap: anywhere; }
+.night-shift-limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); align-items: end; }

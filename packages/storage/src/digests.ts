@@ -1,12 +1,20 @@
 import type { ProjectDb, Sqlite } from "@tomradex/db";
-import { digestLines, exportParts, hasRowid, lineOf, readPart, stateParts, type ExportOptions, type PartRow, type ProjectState, type StatePart } from "./state.js";
+import { digestLines, exportParts, hasRowid, lineOf, manifestOf, projectRow, readPart, stateParts, type ExportOptions, type PartRow, type ProjectState, type StatePart } from "./state.js";
 
-/** A state file as last read: its rowids in file order and each row's line; a WITHOUT ROWID table keeps the lines alone. */
+/** A row of a state file: the row, and its line there. */
+interface KeptRow {
+  row: Record<string, unknown>;
+  line: Buffer;
+}
+
+/** A state file as last read: its rowids in file order and each row; a WITHOUT ROWID table keeps the rows alone. */
 interface KeptPart {
   part: StatePart;
   order: number[];
-  byRow: Map<number, Buffer>;
-  lines?: Buffer[];
+  byRow: Map<number, KeptRow>;
+  rows?: KeptRow[];
+  /** The file's bytes, joined once and kept until a row of it is read again. */
+  body?: Buffer;
 }
 
 interface Kept {
@@ -53,12 +61,16 @@ function watch(db: ProjectDb, parts: StatePart[]): void {
   }
 }
 
-function keep(part: StatePart, rows: { rowid: number | null; line: Buffer }[]): KeptPart {
-  if (!part.rowid) return { part, order: [], byRow: new Map(), lines: rows.map((r) => r.line) };
-  return { part, order: rows.map((r) => r.rowid!), byRow: new Map(rows.map((r) => [r.rowid!, r.line])) };
+function keep(part: StatePart, rows: (KeptRow & { rowid: number | null })[]): KeptPart {
+  if (!part.rowid) return { part, order: [], byRow: new Map(), rows: rows.map(({ row, line }) => ({ row, line })), body: undefined };
+  return { part, order: rows.map((r) => r.rowid!), byRow: new Map(rows.map(({ rowid, row, line }) => [rowid!, { row, line }])), body: undefined };
 }
 
-const linesOf = (rows: PartRow[]) => rows.map((r) => ({ rowid: r.rowid, line: lineOf(r.row) }));
+const linesOf = (rows: PartRow[]) => rows.map((r) => ({ rowid: r.rowid, row: r.row, line: lineOf(r.row) }));
+
+const rowsOf = (k: KeptPart): KeptRow[] => k.rows ?? k.order.map((id) => k.byRow.get(id)!);
+
+const bodyOf = (k: KeptPart): Buffer => (k.body ??= Buffer.concat(rowsOf(k).map((r) => r.line)));
 
 /**
  * The local digest for status, kept row by row: a write reads again only the rows it touched, and
@@ -78,25 +90,52 @@ export class LocalDigests {
       touched(db.handle).clear();
       return this.remember(projectId, db, key, parts.map((p) => keep(p, linesOf(readPart(db, projectId, p)))));
     }
+    this.catchUp(projectId, db, kept);
+    return kept.digest;
+  }
+
+  export(projectId: string, db: ProjectDb, opts: ExportOptions): ProjectState {
+    return this.exportFiles(projectId, db, opts).state;
+  }
+
+  /**
+   * An export and its state files' bytes, kept for the next digest and the next export: only the rows a write
+   * touched are read again, and a file none of whose rows changed is the same bytes as before. Carried tables are
+   * not this file's to keep; then everything is read and there are no bytes to give.
+   */
+  exportFiles(projectId: string, db: ProjectDb, opts: ExportOptions): { state: ProjectState; files?: Map<string, Buffer> } {
+    if (Object.keys(opts.carry ?? {}).length) return { state: exportParts(db, projectId, opts).state };
+    const key = this.keyOf(db, opts);
+    let kept = this.kept.get(projectId);
+    if (kept?.db === db && kept.key === key) this.catchUp(projectId, db, kept);
+    else {
+      touched(db.handle).clear();
+      const { state, parts, lines } = exportParts(db, projectId, opts);
+      watch(db, parts);
+      kept = { db, key, parts: parts.map((p) => keep(p, lines.get(p.file)!)), digest: state.manifest.snapshot!.digest };
+      this.kept.set(projectId, kept);
+    }
+    const tables: ProjectState["tables"] = {};
+    const plugins: ProjectState["plugins"] = {};
+    // Copies: whoever takes the state may change its rows, and the kept ones must stay as the file has them.
+    for (const k of kept.parts) {
+      const rows = rowsOf(k).map((r) => ({ ...r.row }));
+      if (k.part.namespace) (plugins[k.part.namespace] ??= {})[k.part.table] = rows;
+      else tables[k.part.table] = rows;
+    }
+    const state: ProjectState = { manifest: manifestOf(projectRow(db, projectId), opts, kept.digest), tables, plugins };
+    return { state, files: new Map(kept.parts.map((k) => [k.part.file, bodyOf(k)])) };
+  }
+
+  /** The rows writes touched since the kept ones were read, read again. */
+  private catchUp(projectId: string, db: ProjectDb, kept: Kept): void {
     const written = touched(db.handle);
-    if (!written.size) return kept.digest;
+    if (!written.size) return;
     const stale = kept.parts.filter((k) => k.part.reads.some((t) => written.has(t)));
     const rows = new Map(stale.map((k) => [k, written.get(k.part.table)]));
     written.clear();
     for (const [k, own] of rows) this.reread(projectId, db, k, own);
     if (stale.length) kept.digest = this.digestOf(kept.parts);
-    return kept.digest;
-  }
-
-  /** A whole export, kept for the next digest — a publish then reads the file once. Carried tables are not this file's to keep. */
-  export(projectId: string, db: ProjectDb, opts: ExportOptions): ProjectState {
-    if (Object.keys(opts.carry ?? {}).length) return exportParts(db, projectId, opts).state;
-    const key = this.keyOf(db, opts);
-    touched(db.handle).clear();
-    const { state, parts, lines } = exportParts(db, projectId, opts);
-    watch(db, parts);
-    this.kept.set(projectId, { db, key, parts: parts.map((p) => keep(p, lines.get(p.file)!)), digest: state.manifest.snapshot!.digest });
-    return state;
   }
 
   forget(projectId: string): void {
@@ -111,8 +150,9 @@ export class LocalDigests {
     }
     const scope = k.part.scope ? ` WHERE ${k.part.scope}` : "";
     const order = (db.prepare(`SELECT rowid AS r FROM ${k.part.table}${scope} ORDER BY ${k.part.order}`).all(...(k.part.scope ? [{ projectId }] : [])) as { r: number }[]).map((x) => x.r);
+    k.body = undefined;
     const missing = order.filter((id) => own?.has(id) || !k.byRow.has(id));
-    if (missing.length) for (const r of linesOf(readPart(db, projectId, k.part, missing))) k.byRow.set(r.rowid!, r.line);
+    if (missing.length) for (const r of linesOf(readPart(db, projectId, k.part, missing))) k.byRow.set(r.rowid!, { row: r.row, line: r.line });
     if (k.byRow.size > order.length) {
       const present = new Set(order);
       for (const id of k.byRow.keys()) if (!present.has(id)) k.byRow.delete(id);
@@ -127,7 +167,7 @@ export class LocalDigests {
   }
 
   private digestOf(parts: KeptPart[]): string {
-    return digestLines(new Map(parts.map((k) => [k.part.file, k.lines ?? k.order.map((id) => k.byRow.get(id)!)])));
+    return digestLines(new Map(parts.map((k) => [k.part.file, rowsOf(k).map((r) => r.line)])));
   }
 
   private keyOf(db: ProjectDb, opts: ExportOptions): string {

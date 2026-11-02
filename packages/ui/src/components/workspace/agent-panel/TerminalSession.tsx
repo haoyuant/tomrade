@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView, RecordUsage } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
@@ -8,14 +8,17 @@ import { PROMPT_LINES, promptOnScreen, trustOnScreen } from "@tomradex/code-link
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type AgentText, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
+import { Collapse } from "~/components/ui/collapse";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
+import { followEnd } from "~/lib/followEnd";
 import { STATUS } from "~/lib/domain";
 import { segmentKind, segmentWork, type OutcomeWords } from "~/lib/review";
 import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { looksLikeMarkdown } from "~/lib/markdownDetect";
+import { pathForFile } from "~/lib/shell";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
 import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
@@ -163,14 +166,23 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     }, delayUntil(readAt.current, Date.now()));
   }, [move, session.externalId, readTail]);
 
+  // Lines off screen are laid out at a guessed height until seen, Markdown and ticket cuts come after: the end moves on its own.
+  const end = useRef<ReturnType<typeof followEnd> | null>(null);
+  useLayoutEffect(() => {
+    if (!box.current) return;
+    const watch = followEnd(box.current, following);
+    end.current = watch;
+    return () => {
+      watch.stop();
+      end.current = null;
+    };
+  }, []);
+
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || kept.current === null) return;
-    if (kept.current === -1) {
-      el.scrollTop = el.scrollHeight;
-      // Lines off screen are laid out at a guessed height until seen; once they are, the end has moved.
-      requestAnimationFrame(() => { if (following.current) el.scrollTop = el.scrollHeight; });
-    } else el.scrollTop += el.scrollHeight - kept.current;
+    if (kept.current === -1) end.current?.place();
+    else el.scrollTop += el.scrollHeight - kept.current;
     kept.current = null;
   }, [convo]);
 
@@ -250,6 +262,24 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       reportError(error);
     } finally {
       setSending(false);
+    }
+  };
+  const overFiles = (e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const dropFiles = async (e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    const paths = [...e.dataTransfer.files].map(pathForFile).filter((p): p is string => !!p);
+    if (!canType) return void toast({ body: inputNote ?? t("sessionBar.notTaken") });
+    if (trusting) return void toast({ body: t("sessionBar.trustUseButtons") });
+    try {
+      if (paths.length && (await invoke("codeLink.sessionDrop", projectId, session.id, paths))) input.current?.focus();
+      else toast({ body: t("sessionBar.notTaken") });
+    } catch (error) {
+      reportError(error);
     }
   };
   const pressEscape = async () => {
@@ -375,7 +405,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   return (
     <>
-      <div className="ai-scroll ai-session" data-testid="ai-session" data-session={session.id} data-state={session.state}>
+      <div className="ai-scroll ai-session" data-testid="ai-session" data-session={session.id} data-state={session.state} onDragOver={overFiles} onDrop={dropFiles}>
         <div className="ai-session-head">
           <StatusMark status={status} />
           <span className="ai-session-title" title={title}>
@@ -436,9 +466,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           aria-label={t("sessionBar.conversation")}
           ref={box}
           onScroll={(e) => {
-            const el = e.currentTarget;
-            following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-            if (el.scrollTop < 80) readEarlier();
+            end.current?.scrolled();
+            if (e.currentTarget.scrollTop < 80) readEarlier();
           }}
         >
           {convo?.unreadable ? (
@@ -463,8 +492,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : null}
         </div>
       </div>
-      <div className="ai-foot ai-session-foot">
-        {drawer && session.herdrPane && live && (
+      <div className="ai-foot ai-session-foot" onDragOver={overFiles} onDrop={dropFiles}>
+        <Collapse open={drawer && !!session.herdrPane && live}>
           <div className="ai-drawer-box" ref={drawerBox} data-testid="ai-drawer-box">
             <div className="ai-drawer-head">
               <span className="ai-drawer-title" data-testid="ai-drawer-title">{[title || t("agentPanel.newThread"), cell ? t("sessionBar.whereCell", { n: cell }) : null, canType ? t("sessionBar.drawerTypes") : null].filter(Boolean).join(" · ")}</span>
@@ -498,7 +527,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               </label>
             )}
           </div>
-        )}
+        </Collapse>
         {usage?.turn && <TurnLine turn={usage.turn} runs={live && (session.state === "running" || isApprovalAsk(session))} />}
         {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
         {trusting && canType ? (

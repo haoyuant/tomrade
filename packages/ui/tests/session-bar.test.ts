@@ -117,6 +117,14 @@ it("lets a waiting terminal session's card answer only the prompt its screen sho
   expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
 });
 
+it("lets a waiting terminal session's card pick its question's choices while its screen shows them, whatever keys its agent declared", () => {
+  const question = { kind: "question" as const, tool: null, action: null, detail: "Which color?", options: ["Red", "Green"] };
+  const chooses = (id: string, over: Partial<SessionView>) => ({ ...session(id, { state: "waiting", ask: question }), approval: false, prompt: "choice" as const, ...over });
+  const out = rows({ sessions: [chooses("menu", {}), { ...chooses("gone", {}), prompt: null }, chooses("runs", { state: "running", ask: null }), chooses("bare", { ask: { ...question, options: undefined } })] });
+  expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ menu: "choice", gone: null, runs: null, bare: null });
+  expect(out.find((r) => r.sessionId === "menu")?.ask).toEqual(question);
+});
+
 it("lets a waiting terminal session's card answer a folder's trust on its screen, whatever keys its agent declared", () => {
   const blocked = { kind: "permission" as const, tool: null, action: null, detail: null };
   const trusts = (id: string, over: Partial<SessionView> & { approval?: boolean }) => ({ ...session(id, { state: "waiting", ask: blocked }), approval: false, prompt: "trust" as const, ...over });

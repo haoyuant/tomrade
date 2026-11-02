@@ -1,5 +1,5 @@
 import type {} from "cordis";
-export { attachedMedia, claudeMediaInput, codexMediaInput, publishNativeImage } from "./native-media.js";
+export { attachedMedia, claudeMediaBlocks, claudeMediaInput, codexMediaBlocks, codexMediaInput, publishNativeImage } from "./native-media.js";
 export { AgentMediaStore, MAX_MEDIA_BYTES, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 
 export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type GeneralPreparation, type GeneralStartOptions, type NewThreadOptions, type PlaybookRecommendation, type ThreadDetail, type ThreadOrigins, type WorkdirStatus } from "./service.js";
@@ -7,7 +7,7 @@ export { aggregateUsage, dayKeyOf, dayStartOf, usageSummary, windowStart, MICRO_
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";
-export { looksRateLimited, resetTime, untilLabel } from "./limits.js";
+export { looksOutOfBalance, looksRateLimited, resetTime, untilLabel } from "./limits.js";
 export { describeFailure, readableError, redactSecrets, DETAILS_MAX_CHARS } from "./failure.js";
 export { conversationRecap, firstSentence, handoffRecap, withRecap } from "./recap.js";
 export { resultLine, stepHint, stepSummary } from "./steps.js";
@@ -38,6 +38,7 @@ export {
   type OpenDependency,
   type RetryState,
   type TurnInput,
+  type SteerInput,
   type TurnIO,
   type TurnPurpose,
   type TurnResult
@@ -92,6 +93,7 @@ export {
   type McpLinkView,
   type McpProjectApproval,
   type RecordLine,
+  type RecordSession,
   type RecordRead,
   type RecordUsage,
   type RecordUsageCount

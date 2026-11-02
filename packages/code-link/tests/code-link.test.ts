@@ -342,6 +342,21 @@ describe("code link", () => {
         expect(branches(codeLink, project.id, item.id)).toEqual([`${other.id}:${branch}`]);
       } finally { await ctx.fiber.dispose(); }
     });
+    it("lists a pull request until it is known to have ended", async () => {
+      const { codeLink, ctx, project, repo, item, branch } = await claimed("Has a pull request");
+      try {
+        const open = () => codeLink.store.openPulls(project.id).map((l) => l.itemId);
+        expect(open()).toEqual([]);
+        const link = codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch }, { prNumber: 1, prUrl: "https://github.com/o/r/pull/1" });
+        expect(open()).toEqual([item.id]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "open" });
+        expect(open()).toEqual([item.id]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "closed" });
+        expect(open()).toEqual([]);
+        codeLink.store.patchLink(project.id, link.id, { prState: "open", mergedSha: "abc" });
+        expect(open()).toEqual([]);
+      } finally { await ctx.fiber.dispose(); }
+    });
     it("stays once its branch exists here too", async () => {
       const { codeLink, ctx, project, repo, checkout, second, other, item, branch } = await claimed("Lands in both");
       for (const cwd of [checkout, second.checkout]) {
@@ -984,6 +999,21 @@ describe("code link", () => {
     // A question tool asks a question, whichever hook reported it.
     expect(permissionAsk("AskUserQuestion", { questions: [] })).toEqual(questionAsk());
     expect(permissionAsk("ask_user_question", undefined).kind).toBe("question");
+    // the question's words say what it asks
+    expect(askLineIn(questionAsk({ questions: [{ question: "Which color?" }] }), "en")).toBe("Which color?");
+  });
+
+  it("keeps a question's words, and its choices when it takes exactly one of them, as AskUserQuestion's input gives them", () => {
+    const color = { question: "Which color?", header: "Color", options: [{ label: "Red", description: "Red" }, { label: " Green ", description: "" }, { label: "Blue" }], multiSelect: false };
+    expect(permissionAsk("AskUserQuestion", { questions: [color] })).toEqual({ kind: "question", tool: null, action: null, detail: "Which color?", options: ["Red", "Green", "Blue"] });
+    expect(questionAsk({ questions: [{ question: "Which?", options: ["A", "B"] }] }).options).toEqual(["A", "B"]);
+    // several picks, several questions, one choice, a choice twice or one without words: picked where it is asked
+    expect(questionAsk({ questions: [{ ...color, multiSelect: true }] })).toEqual({ kind: "question", tool: null, action: null, detail: "Which color?" });
+    expect(questionAsk({ questions: [color, color] })).toEqual(questionAsk());
+    expect(questionAsk({ questions: [{ ...color, options: [{ label: "Red" }] }] }).options).toBeUndefined();
+    expect(questionAsk({ questions: [{ ...color, options: [{ label: "Red" }, { label: "Red" }] }] }).options).toBeUndefined();
+    expect(questionAsk({ questions: [{ ...color, options: [{ label: "Red" }, { description: "?" }] }] }).options).toBeUndefined();
+    expect(questionAsk({ questions: [{ question: `${"why ".repeat(40)}?` }] }).detail).toMatch(/^why .{70,}…$/);
   });
 
   it("keeps a session's question a question when its permission notice or its screen's reading follows it", async () => {
@@ -991,10 +1021,11 @@ describe("code link", () => {
     const item = ticket("Ask me", "doing");
     const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "workbuddy", threadId: null, device: "test" });
     const ask = () => codeLink.store.session(project.id, session.id)!.ask;
-    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "Which?" }] } });
-    expect(ask()).toEqual(questionAsk());
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] } });
+    const which = { kind: "question", tool: null, action: null, detail: "Which?", options: ["A", "B"] };
+    expect(ask()).toEqual(which);
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "Notification", notification_type: "permission_prompt" });
-    expect(ask()).toEqual(questionAsk());
+    expect(ask()).toEqual(which);
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "ls" } });
     expect(ask()).toMatchObject({ kind: "permission", action: "run" });
   });

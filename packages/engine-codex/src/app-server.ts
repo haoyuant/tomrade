@@ -1,9 +1,9 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
+import { codexMediaBlocks, codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
 import { engineLocale, JsonLinePeer, jsonRpc, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
-import { CodexOptions, codexModel } from "./engine.js";
+import { CODEX, CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
 
@@ -129,18 +129,25 @@ export class CodexRuntime implements Runtime {
         this.asks.settle();
         return true;
       });
-      io.steerTo?.(async (steer) => {
+      io.steersMedia?.();
+      // Taken once Codex has started the turn: turn/steer needs its id.
+      const forward: Parameters<NonNullable<TurnIO["steerTo"]>>[0] = async (steer) => {
         if (!turnId || over || turn.cancelled || !this.alive) return false;
         // known before the request: Codex may add it to the conversation before it answers
         forwarded.set(steer.id, steer.text);
         try {
-          await this.request("turn/steer", { threadId: this.session, expectedTurnId: turnId, clientUserMessageId: steer.id, input: [{ type: "text", text: steer.text, text_elements: [] }] });
+          await this.request("turn/steer", { threadId: this.session, expectedTurnId: turnId, clientUserMessageId: steer.id, input: codexMediaBlocks(steer.text, steer.media ?? []) });
           return true;
         } catch (error) {
           forwarded.delete(steer.id);
           throw error;
         }
-      });
+      };
+      const began = (id: string) => {
+        const first = !turnId;
+        turnId = id;
+        if (first) io.steerTo?.(forward);
+      };
       this.failure = (error) => finish(turn.failed(error.message, { error, attempts: tried() }));
       const abort = () => {
         if (!turnId) { this.close(); return; }
@@ -150,7 +157,7 @@ export class CodexRuntime implements Runtime {
       turn.onAbort(abort);
       this.notification = (method, params) => {
         if (params.threadId && this.session && params.threadId !== this.session) return;
-        if (method === "turn/started") turnId = params.turn.id;
+        if (method === "turn/started") began(params.turn.id);
         if (method === "thread/tokenUsage/updated") {
           const total = params.tokenUsage.total as Counters;
           if (!turnId || params.turnId !== turnId) { this.totals = total; baseline = total; return; }
@@ -230,7 +237,7 @@ export class CodexRuntime implements Runtime {
         const thread = {
           cwd: this.cwd, model: codexModel(options.model),
           ...policy, approvalsReviewer: "user",
-          developerInstructions: sessionSystem(input, "Codex")
+          developerInstructions: sessionSystem(input, CODEX)
         };
         let response: Json;
         try {
@@ -249,7 +256,7 @@ export class CodexRuntime implements Runtime {
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
         input: codexMediaInput(input, io, withRecap(recap, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest }))) });
       recap = "";
-      turnId ??= response.turn.id;
+      if (!turnId) began(response.turn.id);
       if (turn.cancelled) abort();
       const outcome = await done;
       if (outcome.stop === "error") this.close();

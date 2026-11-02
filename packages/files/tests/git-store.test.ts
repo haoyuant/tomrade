@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitRunner } from "@tomradex/git";
+import { gitRunner, type Git, type SyncProgress } from "@tomradex/git";
 import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-"));
@@ -20,16 +20,31 @@ function bare(): string {
   return dir;
 }
 
-async function store(remote: string | null = null, onChange: () => void = noop) {
-  const dir = path.join(root, `store-${n++}`);
+const commits = (remote: string): number => Number(execFileSync("git", ["-C", remote, "rev-list", "--count", "main"]).toString().trim());
+
+/** Another machine putting back a ledger line this one never publishes, as an older Tomrade might. */
+function putBack(remote: string): void {
+  const run = (args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } = {}) => execFileSync("git", ["-C", remote, ...args], opts).toString().trim();
+  const ids = run(["show", `main:${IDS_FILE}`]);
+  if (ids.includes('"ghost"')) return;
+  const blob = run(["hash-object", "-w", "--stdin"], { input: `${ids}\n{"id":"ghost","path":"ghost.md","at":1}\n` });
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(root, `put-back-${n++}`) };
+  run(["read-tree", "main"], { env });
+  run(["update-index", "--add", "--cacheinfo", `100644,${blob},${IDS_FILE}`], { env });
+  const tree = run(["write-tree"], { env });
+  run(["update-ref", "refs/heads/main", run(["-c", "user.name=other", "-c", "user.email=other@localhost", "commit-tree", tree, "-p", "main", "-m", "put back"])]);
+}
+
+async function store(remote: string | null = null, onChange: () => void = noop, dir = path.join(root, `store-${n++}`), runner: Git = git, warn: (message: string) => void = noop, onProgress?: (progress: SyncProgress | null) => void) {
   return new GitFileStore({
-    git,
+    git: runner,
     gitBinary: "git",
     dir,
     remote: remote ? () => ({ url: remote, branch: "main" }) : null,
     location: remote ? "test remote" : null,
-    warn: noop,
+    warn,
     onChange,
+    onProgress,
     watch: false,
     // Tests sync by hand; a timed push landing mid-test would be joined by their sync() and skip a later write.
     pushMs: 600_000
@@ -238,11 +253,131 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     b.close();
   });
 
+  it("syncs again after a fetch was killed midway, its locks and partial pack left behind", async () => {
+    const s = await store(bare());
+    await s.write("a.md", text("a\n"));
+    expect((await s.sync()).state).toBe("synced");
+    const transport = path.join(s.dir, ".git", "files-sync", "transport");
+    const git = path.join(transport, fs.readdirSync(transport)[0]!, ".git");
+    fs.writeFileSync(path.join(git, "shallow.lock"), "");
+    fs.writeFileSync(path.join(git, "index.lock"), "");
+    fs.mkdirSync(path.join(git, "objects", "pack"), { recursive: true });
+    fs.writeFileSync(path.join(git, "objects", "pack", "tmp_pack_x"), "partial");
+    await s.write("b.md", text("b\n"));
+    expect((await s.sync()).state).toBe("synced");
+    expect(fs.readdirSync(path.join(git, "objects", "pack")).filter((f) => f.startsWith("tmp_"))).toEqual([]);
+    s.close();
+  });
+
+  it("lets a store reopened mid-sync wait for the one before it instead of running git beside it", async () => {
+    let running = 0;
+    let most = 0;
+    // A fetch slow enough that the second store's sync starts while the first is still in it.
+    const slow: Git = async (args, opts) => {
+      if (!opts?.cwd?.includes(`${path.sep}transport${path.sep}`)) return git(args, opts);
+      most = Math.max(most, ++running);
+      try {
+        if (args[0] === "fetch") await new Promise((resolve) => setTimeout(resolve, 300));
+        return await git(args, opts);
+      } finally {
+        running--;
+      }
+    };
+    const remote = bare();
+    const first = await store(remote, noop, undefined, slow);
+    await first.write("a.md", text("a\n"));
+    const second = await store(remote, noop, first.dir, slow);
+    await second.write("b.md", text("b\n"));
+    const states = (await Promise.all([first.sync(), second.sync()])).map((s) => s.state);
+    expect(states).toEqual(["synced", "synced"]);
+    expect(most).toBe(1);
+    first.close();
+    second.close();
+  });
+
+  it("publishes the ids a machine syncing for the first time was given, so neither keeps rewriting the other's", async () => {
+    const remote = bare();
+    const a = await store(remote);
+    await a.write("a.md", text("a\n"));
+    await a.write("b.md", text("b\n"));
+    expect((await a.sync()).state).toBe("synced");
+    // B records the ids it receives a moment later, so its own stamps differ from A's.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const b = await store(remote);
+    expect((await b.sync()).state).toBe("synced");
+    await a.sync();
+    const settled = commits(remote);
+    for (let round = 0; round < 3; round++) {
+      expect((await b.sync()).state).toBe("synced");
+      expect((await a.sync()).state).toBe("synced");
+    }
+    expect(commits(remote)).toBe(settled);
+    expect((await b.read("a.md"))?.fileId).toBe((await a.read("a.md"))?.fileId);
+    a.close();
+    b.close();
+  });
+
+  it("stops sharing while another machine keeps putting back what this one replaces, and goes on once something changes", async () => {
+    const remote = bare();
+    const s = await store(remote);
+    await s.write("a.md", text("a\n"));
+    expect((await s.sync()).state).toBe("synced");
+    const states: string[] = [];
+    for (let round = 0; round < 5; round++) {
+      putBack(remote);
+      states.push((await s.sync()).state);
+    }
+    expect(states).toEqual(["synced", "synced", "synced", "error", "error"]);
+    expect((await s.status()).detail).toMatch(/keeps undoing/);
+    expect(execFileSync("git", ["-C", remote, "show", `main:${IDS_FILE}`]).toString()).toContain("ghost");
+    await s.write("b.md", text("b\n"));
+    expect((await s.sync()).state).toBe("synced");
+    expect(execFileSync("git", ["-C", remote, "show", `main:${IDS_FILE}`]).toString()).not.toContain("ghost");
+    s.close();
+  });
+
   it("reports an unreachable remote as offline and keeps working", async () => {
-    const s = await store(path.join(root, "missing.git"));
+    const said: string[] = [];
+    const s = await store(path.join(root, "missing.git"), noop, undefined, git, (m) => said.push(m));
     await s.write("x.md", text("x"));
-    expect((await s.sync()).state).toBe("offline");
+    const status = await s.sync();
+    expect(status).toMatchObject({ state: "offline", failure: "network", detail: expect.stringContaining("missing.git") });
+    expect(status.trace?.steps.map((step) => [step.step, step.ok])).toEqual([["saving", true], ["reaching", false]]);
+    expect(status.trace?.output).toContain("missing.git");
+    // Opening syncs once too: each failed sync tells the log once.
+    expect(said.length).toBeGreaterThan(0);
+    for (const line of said) expect(line).toMatch(/^sync: reach failed \(network\): .*missing\.git/);
     expect((await s.read("x.md"))?.body).toBe("x");
+    s.close();
+  });
+
+  it("shows a remote that refuses the push as trouble, not offline, in the remote's own words", async () => {
+    const remote = bare();
+    fs.writeFileSync(path.join(remote, "hooks", "pre-receive"), "#!/bin/sh\necho 'refused by policy' >&2\nexit 1\n", { mode: 0o755 });
+    const said: string[] = [];
+    const s = await store(remote, noop, undefined, git, (m) => said.push(m));
+    await s.write("x.md", text("x"));
+    expect(await s.sync()).toMatchObject({ state: "error", failure: "other", detail: "remote: refused by policy" });
+    expect([...new Set(said)]).toEqual(["sync: push failed (other): remote: refused by policy"]);
+    s.close();
+  });
+
+  it("follows a sync step by step, says when it is over, and keeps what it did", async () => {
+    const remote = bare();
+    const told: (SyncProgress | null)[] = [];
+    const s = await store(remote, noop, undefined, git, noop, (progress) => told.push(progress));
+    await s.write("a.md", text("a\n"));
+    await s.sync();
+    await s.write("b.md", text("b\n"));
+    told.length = 0;
+    const status = await s.sync();
+    // A transfer tells its step again as it moves; the steps themselves come once each, in order.
+    const steps = told.flatMap((p, i) => (p && p.step !== told[i - 1]?.step ? [p.step] : []));
+    expect(steps).toEqual(["saving", "reaching", "fetching", "merging", "pushing"]);
+    expect(told.at(-1)).toBeNull();
+    expect(status.progress).toBeUndefined();
+    expect(status.trace).toMatchObject({ remote, branch: "main" });
+    expect(status.trace?.steps.map((step) => [step.step, step.ok])).toEqual([["saving", true], ["reaching", true], ["fetching", true], ["merging", true], ["pushing", true]]);
     s.close();
   });
 });

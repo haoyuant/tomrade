@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
-import { arrowsLabel, keyLabel, modifiedEnter, windowChord, windowKey } from "../src/code-sessions/keys";
+import { arrowsLabel, clipboardKey, isInterrupt, keyLabel, modifiedEnter, windowChord, windowKey } from "../src/code-sessions/keys";
+import { primeKeymap, resolveKeymap } from "../src/lib/keybindings";
+import { isMac } from "../src/lib/keys";
 
 const press = (key: string, mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean } = {}, code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key) => ({
   key,
@@ -68,4 +70,25 @@ it("gives each window key's chord for the shortcuts sheet, as the window reads i
   expect(windowChord("palette", true)).toBe("Mod+K");
   expect(windowChord("splitRight", false)).toBe("Mod+Shift+D");
   expect(windowKey(press("d", { meta: true }), true)).toBe("splitRight");
+});
+
+it("copies and pastes on the person's keys, with Ctrl+Insert and Shift+Insert by default, and knows the Ctrl+C that interrupts", () => {
+  const mod = isMac ? { meta: true } : { ctrl: true };
+  primeKeymap(resolveKeymap(undefined));
+  expect(clipboardKey(press("c", mod))).toBe("copy");
+  expect(clipboardKey(press("C", { ...mod, shift: true }))).toBe("copy");
+  expect(clipboardKey(press("Insert", { ctrl: true }))).toBe("copy");
+  expect(clipboardKey(press("V", { ...mod, shift: true }))).toBe("paste");
+  expect(clipboardKey(press("Insert", { shift: true }))).toBe("paste");
+  // Ctrl+V stays the program's: agents paste images on it.
+  expect(clipboardKey(press("v", { ctrl: true }))).toBeNull();
+  expect(clipboardKey({ ...press("Insert", { shift: true }), isComposing: true })).toBeNull();
+  // Rebound in settings, only the new keys do it.
+  primeKeymap(resolveKeymap({ terminalCopy: ["Alt+C"], terminalPaste: [] }));
+  expect(clipboardKey(press("c", { alt: true }))).toBe("copy");
+  expect(clipboardKey(press("Insert", { ctrl: true }))).toBeNull();
+  expect(clipboardKey(press("Insert", { shift: true }))).toBeNull();
+  primeKeymap(resolveKeymap(undefined));
+  expect(isInterrupt(press("c", { ctrl: true }))).toBe(true);
+  for (const e of [press("C", { ctrl: true, shift: true }), press("c", { meta: true }), press("Insert", { ctrl: true }), press("x", { ctrl: true })]) expect(isInterrupt(e)).toBe(false);
 });

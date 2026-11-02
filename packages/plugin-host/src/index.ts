@@ -33,6 +33,7 @@ export interface HostTestInput {
   /** From the manifest: the title its windows carry, and whether it may open them. */
   title?: string;
   window?: boolean;
+  renderer?: boolean;
   dir: string;
   /** A directory the plugin may write: its data dir and the throwaway settings file go here. */
   tmp: string;
@@ -163,7 +164,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
     w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "One that is done", status: "done", by: "human" })
   ];
   const before = new Set(w.ctx.tools.list().map((t) => t.name));
-  const fiber = w.ctx.plugin(sdk(p as never, { id: input.id, namespace: input.namespace, origin: "extension", root: input.dir, dataDir: input.tmp, title: input.title, window: input.window }), configOf(p));
+  const fiber = w.ctx.plugin(sdk(p as never, { id: input.id, namespace: input.namespace, origin: "extension", root: input.dir, dataDir: input.tmp, title: input.title, window: input.window, renderer: input.renderer }), configOf(p));
   try {
     await Promise.race([fiber, timeout(5_000, "loading the plugin")]);
     await settle();
@@ -194,6 +195,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   await guarded("sections render", () => w.ctx.contributions.sectionsFor(w.project.id, samples[0]!.id));
   await guarded("sidebar modules compute", () => w.ctx.contributions.sidebarModules(w.project.id));
   for (const g of w.ctx.contributions.graphs()) await guarded(`graph ${g.id} computes`, () => w.ctx.contributions.graphEdges(g.id, scope));
+  for (const l of w.ctx.contributions.layouts()) check(`layout ${l.id} registers`, true, `${l.render}: ${l.module}`);
   const failures = logs.slice(before_).filter((l) => l.includes("contributions"));
   if (failures.length) check("contributions run without errors", false, failures.join("\n"));
   const added = w.ctx.tools.list().filter((t) => !before.has(t.name)).map((t) => t.name);

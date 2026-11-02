@@ -40,7 +40,7 @@ describe("settings as agent tools", () => {
     ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ id: "ds", apiKey: "sk-live", model: "deepseek-chat" }, { id: "local", apiKey: "", model: "qwen" }], headers: { "X-Org": "acme" } }, github: { token: "ghp_x" } });
     const { sections } = (await call("get_settings", {})) as { sections: { id: string; access: string; value?: unknown }[] };
     const byId = Object.fromEntries(sections.map((s) => [s.id, s]));
-    expect(byId.theme).toMatchObject({ access: "write", value: "dawn" });
+    expect(byId.theme).toMatchObject({ access: "write", value: "sunrise" });
     expect(byId.pet).toMatchObject({ access: "write", value: { enabled: true, size: "medium" } });
     // Unannounced means read; a password field means none, whatever the section says.
     expect(byId.models!.access).toBe("read");
@@ -58,7 +58,7 @@ describe("settings as agent tools", () => {
     const { ctx, call } = await boot();
     const result = (await call("update_settings", { changes: { theme: "dark", pet: { size: "large" } } })) as { changed: { section: string; before: unknown; after: unknown }[] };
     expect(result.changed).toEqual([
-      { section: "theme", title: "Appearance", before: "dawn", after: "dark" },
+      { section: "theme", title: "Appearance", before: "sunrise", after: "dark" },
       { section: "pet", title: "Pet", before: { enabled: true, size: "medium" }, after: { enabled: true, size: "large" } }
     ]);
     expect(ctx.settings.get().theme).toBe("dark");
@@ -68,7 +68,7 @@ describe("settings as agent tools", () => {
     await expect(call("update_settings", { changes: { github: { token: "mine" } } })).rejects.toThrow(/GitHub is the user's to change/);
     await expect(call("update_settings", { changes: { pet: { size: "huge" } } })).rejects.toThrow(/pet\.size/);
     // One bad section and nothing lands.
-    await expect(call("update_settings", { changes: { language: "zh", theme: "neon" } })).rejects.toThrow(/theme/);
+    await expect(call("update_settings", { changes: { language: "zh", theme: "plaid" } })).rejects.toThrow(/theme/);
     expect(ctx.settings.get().language).toBe("system");
     expect(await call("update_settings", { changes: { theme: "dark" } })).toMatchObject({ changed: [] });
   });
@@ -80,7 +80,7 @@ describe("settings as agent tools", () => {
     expect(record).toMatchObject({ provider: "settings", entity: "setting", op: "set", label: "Appearance", by: "ai:loop", runId: "run-1", undoable: true, undoneAt: null });
 
     expect((await ctx.oplog.undo(project.id))?.summary).toBe("Put Appearance back");
-    expect(ctx.settings.get().theme).toBe("dawn");
+    expect(ctx.settings.get().theme).toBe("sunrise");
     expect((await ctx.oplog.redo(project.id))?.summary).toBe("Changed Appearance again");
     expect(ctx.settings.get().theme).toBe("matcha");
 
@@ -95,7 +95,7 @@ describe("settings as agent tools", () => {
     await call("update_settings", { changes: { pet: { enabled: false }, language: "zh" } });
     await call("update_settings", { changes: { theme: "light" } }, { ...inv, run: run("run-2", project.id) });
     expect(ctx.oplog.runChanges(project.id, "run-1")).toEqual([
-      { key: "Appearance", label: "dawn → dark", op: "updated" },
+      { key: "Appearance", label: "sunrise → dark", op: "updated" },
       { key: "Pet", label: "enabled → false", op: "updated" },
       { key: "Language", label: "system → zh", op: "updated" }
     ]);

@@ -121,7 +121,7 @@ const run = async () => {
   /* The ThemeProvider owns the class, so a theme must be set through a real
      control: the settings sheet's own switch on the projects home, the palette
      inside a project. */
-  const SEGMENT = { system: 0, light: 1, dark: 2, matcha: 3 };
+  const SEGMENT = { sunrise: 0, daybreak: 1, glass: 2, sakura: 3, dawn: 4, light: 5, dark: 6, matcha: 7 };
   const settingsNav = (label) => `[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === '${label}')`;
   const themeViaSettings = async (theme) => {
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
@@ -1028,7 +1028,7 @@ const run = async () => {
   const customThemes = () => ctx.settings.get().customThemes?.length ?? 0;
   // the toast stack lies outside the sheet, where a pointer would dismiss it: its buttons are clicked, not pressed
   const clickToast = (selector) => $(`(() => { const b = ${selector}; if (!b) return false; b.click(); return true; })()`);
-  await press(`document.querySelector('.theme-selection-actions button[aria-label="Create custom theme"]')`);
+  await press(`document.querySelector('.mode-grid button[aria-label="Create custom theme"]')`);
   check("creating a custom theme opens its editor", await wait(() => $(`!!document.querySelector('.theme-custom-controls')`)) && customThemes() === 1);
   check("and brings the token table, which only a custom theme can use", (await $(`document.querySelectorAll('.tok-table .token-picker').length`)) === 21);
   await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
@@ -1749,6 +1749,48 @@ const run = async () => {
   await sleep(500);
   check("the palette finds a ticket past the first sixty", (await $(`[...document.querySelectorAll('.palette-row .card-id')].some((n) => n.textContent === ${JSON.stringify(last?.key)})`)) === true);
   check("and shows its title as written, not in capitals", (await $(`(() => { const r = [...document.querySelectorAll('.palette-row')].find((n) => n.querySelector('.card-id')?.textContent === ${JSON.stringify(last?.key)}); return r ? getComputedStyle(r.querySelector('.p-label')).textTransform : null; })()`)) === "none");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+
+  // ── ⌘K scrolls, and a ticket typed for is not buried under old conversations ──
+  const shipped = repos.items.create({ projectId: handoff.id, boardId: handoffBoard.id, title: "Ship the export", by: "human" });
+  repos.items.update(handoff.id, shipped.id, { status: "done" }, "human");
+  const digits = shipped.key.split("-")[1];
+  const engine = ctx.agent.store.threads(project.id)[0]?.engine ?? "pi";
+  const longAgo = Date.now() - 24 * 60 * 60_000;
+  // quiet a day, so they are history; what they said fuzzily spells the key, their titles do not
+  for (let i = 0; i < 14; i++) {
+    const th = ctx.agent.store.createThread(handoff.id, engine, i % 2 ? "Hey" : `New chat ${i}`);
+    ctx.agent.store.setSaid(handoff.id, th.id, `Handled it - ${digits[0]} drafts, ${digits.slice(1) || digits} sent`);
+  }
+  const onTicket = ctx.agent.store.createThread(handoff.id, engine, "Export work", null, shipped.id);
+  repos.dbFor(handoff.id).prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE project_id = ?").run(longAgo, handoff.id);
+  await $(`location.reload();true`);
+  await sleep(3000);
+  if (!(await $(`!!document.querySelector('.ai .sbar')`))) {
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
+    await sleep(1200);
+  }
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
+  await sleep(900);
+  const box = await $(`(() => { const p = document.querySelector('.palette'), l = document.querySelector('.palette-list'); return { panel: p.getBoundingClientRect().height, vh: innerHeight, scroll: l.scrollHeight, client: l.clientHeight }; })()`);
+  check("⌘K stays within 60% of the window", box.panel <= box.vh * 0.6 + 1);
+  check("and its list is bounded by it, so it scrolls", box.scroll > box.client && box.client > 0);
+  check("the wheel scrolls the list", (await $(`(() => { const l = document.querySelector('.palette-list'); l.scrollTop = 240; return l.scrollTop; })()`)) > 0);
+  await $(`document.querySelector('.palette-list').scrollTop = 0;true`);
+  // ↑ from the first row wraps to the last: cmdk scrolls it into view
+  await $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));true`);
+  await sleep(400);
+  // seen: inside the list's box and the palette's, which clips whatever the list does not scroll
+  const inView = (selector) => `(() => { const n = ${selector}; if (!n) return false; const l = document.querySelector('.palette-list').getBoundingClientRect(), p = document.querySelector('.palette').getBoundingClientRect(), r = n.getBoundingClientRect(); return r.top >= Math.max(l.top, p.top) - 1 && r.bottom <= Math.min(l.bottom, p.bottom) + 1; })()`;
+  check("the arrow keys bring the last row into view", (await $(`(() => { const rows = [...document.querySelectorAll('.palette-list [cmdk-item]')]; const last = rows[rows.length - 1]; return last?.getAttribute('aria-selected') === 'true'; })()`)) && (await $(inView(`[...document.querySelectorAll('.palette-list [cmdk-item]')].pop()`))));
+  await typeInto(".palette-input", shipped.key);
+  await sleep(1200);
+  const ticketRow = `[...document.querySelectorAll('.palette-row')].find((n) => n.querySelector('.card-id')?.textContent === ${JSON.stringify(shipped.key)})`;
+  check("a closed ticket typed by its key is in view", await $(inView(ticketRow)));
+  check("and is the first row to pick", (await $(`document.querySelector('.palette-list [cmdk-item]') === ${ticketRow}`)) === true);
+  check("Tickets come before History when both match", (await $(`(() => { const t = ${ticketRow}?.closest('[cmdk-group]'), h = document.querySelector('[data-testid="palette-history"]'); return !!t && !!h && !!(t.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING); })()`)) === true);
+  check("History keeps the conversation on that ticket", (await $(`!!document.querySelector('[data-session="thread:${onTicket.id}"]')`)) === true);
+  check("and leaves out the ones whose title and ticket do not hold the key", (await $(`[...document.querySelectorAll('[data-testid="palette-history"] .palette-row')].filter((n) => /Hey|New chat/.test(n.textContent)).length`)) === 0);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
 
   return results;

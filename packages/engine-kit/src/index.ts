@@ -2,7 +2,7 @@ export { localAvailability, chosenCommand, desktopAppPaths, type DesktopApp } fr
 export { lineSplitter, runJsonl, signedIn, type CliRun } from "./cli.js";
 export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
 export {
-  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, stopCliNow, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
+  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, spawnCliTree, stopCli, stopCliNow, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
   installDirs, searchPath, findCommand, machineHost, archiveFolder,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult
 } from "./locate.js";
@@ -15,6 +15,6 @@ export { JsonLinePeer, jsonRpc, RpcError, STDERR_CAP, type PeerOptions, type Rpc
 export { pooledEngine, runTurn, type TurnFrame, type TurnSpec } from "./turn.js";
 export { engineLocale, KIT_WORDS } from "./words.js";
 export {
-  blocksText, claudeRecord, claudeTranscriptTitle, clipDetail, clipLine, countJsonlUsage, findClaudeTranscript, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine,
+  blocksText, claudeRecord, claudeSessions, claudeTranscriptTitle, clipDetail, clipLine, countJsonlUsage, findClaudeTranscript, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine,
   type ClaudeFolders, type JsonlReader, type RecordCallLine, type UsageEntry
 } from "./record.js";

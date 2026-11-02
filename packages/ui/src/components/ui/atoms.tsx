@@ -1,6 +1,7 @@
 import type * as React from "react";
 import type { Item, ItemStatus, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
+import { Collapse } from "~/components/ui/collapse";
 import { PRIORITY_LABEL, STATUS, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
@@ -35,10 +36,10 @@ export const SectionHead = ({ title, aside, children }: { title: string; aside?:
 export const Fold = ({ id, title, open, onToggle, children }: { id: string; title: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode }) => (
   <section className={cn("fold", !open && "folded")} data-fold={id}>
     <button type="button" className="fold-head" aria-expanded={open} onClick={onToggle}>
-      <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
+      <Icon name="i-chevdown" size={12} style={open ? undefined : { transform: "rotate(-90deg)" }} />
       <span className="fold-title">{title}</span>
     </button>
-    {open && <div className="fold-body">{children}</div>}
+    <Collapse open={open} className="fold-body">{children}</Collapse>
   </section>
 );
 

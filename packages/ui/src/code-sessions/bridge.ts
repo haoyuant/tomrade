@@ -6,6 +6,13 @@ export interface Look {
   dark: boolean;
   tokens: Record<string, string>;
   locale: string;
+  /** The shell put the system's frosted material under this window: the page leaves its own background off. */
+  frosted?: boolean;
+  backdrop?: { veil: number; frost: number; terminalVeil?: number };
+  base?: string;
+  still?: boolean;
+  /** On this page only: something is behind the window (the system's material or the theme's picture), so terminals draw no background of their own. */
+  clear?: boolean;
 }
 
 interface SurfaceBridge {
@@ -15,6 +22,7 @@ interface SurfaceBridge {
   send(message: unknown): void;
   pathForFile?(file: File): string;
   pickDirectory?(title: string, buttonLabel: string): Promise<string | null>;
+  terminalPicture?(themeId: string): Promise<{ mime: string; base64: string } | null>;
 }
 
 declare global {
@@ -28,6 +36,7 @@ const surface = (): SurfaceBridge | undefined => window.tomradeSurface;
 export const send = (message: WindowMessage): void => surface()?.send(message);
 export const pickDirectory = (title: string, buttonLabel: string): Promise<string | null> => (surface()?.pickDirectory?.(title, buttonLabel) ?? Promise.resolve(null)).catch(() => null);
 export const pathForFile = (file: File): string => surface()?.pathForFile?.(file) ?? "";
+export const terminalPicture = (themeId: string) => (surface()?.terminalPicture?.(themeId) ?? Promise.resolve(null)).catch(() => null);
 export const onState = (listener: (state: WindowState) => void) => surface()?.onState((s) => listener(s as WindowState)) ?? (() => undefined);
 export const onLook = (listener: (look: Look) => void) => surface()?.onLook(listener) ?? (() => undefined);
 
@@ -96,6 +105,9 @@ function answer(message: (token: number) => WindowMessage): Promise<void> {
 
 /** A terminal session's prompt allowed or denied from its card. */
 export const answerSession = (sessionId: string, which: "allow" | "deny"): Promise<void> => answer((token) => ({ type: "answer", sessionId, which, token }));
+
+/** A terminal session's question answered from its card with one of its choices. */
+export const chooseSession = (sessionId: string, choice: string): Promise<void> => answer((token) => ({ type: "choose", sessionId, choice, token }));
 
 /** An assistant conversation's question answered from its card. */
 export const answerThreadAsk = (threadId: string, questionId: string, value: string): Promise<void> => answer((token) => ({ type: "answerThread", threadId, questionId, value, token }));

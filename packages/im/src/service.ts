@@ -79,8 +79,20 @@ export interface ImThreadBinding {
 }
 /** Something waiting on the person, as the desktop's attention row decided it; reaches them in their direct chat. */
 export interface ImReminder {
-  projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck";
+  projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck" | "suspect";
   title: string; body: string;
+}
+/** News for the people paired with this desktop that belongs to no conversation: words only, once per `key`. */
+export interface ImAnnouncement {
+  key: string;
+  title: string;
+  body: string;
+}
+/** A yes or no only the person can give: `answer` runs on their press, and says what came of it. */
+export interface ImConfirm extends ImAnnouncement {
+  yes: string;
+  no: string;
+  answer(yes: boolean): string;
 }
 export interface ImAllowRequest {
   /** An ignored message's id. */
@@ -231,6 +243,7 @@ export class Im extends Service {
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
   private stopped = false;
+  private readonly confirms = new Map<string, ImConfirm>();
   private settings: ImSettings = { connections: [], identities: [], routes: [], notify: { tickets: true, code: true, presence: false, routines: false, attention: true } };
   /** Connections that have said "online" since this start. */
   private readonly announced = new Set<string>();
@@ -1353,7 +1366,7 @@ export class Im extends Service {
    * it reached someone.
    */
   remind(n: ImReminder): boolean {
-    if (!n.threadId || (n.kind !== "permission" && n.kind !== "question" && n.kind !== "stuck") || !this.home.db.has(n.projectId)) return false;
+    if (!n.threadId || (n.kind !== "permission" && n.kind !== "question" && n.kind !== "stuck" && n.kind !== "suspect") || !this.home.db.has(n.projectId)) return false;
     const detail = this.home.agent.thread(n.projectId, n.threadId);
     const runId = detail.runs.at(-1)?.id ?? null;
     const bound = this.store.bindings().filter(b => b.thread_id === n.threadId && this.authorizedBinding(b));
@@ -1365,7 +1378,7 @@ export class Im extends Service {
     const known = [...bound, ...watching];
     const people = known.length ? known.map(b => [b.connection_id, b.actor_id] as const)
       : this.settings.identities.map(i => [i.connectionId, i.actorId] as const);
-    const pending = n.kind === "stuck" ? null : detail.pending;
+    const pending = n.kind === "stuck" || n.kind === "suspect" ? null : detail.pending;
     let reached = false;
     for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
       const dm = this.directChat(connectionId, actorId);
@@ -1373,6 +1386,32 @@ export class Im extends Service {
       const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}`;
       const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
       this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
+      reached = true;
+    }
+    return reached;
+  }
+
+  /** Puts a yes or no to each paired person in their direct chat, never in a group; nothing but their press answers it. True when it reached someone. */
+  confirm(n: ImConfirm): boolean {
+    let reached = false;
+    this.confirms.set(n.key, n);
+    for (const { connectionId, actorId } of this.settings.identities) {
+      const dm = this.directChat(connectionId, actorId);
+      if (!dm || !this.notifies(dm, "attention")) continue;
+      const button = (label: string, value: string) => ({ label, token: this.offerValue(dm, `confirm:${n.key}`, actorId, value) });
+      this.enqueue(dm, `confirm:${dm.id}:${n.key}`, { text: `**${n.title}**\n${n.body}`, actions: [{ ...button(n.yes, "yes"), style: "primary" as const }, button(n.no, "no")] }, { anchor: null });
+      reached = true;
+    }
+    return reached;
+  }
+
+  /** Tells each paired person in their direct chat, never in a group; a chat that turned reminders off hears nothing. True when it reached someone. */
+  announce(n: ImAnnouncement): boolean {
+    let reached = false;
+    for (const { connectionId, actorId } of this.settings.identities) {
+      const dm = this.directChat(connectionId, actorId);
+      if (!dm || !this.notifies(dm, "attention")) continue;
+      this.enqueue(dm, `announce:${dm.id}:${n.key}`, { text: `**${n.title}**${n.body ? `\n${n.body}` : ""}` }, { anchor: null });
       reached = true;
     }
     return reached;
@@ -1682,6 +1721,18 @@ export class Im extends Service {
     const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
     const when = running ? this.w("appliesNextTurn") : "";
     const done = (text: string, on = b) => { this.enqueue(on, `${kind}:${row.id}`, { text }, reply); this.accept(row); };
+    if (kind.startsWith("confirm:")) {
+      const key = kind.slice("confirm:".length);
+      const asked = this.confirms.get(key);
+      if (!asked) this.refuse(this.w("choiceExpired"));
+      this.confirms.delete(key);
+      try {
+        done(asked.answer(value === "yes"));
+      } catch (e) {
+        done(errorMessage(e));
+      }
+      return;
+    }
     if (kind === "proposal") {
       const [, verdict, projectId, proposalId] = /^(accept|reject):([^:]+):(.+)$/.exec(value) ?? [];
       const code = this.code();

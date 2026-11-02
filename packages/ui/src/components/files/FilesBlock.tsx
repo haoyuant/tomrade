@@ -10,6 +10,8 @@ import { useI18n } from "~/lib/i18n";
 import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { hintOf, stateOf } from "./state";
+import { SyncActivity } from "~/components/ui/SyncActivity";
+import { useSyncProgress } from "~/lib/syncProgress";
 import { SyncPolicySettings, SyncScopeSummary } from "./SyncPolicy";
 import { AgentPolicySettings } from "./AgentPolicy";
 
@@ -32,6 +34,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
   const STATE = stateOf(t);
   const info = useFilesInfo(projectId);
   const status = useFilesStatus(projectId);
+  const progress = useSyncProgress("files.progress", projectId, status.data?.progress);
   const sync = useSyncFiles(projectId);
   const toast = useToast();
   const state = STATE[status.data?.state ?? "local"];
@@ -76,8 +79,9 @@ export function FilesBlock({ projectId }: { projectId: string }) {
           <Tag tone={state.tone}>{state.label}</Tag>
         </div>
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-          {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : state.hint}
+          {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : hintOf(t, state, status.data)}
         </p>
+        <SyncActivity id={`files:${projectId}`} progress={progress} trace={status.data?.trace} />
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary files-sync" disabled={sync.isPending || !dir} onClick={syncNow}>
             <Icon name="i-sync" size={13} />

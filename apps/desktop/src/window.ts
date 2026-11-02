@@ -1,14 +1,19 @@
-import { BrowserWindow, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
 import { sendToWindow } from "./ipc.js";
+import { isFrosted, materialOptions, takesMaterial } from "./window-material.js";
 
 interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
   trafficLights: boolean;
   /** The window app-wide prompts land in, the one the shell brings forward; the others leave them be. */
   lead: boolean;
+  /** The window wears the system's frosted material: the page leaves its own background off. */
+  frosted: boolean;
+  /** Chromium composites without the GPU, so every animated frame is drawn on the CPU: the page keeps its lights still. */
+  softwareCompositing: boolean;
 }
 
 declare module "@tomradex/ipc" {
@@ -38,10 +43,16 @@ export interface WindowOptions {
   lead: (win: BrowserWindow) => boolean;
 }
 
+// Reads as software until the GPU process first reports; the window is told again on gpu-info-update.
+export function softwareCompositing(): boolean {
+  const status = app.getGPUFeatureStatus().gpu_compositing;
+  return !!status && !status.startsWith("enabled");
+}
+
 /** Tells a window how its chrome stands now. */
 export function sayChrome(win: BrowserWindow, lead: boolean): void {
   if (win.isDestroyed()) return;
-  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead } satisfies WindowChrome);
+  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead, frosted: isFrosted(win), softwareCompositing: softwareCompositing() } satisfies WindowChrome);
 }
 
 export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
@@ -54,23 +65,30 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     icon: opts.icon,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 14 },
+    // Frosted, the material stays lit when another window has the focus, as the Terminal window over it often does.
+    ...(process.platform === "darwin" ? { visualEffectState: "active" as const } : {}),
+    ...materialOptions(),
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false, ...(opts.detached ? { additionalArguments: [DETACHED_ARG] } : {}) }
   });
   if (!place || place.maximized) win.maximize();
 
   const sendChrome = () => sayChrome(win, opts.lead(win));
   win.webContents.on("did-finish-load", sendChrome);
+  takesMaterial(win, sendChrome);
   // The renderer's own failures belong in the log the troubleshooter reads.
   const log = ctx.logger("renderer");
   win.webContents.on("console-message", (event) => { if (event.level === "error" || String(event.level) === "3") log.warn(`${event.message} (${event.sourceId}:${event.lineNumber})`); });
   win.webContents.on("render-process-gone", (_event, details) => log.error(`renderer gone: ${details.reason} (exit ${details.exitCode})`));
   win.on("enter-full-screen", sendChrome);
   win.on("leave-full-screen", sendChrome);
+  // The status settles when the GPU process first reports, and turns to software if that process gives up.
+  app.on("gpu-info-update", sendChrome);
   const wake = () => sendToWindow(win, "window.wake");
   powerMonitor.on("resume", wake);
   powerMonitor.on("unlock-screen", wake);
   win.on("restore", wake);
   win.on("closed", () => {
+    app.off("gpu-info-update", sendChrome);
     powerMonitor.off("resume", wake);
     powerMonitor.off("unlock-screen", wake);
   });

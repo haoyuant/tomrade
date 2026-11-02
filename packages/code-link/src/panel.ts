@@ -1,7 +1,8 @@
 import type { Context } from "cordis";
 import type { EngineApproval } from "@tomradex/agent";
 import type { TerminalInput } from "@tomradex/contracts";
-import { arrowsTo, PROMPT_LINES, promptOnScreen, tailLines, trustOnScreen } from "./prompt.js";
+import { droppedText, dropsFolder, readableDrops } from "./drop.js";
+import { arrowsTo, choiceOnScreen, PROMPT_LINES, promptOnScreen, tailLines, trustOnScreen } from "./prompt.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
 /** The most of a pane's screen one read of its tail takes. */
@@ -27,9 +28,10 @@ export interface SessionGlance {
   approval: boolean;
   /**
    * What its screen asks that a card can answer now: a permission prompt its keys answer, with yes under the cursor or
-   * with no, a folder's trust (arrows to the option, then Enter, whatever the agent), or nothing.
+   * with no, a folder's trust or the menu of the question its hook told of (arrows to the option, then Enter, whatever
+   * the agent), or nothing.
    */
-  prompt: "allow" | "deny" | "trust" | null;
+  prompt: "allow" | "deny" | "trust" | "choice" | null;
   /** The last lines its pane shows that say something; null without a pane here. */
   tail: string[] | null;
 }
@@ -112,6 +114,15 @@ export class SessionPanel {
     return terminals.sendInput(s.herdrPane, { text, keys: ["enter"] });
   }
 
+  /** Files dropped on the session, as on its cell: their paths pasted into the pane, without Enter. False when they could not go. */
+  async drop(projectId: string, sessionId: string, paths: string[]): Promise<boolean> {
+    const s = this.live(projectId, sessionId);
+    const terminals = this.terminals();
+    if (!s?.herdrPane || !terminals?.sendInput) return false;
+    const text = droppedText(await readableDrops(paths, dropsFolder()));
+    return text ? terminals.sendInput(s.herdrPane, { text, paste: true }) : false;
+  }
+
   /** Esc pressed in the session's pane, as at its keyboard: what closes the agent's own menus and panels. False when it could not go. */
   async escape(projectId: string, sessionId: string): Promise<boolean> {
     const s = this.live(projectId, sessionId);
@@ -141,14 +152,30 @@ export class SessionPanel {
    * may well be "No, exit".
    */
   async trust(projectId: string, sessionId: string, which: "trust" | "exit"): Promise<AnswerResult> {
+    return this.pick(projectId, sessionId, trustOnScreen, (prompt) => prompt[which]);
+  }
+
+  /**
+   * A question's choice picked on the session's pane: only one its hook told of, on a menu the screen shows with those
+   * choices; the cursor moved to it and Enter pressed once the screen shows it there.
+   */
+  async choose(projectId: string, sessionId: string, choice: string): Promise<AnswerResult> {
+    const s = this.live(projectId, sessionId);
+    const choices = s?.state === "waiting" && s.ask?.kind === "question" ? s.ask.options : undefined;
+    if (!choices?.includes(choice)) return "notPrompt";
+    return this.pick(projectId, sessionId, (screen) => choiceOnScreen(screen, choices), () => choices.indexOf(choice));
+  }
+
+  /** A menu on the session's pane read by `menu`: the cursor moved to the option `targetOf` names, then Enter — only once the screen shows it there. */
+  private async pick<P extends { options: string[]; selected: number }>(projectId: string, sessionId: string, menu: (screen: string) => P | null, targetOf: (prompt: P) => number): Promise<AnswerResult> {
     const s = this.live(projectId, sessionId);
     const terminals = this.terminals();
     if (!s?.herdrPane || !terminals?.sendInput) return "failed";
     const pane = s.herdrPane;
-    const read = async () => trustOnScreen((await terminals.readTail(pane, PROMPT_LINES).catch(() => null)) ?? "");
+    const read = async () => menu((await terminals.readTail(pane, PROMPT_LINES).catch(() => null)) ?? "");
     const prompt = await read();
     if (!prompt) return "notPrompt";
-    const target = prompt[which];
+    const target = targetOf(prompt);
     const arrows = arrowsTo(prompt, target);
     if (arrows.length && !(await terminals.sendInput(pane, { keys: arrows }))) return "failed";
     for (let look = 0; ; look++) {
@@ -176,15 +203,16 @@ export class SessionPanel {
           out.set(s.id, { approval, prompt: null, tail: null });
           return;
         }
-        // a permission its agent declared keys for, or one only the screen told of, which a folder's trust is
-        const asks = s.state === "waiting" && s.ask?.kind === "permission" && (approval || !s.ask.tool);
+        // a permission its agent declared keys for, or one only the screen told of, which a folder's trust is; a question with choices
+        const choices = s.state === "waiting" && s.ask?.kind === "question" ? (s.ask.options ?? null) : null;
+        const asks = (s.state === "waiting" && s.ask?.kind === "permission" && (approval || !s.ask.tool)) || !!choices;
         const known = this.seen.get(s.id);
         const sameEvent = known?.event === s.lastEventAt;
         const reuse = !!known && (asks ? known.asks && sameEvent && (!!known.prompt || now - known.at < GLANCE_RECHECK_MS) : now - known.at < (sameEvent ? TAIL_STALE_MS : TAIL_MIN_MS));
         if (known && reuse) return void out.set(s.id, { approval, prompt: asks ? known.prompt : null, tail: known.tail });
         const screen = (await terminals.readTail(s.herdrPane, asks ? PROMPT_LINES : TAIL_ROWS).catch(() => null)) ?? "";
-        const seen = asks && approval ? promptOnScreen(screen) : null;
-        const prompt = asks && trustOnScreen(screen) ? "trust" : seen ? (seen.allows ? "allow" : "deny") : null;
+        const seen = asks && approval && !choices ? promptOnScreen(screen) : null;
+        const prompt = choices ? (choiceOnScreen(screen, choices) ? "choice" : null) : asks && trustOnScreen(screen) ? "trust" : seen ? (seen.allows ? "allow" : "deny") : null;
         const tail = tailLines(screen, TAIL_SHOWN).map((line) => line.slice(0, TAIL_LINE_MAX));
         this.seen.set(s.id, { event: s.lastEventAt, at: now, asks, prompt, tail });
         out.set(s.id, { approval, prompt, tail });

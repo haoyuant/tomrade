@@ -20,6 +20,11 @@ const toPark = (r: ParkedRow): ParkView => ({ threadId: r.thread_id, runId: r.ru
 
 /** How a run the app's closing cut short stopped — not cancelled by anyone. */
 const INTERRUPTED = "interrupted";
+/** How a run another machine was driving stopped when this one took its conversation over. */
+export const TAKEN_OVER = "taken-over";
+
+/** Stamped by another machine; a run from before machines were stamped is this one's. */
+const elsewhere = (r: { device?: string | null }, here: string | null): boolean => !!r.device && !!here && r.device !== here;
 
 export const MIGRATIONS = [
   {
@@ -151,7 +156,11 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   // What a conversation said last, kept with it so a card shows it without reading the conversation.
   { version: 17, up: "ALTER TABLE plugin_agent_threads ADD COLUMN said TEXT" },
   // A run the app's closing interrupted, once the person waved it away instead of continuing.
-  { version: 18, up: "ALTER TABLE plugin_agent_runs ADD COLUMN dismissed_at INTEGER" }
+  { version: 18, up: "ALTER TABLE plugin_agent_runs ADD COLUMN dismissed_at INTEGER" },
+  // The machine a run is driven on: one another machine drives is never settled here.
+  { version: 19, up: "ALTER TABLE plugin_agent_runs ADD COLUMN device TEXT" },
+  // The engine the person chose to stay on when offered a move from it.
+  { version: 20, up: "ALTER TABLE plugin_agent_threads ADD COLUMN switch_declined TEXT" }
 ];
 
 interface ThreadRow {
@@ -194,11 +203,12 @@ interface RunRow {
   started_at: number;
   ended_at: number | null;
   dismissed_at?: number | null;
+  device?: string | null;
 }
 
 interface PendingRow {
   thread_id: string;
-  kind: "ask" | "workflow";
+  kind: "ask" | "workflow" | "switch";
   workflow: string | null;
   step: string | null;
   state_json: string | null;
@@ -235,7 +245,7 @@ const toThread = (r: ThreadRow, engineOf: (id: string) => string = (id) => id): 
   updatedAt: r.updated_at
 });
 
-const toRun = (r: RunRow): RunView => {
+const toRun = (r: RunRow, here: string | null = null): RunView => {
   const usage = r.usage_json ? (JSON.parse(r.usage_json) as RunView["usage"]) : null;
   const metrics = r.metrics_json ? (JSON.parse(r.metrics_json) as RunView["metrics"]) : null;
   return {
@@ -256,6 +266,7 @@ const toRun = (r: RunRow): RunView => {
     startedAt: r.started_at,
     endedAt: r.ended_at,
     ...(r.stop === INTERRUPTED ? { dismissedAt: r.dismissed_at ?? null } : {}),
+    ...(r.status === "running" && elsewhere(r, here) ? { elsewhere: true } : {}),
     metrics
   };
 };
@@ -285,13 +296,21 @@ export class AgentStore {
   constructor(
     private readonly pool: Db,
     /** The engine that answers for a stored engine id — another engine may have taken it in. */
-    private readonly engineOf: (id: string) => string = (id) => id
+    private readonly engineOf: (id: string) => string = (id) => id,
+    /** This machine's device id, stamped on each run it begins; null when there is no Hub. */
+    private readonly here: () => string | null = () => null
   ) {}
 
   private toThread = (r: ThreadRow): ThreadSummary => toThread(r, this.engineOf);
+  private toRun = (r: RunRow): RunView => toRun(r, this.here());
 
   private db(projectId: string): ProjectDb {
     return this.pool.for(projectId);
+  }
+
+  /** Whether the project's file is open, so its rows can be read and written. */
+  isOpen(projectId: string): boolean {
+    return this.pool.has(projectId);
   }
 
   transaction<T>(projectId: string, work: () => T): T {
@@ -426,6 +445,16 @@ export class AgentStore {
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET external_json = ? WHERE id = ?").run(JSON.stringify(map), threadId);
   }
 
+  /** The engine whose limits the person said not to be asked about on this thread, until it works again or the thread moves on. */
+  switchDeclined(projectId: string, threadId: string): string | null {
+    const row = this.db(projectId).prepare("SELECT switch_declined FROM plugin_agent_threads WHERE id = ?").get(threadId) as { switch_declined: string | null } | undefined;
+    return row?.switch_declined ?? null;
+  }
+
+  setSwitchDeclined(projectId: string, threadId: string, engine: string | null): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET switch_declined = ? WHERE id = ?").run(engine, threadId);
+  }
+
   waivers(projectId: string, threadId: string): Set<string> {
     const row = this.db(projectId).prepare("SELECT waivers_json FROM plugin_agent_threads WHERE id = ?").get(threadId) as { waivers_json: string } | undefined;
     return new Set(row ? (JSON.parse(row.waivers_json) as string[]) : []);
@@ -453,28 +482,25 @@ export class AgentStore {
 
   appendMessage(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
     const db = this.db(projectId);
-    const seq = ((db.prepare("SELECT MAX(seq) AS m FROM plugin_agent_messages WHERE thread_id = ?").get(threadId) as { m: number | null }).m ?? 0) + 1;
-    const message: ThreadMessage = { id: randomUUID(), threadId, seq, role, block, runId, at: Date.now() };
-    db.prepare("INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-      message.id,
-      threadId,
-      seq,
-      role,
-      JSON.stringify(block),
-      runId,
-      message.at
-    );
-    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(message.at, threadId);
-    return message;
+    const id = randomUUID();
+    const at = Date.now();
+    // The insert takes the number itself, so no earlier read of the thread can hand out one already taken.
+    const { seq } = db
+      .prepare(
+        "INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ? FROM plugin_agent_messages WHERE thread_id = ? RETURNING seq"
+      )
+      .get(id, threadId, role, JSON.stringify(block), runId, at, threadId) as { seq: number };
+    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(at, threadId);
+    return { id, threadId, seq, role, block, runId, at };
   }
 
   runs(projectId: string, threadId: string): RunView[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE thread_id = ? ORDER BY started_at ASC").all(threadId) as RunRow[]).map(toRun);
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE thread_id = ? ORDER BY started_at ASC").all(threadId) as RunRow[]).map(this.toRun);
   }
 
   run(projectId: string, id: string): RunView | null {
     const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE id = ?").get(id) as RunRow | undefined;
-    return row ? toRun(row) : null;
+    return row ? this.toRun(row) : null;
   }
 
   /** The project a run belongs to, searched across open files — for a caller that only holds the run id. */
@@ -488,22 +514,29 @@ export class AgentStore {
   /**
    * Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. A background
    * conversation's interruption is its conclusion: `parentNote` words it for the conversation it reports to.
-   * The runs stop as `interrupted`, and both notes say so, so the conversation can offer to go on. Returns the
-   * conversations interrupted.
+   * The runs stop as `interrupted`, and both notes say so, so the conversation can offer to go on. A run
+   * `owned` by a controller in this process is still going and is left alone, and so is one another machine drives.
+   * Returns the conversations interrupted.
    */
-  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string): string[] {
-    const db = this.db(projectId);
-    const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
-    if (!stale.length) return [];
-    const now = Date.now();
-    const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?");
-    for (const { id, thread_id } of stale) {
-      update.run(INTERRUPTED, note, now, id);
-      this.appendMessage(projectId, thread_id, "system", { type: "note", text: note, interrupted: true }, id);
-      const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(thread_id) as { title: string; parent_id: string | null } | undefined;
-      if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: thread_id, interrupted: true }, null);
-    }
+  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string, owned: (runId: string) => boolean = () => false): string[] {
+    const here = this.here();
+    const stale = (this.db(projectId).prepare("SELECT id, thread_id, device FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string; device: string | null }[])
+      .filter((run) => !owned(run.id) && !elsewhere(run, here));
+    for (const { id } of stale) this.interruptRun(projectId, id, note, parentNote);
     return [...new Set(stale.map((s) => s.thread_id))];
+  }
+
+  /** Stops one running run as `interrupted`, with the notes `reconcileInterrupted` writes. Null when it is not running. */
+  interruptRun(projectId: string, runId: string, note: string, parentNote?: (title: string) => string): RunView | null {
+    const db = this.db(projectId);
+    const row = db.prepare("SELECT thread_id FROM plugin_agent_runs WHERE id = ? AND status = 'running'").get(runId) as { thread_id: string } | undefined;
+    if (!row) return null;
+    const threadId = row.thread_id;
+    db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?").run(INTERRUPTED, note, Date.now(), runId);
+    this.appendMessage(projectId, threadId, "system", { type: "note", text: note, interrupted: true }, runId);
+    const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(threadId) as { title: string; parent_id: string | null } | undefined;
+    if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: threadId, interrupted: true }, null);
+    return this.run(projectId, runId);
   }
 
   /**
@@ -514,7 +547,7 @@ export class AgentStore {
     const row = this.db(projectId)
       .prepare("SELECT r.* FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE r.thread_id = ? AND t.archived = 0 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1")
       .get(threadId) as RunRow | undefined;
-    return row && row.stop === INTERRUPTED && row.dismissed_at == null ? toRun(row) : null;
+    return row && row.stop === INTERRUPTED && row.dismissed_at == null ? this.toRun(row) : null;
   }
 
   /** The project's open conversations left interrupted (see `interruptedRun`), on these surfaces. */
@@ -540,8 +573,25 @@ export class AgentStore {
   beginRun(projectId: string, threadId: string, engine: string): RunView {
     const id = randomUUID();
     const execution = this.thread(projectId, threadId)?.execution;
-    this.db(projectId).prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at, execution_json) VALUES (?, ?, 'running', ?, ?, ?)").run(id, threadId, engine, Date.now(), execution ? JSON.stringify(execution) : null);
+    this.db(projectId).prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at, execution_json, device) VALUES (?, ?, 'running', ?, ?, ?, ?)").run(id, threadId, engine, Date.now(), execution ? JSON.stringify(execution) : null, this.here());
     return this.run(projectId, id)!;
+  }
+
+  /** The conversation's run another machine is driving now, as far as this copy knows; null when none is. */
+  runningElsewhere(projectId: string, threadId: string): RunView | null {
+    const rows = this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE thread_id = ? AND status = 'running'").all(threadId) as RunRow[];
+    const row = rows.find((r) => elsewhere(r, this.here()));
+    return row ? this.toRun(row) : null;
+  }
+
+  /** Stops the run another machine was driving, so this machine can go on with its conversation; `note` says so there. */
+  takeOverRun(projectId: string, runId: string, note: string): RunView | null {
+    const db = this.db(projectId);
+    const row = db.prepare("SELECT * FROM plugin_agent_runs WHERE id = ? AND status = 'running'").get(runId) as RunRow | undefined;
+    if (!row || !elsewhere(row, this.here())) return null;
+    db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?").run(TAKEN_OVER, note, Date.now(), runId);
+    this.appendMessage(projectId, row.thread_id, "system", { type: "note", text: note }, runId);
+    return this.run(projectId, runId);
   }
 
   endRun(
