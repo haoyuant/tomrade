@@ -19,6 +19,14 @@ export class LlmError extends Error {
   }
 }
 
+/** The model is not at fault: the caller's time ran out, or it answered something that does not fit. Asking another source would not help. */
+export class NotAModelFailure extends LlmError {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotAModelFailure";
+  }
+}
+
 /** The provider turned down its own web search (the model, the account or the endpoint); the caller searches another way. */
 export class NativeSearchRefused extends LlmError {
   constructor(message: string, cause?: unknown) {
