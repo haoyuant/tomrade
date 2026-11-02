@@ -25,7 +25,7 @@ export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectI
   const current = useNightShift(projectId);
   const proposal = useShiftProposal(projectId);
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-plan">
+    <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-plan" resizable="plan">
       <DialogHead title={t("nightShift.title")} />
       {current.data ? <Going projectId={projectId} shift={current.data} onClose={onClose} onOpenIssue={onOpenIssue} /> : current.isLoading ? null : proposal.data ? <Asked projectId={projectId} proposal={proposal.data} onOpenIssue={onOpenIssue} /> : <SetUp projectId={projectId} onClose={onClose} />}
     </Dialog>

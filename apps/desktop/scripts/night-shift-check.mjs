@@ -141,6 +141,29 @@ const run = async () => {
   await shot("plan-graph-hover");
   win.webContents.sendInputEvent({ type: "mouseMove", x: 4, y: 4 });
   check("moving away brings them all back", await waitFor(`!document.querySelector('.plan-graph .react-flow__node.is-dim')`));
+
+  // ── its size ──────────────────────────────────────────────────────────
+  const sizes = () => $(`(() => { const sheet = document.querySelector('.sheet-plan').getBoundingClientRect(); const graph = document.querySelector('.plan-graph').getBoundingClientRect(); return { w: Math.round(sheet.width), h: Math.round(sheet.height), graph: Math.round(graph.height), kept: localStorage.getItem('tomrade.dialogSize.plan'), spill: document.querySelector('.sheet-plan .dlg-body').scrollWidth - document.querySelector('.sheet-plan .dlg-body').clientWidth }; })()`);
+  const atFirst = await sizes();
+  const grip = await $(`(() => { const r = document.querySelector('.sheet-plan .dlg-grip')?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; })()`);
+  check("the sheet has a corner to drag", !!grip);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: grip.x, y: grip.y });
+  win.webContents.sendInputEvent({ type: "mouseDown", x: grip.x, y: grip.y, button: "left", clickCount: 1 });
+  for (let i = 1; i <= 8; i++) {
+    win.webContents.sendInputEvent({ type: "mouseMove", x: grip.x - 12 * i, y: grip.y - 10 * i, modifiers: ["leftButtonDown"] });
+    await sleep(16);
+  }
+  win.webContents.sendInputEvent({ type: "mouseUp", x: grip.x - 96, y: grip.y - 80, button: "left", clickCount: 1 });
+  await sleep(200);
+  const dragged = await sizes();
+  check("dragging it makes the sheet smaller", dragged.w < atFirst.w && dragged.h < atFirst.h, { atFirst, dragged });
+  check("the plan's graph follows the sheet", dragged.graph < atFirst.graph, { atFirst, dragged });
+  check("nothing spills sideways", dragged.spill <= 0, dragged);
+  check("the size is kept for the next opening", JSON.parse(dragged.kept ?? "null")?.w === dragged.w, dragged.kept);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: 4, y: 4 });
+  await $(`document.querySelector('.sheet-plan .dlg-grip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  check("a double click puts it back", await waitFor(`Math.round(document.querySelector('.sheet-plan').getBoundingClientRect().height) === ${atFirst.h}`));
+
   await press(`document.querySelector('[data-testid="plan-pick-none"]')`);
   check("None clears the choice", await waitFor(`!document.querySelector('.plan-node.is-chosen')`));
   check("and the answer goes with it", !(await $(text("plan-pick-note"))));
