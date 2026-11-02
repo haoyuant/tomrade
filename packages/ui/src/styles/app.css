@@ -1131,6 +1131,9 @@ strong { font-weight: var(--font-weight-medium); }
 .board-scroll-fade {
   position: absolute; top: 0; right: 0; bottom: 0; width: 32px;
   background: linear-gradient(to right, transparent, var(--bg));
+  /* feathered at both ends, so it leaves no edge against the bars above and below */
+  --feather: min(96px, 30%);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--feather), #000 calc(100% - var(--feather)), transparent);
   pointer-events: none;
 }
 .board-scroll-hint {
