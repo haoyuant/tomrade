@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import { attachedMedia, withRecap, type MediaContent, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
-import { engineLocale, KIT_WORDS, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, KIT_WORDS, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCliTree, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
 import { advertised, choicesOf, optionOf, type Setting } from "./catalog.js";
@@ -210,7 +210,7 @@ export class AcpRuntime implements Runtime {
   /** False when the session in `io.resume` is gone; Tomrade then runs the turn again without it. */
   private async open(input: TurnInput, io: TurnIO, options: AcpOptions): Promise<boolean> {
     const launch = await this.agent.cli.launch(options.command);
-    const child = spawnCli(launch, this.agent.args(input, options), {
+    const child = spawnCliTree(launch, this.agent.args(input, options), {
       // A user-level server naming ${TOMRADE_MCP_TOKEN} (Hermes) then carries this session's token too.
       cwd: this.cwd, env: { ...process.env, ...input.env, ...this.agent.env?.(input, options), TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"]
     }) as ChildProcessWithoutNullStreams;
@@ -218,7 +218,8 @@ export class AcpRuntime implements Runtime {
     // CodeBuddy outlives a closed stdin; Tomrade quits without closing its runtimes, so it takes the agent down itself.
     const reap = () => stopCliNow(child);
     process.once("exit", reap);
-    child.once("exit", () => process.off("exit", reap));
+    // "close", not "exit": what it started may outlive it, holding its output open.
+    child.once("close", () => process.off("exit", reap));
     const conn = (this.conn = acpConnection(child, this.agent.title, this.locale)
       .onNotification((method, params) => this.notification(method, params))
       .onRequest((method, params) => this.request(method, params))

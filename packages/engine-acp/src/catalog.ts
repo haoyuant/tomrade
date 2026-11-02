@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import type { TurnInput } from "@tomradex/agent";
 import { contract } from "@tomradex/contracts";
-import { engineLocale, RpcError, spawnCli, stopCli, type JsonLinePeer } from "@tomradex/engine-kit";
+import { engineLocale, RpcError, spawnCliTree, stopCli, type JsonLinePeer } from "@tomradex/engine-kit";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { acpConnection } from "./connection.js";
 
@@ -101,7 +101,7 @@ export async function oneShot<T>(ctx: Context, agent: AcpAgent<any>, options: Ac
   // The agents' args and env read no turn; a turn's folder is all this one has.
   const input = { cwd } as TurnInput;
   const launch = await agent.cli.launch(options.command);
-  const child = spawnCli(launch, agent.args(input, options), { cwd, env: { ...process.env, ...agent.env?.(input, options) }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+  const child = spawnCliTree(launch, agent.args(input, options), { cwd, env: { ...process.env, ...agent.env?.(input, options) }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
   const conn = acpConnection(child, agent.title, engineLocale(ctx)).onRequest((method) => Promise.reject(new RpcError(`Tomrade does not offer ${method}`, -32601)));
   const stop = () => {
     conn.close(new Error(`${agent.title} was only asked ${why}`));
