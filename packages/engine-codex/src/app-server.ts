@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { codexMediaBlocks, codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
 import { engineLocale, JsonLinePeer, jsonRpc, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
-import { CodexOptions, codexModel } from "./engine.js";
+import { CODEX, CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
 
@@ -237,7 +237,7 @@ export class CodexRuntime implements Runtime {
         const thread = {
           cwd: this.cwd, model: codexModel(options.model),
           ...policy, approvalsReviewer: "user",
-          developerInstructions: sessionSystem(input, "Codex")
+          developerInstructions: sessionSystem(input, CODEX)
         };
         let response: Json;
         try {

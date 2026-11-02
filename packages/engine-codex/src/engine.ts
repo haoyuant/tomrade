@@ -52,6 +52,9 @@ const BREW_INSTALL = "brew install --cask codex";
 export const codexInstall = (found: { npm: boolean; brew: boolean }): string[] =>
   [...(found.npm ? [NPM_INSTALL] : []), ...(found.brew ? [BREW_INSTALL] : [])];
 
+/** Who the engine is, and what its sessions are told of it. */
+export const CODEX = { title: "Codex", nativeWebSearch: true };
+
 /** Everything about the Codex engine except how a turn runs: identity, options, availability, setup. */
 export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
   const cli = localCli("codex");
@@ -96,8 +99,8 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
     suggested: true
   };
   return {
+    ...CODEX,
     id: "codex",
-    title: "Codex",
     author: "ai:codex",
     capabilities: ["backlog", "code", "general"],
     options: CodexOptions,

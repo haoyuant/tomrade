@@ -58,6 +58,9 @@ describe("the Claude Code engine", () => {
       expect(args1).toContain("mcp__tomrade__*");
       expect(args1).toContain("--strict-mcp-config");
       expect(args1).toContain("--model\nopus");
+      expect(ctx.agent.engineOf("claude-code")?.nativeWebSearch).toBe(true);
+      const opened = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)).find((r) => r.request?.subtype === "initialize");
+      expect(opened.request.appendSystemPrompt).toContain("with your own tools first");
       expect(args1).toContain("--effort\nhigh");
       expect(args1).not.toContain("--resume");
 

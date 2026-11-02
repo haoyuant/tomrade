@@ -151,7 +151,7 @@ export class PiRuntime implements Runtime {
     const deferred = deferredTools(listed, input.purpose, input.messages);
     const hidden = this.ctx.tools.served("run").map((t) => t.name).filter((name) => !shown.has(name));
     fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval, deferred: deferred.map((t) => t.name), hidden, kits: kitLines(deferred, io.tools.kits?.(), { names: false }) }), { mode: 0o600 });
-    fs.writeFileSync(system, sessionSystem(input, "Pi"), { mode: 0o600 });
+    fs.writeFileSync(system, sessionSystem(input, { title: "Pi" }), { mode: 0o600 });
     const tools = toolSelection(input);
     const start = await this.start(input);
     // Closed while it was being found (a cancel): nothing to start.

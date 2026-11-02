@@ -47,6 +47,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   env?(input: TurnInput, options: O): Record<string, string>;
   /** The agent's own session mode for a policy; Tomrade answers whatever it still asks. */
   mode?(policy: Policy): string | undefined;
+  /** It has web search of its own; Tomrade's is told to it as the fallback. */
+  nativeWebSearch?: boolean;
   /** "always": it registers HTTP MCP servers without advertising that it can. */
   httpMcp?: "advertised" | "always";
   /**

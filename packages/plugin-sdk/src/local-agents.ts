@@ -310,6 +310,8 @@ export interface LocalAgentSpec<O extends LocalAgentOptions = LocalAgentOptions>
   record?: LocalAgentRecord;
   /** SDK 0.2.30. How its permission prompt in a terminal is answered from the keyboard, so the assistant panel can offer Allow and Deny. */
   approval?: LocalAgentApproval;
+  /** SDK 0.2.32. It searches and reads the web with tools of its own: its ACP sessions are told to use those first, with Tomrade's web_search and web_fetch as the fallback. */
+  nativeWebSearch?: boolean;
 }
 
 /**

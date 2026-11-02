@@ -1313,6 +1313,10 @@ await ctx.agent.localAgent({
   for a refused turn). Absent: an agent with no ACP that Tomrade starts only in
   a terminal (`terminal: { mode: "only" }`), handed the ticket and heard over its user-level
   MCP connection; `picks` are its Model and Effort picks.
+- **`nativeWebSearch`** (SDK 0.2.32) says it searches and reads the web with
+  tools of its own: its ACP sessions are told to use those first, and
+  Tomrade's `web_search` and `web_fetch`, which stay available, only when
+  those fail or are unavailable.
 - **`mcpLink`** is the agent's own user-level connection to Tomrade, shown and
   switched in Settings → Assistant: either `{ status, connect, disconnect }`
   the plugin manages (each answers the link's state), or `{ cli: { file,

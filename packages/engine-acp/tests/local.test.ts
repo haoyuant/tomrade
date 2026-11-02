@@ -62,6 +62,7 @@ describe("a plugin's local agent, run by the app's conductor", () => {
       install: "install the demo agent",
       setup: { install: ["npm i -g demo"], signIn: "demo login" },
       options: Options,
+      nativeWebSearch: true,
       acp: {
         permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] },
         args: (options) => ["--acp", ...(options.model ? [`--model=${options.model}`] : [])],
@@ -110,6 +111,8 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     // The turn's process, and the short session that read the model list, both started as the plugin says.
     expect(requests.filter((r) => r.spawn).map((r) => r.argv)).toContainEqual(["--acp", "--model=Large"]);
     expect(requests.find((r) => r.method === "session/set_config_option" && r.params.configId === "mode")?.params.value).toBe("bypass");
+    expect(engine.nativeWebSearch).toBe(true);
+    expect(requests.find((r) => r.method === "session/prompt")?.params.prompt[0].text).toContain("with your own tools first");
 
     expect(await engine.local!.mcpLink!.status()).toMatchObject({ state: "missing", url: w.ctx.mcp.url });
     expect(await engine.local!.mcpLink!.connect()).toMatchObject({ state: "connected", configuredUrl: w.ctx.mcp.url });
