@@ -129,48 +129,19 @@
   background: radial-gradient(circle, var(--sun-mote-halo), transparent 68%);
   animation: sun-mote-glow var(--glow) ease-in-out var(--blink-from) infinite;
 }
-.sun-drift, .sun-dust { position: absolute; inset: 0; }
+.sun-drift { position: absolute; inset: 0; }
 :where(.sunrise) .sun-drift { --drift-x: 110px; --drift-y: -90px; animation: sun-drift 67s linear -20s infinite; }
 :where(.sunrise) .sun-drift:nth-child(2) { --drift-x: -95px; --drift-y: -115px; animation-duration: 79s; animation-delay: -51s; }
 :where(.sunrise) .sun-drift:nth-child(3) { --drift-x: 120px; --drift-y: 80px; animation-duration: 59s; animation-delay: -33s; }
-/* The finest dust is tiled as Daybreak's stars are, so a larger window holds more of it instead of showing it thinner.
-   Each group has its own tile, so no pattern shows, and reaches past the window by more than the group wanders. */
+/* A group's dust is one canvas (Motes.tsx), not painted elements: a composited element is rastered whole at the screen's
+   resolution, so three window-sized layers of sparse dust took 420 MB on a large window. A canvas keeps its own low
+   resolution. It reaches past the window by more than a group wanders. */
 .sun-dust {
-  --speck: rgba(226, 136, 28, 0.72); --speck-pale: rgba(242, 164, 58, 0.5);
-  inset: -130px; opacity: 0.6;
+  position: absolute; left: -130px; top: -130px; width: calc(100% + 260px); height: calc(100% + 260px); opacity: 0.6;
   animation: sun-dust-turn 11s ease-in-out -3s infinite;
-  background:
-    radial-gradient(circle at 41px 67px, var(--speck) 0.5px, transparent 1.6px),
-    radial-gradient(circle at 318px 34px, var(--speck-pale) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 196px 152px, var(--speck) 0.7px, transparent 2px),
-    radial-gradient(circle at 427px 233px, var(--speck-pale) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 92px 318px, var(--speck-pale) 0.5px, transparent 1.6px),
-    radial-gradient(circle at 283px 389px, var(--speck) 0.4px, transparent 1.4px);
-  background-size: 463px 421px;
 }
-.sun-drift:nth-child(2) .sun-dust {
-  animation-duration: 13s; animation-delay: -9s;
-  background:
-    radial-gradient(circle at 128px 22px, var(--speck-pale) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 351px 118px, var(--speck) 0.5px, transparent 1.6px),
-    radial-gradient(circle at 57px 171px, var(--speck) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 239px 264px, var(--speck-pale) 0.7px, transparent 2px),
-    radial-gradient(circle at 372px 351px, var(--speck-pale) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 146px 448px, var(--speck) 0.5px, transparent 1.6px);
-  background-size: 397px 487px;
-}
-.sun-drift:nth-child(3) .sun-dust {
-  animation-duration: 17s; animation-delay: -6s;
-  background:
-    radial-gradient(circle at 233px 49px, var(--speck) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 482px 96px, var(--speck-pale) 0.5px, transparent 1.6px),
-    radial-gradient(circle at 73px 133px, var(--speck-pale) 0.4px, transparent 1.4px),
-    radial-gradient(circle at 301px 207px, var(--speck) 0.5px, transparent 1.6px),
-    radial-gradient(circle at 418px 288px, var(--speck) 0.7px, transparent 2px),
-    radial-gradient(circle at 164px 341px, var(--speck-pale) 0.4px, transparent 1.4px);
-  background-size: 521px 373px;
-}
-.sun-dust .sun-mote { opacity: var(--peak); animation: none; }
+.sun-drift:nth-child(2) .sun-dust { animation-duration: 13s; animation-delay: -9s; }
+.sun-drift:nth-child(3) .sun-dust { animation-duration: 17s; animation-delay: -6s; }
 .sunrise { --sun-mote-halo: rgba(255, 196, 110, 0.5); }
 .daybreak { --sun-mote-halo: rgba(196, 184, 255, 0.42); }
 .sunrise .sun-mote {
