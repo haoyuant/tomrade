@@ -2004,7 +2004,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .start-starting-mark { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px dashed var(--accent-light); }
 .card-starting { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--accent-light); }
 /* the session at work on the ticket: who, where, for how long */
-.card-session { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--text-xs); color: var(--accent-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-session { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: var(--text-xs); color: var(--accent-light); white-space: nowrap; }
+.card-session-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .card-session-mark { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent-light); }
 /* a ticket's sessions by when each began: what came of each first, where it went unfolded */
 .ticket-sessions { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -3692,7 +3693,10 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .plan-graph { flex: none; height: clamp(340px, calc(100cqh - 330px), 860px); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .plan-graph .react-flow__handle { opacity: 0; pointer-events: none; }
 /* the plan draws the board's graph: what it adds is a tick, a settings button, a note under the card, and where a run stands */
-.plan-canvas { position: absolute; inset: 0; }
+.plan-canvas { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.plan-flow { position: relative; flex: 1; min-height: 0; }
+/* a strip of its own: what is written under a node reaches the canvas's bottom edge */
+.plan-canvas .graph-foot { position: static; flex: none; padding: var(--space-1) var(--space-3); border-top: 1px solid var(--border-soft); background: var(--surface); }
 .plan-graph .react-flow__node, .plan-graph .gnode .card { cursor: pointer; }
 /* a card's paint containment would clip the ring around it */
 .plan-graph .card { content-visibility: visible; }
