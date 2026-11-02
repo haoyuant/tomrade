@@ -20,3 +20,8 @@ overrides:
   "@lezer/javascript": 1.5.5
   "@lezer/lr": 1.4.10
   "@lezer/markdown": 1.7.2
+
+# xterm keeps dim and italic in a cell's background word, so WebGL painted them an
+# opaque block on a clear terminal: its rectangles read colour bits only.
+patchedDependencies:
+  '@xterm/addon-webgl@0.18.0': patches/@xterm__addon-webgl@0.18.0.patch

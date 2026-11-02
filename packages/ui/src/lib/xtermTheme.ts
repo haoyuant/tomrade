@@ -16,7 +16,8 @@ function hex(css: string, probe: HTMLElement, pixel: CanvasRenderingContext2D): 
 /**
  * The terminal's colours from the theme on this page — the app's look once it has arrived, Tomrade's
  * default before — the ANSI palette included, so programs' colours read on light and dark themes alike.
- * `clear` leaves the grid's background out, for a terminal drawn with allowTransparency.
+ * `clear` leaves the grid's background out, for a terminal drawn with allowTransparency: only its alpha,
+ * since xterm takes the colour itself for inverse text.
  */
 export function terminalTheme(clear = false): ITheme {
   const probe = document.createElement("span");
@@ -34,7 +35,7 @@ export function terminalTheme(clear = false): ITheme {
   const magenta = "color-mix(in oklch, var(--danger) 50%, var(--accent))";
   const cyan = "color-mix(in oklch, var(--success) 50%, var(--accent))";
   const theme: ITheme = {
-    background: clear ? "#00000000" : background,
+    background: clear ? `${background}00` : background,
     foreground: c("var(--fg)"),
     cursor: c("var(--accent)"),
     cursorAccent: background,
