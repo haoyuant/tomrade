@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Tomrade: the cat on a red rising sun. Tasks, notes and agents, in one folder you own. Code, plans, journals and docs; any coding agent; undo any run." width="820">
+  <img src="docs/images/banner.png" alt="Tomrade: the cat on a red rising sun. From idea to merged PR, with the agents you already use. A backlog that lasts; keep your tools; see it, undo it." width="820">
 </p>
 
 <p align="center">
@@ -20,11 +20,13 @@
 
 # Tomrade
 
-**Tom + comrade.** Tasks, notes and agents, in one folder you own.
+**Tom + comrade.** From idea to merged PR, with the agents you already use.
 
-Your agents work at **3 a.m.** They read your tickets, edit your notes, and now and then rewrite **everything you own.** Tomrade is the workspace built for them, with **an undo button built for you.**
+Your agents write the code. Tomrade remembers what to build, how far it got and what changed, so every session picks up where the last one stopped, and any run can be undone in one click. It's a local-first workspace for solo makers and small teams who build with Claude Code, Codex and the other coding agents.
 
-It's a local-first workspace for solo makers and tiny teams. Run a codebase, your week, a journal or a shelf of docs from the same app. Say one sentence and the assistant drafts the whole backlog; hand a ticket to Claude Code, Codex or whichever coding agent you use; undo any agent run in one click.
+- **A backlog that lasts.** Every session starts from zero; the backlog doesn't. Ideas, tickets, decisions and what's already done stay in one place across sessions and agents.
+- **Keep the tools you have.** Claude Code, Codex or Cursor stay in the terminal you already use. Tomrade connects over MCP and git, and the board keeps up on its own.
+- **See it, undo it.** Every agent write is attributed and grouped by run. One click takes a whole run back: tickets, notes and settings alike.
 
 <p align="center">
   <a href="https://tomrade.com/#films"><img src="docs/images/film.jpg" alt="Play the 87-second film: one idea becomes linked tickets, agents ask their questions, an auto run works through the night, and one click undoes it all." width="820"></a><br>
@@ -37,6 +39,17 @@ It's a local-first workspace for solo makers and tiny teams. Run a codebase, you
 
 > [!NOTE]
 > **Preview.** Until 1.0, Tomrade is in development and testing: things change from week to week and you will hit rough edges. Your projects are plain folders on your own disk, so back up the ones that matter.
+
+## How it works
+
+One loop from an idea to a merged pull request: **talk, split, build, merge.**
+
+1. **Talk.** Say what you want in plain words, at your desk or from your phone. It becomes a ticket on the board.
+2. **Split.** Say "tidy up" and the assistant merges duplicates and splits the big ones into tickets sized for one pull request. You pick; one click takes it back.
+3. **Build.** Name a ticket to Claude Code, Codex or another agent in your own terminal, or press **Start**. It claims the ticket, works on its own branch and reports back.
+4. **Merge.** Leave the rest to an auto run: it works down the dependency graph overnight, merges what passes and writes you a report by morning.
+
+Each step has a short film on [tomrade.com](https://tomrade.com/#how).
 
 ## Not just for code
 
