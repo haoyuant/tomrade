@@ -173,7 +173,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     win.spec.onMessage(m);
     await settle();
   };
-  // A batch goes 16ms after its first frame, and this waits past it.
+  // A batch goes at most 16ms after its first frame, and this waits past it.
   const batched = () => new Promise<void>((resolve) => setTimeout(resolve, 40));
   // An attach that a newer one overtakes lets its stream go; what was typed meanwhile reaches the one that stays.
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 100, rows: 30 });
@@ -186,20 +186,30 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(streams[1]!.sent).toEqual([["input", "输入法\r"]]);
   streams[1]!.sent.length = 0;
   const live = streams[1]!;
-  // A burst reaches the window as one message: the bytes joined in order, nothing dropped.
-  live.frame("hel");
+  const shown = () => win.posts.flatMap((p) => (p.type === "frame" ? [Buffer.from(p.bytes).toString()] : []));
+  // A frame after a quiet spell goes at once; the rest of its burst reaches the window as one message: the bytes
+  // joined in order, nothing dropped.
+  live.frame("he");
+  expect(shown()).toEqual(["he"]);
+  live.frame("l");
   live.frame("lo");
+  expect(shown()).toEqual(["he"]);
   await batched();
   const drawn = win.posts.filter((p) => p.type === "frame");
-  expect(drawn).toHaveLength(1);
-  expect(drawn[0]).toMatchObject({ type: "frame", cell: "c1", seq: 1, width: 80, height: 24, full: true });
-  expect(Buffer.from(drawn[0]!.bytes).toString()).toBe("hello");
+  expect(drawn).toHaveLength(2);
+  expect(drawn[1]).toMatchObject({ type: "frame", cell: "c1", seq: 1, width: 80, height: 24, full: true });
+  expect(shown()).toEqual(["he", "llo"]);
   // Another size paints another screen: what waited goes first, under the paint it started with.
+  live.frame("w", { full: false });
+  live.frame("v", { full: false });
   live.frame("x", { width: 100, full: false });
   live.frame("y", { width: 100, full: false });
   await batched();
   expect(win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
-    [80, true, "hello"],
+    [80, true, "he"],
+    [80, true, "llo"],
+    [80, false, "w"],
+    [80, false, "v"],
     [100, false, "xy"]
   ]);
   await say({ type: "input", cell: "c1", data: "ls\r" });
@@ -207,21 +217,24 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["key", "ctrl+enter"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
-  // The first frame after a keystroke is its echo: it goes at once, and the frames after it are batched again.
-  const shown = () => win.posts.flatMap((p) => (p.type === "frame" ? [Buffer.from(p.bytes).toString()] : []));
-  live.frame("ls", { full: false });
-  expect(shown().at(-1)).toBe("ls");
+  // The first frame after a keystroke is its echo: it goes at once even in a burst, and the frames after it are batched again.
+  live.frame("busy", { full: false });
+  await say({ type: "input", cell: "c1", data: "l" });
+  live.frame("l", { full: false });
+  expect(shown().at(-1)).toBe("l");
   live.frame("out", { full: false });
-  expect(shown().at(-1)).toBe("ls");
+  expect(shown().at(-1)).toBe("l");
   await batched();
   expect(shown().at(-1)).toBe("out");
-  // Long after the keystroke a frame is no echo: it waits for its batch.
+  // Long after the keystroke a frame is no echo: in a burst it waits for its batch.
   await say({ type: "input", cell: "c1", data: "x" });
   await new Promise((resolve) => setTimeout(resolve, 150));
   live.frame("late", { full: false });
-  expect(shown().at(-1)).toBe("out");
-  await batched();
   expect(shown().at(-1)).toBe("late");
+  live.frame("later", { full: false });
+  expect(shown().at(-1)).toBe("late");
+  await batched();
+  expect(shown().at(-1)).toBe("later");
   // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
   // A frame still waiting goes before it: the window draws what was painted before what is said about it.
   live.frame("tail", { full: false });

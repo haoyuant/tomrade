@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { errorMessage, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "@tomradex/contracts";
 
 export type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll, TerminalStream } from "@tomradex/contracts";
@@ -41,6 +41,55 @@ export const terminalCommand = {
 /** How long a released controller has to leave before it is ended. */
 export const RELEASE_GRACE_MS = 1_000;
 
+/**
+ * Every observer's herdr ends with this process, however it exits. A controller ends by itself once its stdin closes;
+ * an observer reads no stdin and notices only when a paint of its pane cannot be written, so an idle pane's observer
+ * would stay for good — and herdr paints for every client it has whenever any pane changes.
+ */
+const observers = new Set<ChildProcess>();
+let endsWithUs = false;
+const endWithUs = (child: ChildProcess) => {
+  observers.add(child);
+  child.once("exit", () => observers.delete(child));
+  if (endsWithUs) return;
+  endsWithUs = true;
+  process.once("exit", endEveryObserver);
+};
+
+/** Ends every observer's herdr at once, as this process exits. */
+export function endEveryObserver(): void {
+  for (const child of observers) child.kill();
+}
+
+/** A `herdr terminal session` as `openTerminal` starts it, the way `ps` prints its command. */
+const OWN_STREAM = /(?:^|\/)herdr terminal session (?:observe \S+|control \S+ --takeover) --cols \d+ --rows \d+$/;
+
+/** In `ps -axo pid=,ppid=,command=`: the streams an earlier Tomrade left when it crashed or was killed, its own parent gone. */
+export function strayStreams(ps: string): number[] {
+  const out: number[] = [];
+  for (const line of ps.split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+    if (m && m[2] === "1" && OWN_STREAM.test(m[3]!.trim())) out.push(Number(m[1]));
+  }
+  return out;
+}
+
+/** Ends the streams `strayStreams` finds on this machine; how many. */
+export async function endStrayStreams(): Promise<number> {
+  if (process.platform === "win32") return 0;
+  const ps = await new Promise<string>((resolve) => execFile("ps", ["-axo", "pid=,ppid=,command="], { maxBuffer: 16 * 1024 * 1024 }, (err, out) => resolve(err ? "" : out)));
+  let ended = 0;
+  for (const pid of strayStreams(ps)) {
+    try {
+      process.kill(pid);
+      ended++;
+    } catch {
+      // gone meanwhile
+    }
+  }
+  return ended;
+}
+
 /** A stream as it is opened: `settled` once herdr has attached or refused it, or its process has ended — closed or not. */
 export interface OpenedTerminal extends TerminalStream {
   readonly settled: Promise<void>;
@@ -81,6 +130,7 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
     settle();
   }
   if (child) {
+    if (input.mode === "observe") endWithUs(child);
     let buffer = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {

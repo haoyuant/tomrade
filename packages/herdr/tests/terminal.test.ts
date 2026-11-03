@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Context } from "cordis";
-import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, openTerminal, parseTerminalLine, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
+import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, endEveryObserver, openTerminal, parseTerminalLine, strayStreams, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
 
@@ -126,6 +126,32 @@ describe("herdr terminal sessions", SPAWNS, () => {
     stream.input("ignored");
     stream.close();
     expect(cli.stdin()).toEqual([]);
+  });
+
+  it("ends every observer's herdr as Tomrade exits, since an observer reads no stdin to hear it", async () => {
+    const cli = terminalCli();
+    const stream = openTerminal({ bin: cli.bin, paneId: "w1:p1", mode: "observe", cols: 80, rows: 24 });
+    let frames = 0;
+    stream.onFrame(() => frames++);
+    await until(() => frames === 1);
+    endEveryObserver();
+    await until(() => stream.closed);
+  });
+
+  it("finds the streams an earlier Tomrade left, and only those", () => {
+    const ps = [
+      "  2834     1 /opt/homebrew/bin/herdr terminal session observe wM:pB --cols 55 --rows 19",
+      "  2835     1 /Applications/My Tools/herdr terminal session control w1:p2 --takeover --cols 86 --rows 24",
+      // Its Tomrade still runs.
+      " 59116 57008 /opt/homebrew/bin/herdr terminal session control wK:p20 --takeover --cols 86 --rows 24",
+      // Not started the way Tomrade starts them.
+      "  2836     1 /opt/homebrew/bin/herdr terminal session observe wM:pB",
+      "  2837     1 /opt/homebrew/bin/herdr server",
+      "  2838     1 /usr/bin/myherdr terminal session observe wM:pB --cols 55 --rows 19",
+      "  2839     1 vim herdr terminal session observe x --cols 1 --rows 1 notes.txt",
+      ""
+    ].join("\n");
+    expect(strayStreams(ps)).toEqual([2834, 2835]);
   });
 
   it("says why when herdr will not attach, and when herdr itself ends the stream", async () => {

@@ -1,0 +1,24 @@
+diff --git a/lib/index.js b/lib/index.js
+index f8b5b87b82f36408d548d3d82258cf2696464c04..b930d2e7f4a061e9866824d6d8a4c5c3abca2622 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -126,11 +126,18 @@ function withProp(target, prop, value) {
+   }));
+ }
+ __name(withProp, "withProp");
++var shadowBases = /* @__PURE__ */ new WeakMap();
+ function createShadow(ctx, target, property, receiver) {
+   if (!property) return receiver;
+   const origin = getPropertyDescriptor(target, property)?.value;
+   if (!origin) return receiver;
+-  return withProp(receiver, property, ctx.extend({ [symbols.shadow]: origin }));
++  // A shadow of a shadow for the same property hides it entirely: wrap what it wraps instead, or a method that calls
++  // itself again through `this` (a timer loop) adds a layer every time, and every access walks all of them.
++  const inner = shadowBases.get(receiver);
++  const base = inner && inner.property === property ? inner.base : receiver;
++  const shadow = withProp(base, property, ctx.extend({ [symbols.shadow]: origin }));
++  shadowBases.set(shadow, { base, property });
++  return shadow;
+ }
+ __name(createShadow, "createShadow");
+ function createShadowMethod(ctx, value, outer, shadow) {

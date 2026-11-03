@@ -82,6 +82,9 @@ CREATE INDEX idx_plugin_im_topics_binding ON plugin_im_topics(binding_id);
 CREATE INDEX idx_plugin_im_topics_item ON plugin_im_topics(project_id, item_id);
 ` }, { version: 11, up: `
 ALTER TABLE plugin_im_bindings ADD COLUMN topics_backfilled INTEGER NOT NULL DEFAULT 0;
+` }, { version: 12, up: `
+-- Each connection asks for its queued messages four times a second: without this it reads every message ever sent.
+CREATE INDEX idx_plugin_im_outbox_state ON plugin_im_outbox(state, seq);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },

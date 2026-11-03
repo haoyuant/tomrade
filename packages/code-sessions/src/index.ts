@@ -43,7 +43,7 @@ export const RECENTLY_ENDED_MS = 24 * 60 * 60 * 1000;
 export const BRIDGE_POLL_MS = 10_000;
 /** The most typing a cell holds while its terminal attaches. */
 export const HELD_INPUT_MAX = 64 * 1024;
-/** How long a cell's frames wait to go to the window as one: a busy pane paints more often than a screen shows. */
+/** A cell's frames go to the window at most once in this long, the ones meanwhile as one: a busy pane paints more often than a screen shows. */
 const FRAME_BATCH_MS = 16;
 /** A batch past this goes at once, so a pane painting without pause cannot grow it without end. */
 const FRAME_BATCH_MAX = 256 * 1024;
@@ -372,6 +372,8 @@ interface Open {
   follows: Map<string, () => void>;
   /** Frames waiting to go to the window, one batch per cell. */
   frames: Map<string, PendingFrames>;
+  /** When each cell's last batch went: a frame after a quiet spell goes at once, not a batch's time later. */
+  framed: Map<string, number>;
   /** When each cell was last typed into, until its next frame: that frame is the echo, and goes at once. */
   typed: Map<string, number>;
   /** What each attached cell's pane shows, being recorded. */
@@ -417,7 +419,7 @@ interface PendingFrames {
   width: number;
   height: number;
   full: boolean;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | undefined;
 }
 
 /**
@@ -1162,6 +1164,7 @@ function apply(ctx: Context, config: Config) {
     clearTimeout(pending.timer);
     if (!pending.size) return;
     const bytes = pending.bytes.length === 1 ? pending.bytes[0]! : Buffer.concat(pending.bytes, pending.size);
+    win.framed.set(cell, Date.now());
     send(win, { type: "frame", cell, seq: pending.seq, width: pending.width, height: pending.height, full: pending.full, bytes });
     // The same batch, after the window has it: the recording queues it for the disk and never waits on it.
     win.recordings.get(cell)?.write({ seq: pending.seq, width: pending.width, height: pending.height, full: pending.full, bytes });
@@ -1213,9 +1216,10 @@ function apply(ctx: Context, config: Config) {
   };
 
   /**
-   * One frame joins its cell's batch. A pane can paint faster than a screen shows — a burst of frames
-   * becomes one message, its bytes unchanged and in order. The built-in host paces its paints itself (slower in a flood):
-   * its frames are `paced` and go at once, since a batch would only hold each one back a frame (TOM-841).
+   * One frame joins its cell's batch. A pane can paint faster than a screen shows — the frames of a burst after its
+   * first become one message, its bytes unchanged and in order. The first goes at once: herdr paces a busy pane itself,
+   * and holding a frame after a quiet spell only makes it late. The built-in host paces its paints too (slower in a
+   * flood): its frames are `paced` and all go at once, since a batch would only hold each one back a frame (TOM-841).
    */
   const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }, paced = false) => {
     if (win.closed || !frame.bytes.length) return;
@@ -1226,12 +1230,17 @@ function apply(ctx: Context, config: Config) {
     if (!batch) {
       const typedAt = win.typed.get(cell);
       win.typed.delete(cell);
-      const timer = setTimeout(() => flushFrames(win, cell), FRAME_BATCH_MS);
+      const now = Date.now();
+      const since = now - (win.framed.get(cell) ?? -Infinity);
+      // The first frame after a keystroke goes at once too, even in a burst: herdr may already have held it for its next
+      // paint (other panes watched in the background keep it painting), and a batch on top of that is felt as lag (TOM-713).
+      if (paced || since >= FRAME_BATCH_MS || (typedAt !== undefined && now - typedAt <= ECHO_MS)) {
+        win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer: undefined });
+        return flushFrames(win, cell);
+      }
+      const timer = setTimeout(() => flushFrames(win, cell), FRAME_BATCH_MS - since);
       timer.unref?.();
       win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer });
-      // The first frame after a keystroke goes at once: herdr may already have held it for its next paint (other panes
-      // watched in the background keep it painting), and a batch on top of that is felt as lag (TOM-713).
-      if (paced || (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS)) flushFrames(win, cell);
       return;
     }
     batch.bytes.push(frame.bytes);
@@ -1259,6 +1268,7 @@ function apply(ctx: Context, config: Config) {
     win.detached.delete(cell);
     // Its stream is going: what it painted and has not sent belongs to a screen that is being replaced.
     dropFrames(win, cell);
+    win.framed.delete(cell);
     stopRecording(win, cell);
     const stream = win.terminals.get(cell);
     win.terminals.delete(cell);
@@ -1795,7 +1805,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: poll(projectId), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), typed: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null, soon: { timer: null, due: 0, running: false, again: false, urgent: false, last: 0 }, hidden: false, sent: null, standing: standing(projectId) };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: poll(projectId), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), framed: new Map(), typed: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null, soon: { timer: null, due: 0, running: false, again: false, urgent: false, last: 0 }, hidden: false, sent: null, standing: standing(projectId) };
     open.set(projectId, win);
     try {
       await opening(projectId, win, w);
