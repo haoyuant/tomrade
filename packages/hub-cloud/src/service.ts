@@ -6,7 +6,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomradex/storage";
 import type { UserSettingsFile } from "@tomradex/settings";
-import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord } from "./cache.js";
+import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord, type Mutation } from "./cache.js";
 import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
 
 export interface AccountInfo {
@@ -87,6 +87,23 @@ const UserSettings = z.object({
   sections: z.record(z.string(), z.object({ value: z.json(), updatedAt: z.number() }))
 });
 const SETTINGS_KEY = "settings";
+
+/**
+ * A machine joining an account sends its settings as if the account had none. That is no concurrent edit, and no clock
+ * is needed to settle it: a section only one side set is taken as it is. Only a section both set differently is a
+ * clash, for the person to choose; meanwhile this machine's side of it stands in what it would send.
+ */
+function joinSettings(cloud: unknown, local: unknown): { merged: UserSettingsFile; clash: boolean } | null {
+  const theirs = UserSettings.safeParse(cloud), ours = UserSettings.safeParse(local);
+  if (!theirs.success || !ours.success) return null;
+  const sections = { ...theirs.data.sections };
+  let clash = false;
+  for (const [id, entry] of Object.entries(ours.data.sections)) {
+    if (sections[id] && !equal(sections[id].value, entry.value)) clash = true;
+    if (!sections[id] || !equal(sections[id].value, entry.value)) sections[id] = entry;
+  }
+  return { merged: { v: 1, sections }, clash };
+}
 // Failures carry a leading [code] the renderer translates; the rest is the fallback text.
 const failure = (e: { message: string; code?: string; name?: string }) =>
   new Error(e.code ? `[${e.code}] ${e.message}` : e.name === "AuthRetryableFetchError" ? `[network] ${e.message}` : e.message);
@@ -158,7 +175,9 @@ export class CloudHub extends Service implements CloudHubReader {
     const offSettings = settings.useUserStore({
       read: () => this.preferences(),
       write: file => {
-        this.cache.observe("preference", SETTINGS_KEY, JSON.parse(JSON.stringify(file)));
+        // A section this machine has no plugin for, or cannot read, is still the account's: carried as it is, never erased.
+        const carried = Object.entries(this.preferences().sections).filter(([id]) => !(id in file.sections));
+        this.cache.observe("preference", SETTINGS_KEY, JSON.parse(JSON.stringify({ ...file, sections: { ...Object.fromEntries(carried), ...file.sections } })));
         this.schedule();
       }
     });
@@ -311,6 +330,18 @@ export class CloudHub extends Service implements CloudHubReader {
     });
     return this.active;
   }
+  /** The settings this machine sent on joining an account that already had some, folded into the account's; false for any other refusal. */
+  private joined(op: Mutation, record: CloudRecord): boolean {
+    if (op.kind !== "preference" || op.key !== SETTINGS_KEY || op.base_version !== 0) return false;
+    // An edit queued after the first holds this machine's newest word.
+    const newest = this.cache.data.outbox.filter(p => recordKey(p) === recordKey(op)).at(-1) ?? op;
+    const joined = joinSettings(record.value, newest.value);
+    if (!joined) return false;
+    this.cache.rebase(record, JSON.parse(JSON.stringify(joined.merged)));
+    if (joined.clash) this.cache.conflict(record);
+    else this.again = true;
+    return true;
+  }
   /** What the account and the Hub show, but when they last synced. */
   private standing(): string {
     const { lastSyncAt: _at, ...rest } = this.cache.data;
@@ -345,7 +376,7 @@ export class CloudHub extends Service implements CloudHubReader {
       if (failure) throw new Error(failure.message);
       const result = Result.parse(data);
       if (result.ok || equal(op.value, result.record.value)) this.cache.accept(op, result.record);
-      else this.cache.conflict(result.record);
+      else if (!this.joined(op, result.record)) this.cache.conflict(result.record);
     }
     // Explicit pagination: the API's row limit must not silently truncate a larger Hub. After the first read of this
     // run, only rows the cloud changed since the newest one seen; a removal is a row whose value is null, so it comes too.
