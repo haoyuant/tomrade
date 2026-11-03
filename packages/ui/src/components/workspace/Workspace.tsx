@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { TakeoverDialog } from "~/components/dialogs/TakeoverDialog";
+import { BuildPageDialog } from "~/components/dialogs/BuildPageDialog";
 import { NightShiftDialog } from "~/components/dialogs/NightShiftDialog";
 import { FeedbackDialog } from "~/components/dialogs/FeedbackDialog";
 import { AnnouncementsDialog } from "~/components/dialogs/AnnouncementNotice";
@@ -210,6 +211,7 @@ export function Workspace() {
   const [announcements, setAnnouncements] = useState(false);
   const [nightShift, setNightShift] = useState(false);
   const [takeover, setTakeover] = useState(false);
+  const [buildPage, setBuildPage] = useState(false);
   /** A renderer surface a plugin names: a status item's, a sidebar module's, a command's result. */
   const openSurface = useCallback((surface: string) => {
     if (surface === "code-inbox") setCodeInbox(true);
@@ -218,6 +220,7 @@ export function Workspace() {
     else if (surface === "announcements") setAnnouncements(true);
     else if (surface === "night-shift") setNightShift(true);
     else if (surface === "takeover") setTakeover(true);
+    else if (surface === "build-page") setBuildPage(true);
     else if (surface.startsWith("settings:")) setSettings(surface.slice("settings:".length));
   }, []);
   const runCommand = useRunCommand(ws.project.id);
@@ -291,7 +294,7 @@ export function Workspace() {
   const openViewSettings = useCallback(() => setViewSettings(true), []);
   const runRedo = useCallback(() => runStep("redo"), [runStep]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || nightShift || takeover || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || nightShift || takeover || buildPage || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -537,6 +540,7 @@ export function Workspace() {
       />
       <AnnouncementsDialog open={announcements} onOpenChange={setAnnouncements} />
       <TakeoverDialog projectId={ws.project.id} open={takeover} onOpenChange={setTakeover} />
+      <BuildPageDialog projectId={ws.project.id} open={buildPage} onOpenChange={setBuildPage} />
       {nightShift && (
         <NightShiftDialog
           projectId={ws.project.id}

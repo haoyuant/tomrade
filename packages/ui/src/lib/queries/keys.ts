@@ -215,6 +215,10 @@ export const keys = {
     offer: (projectId: string) => ["takeover", projectId, "offer"] as const
   },
 
+  buildPage: {
+    state: (projectId: string) => ["buildPage", projectId, "state"] as const
+  },
+
   nightShift: {
     all: (projectId: string) => ["nightShift", projectId] as const,
     current: (projectId: string) => ["nightShift", projectId, "current"] as const,

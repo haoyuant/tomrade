@@ -75,6 +75,7 @@ import { workspaceContext } from "./workspaceContext";
 import { feedback, inbox } from "./inbox";
 import { nightShift } from "./nightShift";
 import { takeover } from "./takeover";
+import { buildPage } from "./buildPage";
 import { errors } from "./errors";
 import { domain } from "./domain";
 import { ledger } from "./ledger";
@@ -163,6 +164,7 @@ export const en = {
   inbox: inbox.en,
   nightShift: nightShift.en,
   takeover: takeover.en,
+  buildPage: buildPage.en,
   feedback: feedback.en,
   errors: errors.en,
   domain: domain.en,
@@ -252,6 +254,7 @@ export const zh: typeof en = {
   inbox: inbox.zh,
   nightShift: nightShift.zh,
   takeover: takeover.zh,
+  buildPage: buildPage.zh,
   feedback: feedback.zh,
   errors: errors.zh,
   domain: domain.zh,
