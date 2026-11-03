@@ -1,32 +1,44 @@
-/* The entrance is one continuous printed scene, including its form.
-   Scoped tokens keep it coherent with Ink and custom workspace themes. */
+/* The entrance is the Sunrise (晨曦) theme's dawn, whatever theme the workspace uses:
+   a lilac sky over an apricot horizon, a gold sun, vermilion running into gold on what you press.
+   Its tokens are Sunrise's (app.css), scoped here so the form reads the same under every theme. */
 .account-gate {
-  --poster-paper: #f4ead7;
-  --poster-red: #9c392c;
-  --poster-ink: #532f27;
-  --poster-muted: #795c4c;
+  --dawn-bg: #f6f3f8;
+  --dawn-ink: #241b3a;
+  --dawn-muted: #554a6b;
+  --dawn-red: #c93a24;
   /* The sky gives way first, so the whole form, down to using Tomrade without an account, fits the window. */
-  --poster-horizon: clamp(240px, calc(100dvh - 580px), 620px);
-  --fg: var(--poster-ink);
-  --fg-2: var(--poster-ink);
-  --muted: var(--poster-muted);
-  --meta: var(--poster-muted);
-  --accent: var(--poster-red);
-  --accent-on: var(--poster-paper);
-  --accent-active: var(--poster-ink);
-  --surface: var(--poster-paper);
-  --surface-warm: #eaddc5;
-  --border: #c7ad91;
-  --focus-ring: 0 0 0 3px #9c392c20;
+  --dawn-horizon: clamp(240px, calc(100dvh - 580px), 620px);
+  --sun-red: #e0482c;
+  --sun-gold: #f2a43a;
+  --sun-sky: #b9a8ec;
+  --sun-glow: rgba(201, 58, 36, 0.32);
+  --sun-haze: rgba(255, 166, 102, 0.3);
+  --sun-sky-haze: rgba(185, 168, 236, 0.28);
+  --sun-btn-from: #bf2e28;
+  --sun-btn-to: #d2511d;
+  --sun-sheen: rgba(255, 226, 170, 0.45);
+  --fg: var(--dawn-ink);
+  --fg-2: #3a3052;
+  --muted: var(--dawn-muted);
+  --meta: #6a5f80;
+  --accent: var(--dawn-red);
+  --accent-on: #fffaf6;
+  --accent-active: #a52d1a;
+  --surface: #fffdfd;
+  --surface-warm: #efe8f1;
+  --border: #d9cee2;
+  --focus-ring: 0 0 0 3px rgba(201, 58, 36, 0.14);
   position: relative;
   isolation: isolate;
   width: 100%;
   height: 100%;
   min-height: 100dvh;
   overflow-x: hidden;
-  color: var(--poster-ink);
+  color: var(--dawn-ink);
   color-scheme: light;
-  background: var(--poster-paper);
+  /* Lilac high up, warming to apricot at the horizon, then the page's own pale lilac under the form. */
+  background: linear-gradient(180deg, #e9e1f6 0, #f1ebf7 calc(var(--dawn-horizon) * .45), #fbe8e1 calc(var(--dawn-horizon) - 40px),
+    #fde6d3 var(--dawn-horizon), var(--dawn-bg) calc(var(--dawn-horizon) + 240px));
 }
 .account-gate::before {
   content: "";
@@ -41,78 +53,98 @@
   overflow: hidden;
   pointer-events: none;
   z-index: -1;
-  background: radial-gradient(ellipse 65% 46% at 50% var(--poster-horizon), #edc98950, transparent 100%);
+  background:
+    radial-gradient(ellipse 72vw 56vh at 16vw 0, var(--sun-sky-haze), transparent),
+    radial-gradient(ellipse 65% 46% at 50% var(--dawn-horizon), var(--sun-haze), transparent 100%);
+}
+/* Sunrise's golden dust in the morning air: three tile widths keep it from lining up in a grid. It breathes, never drifts. */
+.account-sunrise__dust {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 212px 24px, rgba(226, 136, 28, .7) .6px, transparent 1.8px) 0 0 / 263px 380px,
+    radial-gradient(circle at 37px 252px, rgba(242, 164, 58, .6) .6px, transparent 1.8px) 0 0 / 263px 380px,
+    radial-gradient(circle at 128px 58px, rgba(226, 136, 28, .5) 1px, transparent 2.6px) 0 0 / 331px 420px,
+    radial-gradient(circle at 271px 318px, rgba(242, 164, 58, .6) .6px, transparent 1.8px) 0 0 / 331px 420px,
+    radial-gradient(circle at 84px 160px, rgba(226, 136, 28, .6) .6px, transparent 1.8px) 0 0 / 419px 460px,
+    radial-gradient(circle at 340px 214px, rgba(242, 164, 58, .45) 1px, transparent 2.6px) 0 0 / 419px 460px,
+    radial-gradient(circle at 190px 396px, rgba(226, 136, 28, .6) .6px, transparent 1.8px) 0 0 / 419px 460px;
+  mask-image: linear-gradient(#000 calc(var(--dawn-horizon) - 30px), transparent calc(var(--dawn-horizon) + 10px), transparent calc(var(--dawn-horizon) + 120px), #0007);
+  animation: account-fade-in 2s 2.6s both, account-dust-breathe 23s 4.6s ease-in-out infinite alternate;
 }
 /* Held at its first frame until the cat can be drawn (AccountSunrise). */
 .account-sunrise:not(.is-ready) * { animation-play-state: paused; }
-.account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--poster-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
+.account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--dawn-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .account-sunrise__sun {
   position: absolute;
-  width: clamp(200px, min(29vh, var(--poster-horizon) - 30px), 290px);
+  width: clamp(200px, min(29vh, var(--dawn-horizon) - 30px), 290px);
   aspect-ratio: 1;
   bottom: -9px;
   left: 50%;
   translate: -50% 0;
 }
 /* Centred on the logo and sized in logo widths (200 of AccountSunrise's units).
-   Entrance, in order: the cat rises over the horizon, the red sun fades in behind it,
+   Entrance, in order: the cat rises over the horizon, the sun fades in behind it,
    then the rays shoot out from behind the sun. */
 .account-sunrise__glow, .account-sunrise__rays, .account-sunrise__disk { position: absolute; left: 50%; top: 50%; translate: -50% -50%; aspect-ratio: 1; }
-.account-sunrise__glow { width: 520%; border-radius: 50%; background: radial-gradient(closest-side, #f6d58fbf, #f1c47e59 35%, #f1c47e00); animation: account-sun-fade 2.2s .7s cubic-bezier(.33,0,.2,1) both; }
+.account-sunrise__glow { width: 520%; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 214, 150, .78), rgba(255, 166, 102, .32) 35%, rgba(255, 166, 102, 0)); animation: account-sun-fade 2.2s .7s cubic-bezier(.33,0,.2,1) both; }
 .account-sunrise__disk { width: 125%; animation: account-sun-fade 1.85s .8s cubic-bezier(.33,0,.2,1) both; }
 /* After the entrance the rays turn about a degree every few seconds and a band of light runs out
    along them now and then: alive, but never enough to pull the eye from the form. */
 .account-sunrise__rays { width: 1600%; animation: account-rays-burst 3.05s 2.55s cubic-bezier(.33,1,.68,1) both, account-rays-turn 1200s linear infinite; }
 .account-sunrise__rays svg, .account-sunrise__glint { position: absolute; inset: 0; width: 100%; height: 100%; }
 .account-sunrise__glint { mask-size: 100% 100%; }
-.account-sunrise__glint i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, #e9a44700 78%, #e9a44799 92%, #e9a44700); opacity: 0; animation: account-rays-glint 9s 5.45s linear infinite; }
-/* The original cutout is printed directly onto the sun. */
-.account-sunrise__sun img { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; filter: sepia(1) saturate(.65); mix-blend-mode: multiply; mask-image: linear-gradient(#000 72%, transparent 100%); animation: account-cat-rise 2.05s cubic-bezier(.22,1,.36,1) both; }
+.account-sunrise__glint i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 210, 140, 0) 78%, rgba(255, 210, 140, .6) 92%, rgba(255, 210, 140, 0)); opacity: 0; animation: account-rays-glint 9s 5.45s linear infinite; }
+/* The original cutout, its ink laid straight onto the sun. */
+.account-sunrise__sun img { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; opacity: .9; mix-blend-mode: multiply; mask-image: linear-gradient(#000 72%, transparent 100%); animation: account-cat-rise 2.05s cubic-bezier(.22,1,.36,1) both; }
 .account-sunrise__sea {
   position: absolute;
-  top: calc(var(--poster-horizon) - 23px);
+  top: calc(var(--dawn-horizon) - 23px);
   left: -5%;
   width: 110%;
   height: clamp(160px, 25vh, 250px);
   mask-image: linear-gradient(#000, transparent 90%);
 }
-.account-sunrise__wave--back { fill: #b9683820; animation: account-wave 8s ease-in-out 2 alternate; }
-.account-sunrise__wave--front { fill: #bc754416; animation: account-wave 10s ease-in-out 2 alternate-reverse; }
-.account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--poster-horizon) + 10px) 0 48px; }
+.account-sunrise__wave--back { fill: rgba(185, 168, 236, .2); animation: account-wave 8s ease-in-out 2 alternate; }
+.account-sunrise__wave--front { fill: rgba(255, 166, 102, .14); animation: account-wave 10s ease-in-out 2 alternate-reverse; }
+.account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--dawn-horizon) + 10px) 0 48px; }
 .account-gate__brand { text-align: center; animation: account-form-rise .85s .6s both; }
-.account-gate__brand h1 { margin: 0; font: 800 clamp(32px, 5vw, 42px)/1.1 sans-serif; letter-spacing: .19em; text-indent: .19em; color: var(--poster-red); }
-.account-gate__brand p { margin: 13px 0 0; font: 10px/1.5 sans-serif; letter-spacing: .13em; color: var(--poster-muted); }
-.account-gate__brand p span { margin: 0 9px; color: var(--poster-red); }
+.account-gate__brand h1 { margin: 0; font: 800 clamp(32px, 5vw, 42px)/1.1 sans-serif; letter-spacing: .19em; text-indent: .19em; color: var(--dawn-red); background: linear-gradient(90deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.account-gate__brand p { margin: 13px 0 0; font: 10px/1.5 sans-serif; letter-spacing: .13em; color: var(--dawn-muted); }
+.account-gate__brand p span { margin: 0 9px; color: var(--sun-gold); }
 .account-gate__form { margin-top: 32px; animation: account-form-rise .85s 1s both; }
 .account-gate__form > .panel { padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .account-gate__form .sec-title { text-align: center; font-size: var(--text-md); font-weight: 400; }
 .account-gate__form .meta-txt { text-align: center; line-height: 1.7; }
 .account-gate__form form { margin-top: 24px; gap: 20px; }
-.account-gate__form .field { color: var(--poster-muted); font-size: 12px; letter-spacing: .04em; }
-.account-gate__form .input { min-height: 42px; padding: 8px 2px; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; font-size: 16px; }
-.account-gate__form .input:focus { border-color: var(--poster-red); box-shadow: 0 1px 0 var(--poster-red); }
-.account-gate__form .input:autofill { -webkit-text-fill-color: var(--poster-ink); box-shadow: 0 0 0 100px var(--poster-paper) inset; }
+.account-gate__form .field { color: var(--dawn-muted); font-size: 12px; letter-spacing: .04em; }
+.account-gate__form .input { min-height: 42px; padding: 8px 2px; background: transparent; border: 0; border-bottom: 1px solid #c9bdd6; border-radius: 0; font-size: 16px; }
+.account-gate__form .input:focus { border-color: var(--dawn-red); box-shadow: 0 1px 0 var(--dawn-red); }
+.account-gate__form .input:autofill { -webkit-text-fill-color: var(--dawn-ink); box-shadow: 0 0 0 100px var(--dawn-bg) inset; }
 .account-gate__form form > .row { flex-wrap: wrap; padding-top: 4px; }
 .account-gate__form form .btn { flex: 1; min-height: 44px; border-radius: 3px; box-shadow: none; }
-.account-gate__form .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--poster-red); }
-.account-gate__form .btn-secondary:hover { background: var(--surface-warm); }
+.account-gate__form .btn-secondary { background: rgba(255, 253, 253, .5); border: 1px solid var(--border); color: var(--dawn-red); }
+.account-gate__form .btn-secondary:hover { background: var(--surface); }
+/* What you press is lit, as in Sunrise: the sun's gradient, a sheen along the top edge, a glow beneath. */
+.account-gate__form .btn.btn-primary { background: linear-gradient(135deg, var(--sun-btn-from), var(--sun-btn-to)); color: var(--accent-on); box-shadow: inset 0 1px 0 var(--sun-sheen), 0 4px 14px -6px var(--sun-glow); }
+.account-gate__form .btn.btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, var(--accent-active), var(--sun-btn-to)); box-shadow: inset 0 1px 0 var(--sun-sheen), 0 6px 18px -6px var(--sun-glow); }
+.account-gate__form .btn.btn-primary:disabled { box-shadow: none; }
 .account-gate__form [role="status"], .account-gate__form [role="alert"] { font-size: 12px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
 /* A note belongs to the field above it, so it lines up with it. */
 .account-gate__form .field-note { font-size: 12px; text-align: left; }
 /* The steps after the form (check your email, reset the password) read centred, like the brand above them. */
 .account-gate__form .account-step { margin-top: 24px; text-align: center; }
-.account-gate__form .account-step__title { margin: 0; font-size: 20px; font-weight: 500; color: var(--poster-ink); }
+.account-gate__form .account-step__title { margin: 0; font-size: 20px; font-weight: 500; color: var(--dawn-ink); }
 .account-gate__form .account-step p { line-height: 1.7; }
 .account-gate__form .account-step > .field-note { text-align: center; }
 .account-gate__form .account-step .field-group { margin-top: 28px; text-align: left; }
 .account-gate__form .account-step .btn { flex: 1; min-height: 44px; border-radius: 3px; box-shadow: none; }
 .account-gate__form .account-step__actions { padding-top: 4px; }
-.account-gate__form .link-btn { color: var(--poster-red); font-size: 12px; }
+.account-gate__form .link-btn { color: var(--dawn-red); font-size: 12px; }
 .account-gate__form .account-step > .link-btn { display: block; margin-inline: auto; }
 /* The way past the account: set apart below whatever the panel is showing. */
 .account-gate__form .account-local { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .account-gate__form .account-local .link-btn { font-size: 15px; }
-.account-gate__form .account-local .field-note { text-align: center; color: var(--poster-muted); }
+.account-gate__form .account-local .field-note { text-align: center; color: var(--dawn-muted); }
 /* Keyboard users can enter immediately, even during the entrance; once shown, it never plays again. */
 .account-gate__form.is-entered { animation: none; }
 @keyframes account-cat-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -122,6 +154,8 @@
 @keyframes account-rays-turn { to { rotate: 360deg; } }
 @keyframes account-rays-glint { from { scale: .09; opacity: 0; } 8% { opacity: 1; } 55% { opacity: .7; } 70%, to { scale: .75; opacity: 0; } }
 @keyframes account-form-rise { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes account-fade-in { from { opacity: 0; } }
+@keyframes account-dust-breathe { to { opacity: .45; } }
 @keyframes account-wave { from { transform: translateX(-20px); } to { transform: translateX(20px); } }
 @media (max-height: 720px) {
   .account-sunrise__sun { width: 200px; }
