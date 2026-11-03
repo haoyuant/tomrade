@@ -1873,14 +1873,15 @@ export class Storage extends Service implements StorageReader {
     const pool = this.ctx.db as Db;
     if (!pool.has(entry.id)) return false;
     const db = pool.for(entry.id);
-    const holds = (table: string): boolean => {
+    const holds = (table: string, untouched?: string): boolean => {
       try {
-        return db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get() !== undefined;
+        return db.prepare(`SELECT 1 FROM ${table}${untouched ? ` WHERE NOT (${untouched})` : ""} LIMIT 1`).get() !== undefined;
       } catch {
         return false;
       }
     };
-    const touched = holds("oplog") || (!entry.sample && holds("items")) || pool.registrations("project").some((r) => Object.keys(r.tables).some(holds));
+    // A plugin's rows that are no one's doing — the sample's feedback still waiting in its inbox — leave it untouched.
+    const touched = holds("oplog") || (!entry.sample && holds("items")) || pool.registrations("project").some((r) => Object.entries(r.tables).some(([table, spec]) => holds(table, spec.untouched)));
     if (touched) this.hub.catalog.patchProject(entry.id, { seed: false });
     return !touched;
   }

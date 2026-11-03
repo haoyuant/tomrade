@@ -25,6 +25,11 @@ export interface PluginTableSpec {
    * known to be public. Not for `always` tables.
    */
   export: { order: string; appendOnly?: boolean; always?: boolean; private?: boolean } | false;
+  /**
+   * Rows that are no sign of anyone having used the project, as an SQL condition over the table's columns: a
+   * first-run sample whose rows all match still counts as untouched, and makes way for an account's projects.
+   */
+  untouched?: string;
 }
 
 export type PluginScope = "project" | "hub";
