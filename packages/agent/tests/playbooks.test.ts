@@ -64,6 +64,13 @@ describe("loadPlaybookDir", () => {
     ]);
     expect(loadPlaybookDir(path.join(dir, "missing"))).toEqual([]);
   });
+  it("reads a SKILL.md saved with Windows line endings as the same playbook", () => {
+    const dir = tmp("skills-crlf");
+    fs.mkdirSync(path.join(dir, "acme.review"));
+    const text = ["---", "name: acme.review", "title: Review", "description: the user asks for a review", "tools: [list_items, ask_user]", "---", "1. Look closely.", ""].join("\r\n");
+    fs.writeFileSync(path.join(dir, "acme.review", "SKILL.md"), text);
+    expect(loadPlaybookDir(dir)).toEqual([{ id: "acme.review", title: "Review", when: "the user asks for a review", tools: ["list_items", "ask_user"], body: "1. Look closely." }]);
+  });
 });
 
 describe("playbook sources", () => {
