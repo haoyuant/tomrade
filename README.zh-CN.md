@@ -27,6 +27,11 @@
 这是一个为独立创作者和小团队打造的本地优先工作区。代码项目、这周的待办、日记、一摞文档，都能在同一个应用里管。说一句话，助手就把整个需求池拆好；工单交给 Claude Code、Codex 或你在用的其他编程 Agent 去做；Agent 的任何一次运行都能一键撤销。
 
 <p align="center">
+  <a href="https://tomrade.com/zh/#films"><img src="docs/images/film-zh.jpg" alt="播放 87 秒演示片：一个想法变成串起来的工单，Agent 们排队提问，夜里自动执行，一键全部撤销。" width="820"></a><br>
+  <sub>Tomrade 的一天，全部是应用里的真实画面。每个功能的短片都在 <a href="https://tomrade.com/zh/#films">tomrade.com</a>。</sub>
+</p>
+
+<p align="center">
   <img src="docs/images/board-zh.png" alt="Tomrade 看板：左侧是视图和工作流，中间是待办和进行中的工单卡片，右侧是助手面板。" width="900">
 </p>
 

@@ -27,6 +27,11 @@ Your agents work at **3 a.m.** They read your tickets, edit your notes, and now 
 It's a local-first workspace for solo makers and tiny teams. Run a codebase, your week, a journal or a shelf of docs from the same app. Say one sentence and the assistant drafts the whole backlog; hand a ticket to Claude Code, Codex or whichever coding agent you use; undo any agent run in one click.
 
 <p align="center">
+  <a href="https://tomrade.com/#films"><img src="docs/images/film.jpg" alt="Play the 87-second film: one idea becomes linked tickets, agents ask their questions, an auto run works through the night, and one click undoes it all." width="820"></a><br>
+  <sub>A day with Tomrade, filmed in the app. More short films, one per feature, are on <a href="https://tomrade.com/#films">tomrade.com</a>.</sub>
+</p>
+
+<p align="center">
   <img src="docs/images/board.png" alt="Tomrade's board: a sidebar of views and workstreams, ticket cards in Backlog and To Do columns, and the assistant panel on the right." width="900">
 </p>
 
