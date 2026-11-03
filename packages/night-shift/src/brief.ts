@@ -2,13 +2,47 @@ import { z } from "zod";
 import type { NightShiftTicketView, NightShiftView } from "./service.js";
 import type { BriefWords } from "./words.js";
 
-export const Judgement = z.object({
+const JudgementShape = z.object({
   criteria: z.array(z.object({ text: z.string(), met: z.enum(["yes", "no", "unknown"]), evidence: z.string() })),
   outOfScope: z.array(z.string()),
   unverified: z.array(z.string()),
   risk: z.enum(["low", "medium", "high"])
 });
-export type Judgement = z.infer<typeof Judgement>;
+
+type Loose = Record<string, unknown>;
+const isObject = (v: unknown): v is Loose => typeof v === "object" && v !== null && !Array.isArray(v);
+/** The first of `names` the answer has, matched without regard to case, `_` or `-`. */
+const pick = (o: Loose, names: string[]): unknown => {
+  const key = Object.keys(o).find((k) => names.includes(k.toLowerCase().replace(/[^a-z]/g, "")));
+  return key === undefined ? undefined : o[key];
+};
+const asText = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "");
+const asTexts = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]).map((x) => (isObject(x) ? asText(pick(x, ["text", "description", "change", "item"])) : asText(x))).filter(Boolean);
+const MET: Record<string, "yes" | "no"> = { yes: "yes", true: "yes", met: "yes", pass: "yes", passed: "yes", done: "yes", no: "no", false: "no", notmet: "no", unmet: "no", fail: "no", failed: "no" };
+const asMet = (v: unknown): "yes" | "no" | "unknown" => MET[asText(v).toLowerCase().replace(/[^a-z]/g, "")] ?? "unknown";
+const asCriterion = (v: unknown) => {
+  if (!isObject(v)) return { text: asText(v), met: "unknown", evidence: "" };
+  const met = asMet(pick(v, ["met", "status", "result", "verdict", "satisfied"]));
+  return { text: asText(pick(v, ["text", "criterion", "criteria", "name", "title", "description", "requirement"])), met, evidence: met === "unknown" ? "" : asText(pick(v, ["evidence", "reason", "why", "proof", "notes"])) };
+};
+
+/** Engines answer in near shapes (criteria as plain strings, other key names, a missing list); read what they meant. */
+function loosen(answer: unknown): unknown {
+  if (!isObject(answer)) return answer;
+  const criteria = pick(answer, ["criteria", "acceptancecriteria", "acceptance", "criterion"]);
+  const risk = asText(pick(answer, ["risk", "risklevel"])).toLowerCase().trim();
+  // An answer with neither is not a judgement at all.
+  if (criteria === undefined && !risk) return answer;
+  return {
+    criteria: (Array.isArray(criteria) ? criteria : criteria === undefined || criteria === null ? [] : [criteria]).map(asCriterion).filter((c) => c.text),
+    outOfScope: asTexts(pick(answer, ["outofscope", "scope", "extra", "extras"])),
+    unverified: asTexts(pick(answer, ["unverified", "untested", "nottested"])),
+    risk: risk === "low" || risk === "medium" || risk === "high" ? risk : "medium"
+  };
+}
+
+export const Judgement = z.preprocess(loosen, JudgementShape);
+export type Judgement = z.output<typeof Judgement>;
 
 /** What the morning report knows of one delivered ticket: git's word, and the model's when one was asked. */
 export interface Delivery {
@@ -24,6 +58,7 @@ export const judgeSystem = (language: string) =>
     "Judge only from what you are given: the ticket, the diff and what the agent said. List each acceptance criterion the ticket states.",
     'A criterion is "yes" only when the material shows it, and evidence names what shows it. When it does not show either way, it is "unknown" with empty evidence. Never guess, and never count an agent saying it is done as proof.',
     "outOfScope: changes the ticket did not ask for. unverified: what nothing here shows was tried or tested. risk: how much a reviewer should look, from what the change touches.",
+    'Return only JSON of exactly this shape, every key present: {"criteria": [{"text": string, "met": "yes" | "no" | "unknown", "evidence": string}], "outOfScope": [string], "unverified": [string], "risk": "low" | "medium" | "high"}. Each criterion is an object, never a bare string; a list with nothing in it is [].',
     `Write every text field in ${language}.`
   ].join("\n");
 

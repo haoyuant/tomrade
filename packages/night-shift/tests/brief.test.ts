@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { renderBrief, type Delivery, type Judgement } from "../src/brief.js";
+import { Judgement, renderBrief, type Delivery } from "../src/brief.js";
 import type { NightShiftTicketView, NightShiftView } from "../src/service.js";
 import { NIGHT_SHIFT_WORDS } from "../src/words.js";
 
@@ -56,4 +56,29 @@ it("says why it stopped early, and leaves out what has nothing to say", () => {
   expect(body).toContain("It reached the spending limit.");
   expect(body).not.toContain("Review in this order");
   expect(body).not.toContain("Failed");
+});
+
+it("reads a judgement in the shape the prompt asks for", () => {
+  const exact = { criteria: [{ text: "Exports a CSV", met: "yes", evidence: "export.test.ts" }], outOfScope: [], unverified: ["Windows"], risk: "low" };
+  expect(Judgement.parse(exact)).toEqual(exact);
+});
+
+it("accepts an answer in a near shape rather than dropping it", () => {
+  expect(Judgement.parse({ criteria: ["Exports a CSV", "Handles empty boards"], risk: "High" })).toEqual({
+    criteria: [{ text: "Exports a CSV", met: "unknown", evidence: "" }, { text: "Handles empty boards", met: "unknown", evidence: "" }],
+    outOfScope: [],
+    unverified: [],
+    risk: "high"
+  });
+  expect(Judgement.parse({ acceptance_criteria: [{ criterion: "Exports a CSV", status: "Met", reason: "export.test.ts" }, { name: "Empty boards", met: false, evidence: "throws on []" }, { description: "Docs", met: "unknown", evidence: "a guess" }], out_of_scope: "Renamed a helper", risk: "severe" })).toEqual({
+    criteria: [{ text: "Exports a CSV", met: "yes", evidence: "export.test.ts" }, { text: "Empty boards", met: "no", evidence: "throws on []" }, { text: "Docs", met: "unknown", evidence: "" }],
+    outOfScope: ["Renamed a helper"],
+    unverified: [],
+    risk: "medium"
+  });
+});
+
+it("still refuses an answer that is no judgement at all", () => {
+  expect(Judgement.safeParse({ verdict: "fine" }).success).toBe(false);
+  expect(Judgement.safeParse("looks good").success).toBe(false);
 });

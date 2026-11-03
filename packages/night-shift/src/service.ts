@@ -27,6 +27,8 @@ import { NIGHT_SHIFT_WORDS } from "./words.js";
 export const MAX_HOURS = 72;
 /** An agent on this computer answers all at once, and a long backlog takes it a while. */
 const PLAN_TIMEOUT_MS = 5 * 60_000;
+/** How long the morning report waits on its judgements before it goes out without the rest. */
+const JUDGING_MS = 3 * 60_000;
 
 /** An API's refusal arrives as a status and its JSON; the person needs the sentence inside. */
 const plainError = (err: unknown): string => {
@@ -812,30 +814,32 @@ export class NightShifts extends Service {
     this.home.emit("nightShift/step", view, notices, stuck);
   }
 
-  /** One model call per delivery, and a report that stands without any of them. */
+  /** One model call per delivery, all at once and within one deadline, and a report that stands without any of them. */
   private async deliveries(shift: NightShiftView): Promise<Map<string, Delivery>> {
     const { codeLink, items } = this.home;
     const llm = shift.settings.judge ? this.home.get("llm") : null;
     const worker = llm ? await llm.worker().catch(() => null) : null;
-    const out = new Map<string, Delivery>();
-    for (const ticket of shift.tickets) {
-      if (ticket.state !== "delivered" && ticket.state !== "done") continue;
-      const prUrl = codeLink.store.links(shift.projectId, ticket.itemId).find((l) => l.prUrl)?.prUrl ?? null;
-      const diff = await codeLink.deliveryDiff(shift.projectId, ticket.itemId).catch(() => null);
-      let judgement: Judgement | null = null;
-      if (llm && worker?.ok && diff) {
-        const item = items.get(shift.projectId, ticket.itemId);
-        const said = codeLink.store.sessions(shift.projectId, { itemId: ticket.itemId }).sort((a, b) => b.startedAt - a.startedAt)[0]?.summary ?? null;
-        judgement = await llm
-          .completeJson(Judgement, { system: judgeSystem(languageName(this.locale())), user: judgeUser({ key: ticket.key, title: ticket.title, body: item?.body ?? null }, said, diff), maxTokens: 2000, timeoutMs: 120_000, purpose: "night-shift", ...this.defaultAgent() })
-          .catch((err: unknown) => {
-            this.home.logger.warn(`night shift report on ${ticket.key}: ${errorMessage(err)}`);
-            return null;
-          });
-      }
-      out.set(ticket.itemId, { prUrl, stat: diff?.stat ?? null, lines: diff?.lines ?? null, judgement });
-    }
-    return out;
+    const deadline = AbortSignal.timeout(JUDGING_MS);
+    const delivered = shift.tickets.filter((t) => t.state === "delivered" || t.state === "done");
+    const judged = await Promise.all(
+      delivered.map(async (ticket): Promise<[string, Delivery]> => {
+        const prUrl = codeLink.store.links(shift.projectId, ticket.itemId).find((l) => l.prUrl)?.prUrl ?? null;
+        const diff = await codeLink.deliveryDiff(shift.projectId, ticket.itemId).catch(() => null);
+        let judgement: Judgement | null = null;
+        if (llm && worker?.ok && diff) {
+          const item = items.get(shift.projectId, ticket.itemId);
+          const said = codeLink.store.sessions(shift.projectId, { itemId: ticket.itemId }).sort((a, b) => b.startedAt - a.startedAt)[0]?.summary ?? null;
+          judgement = await llm
+            .completeJson(Judgement, { system: judgeSystem(languageName(this.locale())), user: judgeUser({ key: ticket.key, title: ticket.title, body: item?.body ?? null }, said, diff), maxTokens: 2000, timeoutMs: 120_000, signal: deadline, purpose: "night-shift", ...this.defaultAgent() })
+            .catch((err: unknown) => {
+              this.home.logger.warn(`night shift report on ${ticket.key}: ${deadline.aborted ? "not judged in time" : errorMessage(err)}`);
+              return null;
+            });
+        }
+        return [ticket.itemId, { prUrl, stat: diff?.stat ?? null, lines: diff?.lines ?? null, judgement }];
+      })
+    );
+    return new Map(judged);
   }
 
   /** Writes the morning report into the project's Files and tells the person; returns where it went. */
