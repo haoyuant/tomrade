@@ -3,6 +3,7 @@ import type { CardAction, FocusRef } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
 import { SetupCard } from "./SetupCard";
+import { RepoSetupCard } from "./agent-panel/RepoSetupCard";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
@@ -12,7 +13,8 @@ import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useInterrupted, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
-import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
+import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useRepos, useSettings } from "~/lib/queries";
+import { useSeen } from "~/lib/onboarding";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
@@ -87,6 +89,10 @@ export function AgentPanel({
   const settings = useSettings();
   const itemsQ = useItems(projectId);
   const boardsQ = useBoards(projectId);
+  const reposQ = useRepos(projectId);
+  const { seen, markSeen } = useSeen();
+  // A project without code is offered the setup once; skipped, an agent whose work needs the code asks again (offer_repository).
+  const repoSetupId = `repo-setup:${projectId}`;
   const accessories = useAssistantAccessories();
   const { threadId, choose: chooseThread, clear: clearThread } = useThreadSelection(projectId, threads.data);
   const detail = useAgentThread(projectId, threadId);
@@ -999,6 +1005,9 @@ export function AgentPanel({
         }}
       >
         {(noEngineReady || (empty && !detail.data?.thread.itemId)) && <SetupCard onOpenSettings={onOpenSettings} onTroubleshoot={canTroubleshoot ? troubleshootEngine : undefined} />}
+        {!noEngineReady && !detail.data?.thread.itemId && reposQ.data?.length === 0 && !seen(repoSetupId) && (
+          <RepoSetupCard projectId={projectId} onOpenRepositories={onOpenRepositories} onSkip={() => markSeen(repoSetupId)} />
+        )}
         {empty && !noEngineReady && (
           <div className="turn turn-ai">
             <div className="turn-mark">

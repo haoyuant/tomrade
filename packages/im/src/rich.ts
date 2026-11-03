@@ -153,7 +153,7 @@ export function deliveryCard(scope: RenderScope, item: Delivered, submission: De
 }
 
 /** Card schemas IM shows by their content; any other only by its title. */
-const SHOWN = new Set(["start", "backlog.proposal", "checklist"]);
+const SHOWN = new Set(["start", "backlog.proposal", "checklist", "repo-setup"]);
 
 /** Known card schemas as semantic cards; any other gets its title. */
 function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImContent {
@@ -175,6 +175,10 @@ function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImCo
       const epics = Array.isArray(data.epics) ? data.epics as { title?: string; features?: { title?: string }[] }[] : [];
       const text = epics.map(e => [`**${e.title ?? ""}**`, ...(e.features ?? []).map(f => `- ${f.title ?? ""}`)].join("\n")).join("\n");
       return { text: "", elements: [{ type: "section", title: block.title, ...(text ? { text } : {}) }] };
+    }
+    case "repo-setup": {
+      const reason = typeof data.reason === "string" && data.reason ? `${data.reason}\n` : "";
+      return { text: "", elements: [{ type: "section", title: block.title, text: `${reason}${w("repoSetupDesktop")}` }] };
     }
     case "checklist": {
       const rows = Array.isArray(data.rows) ? data.rows as { title: string; state: string; line?: string }[] : [];

@@ -430,6 +430,35 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
   ctx.tools.register(
     defineTool({
+      name: "offer_repository",
+      title: "Ask the user to set up the code repository",
+      description:
+        "Put the code repository setup in the conversation — a folder on this machine or a remote URL — when the project has none and the work needs one: reading or changing the code, a coding ticket, Start, a branch or a pull request. Tell the user in one line why it is needed, then end your turn.",
+      input: z.object({
+        reason: z.string().max(300).optional().describe("Why the repository is needed now, in the user's language; shown on the card"),
+        projectId: z.string().optional()
+      }),
+      // An outside client has no conversation to put the setup in.
+      mcp: "run",
+      readOnly: true,
+      execute: (args, inv) => {
+        const projectId = requireProjectId("offer_repository", args.projectId, inv);
+        const agent = ctx.get("agent");
+        if (!inv.run || !agent) throw new Error("offer_repository: only a conversation in Tomrade can show the setup");
+        const repos = ctx.repos.list(projectId);
+        if (repos.length) {
+          return { offered: false, repositories: repos.map((r) => r.name), note: "The project already has a repository; a workstream without one is linked to it under Manage workstreams in the sidebar. Tell the user that if it is what stands in the way." };
+        }
+        const reason = args.reason?.trim();
+        const title = CODE_WORDS(ctx.get("settings")?.locale?.())("repoSetupTitle");
+        agent.setCard(inv.run.id, { id: `repo-setup-${inv.run.id}`, schema: "repo-setup", title, data: reason ? { reason } : {} });
+        return { offered: true, note: "The repository setup is in the conversation; the user adds one from there or skips it. End your turn." };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "note_progress",
       kit: "code",
       title: "Note progress on the ticket",

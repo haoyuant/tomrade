@@ -54,10 +54,11 @@ export interface SessionRow {
   /** Its agent declared the keys that answer its permission prompt: Allow and Deny on its card press them in its pane. */
   approval: boolean;
   /**
-   * What its screen asks that its card answers now: a permission prompt with yes under the cursor, one with no, the menu
-   * of the question its hook told of (its `ask.options`, picked with arrows and Enter), or nothing that could safely be answered.
+   * What its screen asks that its card answers now: a permission prompt with yes under the cursor, one with no, a
+   * folder's trust (Trust and continue or Exit, picked with arrows and Enter), the menu of the question its hook told of
+   * (its `ask.options`, picked the same way), or nothing that could safely be answered.
    */
-  prompt: "allow" | "deny" | "choice" | null;
+  prompt: "allow" | "deny" | "trust" | "choice" | null;
   /** When its hooks last spoke; what the session bar orders waiting and idle rows by. */
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
@@ -290,6 +291,8 @@ export type WindowMessage =
   | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny"; token?: number }
+  /** The folder's trust its screen asks answered from its card: the cursor moved to that option, then Enter. */
+  | { type: "trust"; sessionId: string; which: "trust" | "exit"; token?: number }
   /** The session's question answered from its card with one of its choices, picked on its pane's menu. */
   | { type: "choose"; sessionId: string; choice: string; token?: number }
   /** An assistant conversation's question answered from its card with one of its choices. */

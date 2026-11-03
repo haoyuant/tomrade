@@ -15,6 +15,7 @@ import { looksLikeMarkdown } from "~/lib/markdownDetect";
 import { AgentMarkdown, CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
 import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 import { mentionSignature } from "./links";
+import { RepoSetupBlock } from "./RepoSetupCard";
 import { liveStore, useLive, type LiveStore } from "./liveStore";
 
 /** What every row reads besides its own message; the handlers keep their identity, so a streamed reply re-renders only its own line. */
@@ -274,6 +275,8 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       <StartBatchBlock card={(card?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "merge" ? (
       <MergeBlock card={(card?.data ?? b.data) as MergeCard} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
+    ) : b.type === "card" && b.schema === "repo-setup" ? (
+      <RepoSetupBlock projectId={projectId} data={b.data} />
     ) : b.type === "card" && b.schema === "backlog.proposal" ? (
       <ProposalBlock card={b.data as ProposalCard} />
     ) : b.type === "card" ? (
