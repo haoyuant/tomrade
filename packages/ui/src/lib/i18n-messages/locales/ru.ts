@@ -3275,6 +3275,8 @@ export const ru: PartialMessages = {
     waitQuestion: "Задаёт вам вопрос",
     allow: "Разрешить",
     deny: "Отклонить",
+    trustContinue: "Доверять и продолжить",
+    trustExit: "Выйти",
     seeInPane: "Открыть в панели",
     openInMain: "Открыть в главном окне",
     peekHint: "Наведите, чтобы взглянуть; щёлкните, чтобы показать",

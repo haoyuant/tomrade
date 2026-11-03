@@ -3163,6 +3163,8 @@ export const fr: PartialMessages = {
     waitQuestion: "Vous pose une question",
     allow: "Autoriser",
     deny: "Refuser",
+    trustContinue: "Faire confiance et continuer",
+    trustExit: "Quitter",
     seeInPane: "Voir dans un panneau",
     openInMain: "Ouvrir dans la fenêtre principale",
     peekHint: "Survolez pour un aperçu, cliquez pour l’afficher",

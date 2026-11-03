@@ -3193,6 +3193,8 @@ export const ja: PartialMessages = {
     waitQuestion: "質問があります",
     allow: "許可",
     deny: "拒否",
+    trustContinue: "信頼して続ける",
+    trustExit: "終了",
     seeInPane: "ペインで見る",
     openInMain: "メインウィンドウで開く",
     peekHint: "ホバーで覗き見、クリックで表示",

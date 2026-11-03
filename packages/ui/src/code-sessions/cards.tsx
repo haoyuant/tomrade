@@ -3,7 +3,7 @@ import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { outcomeLine } from "../lib/review";
 import { rangeLabel, spanLabel } from "../lib/sessionTime";
 import { askText, doingText } from "../lib/terminalSession";
-import { asksOnScreen, canAnswer, choicesOf, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
+import { asksOnScreen, canAnswer, canTrust, choicesOf, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
 import { useSay, type Say, type Words } from "./say";
 
 /** Three shapes, the session bar's, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
@@ -94,15 +94,16 @@ export const saidClass = (status: BarStatus): string => (status === "wait" ? "cs
 /** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
 const CHOICES_SHOWN = 3;
 
-/** A terminal session's answer from its card: Allow or Deny for its permission, or one of its question's choices. */
-export type SessionReply = "allow" | "deny" | { choice: string };
+/** A terminal session's answer from its card: Allow or Deny for its permission, Trust and continue or Exit for a folder's trust, or one of its question's choices. */
+export type SessionReply = "allow" | "deny" | { trust: "trust" | "exit" } | { choice: string };
 
 /**
  * What can be done from a row without opening it. On a card in the bar, what it waits on is answered in place — a
- * permission prompt on its screen that its agent declared the keys for (Allow with yes under the cursor, else Deny), or
- * a question by one of its choices, an assistant's or one whose menu a terminal shows — or looked at first; one waiting
- * on its screen with nothing to press here can still be looked at. In the overview, those answers too, and a row with a
- * pane goes to its cell and a conversation to the app window.
+ * permission prompt on its screen that its agent declared the keys for (Allow with yes under the cursor, else Deny), a
+ * folder's trust on its screen (Trust and continue or Exit), or a question by one of its choices, an assistant's or one
+ * whose menu a terminal shows — or looked at first; one waiting on its screen with nothing to press here can still be
+ * looked at. In the overview, those answers too, and a row with a pane goes to its cell and a conversation to the app
+ * window.
  */
 export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
@@ -115,6 +116,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
   };
   const s = row.session;
   const answerable = !!s && canAnswer(s);
+  const trusting = !!s && canTrust(s);
   const wait = row.kind === "thread" ? row.thread.wait : null;
   const questionId = wait?.questionId ?? null;
   const choices = (row.kind === "thread" ? (questionId && wait?.options) || [] : s ? choicesOf(s) : []).slice(0, CHOICES_SHOWN);
@@ -125,8 +127,18 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
       {choice}
     </button>
   ));
+  const trustButtons = trusting && (
+    <>
+      <button type="button" className="btn btn-primary btn-xs" data-testid="cs-trust" disabled={sending} onClick={pressOnce(() => onAnswer(s, { trust: "trust" }))}>
+        {say("trustContinue")}
+      </button>
+      <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-trust-exit" disabled={sending} onClick={pressOnce(() => onAnswer(s, { trust: "exit" }))}>
+        {say("trustExit")}
+      </button>
+    </>
+  );
   if (!big) {
-    if (!answerable && !choices.length && !asksOnScreen(row)) return null;
+    if (!answerable && !trusting && !choices.length && !asksOnScreen(row)) return null;
     return (
       <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions" data-choices={choices.length ? "" : undefined}>
         {answerable &&
@@ -139,6 +151,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
               {say("deny")}
             </button>
           ))}
+        {trustButtons}
         {choiceButtons}
         <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-look" onClick={() => onSee(row)}>
           {say("lookFirst")}
@@ -146,7 +159,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
       </span>
     );
   }
-  if (!answerable && !choices.length && !seeable && row.kind !== "thread") return null;
+  if (!answerable && !trusting && !choices.length && !seeable && row.kind !== "thread") return null;
   return (
     <span className="cs-row-actions" data-testid="cs-row-actions">
       {answerable && (
@@ -161,6 +174,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
           </button>
         </>
       )}
+      {trustButtons}
       {choiceButtons}
       {seeable && (
         <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-see-in-pane" onClick={() => onSee(row)}>
