@@ -244,6 +244,28 @@ Tomrade is built with Tomrade. The maintainer's backlog lives in a Tomrade proje
 
 Built with help: [the people who shaped Tomrade](https://tomrade.com/thanks/) with their ideas, their testing and their patience with early builds.
 
+## Buy me a coffee
+
+I build Tomrade on my own, after work. It's free.
+
+It started when I was learning agent development and using Claude Code on my own stuff. The more agents I ran, the more I turned into a dispatcher, digging through terminals to find whichever one got stuck this time. So I built a tool for it, handed it to some dev friends, and let them roast it until it got good.
+
+Honestly, the agents do most of the work now. I review PRs and drink coffee. Problem is, agents don't drink coffee. They eat tokens, buffet-style. Your coffee turns into tokens, tokens turn into PRs, PRs turn into next week's release. Conservation of energy.
+
+The cat supervises for free. The agents don't.
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- Alipay / WeChat Pay: scan below
+
+<p>
+  <img src="docs/images/support/alipay.png" alt="Alipay QR code" height="240">
+  <img src="docs/images/support/wechat.png" alt="WeChat Pay QR code" height="240">
+</p>
+
+Fun fact: you can undo pretty much anything in Tomrade. Not this, though 😂
+
+Can't chip in? No worries. Open an issue or tell a friend, that makes my day too.
+
 ## FAQ
 
 **Is it only for programmers?** No. The board, the assistant and Files work for any project: a household, a trip, a thesis, a journal. Coding agents join in when a project has a repository and stay out of the way when it doesn't.
