@@ -1,0 +1,255 @@
+{
+ "seconds": 19.6875,
+ "music": 0.8,
+ "src": {
+  "top": 0,
+  "width": 3008
+ },
+ "map": [
+  [
+   0,
+   10.5,
+   0
+  ],
+  [
+   3.75,
+   10.5,
+   0
+  ],
+  [
+   5.625,
+   13.5,
+   0
+  ],
+  [
+   8.4375,
+   53.5,
+   0
+  ],
+  [
+   11.25,
+   56.3,
+   0
+  ],
+  [
+   13.125,
+   61.5,
+   0
+  ],
+  [
+   15.9375,
+   64.3,
+   0
+  ],
+  [
+   19.6875,
+   64.4,
+   0
+  ]
+ ],
+ "shots": {
+  "phone": {
+   "x": -247,
+   "y": -803,
+   "w": 5169,
+   "veilTop": 1
+  },
+  "both": {
+   "x": -540,
+   "y": 673,
+   "w": 2160,
+   "veilTop": 1
+  }
+ },
+ "cam": [
+  [
+   0,
+   "phone"
+  ],
+  [
+   8.4375,
+   "both",
+   0.01
+  ],
+  [
+   11.25,
+   "phone",
+   0.01
+  ]
+ ],
+ "title": {
+  "to": 3.75,
+  "blocks": [
+   {
+    "at": 0.234375,
+    "x": 80,
+    "y": 200,
+    "w": 920,
+    "size": 88,
+    "en": "Away from\nyour desk?",
+    "zh": "不在电脑前？",
+    "zhSize": 42
+   },
+   {
+    "at": 1.875,
+    "x": 80,
+    "y": 450,
+    "w": 920,
+    "size": 88,
+    "en": "Just text it.",
+    "zh": "发条消息就行。",
+    "zhSize": 42
+   }
+  ],
+  "chat": {
+   "lines": [
+    {
+     "at": 0.46875,
+     "who": "you",
+     "text": "Add a ticket: screenshots"
+    },
+    {
+     "at": 1.40625,
+     "who": "bot",
+     "text": "Working…"
+    },
+    {
+     "at": 2.109375,
+     "who": "bot",
+     "text": "FD-11 is on the board"
+    },
+    {
+     "at": 2.8125,
+     "who": "bot",
+     "text": "Start FD-11?",
+     "button": "Start"
+    }
+   ]
+  }
+ },
+ "texts": [
+  {
+   "from": 3.984375,
+   "to": 8.3203125,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "size": 70,
+   "en": "Text it\nfrom anywhere.",
+   "zh": "人在哪，都能发。",
+   "zhSize": 36,
+   "align": "left"
+  },
+  {
+   "from": 8.5546875,
+   "to": 11.1328125,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 70,
+   "zhSize": 36,
+   "en": "It lands on the board.",
+   "gray": "As a ticket.",
+   "zh": "直接变成看板上的工单。"
+  },
+  {
+   "from": 11.3671875,
+   "to": 15.8203125,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "size": 70,
+   "en": "Start it\nfrom your phone.",
+   "zh": "手机上点一下就开工。",
+   "zhSize": 36,
+   "align": "left"
+  }
+ ],
+ "end": {
+  "from": 15.9375,
+  "en": "Stop chasing your agents.\nLet them come to you.",
+  "zh": "别再追着 Agent 跑了，让它们来向你禀告。",
+  "url": "tomrade.com"
+ },
+ "fast": [
+  {
+   "from": 5.625,
+   "to": 8.4375,
+   "label": "14×"
+  },
+  {
+   "from": 11.25,
+   "to": 13.125,
+   "label": "3×"
+  }
+ ],
+ "sections": [
+  [
+   0,
+   "sparse"
+  ],
+  [
+   3.75,
+   "full"
+  ],
+  [
+   8.4375,
+   "double"
+  ],
+  [
+   11.25,
+   "full"
+  ],
+  [
+   15.9375,
+   "tail"
+  ]
+ ],
+ "sfx": [
+  {
+   "t": 0.46875,
+   "kind": "boop",
+   "note": 72,
+   "gain": 0.7
+  },
+  {
+   "t": 1.40625,
+   "kind": "boop",
+   "note": 76,
+   "gain": 0.7
+  },
+  {
+   "t": 2.109375,
+   "kind": "boop",
+   "note": 79,
+   "gain": 0.7
+  },
+  {
+   "t": 2.8125,
+   "kind": "boop",
+   "note": 84,
+   "gain": 0.7
+  },
+  {
+   "t": 3.4,
+   "kind": "whoosh",
+   "gain": 0.18
+  },
+  {
+   "t": 8.0875,
+   "kind": "whoosh",
+   "gain": 0.1
+  },
+  {
+   "t": 10.9,
+   "kind": "whoosh",
+   "gain": 0.1
+  },
+  {
+   "t": 15.9375,
+   "kind": "chime"
+  }
+ ],
+ "stage": "tall"
+}
