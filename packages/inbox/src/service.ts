@@ -316,7 +316,8 @@ ALTER TABLE plugin_inbox_entries ADD COLUMN suggest_error TEXT;
  * hear, belong to the machine that pulled and triaged.
  */
 export const TABLES = {
-  plugin_inbox_entries: { project: "project_id", export: { order: "id" } },
+  // Feedback nobody has triaged yet, such as the sample's own exercise, is no one's work.
+  plugin_inbox_entries: { project: "project_id", export: { order: "id" }, untouched: "status = 'new' AND triaged_at IS NULL AND reply IS NULL" },
   plugin_inbox_projects: { project: "project_id", export: { order: "project_id" } },
   plugin_inbox_pulls: { project: "project_id", export: false },
   plugin_inbox_outbox: { project: { via: "entry_id", table: "plugin_inbox_entries" }, export: false }

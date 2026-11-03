@@ -14,6 +14,8 @@ import { fresh, settle } from "@tomradex/testkit";
 import { ARTIFACT_DIR, ForeignProjectError, Storage, digestState, readArtifact, readClone, readHubManifest, writeArtifact, writeHubManifest, type HubProject } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 import { Onboarding } from "@tomradex/onboarding";
+import { Contributions } from "@tomradex/contributions";
+import { Inbox } from "@tomradex/inbox";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-restore-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -79,15 +81,18 @@ describe("restoring the projects the Hub names", () => {
 
     const hubDir = path.join(root, `sample-${n++}`);
     fs.mkdirSync(hubDir, { recursive: true });
-    const b = await fresh({ hubDir, firstRun: "none", plugins: [[Storage, { ...QUIET, autoRestore: true }], storageGit, Onboarding] });
+    // As the app has it: the inbox too, where the sample's own feedback waits for the triage exercise.
+    const sample = () => [[Storage, { ...QUIET, autoRestore: true }], storageGit, Onboarding, Contributions, [Inbox, { pullMs: 3_600_000 }]] as const;
+    const b = await fresh({ hubDir, firstRun: "none", plugins: [...sample()] });
     await settle();
     await b.ctx.storage.ready;
     expect(b.project.sample).toBe(true);
+    expect(b.ctx.inbox.list(b.project.id).length).toBeGreaterThan(0);
     names(hubDir, record(a.project.id, { name: a.project.name, remote: viaGit(remote) }));
     expect(await b.ctx.storage.restoreMissing()).toEqual([a.project.id]);
     expect(b.projects.list().map((p) => p.id)).toEqual([a.project.id]);
 
-    const c = await fresh({ hubDir: path.join(root, `sample-${n++}`), firstRun: "none", plugins: [[Storage, { ...QUIET, autoRestore: true }], storageGit, Onboarding] });
+    const c = await fresh({ hubDir: path.join(root, `sample-${n++}`), firstRun: "none", plugins: [...sample()] });
     await settle();
     await c.ctx.storage.ready;
     c.items.update(c.project.id, c.items.list({ projectId: c.project.id })[0].id, { status: "done" }, "human");
@@ -96,6 +101,15 @@ describe("restoring the projects the Hub names", () => {
     expect(c.projects.list().map((p) => p.id).sort()).toEqual([a.project.id, c.project.id].sort());
     await c.ctx.storage.writeHub();
     expect(readHubManifest(c.hub.dir!)!.projects.map((p) => p.id)).toEqual([a.project.id]);
+
+    // Feedback triaged in the sample's inbox is use too.
+    const d = await fresh({ hubDir: path.join(root, `sample-${n++}`), firstRun: "none", plugins: [...sample()] });
+    await settle();
+    await d.ctx.storage.ready;
+    await d.ctx.inbox.close(d.project.id, d.ctx.inbox.list(d.project.id)[0]!.id, "wontfix");
+    names(d.hub.dir!, record(a.project.id, { name: a.project.name, remote: viaGit(remote) }));
+    expect(await d.ctx.storage.restoreMissing()).toEqual([a.project.id]);
+    expect(d.projects.list().map((p) => p.id).sort()).toEqual([a.project.id, d.project.id].sort());
   });
 
   it("says why a project cannot come back yet, and leaves nothing half-made", async () => {
