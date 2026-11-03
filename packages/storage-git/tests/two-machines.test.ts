@@ -19,6 +19,7 @@ import { Inbox } from "@tomradex/inbox";
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-two-machines-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 let n = 0;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
@@ -38,7 +39,17 @@ const folderBackend = createGitBackend({
   remote: (c) => ({ url: c.path, branch: c.branch, directory: c.directory })
 });
 
-async function machine(device: string) {
+/** By hand: no timers, so every commit on a remote is one of the test's own rounds. Live: every timer and watcher on, as the app runs, only quicker. */
+const HAND = {
+  storage: { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, remoteFreshMs: 0, remoteRetryMs: 0 },
+  files: { watch: false, autoSyncMs: 0, pushMs: 3_600_000 }
+};
+const LIVE = {
+  storage: { snapshotIdleMs: 100, snapshotMaxMs: 400, watch: true, reconcileMs: 500, remoteFreshMs: 0, remoteRetryMs: 0 },
+  files: { watch: true, autoSyncMs: 500, pushMs: 100, settleMs: 100 }
+};
+
+async function machine(device: string, run: typeof HAND = HAND) {
   const hubDir = path.join(root, `${device}-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const bag = await fresh({
@@ -46,10 +57,9 @@ async function machine(device: string) {
     device,
     plugins: [
       [Settings, { path: path.join(hubDir, "settings.json") }],
-      // No timers: the test syncs by hand, so every commit on a remote is one of its own rounds.
-      [Storage, { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, remoteFreshMs: 0, remoteRetryMs: 0 }],
+      [Storage, run.storage],
       storageGit,
-      [Files, { watch: false, autoSyncMs: 0, pushMs: 3_600_000 }],
+      [Files, run.files],
       Contributions,
       [Inbox, { pullMs: 3_600_000 }]
     ]
@@ -154,6 +164,62 @@ describe("two machines sharing a project's folder and its files", () => {
       expect((await m.storage.statusFor(id)).state).toBe("synced");
       expect((await m.ctx.files.status(id)).state).toBe("synced");
     }
+    await a.ctx.fiber.dispose();
+    await b.ctx.fiber.dispose();
+  }, 120_000);
+
+  it("left to their own timers and watchers, agree on their own and then stay quiet", async () => {
+    const a = await machine("live-a", LIVE);
+    const id = a.project.id;
+    const projectRemote = bareRemote();
+    const filesRemote = bareRemote();
+    const shared = a.items.create({ title: "Shared", projectId: id, boardId: a.board.id, by: "human" });
+    await a.ctx.files.write(id, "Specs/brief.md", "# Brief\n");
+    await a.storage.setExports(id, ["inbox"]);
+    await a.storage.bind(id, "git", { remote: projectRemote, branch: "main" });
+    expect((await a.ctx.files.bind(id, "folder", { path: filesRemote })).state).toBe("synced");
+    const b = await machine("live-b", LIVE);
+    expect(await b.storage.attachRemote("git", { remote: projectRemote, branch: "main" })).toBe(id);
+    // A window shows on both, so each sweep asks its remotes.
+    for (const m of [a, b]) m.ctx.emit("desktop/seen", true);
+
+    // From here on nobody syncs by hand. The same field too, on both at once: a clash the merge settles and notes.
+    a.items.update(id, shared.id, { status: "doing" }, "human");
+    b.items.update(id, shared.id, { priority: 3 }, "human");
+    a.items.update(id, shared.id, { title: "Title from A" }, "human");
+    b.items.update(id, shared.id, { title: "Title from B" }, "human");
+    a.items.create({ title: "From A", projectId: id, boardId: shared.boardId, by: "human" });
+    b.items.create({ title: "From B", projectId: id, boardId: shared.boardId, by: "human" });
+    await a.ctx.files.write(id, "Notes/a.md", "a\n");
+    await b.ctx.files.write(id, "Notes/b.md", "b\n");
+    b.ctx.inbox.add(id, "feedback", [{ externalId: "f1", kind: "bug", title: "It crashes", body: "", receivedAt: Date.now() }]);
+
+    const backlog = (m: Machine) => JSON.stringify(m.items.list({ projectId: id }).map((i) => [i.id, i.title, i.status, i.priority]).sort());
+    const files = async (m: Machine) => JSON.stringify((await m.ctx.files.tree(id)).filter((e) => e.kind === "file").map((e) => e.path).sort());
+    const inbox = (m: Machine) => JSON.stringify(m.ctx.inbox.list(id, "all").map((e) => [e.externalId, e.status]).sort());
+    const agreed = async () =>
+      backlog(a) === backlog(b) && inbox(a) === inbox(b) && (await files(a)) === (await files(b)) && a.items.list({ projectId: id }).length === 3 &&
+      (await files(a)).includes("Notes/b.md") && (await files(b)).includes("Notes/a.md") && inbox(a).includes("f1");
+    let together = false;
+    for (let i = 0; i < 300 && !together; i++) {
+      await sleep(100);
+      together = await agreed();
+    }
+    expect(together).toBe(true);
+    expect(a.items.get(id, shared.id)).toMatchObject({ status: "doing", priority: 3 });
+
+    // Let what is under way finish, then watch many idle cycles: nothing is committed anywhere.
+    await sleep(2_000);
+    const heads = async () => [
+      git(["rev-parse", "main"], projectRemote),
+      git(["rev-parse", "main"], filesRemote),
+      ...(await Promise.all([a, b].map(async (m) => [git(["rev-parse", "HEAD"], m.hub.catalog.project(id)!.dir!), (await m.ctx.files.status(id)).head]))).flat()
+    ];
+    const settled = await heads();
+    await sleep(5_000);
+    expect(await heads()).toEqual(settled);
+    expect(await agreed()).toBe(true);
+    for (const m of [a, b]) expect(m.storage.pending(id)?.count).toBe(0);
     await a.ctx.fiber.dispose();
     await b.ctx.fiber.dispose();
   }, 120_000);
