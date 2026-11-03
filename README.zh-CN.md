@@ -241,6 +241,28 @@ Tomrade 是用 Tomrade 开发的。维护者的需求池放在一个 Tomrade 项
 
 感谢一路同行的人：[这些人](https://tomrade.com/zh/thanks/)用他们的想法、测试和对早期版本的耐心，塑造了今天的 Tomrade。
 
+## 请我喝杯咖啡
+
+Tomrade 是我一个人下班后折腾出来的，免费用。
+
+起因很简单：那阵子在学 Agent 开发，顺手拿 Claude Code 做自己的项目，结果 Agent 越开越多，我反倒成了调度员，天天在一堆终端里找哪个又卡住了。干脆自己做个工具，丢给身边写代码的朋友用，被他们吐槽了一轮又一轮，慢慢调教成了现在这样。
+
+说实话，现在活基本都是 Agent 在干，我主要负责看 PR 和喝咖啡。问题是 Agent 不喝咖啡，它们吃 Token，还是自助餐那种吃法。你请的咖啡最后都会变成 Token，Token 变成 PR，PR 变成下周的新版本。能量守恒嘛。
+
+猫猫监工不要钱，Agent 打工要。
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- 支付宝 / 微信扫下面的码
+
+<p>
+  <img src="docs/images/support/alipay.png" alt="支付宝收款码" height="240">
+  <img src="docs/images/support/wechat.png" alt="微信赞赏码" height="240">
+</p>
+
+对了，Tomrade 里啥都能一键撤销，就这个不行 😂
+
+白嫖也完全没问题，提个 issue、跟朋友安利一句，我一样开心。
+
 ## 常见问题
 
 **只给程序员用吗？** 不是。看板、助手和文件对任何项目都适用：家务、旅行、论文、日记都行。项目连了代码仓库，编程 Agent 就能上手；没连，它们也不会来打扰你。
