@@ -111,4 +111,45 @@ describe("a pane's paints", () => {
     await flood(100);
     expect(gaps().every((g) => g <= FRAME_MS)).toBe(true);
   });
+
+  it("parses what the program prints as it comes, not a timer later", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setImmediate", "clearImmediate", "Date"] });
+    const pty = fakePty();
+    const pane = new Pane("p", pty, ".", null, 20, 4, hooks);
+    panes.push(pane);
+    const before = pane.revision;
+    pty.print("one");
+    pty.print("two");
+    expect(pane.revision).toBe(before + 2);
+    expect(pane.term.buffer.active.getLine(0)?.translateToString(true)).toBe("onetwo");
+    // Nothing of xterm's own goes to the program for it.
+    expect(pty.written).toBe("");
+  });
+
+  it("paints a frame that is due with the output that comes then, not a late timer's tick after", async () => {
+    // Real timeouts, which no test advances: a paint goes only when output comes after it is due.
+    vi.useFakeTimers({ toFake: ["setImmediate", "clearImmediate", "Date"] });
+    const pty = fakePty();
+    const pane = new Pane("p", pty, ".", null, 20, 4, hooks);
+    panes.push(pane);
+    const frames: TerminalFrame[] = [];
+    pane.attach({ mode: "control", send: (f) => frames.push(f), close: () => undefined }, 20, 4);
+    await new Promise((resolve) => pane.term.write("", resolve));
+    expect(frames).toHaveLength(1);
+    vi.advanceTimersByTime(FRAME_MS * 4);
+    frames.length = 0;
+
+    pty.print("a");
+    vi.advanceTimersByTime(0);
+    expect(frames).toHaveLength(1);
+    vi.setSystemTime(Date.now() + 5);
+    pty.print("b");
+    vi.advanceTimersByTime(0);
+    expect(frames).toHaveLength(1);
+    vi.setSystemTime(Date.now() + FRAME_MS);
+    pty.print("c");
+    vi.advanceTimersByTime(0);
+    expect(frames).toHaveLength(2);
+    expect(text(frames.slice(1))).toContain("abc");
+  });
 });

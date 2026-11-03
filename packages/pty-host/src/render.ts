@@ -116,6 +116,68 @@ export function renderRow(line: IBufferLine | undefined, cols: number, cell: IBu
   return { text, width };
 }
 
+/** xterm's own row behind the public view (internal, so only ever looked for): three words a cell, content, fg and bg. */
+interface RawLine {
+  _data?: unknown;
+  length?: unknown;
+}
+/** A cell whose text is kept outside its words (a grapheme of several code points). */
+const CONTENT_COMBINED = 0x200000;
+/** A cell whose styling is partly kept outside its words (an underline's style or color, a link). */
+const BG_EXTENDED = 0x10000000;
+
+interface CachedRow {
+  words: Uint32Array;
+  cols: number;
+  row: { text: string; width: number };
+}
+
+/**
+ * The rows of the last screen painted, by xterm's own line, with the words they were painted from: a row whose words
+ * are the same paints the same, so it is not read cell by cell again, and its text is the very string it was (which a
+ * diff compares and hashes for nothing). A row with a cell kept outside its words is always read again.
+ */
+export class RowCache {
+  private rows = new Map<object, CachedRow>();
+  private next = new Map<object, CachedRow>();
+
+  render(line: IBufferLine | undefined, cols: number, cell: IBufferCell): { text: string; width: number } {
+    const raw = (line as { _line?: RawLine } | undefined)?._line;
+    const data = raw?._data;
+    if (!raw || !(data instanceof Uint32Array) || typeof raw.length !== "number") return renderRow(line, cols, cell);
+    const n = Math.min(cols, raw.length) * 3;
+    if (data.length < n) return renderRow(line, cols, cell);
+    const hit = this.rows.get(raw);
+    if (hit && hit.cols === cols && hit.words.length === n && sameWords(hit.words, data, n)) {
+      this.next.set(raw, hit);
+      return hit.row;
+    }
+    const row = renderRow(line, cols, cell);
+    if (plainWords(data, n)) {
+      const words = hit && hit.words.length === n ? hit.words : new Uint32Array(n);
+      words.set(data.subarray(0, n));
+      this.next.set(raw, { words, cols, row });
+    }
+    return row;
+  }
+
+  /** The screen is read: only its rows are kept for the next one. */
+  done(): void {
+    this.rows = this.next;
+    this.next = new Map();
+  }
+}
+
+function sameWords(a: Uint32Array, b: Uint32Array, n: number): boolean {
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function plainWords(data: Uint32Array, n: number): boolean {
+  for (let i = 0; i < n; i += 3) if (data[i]! & CONTENT_COMBINED || data[i + 2]! & BG_EXTENDED) return false;
+  return true;
+}
+
 /** Paints a whole screen over whatever the window showed. */
 export function fullFrame(screen: Screen): string {
   let out = `${RESET}\x1b[?25l\x1b[H\x1b[2J${screen.modes}`;

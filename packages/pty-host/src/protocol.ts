@@ -92,7 +92,7 @@ export interface AttachParams {
   rows: number;
 }
 
-export const frameLine = (frame: TerminalFrame) => ({ type: "terminal.frame", seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, bytes: Buffer.from(frame.bytes).toString("base64") });
+export const frameLine = (frame: TerminalFrame) => ({ type: "terminal.frame", seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, bytes: Buffer.from(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength).toString("base64") });
 
 export type TerminalLine = { type: "frame"; frame: TerminalFrame } | { type: "closed"; reason: string | null };
 
