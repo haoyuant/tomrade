@@ -133,6 +133,33 @@ const run = async () => {
   await $(`document.querySelector('[data-testid="worker-usage"]')?.scrollIntoView();true`);
   await sleep(300);
   await shot("usage-03-worker-calls");
+
+  // ── Agent scorecard: merged pull requests by engine ───────────────────
+  const db = ctx.db.for(project.id);
+  const now = Date.now();
+  const deliver = (item, sequence, completed) => db.prepare("INSERT OR REPLACE INTO deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json) VALUES (?, ?, ?, ?, ?, 0, ?, ?, '{}')").run(`${item.id}:delivery:${sequence}`, project.id, item.id, sequence, completed ? "completed" : "active", completed, completed ?? now);
+  const pull = (item, sequence, number) => db.prepare("INSERT INTO plugin_code_link_links (id, project_id, item_id, repo_id, branch, pr_number, pr_url, pr_state, delivery, created_at, updated_at) VALUES (?, ?, ?, 'repo', ?, ?, ?, 'merged', ?, 0, ?)").run(`pr-${number}`, project.id, item.id, `al/${number}`, number, `https://example.test/pull/${number}`, sequence, now);
+  deliver(big, 1, now); pull(big, 1, 11);
+  deliver(small, 1, now - 1000); deliver(small, 2, now); pull(small, 2, 12);
+  deliver(none, 1, now); pull(none, 1, 13);
+  await press(`document.querySelector('[data-days="30"]')`);
+  await sleep(900);
+  const score = await $(`[...document.querySelectorAll('[data-testid="scorecard"] tbody tr[data-engine]')].map((r) => [r.dataset.engine, ...[...r.querySelectorAll('td')].map((d) => d.textContent)])`);
+  check("the scorecard lists each engine's merged pull requests", score.length === 2 && score[0]?.[0] === "spender" && score[0]?.[2] === "2" && score[1]?.[0] === "" && score[1]?.[2] === "1", score);
+  check("first-pass rate counts the reopened ticket out", score[0]?.[3]?.startsWith("50%"), score[0]);
+  check("spend per pull request comes from the engine's priced runs", score[0]?.[4]?.startsWith("$0.877"), score[0]);
+  check("an engine with no reported spend reads No data, not a zero", score[1]?.[4]?.startsWith("No data") && !score[1]?.[4]?.includes("$"), score[1]);
+  const basis = await $(`document.querySelectorAll('[data-testid="scorecard"] details tbody tr').length`);
+  check("every counted pull request is listed for recounting", basis === 3, basis);
+  const cardText = await $(`document.querySelector('.score-card')?.textContent ?? ''`);
+  check("the share image names no project, ticket or code", cardText.includes("Agent scorecard") && !/Alpha|AL-|importer|typo|Never started|example\.test|#1[123]/.test(cardText), cardText);
+  await $(`(() => { const s = document.querySelector('.score-card-stage'); s.style.left = '24px'; s.style.top = '24px'; s.style.zIndex = '9999'; return true; })()`);
+  await sleep(300);
+  await shot("usage-06-share-card");
+  await $(`(() => { document.querySelector('.score-card-stage').style.left = ''; return true; })()`);
+  await $(`document.querySelector('[data-testid="scorecard"]')?.scrollIntoView({ block: 'start' });true`);
+  await sleep(300);
+  await shot("usage-07-scorecard");
   check("harness reached the end", true);
 };
 

@@ -7,6 +7,7 @@ import { invoke } from "~/lib/api";
 import { usd } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
+import { ScorecardSection } from "./Scorecard";
 
 const RANGES = [
   { days: 1, label: "usage.rangeToday" as MessageKey },
@@ -470,6 +471,7 @@ export function UsagePane() {
           </>
         ))}
       </div>
+      <ScorecardSection days={days} range={t(RANGES.find((r) => r.days === days)?.label ?? "usage.rangeWeek")} />
       <WorkerSection days={days} />
     </>
   );
