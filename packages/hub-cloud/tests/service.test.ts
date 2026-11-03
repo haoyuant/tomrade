@@ -24,7 +24,9 @@ const remote = vi.hoisted(() => ({
   /** Each read of the Hub's records: from when, or null for all of them. */
   reads: [] as (string | null)[],
   /** Whether this machine starts with a stored session. */
-  signedIn: true
+  signedIn: true,
+  /** How long each write to the Hub takes to answer. */
+  rpcWait: 0
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -67,6 +69,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       }
       if (remote.offline) return { data: null, error: { message: "offline" } };
       if (name === "tomrade_ensure_hub") return { data: remote.hubId, error: null };
+      if (remote.rpcWait) await new Promise((resolve) => setTimeout(resolve, remote.rpcWait));
       const op = args!.p_mutation;
       remote.requests.push(structuredClone(op));
       if (remote.receipts.has(op.id)) return { data: remote.receipts.get(op.id), error: null };
@@ -100,7 +103,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = [];
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0;
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -147,6 +150,42 @@ it("reads only what changed in the cloud after the first read, and tells no wind
   expect(keys).toContain("elsewhere");
   expect(keys).toContain("settings");
 });
+
+it("takes a record the database hands back with its keys in its own order as the same record: nothing is changed, sent or told", async () => {
+  const { ctx, cloud, project } = await machine();
+  await cloud.sync();
+  const key = `project:${project.id}`;
+  const record = remote.records.get(key)!;
+  const value = record.value as Record<string, unknown>;
+  // jsonb gives keys back shortest first, then in byte order.
+  const reordered = Object.fromEntries(Object.keys(value).sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).map((k) => [k, value[k]]));
+  expect(Object.keys(reordered)).not.toEqual(Object.keys(value));
+  remote.records.set(key, { ...record, value: reordered, updated_at: new Date().toISOString() } as CloudRecord);
+  await cloud.sync();
+  // Unchanged in the cloud from now on: later reads leave it out.
+  remote.records.set(key, { ...record, value: reordered, updated_at: "2000-01-01T00:00:00.000Z" } as CloudRecord);
+  const held = JSON.stringify(cloud.manifest());
+  const refreshed = vi.spyOn(ctx.settings, "refreshUserStore");
+  const sent = remote.requests.length;
+  await cloud.sync();
+  await cloud.sync();
+  expect(refreshed).not.toHaveBeenCalled();
+  expect(remote.requests).toHaveLength(sent);
+  expect(JSON.stringify(cloud.manifest())).toBe(held);
+});
+
+it("sends a change queued while a pass is already sending right after that pass, not at the next sweep", async () => {
+  const { ctx, cloud } = await machine();
+  await cloud.sync();
+  remote.rpcWait = 1_500;
+  ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
+  // The first change's pass starts a second later and is still waiting on the cloud when the next change comes.
+  await new Promise((resolve) => setTimeout(resolve, 1_300));
+  ctx.settings.set({ ...ctx.settings.get(), theme: "light" });
+  const theme = () => (remote.records.get("preference:settings")?.value as { sections?: { theme?: { value?: string } } } | undefined)?.sections?.theme?.value;
+  for (let i = 0; i < 120 && theme() !== "light"; i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(theme()).toBe("light");
+}, 15_000);
 
 it("migrates only portable metadata, preserves legacy files, and continues the project write path", async () => {
   const { ctx, cloud, hubDir, legacy, project, board, items, hub } = await machine();

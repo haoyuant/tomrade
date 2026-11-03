@@ -109,6 +109,8 @@ export class CloudHub extends Service implements CloudHubReader {
   private user: User | null = null;
   private error: string | null = null;
   private active: Promise<void> | null = null;
+  /** A change was queued while a pass ran; one more pass follows it. */
+  private again = false;
   /** The Hub read in full during this run, and the newest change time seen in it: later reads ask only what changed since. */
   private readHub: string | null = null;
   private cursor: string | null = null;
@@ -241,9 +243,10 @@ export class CloudHub extends Service implements CloudHubReader {
     this.cache.data.migrated = true;
     this.cache.save();
   }
+  /** A copy: whoever reads it may change what it got without changing the cache, or a queued request already sent. */
   manifest(): HubManifest {
     const manifest = emptyHub();
-    for (const r of this.cache.view()) {
+    for (const r of structuredClone(this.cache.view())) {
       if (r.kind === "project") {
         if (r.value === null) manifest.removed.push({ id: r.key, at: 0 });
         else manifest.projects.push(r.value as unknown as HubProject);
@@ -285,7 +288,12 @@ export class CloudHub extends Service implements CloudHubReader {
   }
   private schedule(): void {
     if (this.closed || this.timer) return;
-    this.timer = setTimeout(() => { this.timer = null; void this.sync(); }, 1000);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      // The pass under way may have read the outbox before this change was queued: another follows it.
+      if (this.active) this.again = true;
+      void this.sync();
+    }, 1000);
     this.timer.unref?.();
   }
   sync(): Promise<void> {
@@ -297,6 +305,7 @@ export class CloudHub extends Service implements CloudHubReader {
       if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${errorMessage(e)}`));
     }).catch(e => { this.error = errorMessage(e); }).finally(() => {
       this.active = null;
+      if (this.again) { this.again = false; this.schedule(); }
       // A pass that changed nothing tells no window: each would read the account and the Hub again.
       if (!this.closed && this.standing() !== before) { this.ctx.settings.refreshUserStore(); this.notify(); }
     });

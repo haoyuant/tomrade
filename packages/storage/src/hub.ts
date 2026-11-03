@@ -83,9 +83,16 @@ export function writeHubManifest(dir: string, manifest: HubManifest): boolean {
 /** What this machine contributes: every catalogued project, with its remote when it has a portable one. */
 export function hubProjectOf(entry: CatalogProject, origin: { url: string | null; branch: string | null } | null, at: number): HubProject {
   const portable = entry.git === "dedicated" && entry.remote ? entry.remote : null;
-  const hint = !portable && origin?.url ? `${origin.url}${origin.branch ? ` · ${origin.branch}` : ""}` : null;
+  // Where it was last seen, without the branch: a checkout changes branch all day, and each change would be a write every machine sees.
+  const hint = !portable && origin?.url ? origin.url : null;
   return { id: entry.id, name: entry.name, keyPrefix: entry.keyPrefix, remote: portable, hint, updatedAt: at };
 }
+
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical((value as Record<string, unknown>)[k])])) : value;
+
+/** The same project record but for its stamp, whatever order its keys came in (a database hands them back in its own). */
+export const sameHubProject = (a: HubProject, b: HubProject): boolean => JSON.stringify(canonical({ ...a, updatedAt: 0 })) === JSON.stringify(canonical({ ...b, updatedAt: 0 }));
 
 /**
  * Union by id with tombstones. Low-frequency, low-conflict data, so no log is

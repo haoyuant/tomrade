@@ -202,6 +202,46 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     b.close();
   });
 
+  it("a copy received while a clash waits was never the remote's: the other machine's later edit to it is kept", async () => {
+    const remote = bare();
+    const a = await store(remote);
+    await a.write("f.md", text("v0\n"));
+    await a.write("g.md", text("g0\n"));
+    await a.sync();
+    const b = await store(remote);
+    expect((await b.sync()).state).toBe("synced");
+    await a.write("f.md", text("t1\n"));
+    await a.write("g.md", text("gA\n"));
+    await a.sync();
+    await b.write("g.md", text("gB\n"));
+    expect((await b.sync()).state).toBe("conflicted");
+    expect((await b.read("f.md"))?.body).toBe("t1\n");
+    await a.write("f.md", text("t2\n"));
+    await a.sync();
+    await b.resolve("g.md", "ours");
+    expect((await b.sync()).state).toBe("synced");
+    expect((await b.read("f.md"))?.body).toBe("t2\n");
+    expect((await a.sync()).state).toBe("synced");
+    expect((await a.read("f.md"))?.body).toBe("t2\n");
+    a.close();
+    b.close();
+  });
+
+  it("publishes its copy again when the remote went back to one from before it", async () => {
+    const remote = bare();
+    const a = await store(remote);
+    await a.write("f.md", text("v1\n"));
+    await a.sync();
+    const before = execFileSync("git", ["-C", remote, "rev-parse", "main"]).toString().trim();
+    await a.write("f.md", text("v2\n"));
+    await a.sync();
+    execFileSync("git", ["-C", remote, "update-ref", "refs/heads/main", before]);
+    expect((await a.sync()).state).toBe("synced");
+    expect((await a.read("f.md"))?.body).toBe("v2\n");
+    expect(execFileSync("git", ["-C", remote, "show", "main:f.md"]).toString()).toBe("v2\n");
+    a.close();
+  });
+
   it("leaves a clash for a person, shows both sides, and settles it either way", async () => {
     const remote = bare();
     const a = await store(remote);
@@ -362,6 +402,91 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     s.close();
   });
 
+  it("goes on saying why the remote refuses a push, however often it is tried: a refusal replaced nothing", async () => {
+    const remote = bare();
+    fs.writeFileSync(path.join(remote, "hooks", "pre-receive"), "#!/bin/sh\necho 'refused by policy' >&2\nexit 1\n", { mode: 0o755 });
+    const s = await store(remote);
+    await s.write("x.md", text("x"));
+    for (let round = 0; round < 5; round++) expect(await s.sync()).toMatchObject({ state: "error", failure: "other", detail: "remote: refused by policy" });
+    s.close();
+  });
+
+  it("with nothing new on either side, only asks the remote: no fetch, no commit, no push", async () => {
+    const remote = bare();
+    const ran: string[][] = [];
+    const counting: Git = (args, opts) => {
+      ran.push(args);
+      return git(args, opts);
+    };
+    const s = await store(remote, noop, undefined, counting);
+    await s.write("a.md", text("a\n"));
+    expect((await s.sync()).state).toBe("synced");
+    const before = commits(remote);
+    ran.length = 0;
+    expect((await s.sync()).state).toBe("synced");
+    const verbs = ran.map((args) => args.find((a) => !a.startsWith("-") && !a.includes("=")));
+    expect(verbs).toContain("ls-remote");
+    expect(verbs.filter((v) => v === "fetch" || v === "push" || v === "commit-tree")).toEqual([]);
+    expect(commits(remote)).toBe(before);
+    s.close();
+  });
+
+  it("two machines that each add a rule settle on one order, and stop publishing", async () => {
+    const remote = bare();
+    const a = await store(remote);
+    await a.write("a.md", text("a\n"));
+    expect((await a.sync()).state).toBe("synced");
+    const b = await store(remote);
+    expect((await b.sync()).state).toBe("synced");
+    await a.setAgentRules(["zeta"], "unlisted");
+    await b.setAgentRules(["alpha"], "unlisted");
+    for (let round = 0; round < 2; round++) {
+      await a.sync();
+      await b.sync();
+    }
+    const settled = commits(remote);
+    for (let round = 0; round < 3; round++) {
+      expect((await a.sync()).state).toBe("synced");
+      expect((await b.sync()).state).toBe("synced");
+    }
+    expect(commits(remote)).toBe(settled);
+    expect((await a.agentPolicy()).rules).toEqual([{ path: "alpha", mode: "unlisted" }, { path: "zeta", mode: "unlisted" }]);
+    expect(await b.agentPolicy()).toEqual(await a.agentPolicy());
+    a.close();
+    b.close();
+  });
+
+  it("a change made while a sync is already pushing goes out right after it", async () => {
+    const remote = bare();
+    let reached!: () => void;
+    const atPush = new Promise<void>((resolve) => (reached = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // Armed once the store is open: opening a first copy syncs too.
+    let held = true;
+    const gated: Git = async (args, opts) => {
+      if (args[0] === "push" && !held) {
+        held = true;
+        reached();
+        await gate;
+      }
+      return git(args, opts);
+    };
+    const s = await new GitFileStore({ git: gated, gitBinary: "git", dir: path.join(root, `store-${n++}`), remote: () => ({ url: remote, branch: "main" }), location: "test remote", warn: noop, onChange: noop, watch: false, pushMs: 20 }).open();
+    held = false;
+    await s.write("a.md", text("a\n"));
+    const first = s.sync();
+    await atPush;
+    await s.write("b.md", text("b\n"));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+    await first;
+    const shows = () => execFileSync("git", ["-C", remote, "ls-tree", "-r", "--name-only", "main"]).toString();
+    for (let i = 0; i < 100 && !shows().includes("b.md"); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(shows()).toContain("b.md");
+    s.close();
+  });
+
   it("follows a sync step by step, says when it is over, and keeps what it did", async () => {
     const remote = bare();
     const told: (SyncProgress | null)[] = [];
@@ -373,11 +498,12 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     const status = await s.sync();
     // A transfer tells its step again as it moves; the steps themselves come once each, in order.
     const steps = told.flatMap((p, i) => (p && p.step !== told[i - 1]?.step ? [p.step] : []));
-    expect(steps).toEqual(["saving", "reaching", "fetching", "merging", "pushing"]);
+    // The remote is still at our last push, so there is nothing to fetch.
+    expect(steps).toEqual(["saving", "reaching", "merging", "pushing"]);
     expect(told.at(-1)).toBeNull();
     expect(status.progress).toBeUndefined();
     expect(status.trace).toMatchObject({ remote, branch: "main" });
-    expect(status.trace?.steps.map((step) => [step.step, step.ok])).toEqual([["saving", true], ["reaching", true], ["fetching", true], ["merging", true], ["pushing", true]]);
+    expect(status.trace?.steps.map((step) => [step.step, step.ok])).toEqual([["saving", true], ["reaching", true], ["merging", true], ["pushing", true]]);
     s.close();
   });
 });

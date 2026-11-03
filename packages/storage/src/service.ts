@@ -13,7 +13,7 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
 import { GitFolder, GitMissingError, SyncRecorder, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential, type PushResult, type SyncTrace } from "@tomradex/git";
-import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
+import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, sameHubProject, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
 import { Restorer, fetchProject, type Adoption, type RestoreEntry, type RestoreSummary } from "./restore.js";
@@ -1033,8 +1033,11 @@ export class Storage extends Service implements StorageReader {
     }
   }
 
-  /** Commit the folder, then bring the remote's news in before pushing ours out. */
-  private async pushDedicated(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
+  /**
+   * Commit the folder, then bring the remote's news in before pushing ours out. A push turned away only because the
+   * remote moved since the fetch goes again once, after taking that news, rather than waiting for the next sweep.
+   */
+  private async pushDedicated(projectId: string, entry: CatalogProject, summary: string, again = false): Promise<boolean> {
     const g = this.git(entry.dir!);
     const recorder = this.recorders.get(projectId);
     recorder?.step("saving");
@@ -1055,8 +1058,15 @@ export class Storage extends Service implements StorageReader {
         await this.mergeRemote(projectId, this.mustEntry(projectId), g, remote.branch);
       }
     }
+    // Nothing of ours the remote lacks — nothing changed, or the merge's own publish pushed it: no push to make.
+    if (probe === "exists" && (await g.aheadBehind(remote.branch))?.ahead === 0) return true;
     recorder?.step("pushing");
-    if (!this.pushLanded(projectId, entry.dir!, remote.branch, await g.push(remote.branch, "origin", recorder?.stderr))) {
+    const pushed = await g.push(remote.branch, "origin", recorder?.stderr);
+    if (!pushed.ok && pushed.stale && !again) {
+      this.remoteAsks.delete(`${entry.dir}\0${remote.branch}`);
+      return this.pushDedicated(projectId, this.mustEntry(projectId), summary, true);
+    }
+    if (!this.pushLanded(projectId, entry.dir!, remote.branch, pushed)) {
       recorder?.fail();
       return false;
     }
@@ -2057,12 +2067,11 @@ export class Storage extends Service implements StorageReader {
     }
     // Projects the manifest knows but this machine does not are kept: they are what "attach all" offers.
     const merged = mergeHubManifests(current, mine);
-    for (const p of merged.projects) {
+    // Replaced, never changed in place: the records may be the Hub backend's own.
+    merged.projects = merged.projects.map((p) => {
       const fresh = mine.projects.find((m) => m.id === p.id);
-      if (fresh) {
-        if (JSON.stringify({ ...fresh, updatedAt: 0 }) !== JSON.stringify({ ...p, updatedAt: 0 })) Object.assign(p, fresh, { updatedAt: now });
-      }
-    }
+      return fresh && !sameHubProject(fresh, p) ? { ...fresh, updatedAt: now } : p;
+    });
     if (this.hubBackend) this.hubBackend.observe(mine);
     else if (dir) writeHubManifest(dir, merged);
     if (this.hubBackend || !dir) return merged;
