@@ -6,6 +6,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import { gitRunner, type Git, type SyncProgress } from "@tomradex/git";
 import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
 
+/** The git command a runner was asked to run, past the config the store puts in front of it. */
+const verb = (args: string[]): string | undefined => {
+  let i = 0;
+  while (args[i] === "-c") i += 2;
+  return args[i];
+};
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -317,7 +324,7 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
       if (!opts?.cwd?.includes(`${path.sep}transport${path.sep}`)) return git(args, opts);
       most = Math.max(most, ++running);
       try {
-        if (args[0] === "fetch") await new Promise((resolve) => setTimeout(resolve, 300));
+        if (verb(args) === "fetch") await new Promise((resolve) => setTimeout(resolve, 300));
         return await git(args, opts);
       } finally {
         running--;
@@ -402,6 +409,92 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     s.close();
   });
 
+  it("records and shares exactly the bytes it is given, whatever the person's own git config says", async () => {
+    const own = path.join(root, `own-config-${n++}`);
+    fs.mkdirSync(path.join(own, "hooks"), { recursive: true });
+    fs.writeFileSync(path.join(own, "ignore"), "*.log\n");
+    fs.writeFileSync(path.join(own, "hooks", "pre-commit"), "#!/bin/sh\necho 'not in my repositories' >&2\nexit 1\n", { mode: 0o755 });
+    const config = path.join(own, "gitconfig");
+    fs.writeFileSync(config, `[core]\n\tautocrlf = true\n\texcludesFile = ${path.join(own, "ignore")}\n\thooksPath = ${path.join(own, "hooks")}\n`);
+    const was = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+      const remote = bare();
+      const a = await store(remote);
+      await a.write("run.log", text("one\n"));
+      await a.write("crlf.txt", text("a\r\nb\r\n"));
+      expect((await a.sync()).state).toBe("synced");
+      const b = await store(remote);
+      expect((await b.sync()).state).toBe("synced");
+      expect((await b.read("run.log"))?.body).toBe("one\n");
+      expect((await b.read("crlf.txt"))?.body).toBe("a\r\nb\r\n");
+      await b.write("crlf.txt", text("a\r\nB\r\n"));
+      expect((await b.sync()).state).toBe("synced");
+      expect((await a.sync()).state).toBe("synced");
+      expect((await a.read("crlf.txt"))?.body).toBe("a\r\nB\r\n");
+      expect((await b.sync()).state).toBe("synced");
+      expect((await a.sync()).state).toBe("synced");
+      expect(execFileSync("git", ["-C", remote, "ls-tree", "-r", "--name-only", "main"]).toString()).toContain("run.log");
+      expect(execFileSync("git", ["-C", remote, "show", "main:crlf.txt"]).toString()).toBe("a\r\nB\r\n");
+      a.close();
+      b.close();
+      // Its own history never leaves the machine: a signing key that cannot sign stops nothing there.
+      fs.appendFileSync(config, `[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = ${path.join(own, "no-gpg")}\n`);
+      const local = await store();
+      await local.write("signed.md", text("never signed\n"));
+      expect((await local.read("signed.md"))?.body).toBe("never signed\n");
+      expect((await local.status()).state).toBe("local");
+      local.close();
+    } finally {
+      if (was === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = was;
+    }
+  });
+
+  it("a store closed while its sync waits on the remote leaves the folder to its successor", async () => {
+    const remote = bare();
+    const other = await store(remote);
+    await other.write("a.md", text("a\n"));
+    await other.sync();
+    let gate: Promise<void> | null = null;
+    let release!: () => void;
+    let reached!: () => void;
+    const atFetch = new Promise<void>((resolve) => (reached = resolve));
+    const gated: Git = async (args, opts) => {
+      if (gate && verb(args) === "fetch") {
+        reached();
+        await gate;
+      }
+      return git(args, opts);
+    };
+    const dir = path.join(root, `store-${n++}`);
+    const a = await store(remote, noop, dir, gated);
+    await other.write("later.md", text("later\n"));
+    await other.sync();
+    gate = new Promise<void>((resolve) => (release = resolve));
+    const syncing = a.sync();
+    await atFetch;
+    a.close();
+    const head = execFileSync("git", ["-C", dir, "rev-parse", "HEAD"]).toString().trim();
+    release();
+    await syncing;
+    expect(execFileSync("git", ["-C", dir, "rev-parse", "HEAD"]).toString().trim()).toBe(head);
+    expect(fs.existsSync(path.join(dir, "later.md"))).toBe(false);
+    gate = null;
+    const successor = await store(remote, noop, dir);
+    expect((await successor.sync()).state).toBe("synced");
+    expect((await successor.read("later.md"))?.body).toBe("later\n");
+    other.close();
+    successor.close();
+  });
+
+  it("says offline, not error, when the host it asks to make the remote cannot be reached", async () => {
+    const remote = bare();
+    const s = await new GitFileStore({ git, gitBinary: "git", dir: path.join(root, `store-${n++}`), remote: () => ({ url: remote, branch: "main" }), location: "test remote", warn: noop, onChange: noop, watch: false, pushMs: 600_000, ensureRemote: async () => { throw new TypeError("fetch failed"); } }).open();
+    expect(await s.sync()).toMatchObject({ state: "offline", detail: "fetch failed" });
+    s.close();
+  });
+
   it("goes on saying why the remote refuses a push, however often it is tried: a refusal replaced nothing", async () => {
     const remote = bare();
     fs.writeFileSync(path.join(remote, "hooks", "pre-receive"), "#!/bin/sh\necho 'refused by policy' >&2\nexit 1\n", { mode: 0o755 });
@@ -465,7 +558,7 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     // Armed once the store is open: opening a first copy syncs too.
     let held = true;
     const gated: Git = async (args, opts) => {
-      if (args[0] === "push" && !held) {
+      if (verb(args) === "push" && !held) {
         held = true;
         reached();
         await gate;
