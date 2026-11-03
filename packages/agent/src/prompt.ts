@@ -159,7 +159,9 @@ function mainConversationSection(repositories: TurnInput["repositories"]): strin
         : "";
   const where = repositories?.length
     ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}${standing(r)}`).join("\n")
-    : "No workstream has a repository linked yet.";
+    : "No workstream has a repository linked yet; most often the project has no code repository at all (the user may have skipped setting one up). " +
+      "Whenever the work needs one — reading or changing the code, a coding ticket, Start, a branch or a pull request — call offer_repository to put the setup back in front of the user (it says so when one only needs linking to a workstream), tell them in one line why, and end your turn. " +
+      "Never let such work fail or drop silently: no guessing at code you cannot read, no filing code work as general tickets to get around it.";
   return (
     "This is the project's main conversation, not a ticket's worktree. Read the repositories below freely to answer about the code, but never change them here: code work goes through a ticket. " +
     "Anything else on this machine you may do as the permission mode the user picked for this conversation allows — the user is asked when it requires. Tomrade's tools all work, Files included (write_file saves a document there). " +
