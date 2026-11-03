@@ -35,6 +35,22 @@ describe("durable Hub outbox", () => {
     cache.observe("project", "p1", project("New local edit"));
     expect(cache.data.outbox[0].base_version).toBe(2);
   });
+  it("sends a removal asked for again after another machine listed the project again, even after a restart", () => {
+    const location = file();
+    const a = new CloudCache(location, "https://example.supabase.co");
+    a.observe("project", "p1", project("Here"));
+    a.accept(a.data.outbox[0], { kind: "project", key: "p1", value: project("Here"), version: 1 });
+    a.intend("project", "p1", null);
+    a.accept(a.data.outbox[0], { kind: "project", key: "p1", value: null, version: 2 });
+    a.ingest([{ kind: "project", key: "p1", value: project("Back"), version: 3 }]);
+    const b = new CloudCache(location, "https://example.supabase.co");
+    b.intend("project", "p1", null);
+    expect(b.data.outbox).toMatchObject([{ kind: "project", key: "p1", value: null, base_version: 3 }]);
+    // Asked while the Hub already shows it removed: nothing to send.
+    b.accept(b.data.outbox[0], { kind: "project", key: "p1", value: null, version: 4 });
+    b.intend("project", "p1", null);
+    expect(b.data.outbox).toEqual([]);
+  });
   it("retains conflicts through restart and explicitly rebases the chosen value", () => {
     const location = file();
     const cache = new CloudCache(location, "https://example.supabase.co");

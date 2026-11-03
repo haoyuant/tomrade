@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +27,11 @@ const remote = vi.hoisted(() => ({
   /** Whether this machine starts with a stored session. */
   signedIn: true,
   /** How long each write to the Hub takes to answer. */
-  rpcWait: 0
+  rpcWait: 0,
+  /** Records the database refuses with a code of its own, by kind:key. */
+  refuse: new Set<string>(),
+  /** How many passes asked for the Hub, reachable or not. */
+  passes: 0
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -67,10 +72,12 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         remote.deleted.push((remote.as ?? user()).id);
         return { data: null, error: null };
       }
+      if (name === "tomrade_ensure_hub") remote.passes++;
       if (remote.offline) return { data: null, error: { message: "offline" } };
       if (name === "tomrade_ensure_hub") return { data: remote.hubId, error: null };
       if (remote.rpcWait) await new Promise((resolve) => setTimeout(resolve, remote.rpcWait));
       const op = args!.p_mutation;
+      if (remote.refuse.has(`${op.kind}:${op.key}`)) return { data: null, error: { message: "Mutation id reused", code: "P0001" } };
       remote.requests.push(structuredClone(op));
       if (remote.receipts.has(op.id)) return { data: remote.receipts.get(op.id), error: null };
       const key = `${op.kind}:${op.key}`;
@@ -103,13 +110,13 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0;
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0;
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
-async function machine({ used = true, accounts }: { used?: boolean; accounts?: LocalAccounts } = {}) {
+async function machine({ used = true, accounts, syncMs = 60_000 }: { used?: boolean; accounts?: LocalAccounts; syncMs?: number } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-cloud-service-")); dirs.push(dir);
   const hubDir = path.join(dir, "hub");
   const bag = await fresh({ hubDir, plugins: [
@@ -126,7 +133,7 @@ async function machine({ used = true, accounts }: { used?: boolean; accounts?: L
   const legacy = fs.readFileSync(path.join(hubDir, "hub.json"), "utf8");
   await bag.ctx.plugin(CloudHub, {
     url: "https://example.supabase.co", publishableKey: "sb_publishable_test", cacheFile: path.join(dir, "hub-cloud.json"),
-    sessionStorage: { getItem: () => null, setItem() {}, removeItem: (key: string) => { remote.forgotten.push(key); } }, syncMs: 60_000, accounts
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem: (key: string) => { remote.forgotten.push(key); } }, syncMs, accounts
   });
   await settle();
   await bag.ctx.cloudHub.ready;
@@ -335,6 +342,59 @@ it("a clash waiting for the person follows the cloud: taking the cloud's side ta
   expect(cloud.info().conflicts[0]?.cloud).toMatchObject({ sections: { theme: { value: "sunrise" } } });
   cloud.cache.resolve("preference:settings", "cloud");
   expect(cloud.cache.view().find((r) => r.kind === "preference")).toMatchObject({ version: 3 });
+});
+
+it("a request the database refuses holds up only its own record: the others are sent, the Hub is read, and the status says why", async () => {
+  const { ctx, cloud, project } = await machine();
+  await cloud.sync();
+  remote.refuse.add(`project:${project.id}`);
+  ctx.projects.update(project.id, { name: "Renamed" });
+  await ctx.storage.writeHub();
+  ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
+  remote.records.set("project:elsewhere", { kind: "project", key: "elsewhere", value: { id: "elsewhere", name: "Elsewhere", keyPrefix: "ELS" }, version: 1 });
+  await cloud.sync();
+  expect((remote.records.get("preference:settings")?.value as { sections: Record<string, { value: unknown }> }).sections.theme?.value).toBe("matcha");
+  expect(cloud.manifest().projects.map((p) => p.id)).toContain("elsewhere");
+  expect(cloud.info().status).toMatchObject({ state: "error", detail: "Mutation id reused" });
+  expect(cloud.info().pending).toBe(1);
+  remote.refuse.clear();
+  await cloud.sync();
+  expect(cloud.info().status.state).toBe("synced");
+  expect(remote.records.get(`project:${project.id}`)?.value).toMatchObject({ name: "Renamed" });
+});
+
+it("waits longer after each pass that could not reach the cloud, and a change still goes at once", async () => {
+  const { ctx, cloud } = await machine({ syncMs: 1_000 });
+  await cloud.sync();
+  remote.offline = true;
+  await cloud.sync();
+  remote.passes = 0;
+  // Every second, asked again at once, the cloud would be asked about six times; waiting 1, 2, then 4 s, two or three.
+  await new Promise((resolve) => setTimeout(resolve, 6_500));
+  expect(remote.passes).toBeLessThanOrEqual(3);
+  remote.offline = false;
+  ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
+  const theme = () => (remote.records.get("preference:settings")?.value as { sections: Record<string, { value: unknown }> }).sections.theme?.value;
+  for (let i = 0; i < 60 && theme() !== "matcha"; i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(theme()).toBe("matcha");
+}, 15_000);
+
+it("a project removed while the catalog is being written is not listed again after its removal", async () => {
+  const { ctx, cloud, dir } = await machine();
+  await cloud.sync();
+  const other = ctx.projects.create({ name: "Second", keyPrefix: "SEC" });
+  // In a checkout of its own, so writing the catalog waits on git for it.
+  const checkout = path.join(dir, "second-checkout");
+  fs.mkdirSync(checkout, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: checkout });
+  await ctx.storage.setFolder(other.id, checkout);
+  await ctx.storage.writeHub();
+  await cloud.sync();
+  const writing = ctx.storage.writeHub();
+  ctx.projects.remove(other.id);
+  await writing;
+  // What is queued last for it is what the cloud keeps, even if the app quits before the next write.
+  expect(cloud.cache.data.outbox.filter((op) => op.key === other.id).at(-1)).toMatchObject({ value: null });
 });
 
 it("persists a removal before the debounce timer or process exit, and explicit sign-out locks offline access", async () => {

@@ -188,6 +188,7 @@ export class Storage extends Service implements StorageReader {
   private publishedMem = new Map<string, ProjectState>();
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private hubWriteTimer: ReturnType<typeof setTimeout> | null = null;
+  private hubWriting: Promise<unknown> = Promise.resolve();
   /** Why the Hub folder's manifest cannot be read, until it reads again: nothing is written over it meanwhile. */
   private hubUnreadable: string | null = null;
   /** Projects removed on purpose on this machine; the Hub's catalog must not bring them back. */
@@ -2027,7 +2028,14 @@ export class Storage extends Service implements StorageReader {
    * as it is: written over with this machine's projects alone, every other
    * machine's would be gone from the catalog.
    */
-  async writeHub(): Promise<HubManifest | null> {
+  writeHub(): Promise<HubManifest | null> {
+    // One at a time: two that overlapped would each fold in the catalog as it was when it began.
+    const run = this.hubWriting.then(() => this.writeHubNow());
+    this.hubWriting = run.catch(() => undefined);
+    return run;
+  }
+
+  private async writeHubNow(): Promise<HubManifest | null> {
     const dir = this.hub.dir;
     if (!dir && !this.hubBackend) return null;
     const now = Date.now();
@@ -2038,7 +2046,7 @@ export class Storage extends Service implements StorageReader {
       if (problem) return null;
       current = manifest ?? emptyHub();
     }
-    const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [...this.tombstones].map(([id, at]) => ({ id, at })) };
+    const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [] };
     const ignores = new Set<string>(["repos/", "worktrees/", "*.tmp", ".DS_Store"]);
     const ignore = (projectDir: string | null) => {
       if (this.hubBackend || !dir || !projectDir) return;
@@ -2065,6 +2073,10 @@ export class Storage extends Service implements StorageReader {
     for (const [remote, repo] of Object.entries(this.hub.catalog.repos())) {
       if (repo.checkout) mine.repos.push({ remote, name: path.basename(repo.checkout) });
     }
+    // Read after the awaits above: a project removed meanwhile is not listed again, and one added back is no longer removed.
+    const live = new Set(this.hub.catalog.projects().map((entry) => entry.id));
+    mine.projects = mine.projects.filter((p) => live.has(p.id));
+    mine.removed = [...this.tombstones].filter(([id]) => !live.has(id)).map(([id, at]) => ({ id, at }));
     // Projects the manifest knows but this machine does not are kept: they are what "attach all" offers.
     const merged = mergeHubManifests(current, mine);
     // Replaced, never changed in place: the records may be the Hub backend's own.
