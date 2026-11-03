@@ -330,6 +330,7 @@ export class NightShifts extends Service {
       case "waits-upstream": return w("waitsUpstream", { keys: why.keys.join(", ") });
       case "upstream-stuck": return w("upstreamStuck", { keys: why.keys.join(", ") });
       case "waits-outside": return w("waitsOutside", { keys: why.keys.join(", ") });
+      case "waits-elsewhere": return w("waitsElsewhere", { keys: why.keys.join(", ") });
       case "halted": return w(why.halt === "stopped" ? "haltedStopped" : why.halt === "deadline" ? "haltedDeadline" : why.halt === "budget" ? "haltedBudget" : "haltedFailures");
       case "asked": return named("asked", "askedBare", why.text);
       case "error": return named("error", "errorBare", why.text);
@@ -727,7 +728,9 @@ export class NightShifts extends Service {
       const item = this.home.items.get(projectId, ticket.itemId);
       const blockers = (item?.blockedBy ?? []).flatMap((id) => {
         const upstream = this.home.items.get(projectId, id);
-        return upstream && upstream.status !== "done" && upstream.status !== "cancelled" ? [{ itemId: id, key: upstream.key }] : [];
+        if (!upstream || upstream.status === "done" || upstream.status === "cancelled") return [];
+        const elsewhere = (upstream.status === "doing" || upstream.status === "verifying") && !shift.tickets.some((t) => t.itemId === id);
+        return [{ itemId: id, key: upstream.key, ...(elsewhere ? { elsewhere } : {}) }];
       });
       const parked = ticket.threadId ? this.home.agent.parked(projectId, ticket.threadId) : null;
       const interrupted = !!ticket.threadId && !!this.home.agent.store.interruptedRun(projectId, ticket.threadId);

@@ -59,7 +59,7 @@ export type TicketState = "queued" | "running" | "limited" | "needs-you" | "deli
 export type Halt = "stopped" | "deadline" | "budget" | "failures";
 
 export type Why =
-  | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-outside"; keys: string[] }
+  | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-outside" | "waits-elsewhere"; keys: string[] }
   | { kind: "halted"; halt: Halt }
   | { kind: "asked" | "error" | "gate" | "merge-refused" | "merge-conflict" | "blocked"; text: string }
   | { kind: "found"; fromKey: string; text: string }
@@ -158,7 +158,7 @@ export interface SessionFacts {
 export interface TicketFacts {
   status: ItemStatus | null;
   /** Tickets that must land first, still open. */
-  blockers: { itemId: string; key: string }[];
+  blockers: { itemId: string; key: string; /** Outside the run and already at work there: Doing or Verifying. */ elsewhere?: boolean }[];
   session: SessionFacts | null;
   parkedUntil: number | null;
   interrupted: boolean;
@@ -314,17 +314,20 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
     !halt &&
     factsOf(t.itemId).blockers.every((b) => {
       const upstream = byId.get(b.itemId);
-      return !!upstream && willLand(upstream, seen);
+      // one at work outside the run is waited for: its own session or its merge lands it
+      return upstream ? willLand(upstream, seen) : !!b.elsewhere;
     });
   const whyWaiting = (t: ShiftTicket): Why | null => {
     const blockers = factsOf(t.itemId).blockers;
     const keys = (test: (upstream: ShiftTicket | undefined) => boolean) => blockers.filter((b) => test(byId.get(b.itemId))).map((b) => b.key);
-    const outside = keys((u) => !u);
+    const outside = blockers.filter((b) => !byId.has(b.itemId) && !b.elsewhere).map((b) => b.key);
     if (outside.length) return { kind: "waits-outside", keys: outside };
     const unmerged = keys((u) => u?.state === "delivered" && !merging(u));
     if (unmerged.length) return { kind: "waits-merge", keys: unmerged };
     const stuck = keys((u) => !!u && (u.state === "failed" || u.state === "needs-you" || u.state === "skipped" || (u.state === "delivered" && u.merge === "refused")));
     if (stuck.length) return { kind: "upstream-stuck", keys: stuck };
+    const elsewhere = keys((u) => !u);
+    if (elsewhere.length) return { kind: "waits-elsewhere", keys: elsewhere };
     return blockers.length ? { kind: "waits-upstream", keys: blockers.map((b) => b.key) } : null;
   };
 

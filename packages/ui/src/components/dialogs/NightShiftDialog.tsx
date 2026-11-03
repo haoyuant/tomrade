@@ -425,7 +425,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const noteOf = (item: Item) => {
     const merging = nodeConfig(overrides[item.id], ruleOf(item.id)).config.autoMerge ?? autoMerge;
     const note = chosen.has(item.id) ? shiftNote(item, chosen, open, merging) : null;
-    return note ? t(note.kind === "outside" ? "nightShift.outside" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") }) : null;
+    return note ? t(note.kind === "outside" ? "nightShift.outside" : note.kind === "elsewhere" ? "nightShift.elsewhere" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") }) : null;
   };
   const subOf = (item: Item) => [noteOf(item) ?? whyLeft.get(item.id), sourceOf(item)].filter(Boolean).join(" · ") || null;
   const focusItem = focus ? candidates.find((i) => i.id === focus) : undefined;

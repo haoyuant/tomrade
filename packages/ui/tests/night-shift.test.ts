@@ -89,4 +89,8 @@ describe("what a chosen ticket says", () => {
     expect(shiftNote(down, new Set(["UP", "DOWN"]), open, true)).toEqual({ kind: "after", keys: ["UP"] });
   });
   it("an upstream left out means it will not start", () => expect(shiftNote(down, new Set(["DOWN"]), open, true)).toEqual({ kind: "outside", keys: ["UP"] }));
+  it("an upstream at work elsewhere is waited for", () => {
+    const busy = item("UP", { status: "doing" });
+    expect(shiftNote(down, new Set(["DOWN"]), new Map([["UP", busy], ["DOWN", down]]), true)).toEqual({ kind: "elsewhere", keys: ["UP"] });
+  });
 });
