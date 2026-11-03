@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import "./account-sunrise.css";
 
-/* Poster-style 红太阳: a red sun behind the logo and golden rays that start at a ring
-   around it and run out to the window edge, narrowing as they go. Broad wedges that
-   widen from the centre would read as the Rising Sun flag. */
+/* The Sunrise (晨曦) theme's dawn: a gold sun coming up behind the logo out of a lilac sky,
+   with soft rays that start at a ring around it and run out to the window edge, narrowing
+   as they go and fading from gold into the sky. Broad wedges that widen from the centre
+   would read as the Rising Sun flag. */
 const RAY_COUNT = 36;
 const RAY_BASE = 128;
 /** Each ray emerges from transparency over this stretch past its base instead of starting with a cut edge. */
@@ -47,6 +48,7 @@ export function AccountSunrise() {
     return () => { live = false; };
   }, []);
   return <div className={ready ? "account-sunrise is-ready" : "account-sunrise"} aria-hidden="true">
+    <div className="account-sunrise__dust" />
     <div className="account-sunrise__sky">
       <div className="account-sunrise__sun">
         <div className="account-sunrise__glow" />
@@ -54,16 +56,16 @@ export function AccountSunrise() {
           <svg viewBox={RAY_BOX}>
             <defs>
               <radialGradient id="account-sun-wide" r={RAY_REACH} cx="0" cy="0" gradientUnits="userSpaceOnUse">
-                <stop offset={RAY_START} stopColor="#cf7a36" stopOpacity="0" />
-                <stop offset={RAY_FULL} stopColor="#cf7a36" stopOpacity=".62" />
-                <stop offset=".38" stopColor="#dc9a48" stopOpacity=".36" />
-                <stop offset="1" stopColor="#e6b25c" stopOpacity=".2" />
+                <stop offset={RAY_START} stopColor="#f2a43a" stopOpacity="0" />
+                <stop offset={RAY_FULL} stopColor="#f2a43a" stopOpacity=".4" />
+                <stop offset=".38" stopColor="#f6bc72" stopOpacity=".2" />
+                <stop offset="1" stopColor="#b9a8ec" stopOpacity=".14" />
               </radialGradient>
               <radialGradient id="account-sun-narrow" r={RAY_REACH} cx="0" cy="0" gradientUnits="userSpaceOnUse">
-                <stop offset={RAY_START} stopColor="#e4a64e" stopOpacity="0" />
-                <stop offset={RAY_FULL} stopColor="#e4a64e" stopOpacity=".55" />
-                <stop offset=".38" stopColor="#e8b260" stopOpacity=".3" />
-                <stop offset="1" stopColor="#ecc070" stopOpacity=".15" />
+                <stop offset={RAY_START} stopColor="#ffc879" stopOpacity="0" />
+                <stop offset={RAY_FULL} stopColor="#ffc879" stopOpacity=".38" />
+                <stop offset=".38" stopColor="#ffd9a0" stopOpacity=".17" />
+                <stop offset="1" stopColor="#c9bcf0" stopOpacity=".1" />
               </radialGradient>
             </defs>
             <path d={WIDE_RAYS} fill="url(#account-sun-wide)" />
@@ -74,13 +76,13 @@ export function AccountSunrise() {
         <svg className="account-sunrise__disk" viewBox="-125 -125 250 250">
           <defs>
             <radialGradient id="account-sun-disk" r="125" cx="0" cy="-20" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#f7d98e" />
-              <stop offset=".55" stopColor="#efa85a" />
-              <stop offset="1" stopColor="#d4593a" />
+              <stop offset="0" stopColor="#ffe9b0" />
+              <stop offset=".5" stopColor="#f2a43a" />
+              <stop offset="1" stopColor="#e0482c" />
             </radialGradient>
           </defs>
-          <circle r="124" fill="none" stroke="#c4553a" strokeOpacity=".38" strokeWidth="1.2" />
-          <circle r="116" fill="none" stroke="#c4553a" strokeOpacity=".6" strokeWidth="2" />
+          <circle r="124" fill="none" stroke="#f2a43a" strokeOpacity=".35" strokeWidth="1.2" />
+          <circle r="116" fill="none" stroke="#e0482c" strokeOpacity=".4" strokeWidth="2" />
           <circle r="110" fill="url(#account-sun-disk)" opacity=".9" />
         </svg>
         <img ref={cat} src={`${import.meta.env.BASE_URL}logo.png`} alt="" draggable={false} />

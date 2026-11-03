@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { Disposer, Localized, ModelMessage, ModelTool } from "./contract.js";
 
 type Maybe<T> = T | Promise<T>;
@@ -172,6 +173,20 @@ export interface CompatibleModelOptions {
   headers?(request: { url: string; body: string }): Maybe<Record<string, string>>;
 }
 
+/** SDK 0.2.33. One question for the person's worker model, answered as a single JSON document. */
+export interface WorkerRequest {
+  system: string;
+  user: string;
+  /** Absent, 8000. */
+  maxTokens?: number;
+  /** Absent, 0.2. */
+  temperature?: number;
+  /** Ends the request. */
+  signal?: AbortSignal;
+  /** The whole call, its repair round included, ends after this long. */
+  timeoutMs?: number;
+}
+
 export interface ModelsApi {
   /** Serves the profiles naming `provider.id` and offers its presets until disposed or the plugin unloads. */
   registerProvider(provider: ModelProviderSpec): Promise<Disposer>;
@@ -185,4 +200,11 @@ export interface ModelsApi {
    * without a listing answers `models: null`. `headers` go in place of the bearer key.
    */
   listCompatible(endpoint: { baseURL: string; apiKey: string; headers?: Record<string, string> }, signal?: AbortSignal): Promise<ModelListing>;
+  /**
+   * SDK 0.2.33. Asks the worker the person picked in Settings → Assistant — a profile or a
+   * signed-in CLI — for one document matching `schema`; one that does not fit gets one repair
+   * round. The plugin never sees the key or picks the model. `label` (1–64 characters) names
+   * the call in the Usage pane beside the plugin. Rejects saying why when no model can answer.
+   */
+  completeJson<T>(schema: z.ZodType<T>, request: WorkerRequest, label: string): Promise<T>;
 }

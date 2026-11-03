@@ -106,6 +106,9 @@ function answer(message: (token: number) => WindowMessage): Promise<void> {
 /** A terminal session's prompt allowed or denied from its card. */
 export const answerSession = (sessionId: string, which: "allow" | "deny"): Promise<void> => answer((token) => ({ type: "answer", sessionId, which, token }));
 
+/** The folder's trust a terminal session's screen asks, answered from its card. */
+export const trustSession = (sessionId: string, which: "trust" | "exit"): Promise<void> => answer((token) => ({ type: "trust", sessionId, which, token }));
+
 /** A terminal session's question answered from its card with one of its choices. */
 export const chooseSession = (sessionId: string, choice: string): Promise<void> => answer((token) => ({ type: "choose", sessionId, choice, token }));
 

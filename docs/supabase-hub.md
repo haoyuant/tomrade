@@ -235,6 +235,21 @@ that has the button: until then, deletion fails with PostgREST's PGRST202
   Project folders stay. The next account to sign in there takes them over, as
   on a first run.
 
+## Email preferences
+
+The sign-up form asks whether the person wants news and updates from Tomrade by
+email, ticked by default. The answer rides in the new user's metadata as
+`marketing_emails`, and `supabase/migrations/202611030001_email_preferences.sql`
+writes it to `public.tomrade_email_preferences` when the `auth.users` row is
+inserted (an account awaiting confirmation has no session to write it with).
+Accounts made before the migration get a row from their metadata, else `false`.
+
+- Send product mail only to `marketing = true`, with an unsubscribe link in
+  every message. Account mail (confirmation, password reset) ignores it.
+- A signed-in person can read and change only their own row's `marketing`
+  under RLS; the row goes with the account.
+- Prod gets the table only when you run `supabase db push`.
+
 ## Verification
 
 `pnpm test` includes the real migration executed in PGlite's PostgreSQL runtime:

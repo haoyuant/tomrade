@@ -415,6 +415,17 @@ it("creates an account only with the terms agreed, and records which version on 
   expect(remote.signUpData).toMatchObject({ terms_version: TERMS_VERSION, terms_accepted_at: expect.any(String) });
 });
 
+it("carries the choice about Tomrade's email to the new account, and none unless it was made", async () => {
+  const { cloud } = await machine();
+  remote.confirm = true;
+  await cloud.signUp("new@example.test", "long enough", "en", true, true);
+  expect(remote.signUpData).toMatchObject({ marketing_emails: true });
+  await cloud.signUp("new@example.test", "long enough", "en", true, false);
+  expect(remote.signUpData).toMatchObject({ marketing_emails: false });
+  await cloud.signUp("new@example.test", "long enough", "en", true);
+  expect(remote.signUpData).toMatchObject({ marketing_emails: false });
+});
+
 it("asks an account that never agreed, and records the agreement once, even after time offline", async () => {
   const { cloud } = await machine();
   await cloud.sync();

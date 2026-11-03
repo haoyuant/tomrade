@@ -7,6 +7,7 @@ import { invoke } from "~/lib/api";
 import { usd } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
+import { ScorecardSection } from "./Scorecard";
 
 const RANGES = [
   { days: 1, label: "usage.rangeToday" as MessageKey },
@@ -256,6 +257,13 @@ const PURPOSES: Record<string, MessageKey> = {
   branch: "usage.purposeBranch"
 };
 
+/** A plugin's call reads `plugin:<publisher/name>:<label>`; the plugin's id has no colon. */
+function purposeName(purpose: string | null, t: ReturnType<typeof useI18n>["t"]): string {
+  const plugin = purpose?.match(/^plugin:([^:]+):(.+)$/);
+  if (plugin) return t("usage.purposePlugin", { plugin: plugin[1]!, label: plugin[2]! });
+  return purpose && PURPOSES[purpose] ? t(PURPOSES[purpose]) : t("usage.purposeOther");
+}
+
 function WorkerCallsChart({ days }: { days: WorkerUsageDay[] }) {
   const { t, locale } = useI18n();
   const max = Math.max(1, ...days.map((d) => d.calls));
@@ -296,7 +304,7 @@ function WorkerPurposes({ rows }: { rows: WorkerPurposeUsage[] }) {
         <div className="usage-purposes">
           {rows.map((r) => (
             <div key={r.purpose ?? "other"} className="usage-purpose-row" data-purpose={r.purpose ?? ""}>
-              <span className="usage-purpose-name">{r.purpose && PURPOSES[r.purpose] ? t(PURPOSES[r.purpose]) : t("usage.purposeOther")}</span>
+              <span className="usage-purpose-name">{purposeName(r.purpose, t)}</span>
               <div className="usage-purpose-track">
                 <span className="usage-purpose-fill" style={{ width: `${((r.calls - r.failed) / max) * 100}%` }} />
                 <span className="usage-purpose-fail" style={{ width: `${(r.failed / max) * 100}%` }} />
@@ -337,7 +345,7 @@ function WorkerTable({ rows }: { rows: WorkerUsage[] }) {
           {rows.map((r) => (
             <tr key={`${r.source} ${r.purpose ?? ""}`} data-source={r.source} data-purpose={r.purpose ?? ""}>
               <td>{r.title}</td>
-              <td>{r.purpose && PURPOSES[r.purpose] ? t(PURPOSES[r.purpose]) : t("usage.purposeOther")}</td>
+              <td>{purposeName(r.purpose, t)}</td>
               <td className="num">{number(r.calls)}{r.failed > 0 && <span className="usage-cell-sub">{t("usage.failedCount", { n: r.failed })}</span>}</td>
               <td className="num">{number(r.inputTokens)}</td>
               <td className="num">{number(r.cacheReadTokens)}</td>
@@ -463,6 +471,7 @@ export function UsagePane() {
           </>
         ))}
       </div>
+      <ScorecardSection days={days} range={t(RANGES.find((r) => r.days === days)?.label ?? "usage.rangeWeek")} />
       <WorkerSection days={days} />
     </>
   );

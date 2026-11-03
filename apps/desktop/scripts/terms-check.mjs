@@ -2,7 +2,7 @@
  * Agreeing to the Terms of Service and Privacy Policy, against the real shell
  * and a stand-in for Supabase: the sign-in form asks for the tick before it
  * creates an account or signs in, the account records which version was
- * agreed, an account that never agreed (or agreed to an older version) is asked
+ * agreed (and carries the email box, ticked unless the person unticks it), an account that never agreed (or agreed to an older version) is asked
  * once and can only agree or sign out, and Settings → About links to both.
  *
  *   pnpm --filter @tomrade/desktop test:terms      (needs the dev server up)
@@ -123,6 +123,7 @@ const run = async () => {
   };
   const button = (label, scope = "document") => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
   const agreeBox = `document.querySelector('.account-agree input')`;
+  const marketingBox = `document.querySelector('.account-marketing input')`;
   const gateText = () => $(`document.querySelector('.account-gate')?.textContent ?? ''`);
   const prompt = `document.querySelector('.terms-prompt')`;
   const promptText = () => $(`${prompt}?.textContent ?? ''`);
@@ -141,6 +142,7 @@ const run = async () => {
 
   // ── signing up asks for the tick ─────────────────────────────────────
   check("the sign-in form shows the terms box, unticked", await until(`!!${agreeBox} && !${agreeBox}.checked`), await gateText());
+  check("and the box for Tomrade's email, ticked", await $(`!!${marketingBox} && ${marketingBox}.checked`), await gateText());
   check("naming both documents", /I agree to the Terms of Service and the Privacy Policy\./.test(await gateText()), await gateText());
   await press(button("Terms of Service", "document.querySelector('.account-agree')"));
   await press(button("Privacy Policy", "document.querySelector('.account-agree')"));
@@ -163,6 +165,7 @@ const run = async () => {
   await press(button("Create account"));
   check("with the tick, the account is created", await until(`!document.querySelector('.account-gate')`), await gateText());
   check("carrying the version agreed to", supabase.state.signUps[0]?.data?.terms_version === TERMS_VERSION, supabase.state.signUps[0]?.data);
+  check("and the wish for Tomrade's email", supabase.state.signUps[0]?.data?.marketing_emails === true, supabase.state.signUps[0]?.data);
   await sleep(1500);
   check("and nothing more is asked", !(await $(`!!${prompt}`)));
 

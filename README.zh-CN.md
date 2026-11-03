@@ -8,6 +8,7 @@
   <a href="#接入你的-agent">接入 Agent</a> ·
   <a href="#从源码构建">从源码构建</a> ·
   <a href="https://github.com/haoyuant/tomrade-plugins">插件</a> ·
+  <a href="#请我喝杯咖啡">☕ 请我喝杯咖啡</a> ·
   <a href="README.md">English</a>
 </p>
 
@@ -24,6 +25,11 @@
 你的 Agent **凌晨三点**还在干活。它读工单、改笔记，偶尔把**你所有的东西**都重写一遍。Tomrade 是为它们造的工作区，顺便**给你配了一个撤销键**。
 
 这是一个为独立创作者和小团队打造的本地优先工作区。代码项目、这周的待办、日记、一摞文档，都能在同一个应用里管。说一句话，助手就把整个需求池拆好；工单交给 Claude Code、Codex 或你在用的其他编程 Agent 去做；Agent 的任何一次运行都能一键撤销。
+
+<p align="center">
+  <a href="https://tomrade.com/zh/#films"><img src="docs/images/film-zh.jpg" alt="播放 87 秒演示片：一个想法变成串起来的工单，Agent 们排队提问，夜里自动执行，一键全部撤销。" width="820"></a><br>
+  <sub>Tomrade 的一天，全部是应用里的真实画面。每个功能的短片都在 <a href="https://tomrade.com/zh/#films">tomrade.com</a>。</sub>
+</p>
 
 <p align="center">
   <img src="docs/images/board-zh.png" alt="Tomrade 看板：左侧是视图和工作流，中间是待办和进行中的工单卡片，右侧是助手面板。" width="900">
@@ -193,6 +199,28 @@ url = "http://127.0.0.1:19090/mcp"
 ```
 
 接上之后，你的 Agent 拿到的工具和助手一模一样：`list_items`、`get_item`、`create_item`、`update_item`、`change_status`、`claim_ticket`、`link_code`、`find_similar`、`plan_and_apply`、`search_files`……再加上插件提供的。它的写入和所有人守同一套规矩：注明出处、带版本、碰到锁定字段就拒绝、随时可撤销。`whoami` 工具会告诉它连上的是哪个 Tomrade。
+
+## 请我喝杯咖啡
+
+Tomrade 是我一个人下班后折腾出来的，免费用。
+
+起因很简单：那阵子在学 Agent 开发，顺手拿 Claude Code 做自己的项目，结果 Agent 越开越多，我反倒成了调度员，天天在一堆终端里找哪个又卡住了。干脆自己做个工具，丢给身边写代码的朋友用，被他们吐槽了一轮又一轮，慢慢调教成了现在这样。
+
+说实话，现在活基本都是 Agent 在干，我主要负责看 PR 和喝咖啡。问题是 Agent 不喝咖啡，它们吃 Token，还是自助餐那种吃法。你请的咖啡最后都会变成 Token，Token 变成 PR，PR 变成下周的新版本。能量守恒嘛。
+
+猫猫监工不要钱，Agent 打工要。
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- 支付宝 / 微信扫下面的码
+
+<p>
+  <img src="docs/images/support/alipay.png" alt="支付宝收款码" height="240">
+  <img src="docs/images/support/wechat.png" alt="微信赞赏码" height="240">
+</p>
+
+对了，Tomrade 里啥都能一键撤销，就这个不行 😂
+
+白嫖也完全没问题，提个 issue、跟朋友安利一句，我一样开心。
 
 ## 从源码构建
 

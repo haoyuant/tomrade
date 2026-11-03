@@ -11,7 +11,7 @@ overrides:
   '@lezer/markdown': 1.7.2
 
 patchedDependencies:
-  '@xterm/addon-webgl@0.18.0': 4f526a2f667ab6ce525b3a0ce8467c0d56b7ea1c7633a4c1aedb83c02f933a9c
+  '@xterm/addon-webgl@0.18.0': f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9
 
 importers:
 
@@ -1215,6 +1215,9 @@ importers:
       '@tomradex/im':
         specifier: workspace:*
         version: link:../im
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
@@ -2974,7 +2977,7 @@ importers:
         version: 0.11.0(@xterm/xterm@5.5.0)
       '@xterm/addon-webgl':
         specifier: 0.18.0
-        version: 0.18.0(patch_hash=4f526a2f667ab6ce525b3a0ce8467c0d56b7ea1c7633a4c1aedb83c02f933a9c)(@xterm/xterm@5.5.0)
+        version: 0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0)
       '@xterm/xterm':
         specifier: 5.5.0
         version: 5.5.0
@@ -8845,7 +8848,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 5.5.0
 
-  '@xterm/addon-webgl@0.18.0(patch_hash=4f526a2f667ab6ce525b3a0ce8467c0d56b7ea1c7633a4c1aedb83c02f933a9c)(@xterm/xterm@5.5.0)':
+  '@xterm/addon-webgl@0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0)':
     dependencies:
       '@xterm/xterm': 5.5.0
 

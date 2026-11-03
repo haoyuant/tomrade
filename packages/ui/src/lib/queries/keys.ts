@@ -136,6 +136,8 @@ export const keys = {
   codeLink: {
     root: ["codeLink"] as const,
     all: (projectId: string) => ["codeLink", projectId] as const,
+    /** Every open project's merged pull requests by engine, not one project's. */
+    scorecard: (days: number) => ["codeLink", "scorecard", days] as const,
     links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
     sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
     sessionsAll: (projectId: string) => ["codeLink", projectId, "sessions"] as const,
