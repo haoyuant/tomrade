@@ -16,6 +16,15 @@
 
 !macroundef extractUsing7za
 !macro extractUsing7za FILE
+  ; With the old version removed the install folder is empty and nothing in it can be in use: unpack straight into
+  ; it, not into the temp folder and then copy every file again (across drives when the folder is on another).
+  Call tomradeOutDirEmpty
+  Pop $R0
+  ${if} $R0 == 1
+    !insertmacro tomradeUnpack "${FILE}"
+    Goto DoneExtract7za
+  ${endif}
+
   Push $OUTDIR
   CreateDirectory "$PLUGINSDIR\7z-out"
   ClearErrors

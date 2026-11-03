@@ -102,7 +102,57 @@
       Pop $1
       Pop $0
     FunctionEnd
+
+    ; Pushes 1 when $OUTDIR holds nothing, else 0.
+    Function tomradeOutDirEmpty
+      Push $0
+      Push $1
+      Push $2
+      StrCpy $0 1
+      FindFirst $1 $2 "$OUTDIR\*.*"
+      ${DoWhile} $2 != ""
+        ${if} $2 != "."
+        ${andIf} $2 != ".."
+          StrCpy $0 0
+          ${ExitDo}
+        ${endif}
+        FindNext $1 $2
+      ${loop}
+      FindClose $1
+      Pop $2
+      Pop $1
+      Exch $0
+    FunctionEnd
   !endif
+!macroend
+
+; An update moves the old version out of the way in one rename of its folder, not one rename per file into the
+; temp folder: thousands of them, and a copy of each when the temp folder is on another drive. When a file in it
+; is in use the rename fails, and electron-builder's own way runs: it names the busy file and puts back what it moved.
+!macro customRemoveFiles
+  SetOutPath $TEMP
+  ${if} ${isUpdated}
+    RMDir /r "$INSTDIR.old"
+    ClearErrors
+    Rename "$INSTDIR" "$INSTDIR.old"
+    ${if} ${errors}
+      CreateDirectory "$PLUGINSDIR\old-install"
+      Push ""
+      Call un.atomicRMDir
+      Pop $R0
+      ${if} $R0 != 0
+        DetailPrint "File is busy, aborting: $R0"
+        Push ""
+        Call un.restoreFiles
+        Pop $R0
+        Abort `Can't rename "$INSTDIR" to "$PLUGINSDIR\old-install".`
+      ${endif}
+    ${else}
+      ; Nothing waits on its files: they go in the background while the installer unpacks the new version.
+      ExecShell "" "$SYSDIR\cmd.exe" `/c rd /s /q "$INSTDIR.old"` SW_HIDE
+    ${endif}
+  ${endif}
+  RMDir /r $INSTDIR
 !macroend
 
 ; What allowOnlyOneInstallerInstance.nsh brings in for _CHECK_APP_RUNNING only while this macro is undefined.
@@ -115,9 +165,22 @@ Var pid
     ; The section's macros are defined by now and not yet used: swap in the unpacking that keeps the bar going forward.
     !include "installer-unpack.nsh"
   !endif
-  !insertmacro IS_POWERSHELL_AVAILABLE
-  !insertmacro _CHECK_APP_RUNNING
+  ; Asking PowerShell takes seconds, three times over, in the installer and again in the old uninstaller. Every
+  ; Tomrade process (the app, and the pty host and Pi it runs as Node) runs its exe, which then opens for no writing.
+  ClearErrors
+  ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    FileOpen $R0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" a
+    ${if} ${errors}
+      !insertmacro IS_POWERSHELL_AVAILABLE
+      !insertmacro _CHECK_APP_RUNNING
+    ${else}
+      FileClose $R0
+    ${endif}
+  ${endif}
   !ifndef BUILD_UNINSTALLER
+    ; .onInit made the install folder this process's working directory, and the old uninstaller's too: neither
+    ; could then rename it away (customRemoveFiles). The section sets it back before writing any file.
+    SetOutPath $PLUGINSDIR
     ReadRegStr $0 SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
     ${if} $0 != ""
       !insertmacro tomradeStep "$(tomradeStepRemoving)"
