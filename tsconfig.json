@@ -161,6 +161,9 @@
       "path": "./packages/takeover"
     },
     {
+      "path": "./packages/build-page"
+    },
+    {
       "path": "./packages/night-shift"
     },
     {

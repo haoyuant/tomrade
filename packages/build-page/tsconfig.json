@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../db" },
+    { "path": "../domain" },
+    { "path": "../github" },
+    { "path": "../inbox-github" },
+    { "path": "../ipc" },
+    { "path": "../items" },
+    { "path": "../projects" },
+    { "path": "../repos" },
+    { "path": "../settings" }
+  ]
+}

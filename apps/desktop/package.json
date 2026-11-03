@@ -143,6 +143,7 @@
     "@tomradex/settings": "workspace:*",
     "@tomradex/night-shift": "workspace:*",
     "@tomradex/takeover": "workspace:*",
+    "@tomradex/build-page": "workspace:*",
     "@tomradex/schedules": "workspace:*",
     "@tomradex/doctor": "workspace:*",
     "@tomradex/herdr": "workspace:*",
