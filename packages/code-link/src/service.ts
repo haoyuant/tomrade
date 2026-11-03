@@ -5,7 +5,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
 import type { Engine, EngineCapability, RecordRead, RecordUsage, RecordUsageCount, ThreadSummary } from "@tomradex/agent";
-import { untilLabel } from "@tomradex/agent";
+import { untilLabel, windowStart } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
@@ -43,6 +43,7 @@ import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js"
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult, type StartMode } from "./start.js";
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
+import { isMergedPr, scorecardPrs, summarizeScorecard, type Scorecard, type ScorecardPr } from "./scorecard.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionFilter, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
 import { askLine, doingLine, permissionAsk, questionAsk } from "./ask.js";
@@ -253,6 +254,8 @@ declare module "@tomradex/ipc" {
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
     "codeLink.startLoose": (projectId: string, input: { engine?: string; prompt: string }) => StartResult;
     "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
+    /** Merged pull requests of the last `days` days across open projects, by engine: first-pass rate and engine-reported spend. */
+    "codeLink.scorecard": (days?: number) => Scorecard;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
     /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start; read at its end, with the tokens the record counts. */
     "codeLink.conversation": (projectId: string, sessionId: string, before?: number, after?: number) => (RecordRead & { usage?: RecordUsage | null }) | null;
@@ -809,6 +812,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
+      ctx.ipc.handle("codeLink.scorecard", (days) => ctx.codeLink.scorecard(Date.now(), typeof days === "number" ? days : 30));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => {
         const read = ctx.codeLink.conversation(projectId, sessionId, before, after);
@@ -1420,6 +1424,36 @@ export class CodeLink extends Service implements CodeLinkReader {
     const sessions = [...this.store.sessions(projectId, { itemId }), ...this.store.movedOn(projectId, itemId)];
     const links = currentLinks(this.store, projectId, itemId);
     return ticketTimeline(sessions, links, await this.filesChanged(projectId, primaryOf(links)));
+  }
+
+  /**
+   * Every open project's merged pull requests of the last `days` local days, by the engine that wrote them: how many
+   * passed on their first delivery, and what the engine's own priced runs on them cost. Read from links, deliveries,
+   * sessions and runs alone, so each number can be counted again from those records.
+   */
+  scorecard(now = Date.now(), days = 30): Scorecard {
+    const from = windowStart(now, days);
+    const agent = this.ctx.get("agent");
+    const prs: ScorecardPr[] = [];
+    for (const projectId of this.ctx.db.openIds()) {
+      const links = this.store.links(projectId);
+      const itemIds = [...new Set(links.filter(isMergedPr).map((l) => l.itemId))];
+      if (!itemIds.length) continue;
+      const threads = agent ? itemIds.flatMap((id) => agent.store.threadsForItem(projectId, id)) : [];
+      const linked = agent ? links.flatMap((l) => (l.threadId && !threads.some((t) => t.id === l.threadId) ? [agent.store.thread(projectId, l.threadId)].filter((t) => !!t) : [])) : [];
+      const all = [...threads, ...linked];
+      prs.push(...scorecardPrs({
+        projectId,
+        links,
+        deliveries: this.store.deliveries(projectId),
+        sessions: itemIds.flatMap((itemId) => [...this.store.sessions(projectId, { itemId }), ...this.store.movedOn(projectId, itemId)]),
+        threads: all.map((t) => ({ id: t.id, engine: t.engine, itemId: t.itemId })),
+        runs: agent ? threads.flatMap((t) => agent.store.runs(projectId, t.id)) : [],
+        keys: new Map(itemIds.map((id) => [id, this.ctx.items.get(projectId, id)?.key ?? ""]).filter(([, key]) => !!key) as [string, string][])
+      }, from, now));
+    }
+    const titles = new Map((agent?.allEngines() ?? []).map((e) => [e.id, e.title]));
+    return summarizeScorecard(prs, { from, to: now, titles });
   }
 
   /** Files changed by a branch at a commit: asked of git once, not on every session event the ticket page refreshes on. */
