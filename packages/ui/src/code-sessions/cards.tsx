@@ -100,9 +100,10 @@ export type SessionReply = "allow" | "deny" | { trust: "trust" | "exit" } | { ch
 /**
  * What can be done from a row without opening it. On a card in the bar, what it waits on is answered in place — a
  * permission prompt on its screen that its agent declared the keys for (Allow with yes under the cursor, else Deny), a
- * folder's trust on its screen (Trust and continue or Exit), or a question by one of its choices, an assistant's or one whose menu a terminal shows — or looked at first; one waiting
- * on its screen with nothing to press here can still be looked at. In the overview, those answers too, and a row with a
- * pane goes to its cell and a conversation to the app window.
+ * folder's trust on its screen (Trust and continue or Exit), or a question by one of its choices, an assistant's or one
+ * whose menu a terminal shows — or looked at first; one waiting on its screen with nothing to press here can still be
+ * looked at. In the overview, those answers too, and a row with a pane goes to its cell and a conversation to the app
+ * window.
  */
 export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
