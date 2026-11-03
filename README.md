@@ -8,6 +8,7 @@
   <a href="#connect-your-agents">Connect your agents</a> ·
   <a href="#build-from-source">Build from source</a> ·
   <a href="https://github.com/haoyuant/tomrade-plugins">Plugins</a> ·
+  <a href="#buy-me-a-coffee">☕ Buy me a coffee</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -197,6 +198,28 @@ url = "http://127.0.0.1:19090/mcp"
 
 Your agent gets the same tools the assistant has: `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `claim_ticket`, `link_code`, `find_similar`, `plan_and_apply`, `search_files`, … plus whatever plugins add. Its writes follow the same rules as everyone's: attributed, versioned, refused on a locked field, undoable. The `whoami` tool tells it which Tomrade it reached.
 
+## Buy me a coffee
+
+I build Tomrade on my own, after work. It's free.
+
+It started when I was learning agent development and using Claude Code on my own stuff. The more agents I ran, the more I turned into a dispatcher, digging through terminals to find whichever one got stuck this time. So I built a tool for it, handed it to some dev friends, and let them roast it until it got good.
+
+Honestly, the agents do most of the work now. I review PRs and drink coffee. Problem is, agents don't drink coffee. They eat tokens, buffet-style. Your coffee turns into tokens, tokens turn into PRs, PRs turn into next week's release. Conservation of energy.
+
+The cat supervises for free. The agents don't.
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- Alipay / WeChat Pay: scan below
+
+<p>
+  <img src="docs/images/support/alipay.png" alt="Alipay QR code" height="240">
+  <img src="docs/images/support/wechat.png" alt="WeChat Pay QR code" height="240">
+</p>
+
+Fun fact: you can undo pretty much anything in Tomrade. Not this, though 😂
+
+Can't chip in? No worries. Open an issue or tell a friend, that makes my day too.
+
 ## Build from source
 
 You need Node.js (CI uses 26) and pnpm 11 (`corepack enable` picks the pinned version).
@@ -243,28 +266,6 @@ Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) has t
 Tomrade is built with Tomrade. The maintainer's backlog lives in a Tomrade project, and the agent config checked into this repository (`.mcp.json`, `.codex/`, `.cursor/`, `.gemini/`, `CLAUDE.md`, `AGENTS.md`) points at it. Without that project on your machine the `tomrade` server simply isn't there, and your agent carries on as usual. Ticket keys in commit messages (`TOM-42: …`) are the maintainer's habit; you don't need one.
 
 Built with help: [the people who shaped Tomrade](https://tomrade.com/thanks/) with their ideas, their testing and their patience with early builds.
-
-## Buy me a coffee
-
-I build Tomrade on my own, after work. It's free.
-
-It started when I was learning agent development and using Claude Code on my own stuff. The more agents I ran, the more I turned into a dispatcher, digging through terminals to find whichever one got stuck this time. So I built a tool for it, handed it to some dev friends, and let them roast it until it got good.
-
-Honestly, the agents do most of the work now. I review PRs and drink coffee. Problem is, agents don't drink coffee. They eat tokens, buffet-style. Your coffee turns into tokens, tokens turn into PRs, PRs turn into next week's release. Conservation of energy.
-
-The cat supervises for free. The agents don't.
-
-- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
-- Alipay / WeChat Pay: scan below
-
-<p>
-  <img src="docs/images/support/alipay.png" alt="Alipay QR code" height="240">
-  <img src="docs/images/support/wechat.png" alt="WeChat Pay QR code" height="240">
-</p>
-
-Fun fact: you can undo pretty much anything in Tomrade. Not this, though 😂
-
-Can't chip in? No worries. Open an issue or tell a friend, that makes my day too.
 
 ## FAQ
 

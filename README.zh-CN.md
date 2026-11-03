@@ -8,6 +8,7 @@
   <a href="#接入你的-agent">接入 Agent</a> ·
   <a href="#从源码构建">从源码构建</a> ·
   <a href="https://github.com/haoyuant/tomrade-plugins">插件</a> ·
+  <a href="#请我喝杯咖啡">☕ 请我喝杯咖啡</a> ·
   <a href="README.md">English</a>
 </p>
 
@@ -194,6 +195,28 @@ url = "http://127.0.0.1:19090/mcp"
 
 接上之后，你的 Agent 拿到的工具和助手一模一样：`list_items`、`get_item`、`create_item`、`update_item`、`change_status`、`claim_ticket`、`link_code`、`find_similar`、`plan_and_apply`、`search_files`……再加上插件提供的。它的写入和所有人守同一套规矩：注明出处、带版本、碰到锁定字段就拒绝、随时可撤销。`whoami` 工具会告诉它连上的是哪个 Tomrade。
 
+## 请我喝杯咖啡
+
+Tomrade 是我一个人下班后折腾出来的，免费用。
+
+起因很简单：那阵子在学 Agent 开发，顺手拿 Claude Code 做自己的项目，结果 Agent 越开越多，我反倒成了调度员，天天在一堆终端里找哪个又卡住了。干脆自己做个工具，丢给身边写代码的朋友用，被他们吐槽了一轮又一轮，慢慢调教成了现在这样。
+
+说实话，现在活基本都是 Agent 在干，我主要负责看 PR 和喝咖啡。问题是 Agent 不喝咖啡，它们吃 Token，还是自助餐那种吃法。你请的咖啡最后都会变成 Token，Token 变成 PR，PR 变成下周的新版本。能量守恒嘛。
+
+猫猫监工不要钱，Agent 打工要。
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- 支付宝 / 微信扫下面的码
+
+<p>
+  <img src="docs/images/support/alipay.png" alt="支付宝收款码" height="240">
+  <img src="docs/images/support/wechat.png" alt="微信赞赏码" height="240">
+</p>
+
+对了，Tomrade 里啥都能一键撤销，就这个不行 😂
+
+白嫖也完全没问题，提个 issue、跟朋友安利一句，我一样开心。
+
 ## 从源码构建
 
 需要 Node.js（CI 用的是 26）和 pnpm 11（`corepack enable` 会用仓库锁定的版本）。
@@ -240,28 +263,6 @@ pnpm --filter @tomrade/desktop package   # 打安装包：DMG/ZIP、NSIS、AppIm
 Tomrade 是用 Tomrade 开发的。维护者的需求池放在一个 Tomrade 项目里，仓库里提交的 Agent 配置（`.mcp.json`、`.codex/`、`.cursor/`、`.gemini/`、`CLAUDE.md`、`AGENTS.md`）指向的就是它。你的电脑上没有那个项目的话，`tomrade` 服务就是不存在，你的 Agent 照常干活。提交信息里的工单号（`TOM-42: …`）是维护者的习惯，你不需要。
 
 感谢一路同行的人：[这些人](https://tomrade.com/zh/thanks/)用他们的想法、测试和对早期版本的耐心，塑造了今天的 Tomrade。
-
-## 请我喝杯咖啡
-
-Tomrade 是我一个人下班后折腾出来的，免费用。
-
-起因很简单：那阵子在学 Agent 开发，顺手拿 Claude Code 做自己的项目，结果 Agent 越开越多，我反倒成了调度员，天天在一堆终端里找哪个又卡住了。干脆自己做个工具，丢给身边写代码的朋友用，被他们吐槽了一轮又一轮，慢慢调教成了现在这样。
-
-说实话，现在活基本都是 Agent 在干，我主要负责看 PR 和喝咖啡。问题是 Agent 不喝咖啡，它们吃 Token，还是自助餐那种吃法。你请的咖啡最后都会变成 Token，Token 变成 PR，PR 变成下周的新版本。能量守恒嘛。
-
-猫猫监工不要钱，Agent 打工要。
-
-- ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
-- 支付宝 / 微信扫下面的码
-
-<p>
-  <img src="docs/images/support/alipay.png" alt="支付宝收款码" height="240">
-  <img src="docs/images/support/wechat.png" alt="微信赞赏码" height="240">
-</p>
-
-对了，Tomrade 里啥都能一键撤销，就这个不行 😂
-
-白嫖也完全没问题，提个 issue、跟朋友安利一句，我一样开心。
 
 ## 常见问题
 
