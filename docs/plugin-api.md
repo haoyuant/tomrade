@@ -129,7 +129,7 @@ returns is disposed when the service goes.
 | `oplog` | `recent`, `history` |
 | `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; also `setup` (credential fields, console steps, permissions, manifest) whose values arrive sealed-at-rest as `io.credentials`, a session `identity`, the `ambient` group activation, a message's `replyTo`, and `retract` / `edit` inbound events. An adapter that declares none of them keeps the 0.2.2 behaviour. SDK 0.2.19 adds the `topics` capability with `session.topics.open({ operationId, address, title }) → { topicId }` and `update({ address, title, closed })`: in a group, the common layer opens a topic per ticket being worked and sends that ticket's news there. SDK 0.2.20 adds a session's `links` (shown on the connection once it is up and in the pairing reply, e.g. the bot's install link) and `io.notice({ key, text, address?, link? })` / `io.clearNotice(key)`: something the person has to fix, said once per key on the connection and in the conversation it happened in (else the paired people's direct chats); both are absent on older hosts. SDK 0.2.21 adds, for an adapter's own setup command, `io.projects(actorId)` (what a paired person may give a conversation, last used first; empty for anyone else) and `io.allow({ actorId, address, kind: "work" | "status" | "chat", projectId })`, which allows a group conversation with the same preset as the card a paired person gets there, leaving one already allowed as it is. SDK 0.2.22 adds `setup.groupSteps`: how to start using the connected bot in a group or server, shown in Settings → IM under the connection before what each kind of channel does. SDK 0.2.24 adds `session.describe(address) → { name } | null` (a conversation's name as the platform shows it, kept on the route for Settings and asked once per session) and `name` on `io.allow` |
 | `webSearch` | `register({ id, title, unavailable(), search(request, signal), read?(request, signal), settings? })` — a provider answering the agent's `web_search` / `web_fetch`, exactly as the app's own do; see [Web search](#web-search). SDK 0.2.9 |
-| `models` | `registerProvider({ id, title, baseURL, presets?, list(endpoint, signal), usable?, capabilities?, signIn?, build(profile) })` — a model provider serving the profiles that name it and offering its presets in the model setup, as the app's own do; see [Model providers](#model-providers). SDK 0.2.16 |
+| `models` | `registerProvider({ id, title, baseURL, presets?, list(endpoint, signal), usable?, capabilities?, signIn?, build(profile) })` — a model provider serving the profiles that name it and offering its presets in the model setup, as the app's own do; see [Model providers](#model-providers). SDK 0.2.16; SDK 0.2.33: `completeJson(schema, request, label)`, one JSON document from the person's worker, see [Asking the worker](#asking-the-worker) |
 | `terminals` | `state()` — whether herdr can hand over a live terminal, and the fix when it cannot — and `open(paneId, { mode, cols, rows })`: a pane's terminal as frames in and `input` / `resize` / `scroll` / `mouse` out; see [Terminals](#terminals). SDK 0.2.10 |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
@@ -581,6 +581,28 @@ await ctx.models.registerProvider({
   with its message. `ctx.models.listCompatible({ baseURL, apiKey, headers? },
   signal)` is the app's own `GET /models` listing, media read from it, for
   `list`; `headers` go in place of the bearer key there too.
+
+### Asking the worker
+
+A plugin that names `models` can ask the person's worker model for one JSON
+document, without a conversation (SDK 0.2.33):
+
+```ts
+const Copy = z.object({ title: z.string(), body: z.string() });
+const copy = await ctx.models.completeJson(Copy, { system: "Write launch copy.", user: brief, maxTokens?, temperature?, signal?, timeoutMs? }, "launch-copy");
+```
+
+- It is answered by whoever answers Tomrade's own worker calls: the worker the
+  person picked in Settings → Assistant — a profile or a CLI signed in on this
+  computer — and, when that fails, a signed-in agent standing in. The plugin
+  never sees a key and cannot pick the model.
+- A reply that does not fit the schema gets one repair round with the problem
+  quoted back; one that still does not fit rejects naming the field. With no
+  model to answer, the call rejects saying why (no profile configured, the
+  picked CLI not signed in).
+- `label` (1–64 characters) names the call in Settings → Usage, beside the
+  plugin's id; its tokens count with the other worker calls.
+- No streaming and no tools: for those, register a provider or use an agent.
 
 A plugin that names `models` is labelled elevated risk (`models`): it reads
 the conversations and keys of the profiles on its provider. It is shown, never

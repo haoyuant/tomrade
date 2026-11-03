@@ -1,7 +1,7 @@
 import type { ProjectDb } from "@tomradex/db";
 
-/** What a worker call was for; the Usage pane names each one. */
-export type WorkerPurpose = "plan" | "gaps" | "similar" | "dependencies" | "inbox" | "playbook" | "branch" | "brief" | "night-shift" | "watchdog";
+/** What a worker call was for; the Usage pane names each one. A plugin's call is `plugin:<plugin id>:<its label>`. */
+export type WorkerPurpose = "plan" | "gaps" | "similar" | "dependencies" | "inbox" | "playbook" | "branch" | "brief" | "night-shift" | "watchdog" | `plugin:${string}`;
 
 /** Tokens a worker call spent, every round of it (a repair round included). */
 export interface WorkerSpend {

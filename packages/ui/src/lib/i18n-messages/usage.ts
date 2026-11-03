@@ -94,6 +94,7 @@ export const usage = {
     purposePlaybook: "Playbook pick",
     purposeNightShift: "Night shift report",
     purposeBranch: "Branch name",
+    purposePlugin: "{{label}} · plugin {{plugin}}",
     purposeOther: "Other"
   },
   zh: {
@@ -191,6 +192,7 @@ export const usage = {
     purposePlaybook: "推荐 playbook",
     purposeNightShift: "夜班晨报",
     purposeBranch: "分支命名",
+    purposePlugin: "{{label}} · 插件 {{plugin}}",
     purposeOther: "其他"
   }
 };

@@ -381,6 +381,7 @@ export const ru: PartialMessages = {
     purposeInbox: "Разбор входящих",
     purposePlaybook: "Выбор сценария",
     purposeBranch: "Название ветки",
+    purposePlugin: "{{label}} · плагин {{plugin}}",
     purposeOther: "Другое"
   },
   webSearch: {

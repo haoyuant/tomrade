@@ -373,6 +373,7 @@ export const es: PartialMessages = {
     purposeInbox: "Clasificación de la bandeja de entrada",
     purposePlaybook: "Elección de playbook",
     purposeBranch: "Nombre de rama",
+    purposePlugin: "{{label}} · complemento {{plugin}}",
     purposeOther: "Otros"
   },
   webSearch: {
