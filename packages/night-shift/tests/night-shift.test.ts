@@ -364,9 +364,9 @@ class FakeLlm extends Service {
   planReply: unknown = null;
   triageReply: unknown = null;
   seen: string[] = [];
-  asked: { preferEngine?: string }[] = [];
+  asked: { preferEngine?: string; signal?: AbortSignal }[] = [];
   refusal = "the model fell over";
-  async completeJson(_schema: unknown, opts: { system: string; user: string; preferEngine?: string }) {
+  async completeJson(_schema: unknown, opts: { system: string; user: string; preferEngine?: string; signal?: AbortSignal }) {
     this.calls += 1;
     this.asked.push(opts);
     if (opts.system.startsWith("You decide")) {
@@ -418,6 +418,7 @@ it("writes the report into Files when the shift ends, and the shift remembers wh
   try {
     const body = await run();
     expect(llm.calls).toBe(1);
+    expect(llm.asked.at(-1)!.signal).toBeInstanceOf(AbortSignal);
     expect(body).toContain("https://example.com/pr/1");
     expect(body).toContain("✓ It works: a.ts");
     expect(f.ctx.nightShift.list(f.project.id, 1)[0]!.briefPath).toMatch(/^Auto runs\/\d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
