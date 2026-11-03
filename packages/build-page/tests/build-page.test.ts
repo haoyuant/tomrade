@@ -156,7 +156,7 @@ describe("what may go on the page", () => {
 describe("publishing to GitHub Pages", () => {
   it("makes the gh-pages branch and turns Pages on", async () => {
     const gh = fakeGitHub();
-    const out = await publishPages(gh.api, REPO, { "index.html": `<meta name="generator" content="${GENERATOR}">one`, ".nojekyll": "" }, "m");
+    const out = await publishPages(gh.api, REPO, { "index.html": `<meta name="generator" content="${GENERATOR}">one` }, "m");
     expect(out).toMatchObject({ ok: true, pages: "enabled", url: "https://acme.github.io/app/" });
     expect(gh.live()).toContain("one");
     expect(gh.state.pages?.source).toEqual({ branch: "gh-pages", path: "/" });
@@ -192,7 +192,8 @@ describe("publishing to GitHub Pages", () => {
 class FakeGitHub extends Service {
   static provide = "github";
   token = async () => "token";
-  readonly api = fakeGitHub().api;
+  readonly gh = fakeGitHub();
+  readonly api = this.gh.api;
   constructor(ctx: Context) {
     super(ctx, "github");
   }
@@ -227,8 +228,7 @@ async function boot() {
     fs.rmSync(dir, { recursive: true, force: true });
   });
   const ctx = f.ctx as Context;
-  const gh = fakeGitHub();
-  ctx.buildPage.api = gh.api;
+  const gh = (ctx.github as unknown as FakeGitHub).gh;
   const p = f.project.id;
   const mk = (title: string, status: Item["status"] = "todo") => {
     const made = f.items.create({ projectId: p, boardId: f.board.id, title, by: "human" });

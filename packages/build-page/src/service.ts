@@ -11,7 +11,7 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import { candidates, content, renderPage, type Candidate, type PageConfig } from "./page.js";
-import { publishPages, type Api } from "./publish.js";
+import { publishPages } from "./publish.js";
 import { BUILD_PAGE_WORDS, type BuildPageWords } from "./words.js";
 
 declare module "cordis" {
@@ -89,8 +89,6 @@ export class BuildPage extends Service {
 
   private readonly home: Context;
   private readonly previews = new Map<string, { id: string; html: string; repo: string }>();
-  /** Tests answer GitHub themselves. */
-  api: Api | null = null;
 
   constructor(ctx: Context) {
     super(ctx, "buildPage");
@@ -166,7 +164,7 @@ export class BuildPage extends Service {
     if (!shown) throw new Error(w("noPreview"));
     if (shown.id !== previewId) throw new Error(w("stale"));
     if (!(await this.home.github.token())) throw new Error(w("notConnected"));
-    const outcome = await publishPages(this.api ?? this.home.github.api, shown.repo, { "index.html": shown.html, ".nojekyll": "" }, w("commit"));
+    const outcome = await publishPages(this.home.github.api, shown.repo, { "index.html": shown.html }, w("commit"));
     if (!outcome.ok) throw new Error(w("foreignSite", { repo: shown.repo }));
     this.previews.delete(projectId);
     const url = outcome.url;
