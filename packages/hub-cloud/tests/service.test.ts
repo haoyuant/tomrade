@@ -280,6 +280,63 @@ it("resolves the single settings document as one conflict boundary", async () =>
   expect(cloud.info().pending).toBe(0);
 });
 
+type Sections = Record<string, { value: unknown; updatedAt: number }>;
+const cloudSettings = () => (remote.records.get("preference:settings")?.value as { sections: Sections }).sections;
+
+it("a machine joining an account that has settings takes what only the account set, with no conflict, and later keeps what it cannot read", async () => {
+  const { ctx, cloud } = await machine();
+  // Set elsewhere: the same choices this machine made, stamped at other times, and a section no plugin here knows.
+  const theirs: Sections = Object.fromEntries(Object.entries(ctx.settings.exportUser().sections).map(([id, e]) => [id, { value: e.value, updatedAt: 1 }]));
+  theirs.elsewhere = { value: { kept: true }, updatedAt: 1 };
+  remote.records.set("preference:settings", { kind: "preference", key: "settings", version: 4, value: { v: 1, sections: theirs } });
+  await cloud.sync();
+  await cloud.sync();
+  expect(cloud.info().conflicts).toEqual([]);
+  expect(cloud.info().pending).toBe(0);
+  expect(cloud.info().status.state).toBe("synced");
+  expect(cloudSettings().elsewhere?.value).toEqual({ kept: true });
+  expect(cloudSettings().theme?.value).toBe("dark");
+
+  ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
+  await cloud.sync();
+  expect(cloudSettings().theme?.value).toBe("matcha");
+  expect(cloudSettings().elsewhere?.value).toEqual({ kept: true });
+});
+
+it("a machine joining an account that set a section differently leaves that one for the person, with the account's other sections beside it", async () => {
+  const { ctx, cloud } = await machine();
+  remote.records.set("preference:settings", { kind: "preference", key: "settings", version: 2, value: { v: 1, sections: {
+    theme: { value: "light", updatedAt: 1 },
+    elsewhere: { value: { kept: true }, updatedAt: 1 }
+  } } });
+  await cloud.sync();
+  const [conflict] = cloud.info().conflicts;
+  expect(conflict?.id).toBe("preference:settings");
+  expect((conflict?.local as { sections: Sections }).sections.theme?.value).toBe("dark");
+  expect((conflict?.local as { sections: Sections }).sections.elsewhere?.value).toEqual({ kept: true });
+  expect(ctx.settings.get().theme).toBe("dark");
+  cloud.cache.resolve("preference:settings", "local");
+  await cloud.sync();
+  expect(cloud.info().conflicts).toEqual([]);
+  expect(cloudSettings().theme?.value).toBe("dark");
+  expect(cloudSettings().elsewhere?.value).toEqual({ kept: true });
+});
+
+it("a clash waiting for the person follows the cloud: taking the cloud's side takes its newest version", async () => {
+  const { cloud, ctx } = await machine();
+  await cloud.sync();
+  ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
+  remote.records.set("preference:settings", { kind: "preference", key: "settings", version: 2, value: { v: 1, sections: { theme: { value: "light", updatedAt: 1 } } } });
+  await cloud.sync();
+  expect(cloud.info().conflicts).toHaveLength(1);
+  // Another machine writes again before the person chooses.
+  remote.records.set("preference:settings", { kind: "preference", key: "settings", version: 3, value: { v: 1, sections: { theme: { value: "sunrise", updatedAt: 2 } } } });
+  await cloud.sync();
+  expect(cloud.info().conflicts[0]?.cloud).toMatchObject({ sections: { theme: { value: "sunrise" } } });
+  cloud.cache.resolve("preference:settings", "cloud");
+  expect(cloud.cache.view().find((r) => r.kind === "preference")).toMatchObject({ version: 3 });
+});
+
 it("persists a removal before the debounce timer or process exit, and explicit sign-out locks offline access", async () => {
   const { cloud, ctx, project, dir } = await machine();
   await cloud.sync();

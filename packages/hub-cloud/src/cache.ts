@@ -102,9 +102,15 @@ export class CloudCache {
       const kept = new Set(this.data.records.map(recordKey));
       next = [...this.data.records.map(r => read.get(recordKey(r)) ?? r), ...records.filter(r => !kept.has(recordKey(r)))];
     }
+    // A clash waiting for the person shows the cloud's newest side of it, so choosing the cloud never steps back to an older one.
+    const conflicts = this.data.conflicts.map(c => {
+      const read = records.find(r => recordKey(r) === recordKey(c));
+      return read && read.version > c.version ? read : c;
+    });
     // Each read overlaps the last by a minute, and the database orders a value's keys its own way: neither is a change.
-    if (JSON.stringify(canonical(next)) === JSON.stringify(canonical(this.data.records))) return;
+    if (JSON.stringify(canonical([next, conflicts])) === JSON.stringify(canonical([this.data.records, this.data.conflicts]))) return;
     this.data.records = next;
+    this.data.conflicts = conflicts;
     this.save();
   }
   accept(op: Mutation, record: CloudRecord): void {
@@ -117,6 +123,13 @@ export class CloudCache {
         ? { ...p, id: randomUUID(), base_version: version++ } : p);
     }
     this.data.records = [...this.data.records.filter(r => recordKey(r) !== recordKey(record)), record];
+    this.save();
+  }
+  /** The cloud holds a record our requests for it did not know of: take it, and send on top of it what is left of ours, if anything is. */
+  rebase(record: CloudRecord, value: CloudRecord["value"]): void {
+    this.data.outbox = this.data.outbox.filter(p => recordKey(p) !== recordKey(record));
+    this.data.records = [...this.data.records.filter(r => recordKey(r) !== recordKey(record)), record];
+    if (!equal(value, record.value)) this.data.outbox.push({ id: randomUUID(), kind: record.kind, key: record.key, value, base_version: record.version });
     this.save();
   }
   conflict(record: CloudRecord): void {

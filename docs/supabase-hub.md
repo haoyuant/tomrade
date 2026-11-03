@@ -110,6 +110,14 @@ panel lets the user choose the local or cloud value. Choosing local creates a
 fresh mutation against the observed cloud version, which may conflict again if
 another device writes meanwhile. No device clock decides concurrent edits.
 
+A machine signing in to an account that already holds settings sends its own as
+if there were none; that is not a concurrent edit. A section only one side set is
+taken as it is, so a new machine simply gets the account's settings; only a
+section both sides set to different values pauses the document for the person,
+with this machine's side of it shown as local. A section this machine has no
+plugin for, or cannot read, is carried along and never erased. A pending clash
+follows the cloud: choosing the cloud takes its newest version.
+
 After every successful sync, projects the account names and this machine lacks
 are restored by themselves (`ctx.storage.restoreMissing()`): those with a
 portable remote are cloned through their storage provider, one at a time; a
