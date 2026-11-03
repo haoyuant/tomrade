@@ -162,6 +162,57 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
     }
   });
 
+  it("sweeps each project on its own: one whose remote is slow holds up no other", async () => {
+    const flag = path.join(root, `slow-flag-${n++}`);
+    const wrapper = path.join(root, `git-${n++}.sh`);
+    // git as the store runs it, except that asking a remote whose URL says "slow" takes a while.
+    fs.writeFileSync(wrapper, `#!/bin/sh\ncase " $* " in *" ls-remote "*) if [ -f '${flag}' ] && git config --get remote.origin.url | grep -q slow; then sleep 4; fi;; esac\nexec git "$@"\n`, { mode: 0o755 });
+    const hubDir = path.join(root, `hub-${n++}`);
+    fs.mkdirSync(hubDir, { recursive: true });
+    const { ctx, project } = await fresh({
+      hubDir,
+      plugins: [
+        [Settings, { path: path.join(hubDir, "settings.json") }],
+        [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
+        [Files, { watch: false, autoSyncMs: 0, gitBinary: wrapper }]
+      ]
+    });
+    await settle();
+    await ctx.storage.ready;
+    try {
+      ctx.plugin({ name: "scoped-folder-backend", inject: ["files"], apply: (c) => void c.files.register(folderBackend) });
+      await settle();
+      const slow = path.join(root, `slow-${n++}.git`);
+      const fast = path.join(root, `fast-${n++}.git`);
+      for (const remote of [slow, fast]) execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+      // The project swept first is the slow one.
+      await ctx.files.bind(project.id, "scoped-folder", { path: slow, directory: "" });
+      const other = ctx.projects.create({ name: "Second", keyPrefix: "SEC" });
+      await settle();
+      await ctx.files.bind(other.id, "scoped-folder", { path: fast, directory: "" });
+      const seed = path.join(root, `seed-${n++}`);
+      execFileSync("git", ["clone", "-q", fast, seed]);
+      git(seed, "config", "user.name", "Test");
+      git(seed, "config", "user.email", "test@example.com");
+      fs.writeFileSync(path.join(seed, "news.md"), "news\n");
+      git(seed, "add", ".");
+      git(seed, "commit", "-qm", "News from elsewhere");
+      git(seed, "push", "-q", "origin", "HEAD:refs/heads/main");
+
+      fs.writeFileSync(flag, "");
+      const started = Date.now();
+      const sweeping = ctx.files.syncAll();
+      const arrived = async () => (await ctx.files.tree(other.id)).some((e) => e.path === "news.md");
+      for (let i = 0; i < 60 && !(await arrived()); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(await arrived()).toBe(true);
+      expect(Date.now() - started).toBeLessThan(3_500);
+      fs.rmSync(flag);
+      await sweeping;
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("rebinds a root cache to a directory without republishing code or losing pinned versions", async () => {
     const { ctx, project } = await machine();
     const id = project.id;

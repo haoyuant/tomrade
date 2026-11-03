@@ -157,6 +157,8 @@ function freeName(name: string, taken: (candidate: string) => boolean): string {
   for (let n = 2; ; n++) if (!taken(`${stem} ${n}${ext}`)) return `${stem} ${n}${ext}`;
 }
 
+/** How long an agent's turn waits for the files index before going on without it. */
+const INDEX_WAIT_MS = 2_000;
 const gitInstalled = (binary: string): Promise<boolean> => execGit(binary, ["--version"]).then(() => true, () => false);
 
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
@@ -290,7 +292,7 @@ export class Files extends Service implements FilesReader {
       // read: the index is discovery, and a path left out of it still reads.
       ctx.on("agent/prepare-turn", async (input) => {
         try {
-          const index = await this.indexFor(input.projectId, input.purpose !== "backlog", input.ticket?.id);
+          const index = await this.indexSoon(input.projectId, input.purpose !== "backlog", input.ticket?.id);
           if (index) input.filesIndex = { markdown: index.markdown, digest: index.digest };
         } catch (error) {
           this.warn(input.projectId, error);
@@ -299,7 +301,7 @@ export class Files extends Service implements FilesReader {
       // A terminal agent is handed the same index inside its brief.
       ctx.on("agent/prepare-brief", async (brief) => {
         try {
-          const index = await this.indexFor(brief.projectId, true, brief.itemId);
+          const index = await this.indexSoon(brief.projectId, true, brief.itemId);
           if (index) brief.filesIndex = index.markdown;
         } catch (error) {
           this.warn(brief.projectId, error);
@@ -1023,6 +1025,19 @@ export class Files extends Service implements FilesReader {
    * The index as a prompt wants it: the person's budget, and the ticket's own
    * folder kept open whatever that budget is.
    */
+  /**
+   * The index, or none when it is not ready in a moment: an agent's turn never waits on the files — a first copy
+   * fetching its remote's files waits for them, and the turn goes on without the index this once.
+   */
+  private indexSoon(projectId: string, native: boolean, itemId?: string): Promise<AgentIndex | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), INDEX_WAIT_MS);
+      timer.unref?.();
+    });
+    return Promise.race([this.indexFor(projectId, native, itemId).finally(() => clearTimeout(timer)), late]);
+  }
+
   async indexFor(projectId: string, native: boolean, itemId?: string): Promise<AgentIndex | null> {
     const budget = (this.home.get("settings")?.get().files as FilesSettings | undefined)?.agentIndexTokens ?? FILES_SECTION.defaults.agentIndexTokens;
     if (budget <= 0) return null;
@@ -1053,6 +1068,7 @@ export class Files extends Service implements FilesReader {
   /** The sweep: every project open on this machine with files, or a remote, is saved and synced. */
   async syncAll(): Promise<void> {
     const now = Date.now();
+    const due: string[] = [];
     for (const projectId of this.ctx.db.openIds()) {
       const dir = this.dirFor(projectId);
       if (!dir) continue;
@@ -1062,12 +1078,10 @@ export class Files extends Service implements FilesReader {
       const rare = this.remoteOf(projectId) ? !this.seen : !!this.open.get(projectId)?.store.watching?.();
       if (rare && now - (this.swept.get(projectId) ?? 0) < this.config.rareSyncMs) continue;
       this.swept.set(projectId, now);
-      try {
-        await this.sync(projectId, { quiet: true });
-      } catch (error) {
-        this.warn(projectId, error);
-      }
+      due.push(projectId);
     }
+    // Each on its own: a project whose remote is slow, or out of reach until git gives up on it, holds up no other.
+    await Promise.all(due.map((projectId) => this.sync(projectId, { quiet: true }).catch((error) => this.warn(projectId, error))));
   }
 
   async conflicts(projectId: string): Promise<FileConflict[]> {

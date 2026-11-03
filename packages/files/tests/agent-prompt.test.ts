@@ -39,6 +39,21 @@ const turnOf = (projectId: string, purpose: TurnInput["purpose"]): TurnInput => 
 const io = { playbooks: { index: () => [] } } as unknown as TurnIO;
 
 describe("what an agent is told about a project's files", () => {
+  it("never holds a turn on the files: an index not ready in a moment is left out this once", async () => {
+    const { ctx, project } = await machine();
+    try {
+      // As a first copy still fetching a slow remote's files would.
+      (ctx.files as unknown as { indexFor: () => Promise<never> }).indexFor = () => new Promise<never>(() => {});
+      const input = turnOf(project.id, "backlog");
+      const started = Date.now();
+      await ctx.parallel("agent/prepare-turn", input);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(input.filesIndex).toBeUndefined();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("puts the index on every turn, once, and lets an engine leave it out of the per-turn prompt", async () => {
     const { ctx, project } = await machine();
     try {

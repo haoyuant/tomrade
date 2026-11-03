@@ -24,7 +24,9 @@ const State = z.object({
   /** Chosen on the sign-in page: this local Hub is used without an account until someone signs in here. */
   localOnly: z.boolean().default(false),
   /** The terms version agreed to here, kept until the account carries it too. */
-  terms: z.string().nullable().default(null)
+  terms: z.string().nullable().default(null),
+  /** Requests that may have reached the cloud: never changed again, since a retry must say what the first said. */
+  sent: z.array(z.string()).default([])
 });
 export type CacheState = z.infer<typeof State>;
 export const recordKey = (r: { kind: Kind; key: string }) => `${r.kind}:${r.key}`;
@@ -36,7 +38,7 @@ function canonical(v: unknown): unknown {
 }
 
 const empty = (endpoint: string): CacheState => ({
-  v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null
+  v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null, sent: []
 });
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
@@ -66,6 +68,8 @@ export class CloudCache {
     this.save();
   }
   save(): void {
+    // A request that left the outbox — taken, rebased or dropped — is no longer anyone's to keep apart.
+    this.data.sent = this.data.sent.filter(id => this.data.outbox.some(p => p.id === id));
     writeJsonAtomic(this.file, this.data, { mode: 0o600 });
   }
   bind(userId: string, hubId: string): void {
@@ -88,9 +92,7 @@ export class CloudCache {
     const fingerprint = JSON.stringify(canonical(value));
     if (this.data.observed[id] === fingerprint) return;
     const current = this.view().find(r => recordKey(r) === id);
-    if (!equal(current?.value ?? null, value)) {
-      this.data.outbox.push({ id: randomUUID(), kind, key, value, base_version: current?.version ?? 0 });
-    }
+    if (!equal(current?.value ?? null, value)) this.queue(kind, key, value, current?.version ?? 0);
     this.data.observed[id] = fingerprint;
     this.save();
   }
@@ -101,8 +103,30 @@ export class CloudCache {
   intend(kind: Kind, key: string, value: CloudRecord["value"]): void {
     const id = recordKey({ kind, key });
     const current = this.view().find(r => recordKey(r) === id);
-    if (!equal(current?.value ?? null, value)) this.data.outbox.push({ id: randomUUID(), kind, key, value, base_version: current?.version ?? 0 });
+    if (!equal(current?.value ?? null, value)) this.queue(kind, key, value, current?.version ?? 0);
     this.data.observed[id] = JSON.stringify(canonical(value));
+    this.save();
+  }
+  /**
+   * One request per record while none has gone: a later edit to a record whose last request was never sent takes that
+   * request's place, and one that brings the record back to what the cloud has needs none.
+   */
+  private queue(kind: Kind, key: string, value: CloudRecord["value"], base: number): void {
+    const id = recordKey({ kind, key });
+    const last = this.data.outbox.filter(p => recordKey(p) === id).at(-1);
+    if (!last || this.data.sent.includes(last.id)) {
+      this.data.outbox.push({ id: randomUUID(), kind, key, value, base_version: base });
+      return;
+    }
+    const held = this.data.records.find(r => recordKey(r) === id);
+    const alone = this.data.outbox.filter(p => recordKey(p) === id).length === 1;
+    if (alone && held && held.version === last.base_version && equal(held.value, value)) this.data.outbox = this.data.outbox.filter(p => p.id !== last.id);
+    else this.data.outbox = this.data.outbox.map(p => (p.id === last.id ? { ...p, value } : p));
+  }
+  /** Before a request goes: from now on it may have reached the cloud. */
+  sending(id: string): void {
+    if (this.data.sent.includes(id)) return;
+    this.data.sent.push(id);
     this.save();
   }
   /** The cloud's records: all of them, or with `partial` only those changed since the last read, laid over the ones kept. */

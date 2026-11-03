@@ -27,6 +27,8 @@ export interface FreshOptions {
   legacyPath?: string;
   /** "none" leaves the first project to a plugin in `plugins`, as the app leaves it to onboarding. */
   firstRun?: "default" | "none";
+  /** This machine's device id, for tests that play two machines sharing a project; "test-device" otherwise. */
+  device?: string;
 }
 
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
@@ -39,7 +41,7 @@ export async function fresh(opts: FreshOptions = {}) {
   ctx.logger.exporter({ export: (m) => { if (m.type === "error") failures.push(m.args[0]); } });
 
   await ctx.plugin(Db, { dir: opts.cacheDir ?? ":memory:" });
-  await ctx.plugin(Hub, { memory: true, defaultDir: opts.hubDir });
+  await ctx.plugin(Hub, { memory: true, defaultDir: opts.hubDir, device: opts.device });
   await ctx.plugin(Oplog);
   if (opts.policy !== false) await ctx.plugin(policy);
   await ctx.plugin(Fields);
