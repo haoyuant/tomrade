@@ -9,6 +9,7 @@ import { contributionsApi } from "./facade/contributions.js";
 import { dbApi } from "./facade/db.js";
 import { fieldsApi } from "./facade/fields.js";
 import { imApi } from "./facade/im.js";
+import { inboxApi } from "./facade/inbox.js";
 import { itemsApi } from "./facade/items.js";
 import { lifecycle } from "./facade/lifecycle.js";
 import { modelsApi } from "./facade/models.js";
@@ -197,6 +198,9 @@ export class Host {
       },
       get terminals() {
         return terminalsApi(facade);
+      },
+      get inbox() {
+        return inboxApi(facade);
       },
 
       ...lifecycle(facade)

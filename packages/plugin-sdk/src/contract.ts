@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { ImApi } from "./im.js";
 import type { TerminalsApi } from "./terminals.js";
 import type { WebSearchApi } from "./web-search.js";
+import type { InboxApi } from "./inbox.js";
 import type { ModelsApi } from "./models.js";
 import type { LocalAgentOptions, LocalAgentSpec } from "./local-agents.js";
 import type { LayoutSpec } from "./layout.js";
@@ -47,7 +48,7 @@ export interface SectionWords {
 }
 
 /** The services a plugin names in `inject` (required) or `optional`. */
-export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "alerts" | "oplog" | "im" | "webSearch" | "terminals" | "models";
+export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "alerts" | "oplog" | "im" | "webSearch" | "terminals" | "models" | "inbox";
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -535,6 +536,8 @@ export interface PluginContext {
   readonly terminals: TerminalsApi;
   /** SDK 0.2.16: model providers, as the app's own are. */
   readonly models: ModelsApi;
+  /** SDK 0.2.33: sources of feedback for the project's inbox, as the app's own are. */
+  readonly inbox: InboxApi;
   on<K extends keyof Events>(event: K, listener: Events[K]): Disposer;
   /** Runs `fn` while an optional service is present; what it returns is disposed when the service goes. */
   when(name: ServiceName, fn: (ctx: PluginContext) => Maybe<Disposer | void>): Disposer;
