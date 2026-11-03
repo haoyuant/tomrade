@@ -1,0 +1,314 @@
+{
+ "seconds": 26.25,
+ "music": 0.8,
+ "src": {
+  "top": 0,
+  "width": 3008
+ },
+ "map": [
+  [
+   0,
+   5.2,
+   0
+  ],
+  [
+   3.75,
+   5.2,
+   0
+  ],
+  [
+   6.5625,
+   8.6,
+   0
+  ],
+  [
+   6.5625,
+   9.2,
+   0
+  ],
+  [
+   7.5,
+   10.2,
+   0
+  ],
+  [
+   7.5,
+   25,
+   0
+  ],
+  [
+   11.25,
+   30.6,
+   0
+  ],
+  [
+   11.25,
+   33.4,
+   0
+  ],
+  [
+   15,
+   39,
+   0
+  ],
+  [
+   15,
+   4.4,
+   1
+  ],
+  [
+   18.75,
+   9.8,
+   1
+  ],
+  [
+   18.75,
+   22.5,
+   1
+  ],
+  [
+   22.5,
+   85,
+   1
+  ],
+  [
+   26.25,
+   85.4,
+   1
+  ]
+ ],
+ "shots": {
+  "head": {
+   "x": -540,
+   "y": 698,
+   "w": 2160,
+   "veilTop": 1
+  },
+  "inbox": {
+   "x": -456,
+   "y": 600,
+   "w": 2584,
+   "veilTop": 1
+  }
+ },
+ "cam": [
+  [
+   0,
+   "head"
+  ],
+  [
+   7.5,
+   "inbox",
+   0.4
+  ],
+  [
+   15,
+   "head",
+   0.4
+  ]
+ ],
+ "title": {
+  "to": 3.75,
+  "blocks": [
+   {
+    "at": 0.234375,
+    "x": 80,
+    "y": 200,
+    "w": 920,
+    "size": 88,
+    "en": "Issues pile up.",
+    "zh": "issue 越堆越多。",
+    "zhSize": 42
+   },
+   {
+    "at": 1.875,
+    "x": 80,
+    "y": 450,
+    "w": 920,
+    "size": 88,
+    "en": "Your inbox sorts them.",
+    "zh": "收件箱帮你分好。",
+    "zhSize": 42
+   }
+  ],
+  "mailbox": {
+   "at": [
+    0.1375,
+    0.6062,
+    1.075,
+    1.5437,
+    2.0125
+   ],
+   "lines": [
+    "#8",
+    "#9",
+    "Bug?",
+    "Urgent!",
+    "+1"
+   ]
+  }
+ },
+ "texts": [
+  {
+   "from": 3.984375,
+   "to": 7.265625,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 78,
+   "zhSize": 36,
+   "en": "They land in your inbox.",
+   "zh": "它们都进了收件箱。"
+  },
+  {
+   "from": 7.734375,
+   "to": 11.015625,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 66,
+   "en": "Triaged\nalready.",
+   "gray": "\nYou confirm.",
+   "zh": "已经分好诊，你点确认。",
+   "zhSize": 36,
+   "align": "left"
+  },
+  {
+   "from": 11.484375,
+   "to": 14.765625,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 62,
+   "en": "Duplicates merge.",
+   "gray": "\nThe rest become tickets.",
+   "zh": "重复的合并，其余变成工单。",
+   "zhSize": 34,
+   "align": "left"
+  },
+  {
+   "from": 15.234375,
+   "to": 18.515625,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 78,
+   "zhSize": 36,
+   "en": "Then start it.",
+   "zh": "然后点开始。"
+  },
+  {
+   "from": 18.8671875,
+   "to": 22.5,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 78,
+   "zhSize": 36,
+   "en": "One click later, a PR.",
+   "zh": "点一下，PR 就来了。"
+  }
+ ],
+ "end": {
+  "from": 22.5,
+  "en": "Stop chasing your agents.\nLet them come to you.",
+  "zh": "别再追着 Agent 跑了，让它们来向你禀告。",
+  "url": "tomrade.com"
+ },
+ "fast": [
+  {
+   "from": 18.75,
+   "to": 22.5,
+   "label": "17×"
+  }
+ ],
+ "sfx": [
+  {
+   "t": 0.9375,
+   "kind": "boop",
+   "note": 72,
+   "gain": 0.75
+  },
+  {
+   "t": 1.40625,
+   "kind": "boop",
+   "note": 76,
+   "gain": 0.75
+  },
+  {
+   "t": 1.875,
+   "kind": "boop",
+   "note": 79,
+   "gain": 0.75
+  },
+  {
+   "t": 2.34375,
+   "kind": "boop",
+   "note": 84,
+   "gain": 0.75
+  },
+  {
+   "t": 2.8125,
+   "kind": "boop",
+   "note": 88,
+   "gain": 0.75
+  },
+  {
+   "t": 3.4,
+   "kind": "whoosh",
+   "gain": 0.18
+  },
+  {
+   "t": 11.25,
+   "kind": "boop",
+   "note": 79
+  },
+  {
+   "t": 14.65,
+   "kind": "whoosh",
+   "gain": 0.12
+  },
+  {
+   "t": 15,
+   "kind": "boop",
+   "note": 84
+  },
+  {
+   "t": 18.75,
+   "kind": "boop",
+   "note": 88
+  },
+  {
+   "t": 22.5,
+   "kind": "chime"
+  }
+ ],
+ "sections": [
+  [
+   0,
+   "sparse"
+  ],
+  [
+   3.75,
+   "full"
+  ],
+  [
+   15,
+   "double"
+  ],
+  [
+   18.75,
+   "full"
+  ],
+  [
+   22.5,
+   "tail"
+  ]
+ ],
+ "cells": {},
+ "flashes": [],
+ "stage": "tall"
+}

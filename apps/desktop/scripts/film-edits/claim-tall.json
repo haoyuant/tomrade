@@ -1,0 +1,436 @@
+{
+ "seconds": 22.5,
+ "music": 0.8,
+ "src": {
+  "top": 0,
+  "width": 3008
+ },
+ "map": [
+  [
+   0,
+   4.8,
+   0
+  ],
+  [
+   3.75,
+   4.8,
+   0
+  ],
+  [
+   7.5,
+   10,
+   0
+  ],
+  [
+   7.5,
+   26,
+   0
+  ],
+  [
+   11.25,
+   36,
+   0
+  ],
+  [
+   11.25,
+   36.9,
+   0
+  ],
+  [
+   14.0625,
+   39.6,
+   0
+  ],
+  [
+   15,
+   76,
+   0
+  ],
+  [
+   15,
+   7.3,
+   1
+  ],
+  [
+   18.75,
+   10.5,
+   1
+  ],
+  [
+   22.5,
+   10.7,
+   1
+  ]
+ ],
+ "shots": {
+  "pane": {
+   "x": -189,
+   "y": 530,
+   "w": 4212,
+   "veilTop": 1,
+   "top": 30
+  },
+  "card": {
+   "x": -5717,
+   "y": 600,
+   "w": 7060,
+   "veilTop": 1,
+   "top": 30
+  },
+  "board": {
+   "x": -540,
+   "y": 698,
+   "w": 2160,
+   "veilTop": 1
+  },
+  "report": {
+   "x": -1665,
+   "y": -97,
+   "w": 6768,
+   "veilTop": 1
+  }
+ },
+ "cam": [
+  [
+   0,
+   "pane"
+  ],
+  [
+   7.5,
+   "card",
+   0.01
+  ],
+  [
+   11.25,
+   "pane",
+   0.01
+  ],
+  [
+   15,
+   "report",
+   0.01
+  ]
+ ],
+ "title": {
+  "to": 3.75,
+  "blocks": [
+   {
+    "at": 0.234375,
+    "x": 80,
+    "y": 200,
+    "w": 920,
+    "size": 86,
+    "en": "Already living in the terminal?",
+    "zh": "习惯在终端里干活？",
+    "zhSize": 42
+   },
+   {
+    "at": 1.875,
+    "x": 80,
+    "y": 450,
+    "w": 920,
+    "size": 86,
+    "en": "Stay there.",
+    "zh": "那就别动。",
+    "zhSize": 42
+   }
+  ],
+  "terminal": {
+   "at": 0.12,
+   "command": "claude \"Pick up FK-8.\"",
+   "typeFrom": 0.46875,
+   "typeTo": 1.40625,
+   "lines": [
+    {
+     "at": 1.875,
+     "text": "✓ Claimed FK-8 · Doing",
+     "tone": "ok"
+    },
+    {
+     "at": 2.34375,
+     "text": "⎇ fk-8/count-emoji-as-one-character",
+     "tone": "branch"
+    },
+    {
+     "at": 2.8125,
+     "text": "↑ PR #34 · Verifying",
+     "tone": "pr"
+    }
+   ]
+  }
+ },
+ "texts": [
+  {
+   "from": 3.984375,
+   "to": 7.265625,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 70,
+   "en": "Just name\nthe ticket.",
+   "zh": "报个工单号就行。",
+   "zhSize": 36,
+   "align": "left"
+  },
+  {
+   "from": 7.734375,
+   "to": 11.015625,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 66,
+   "en": "It claims the\nticket itself.",
+   "zh": "它自己认领工单。",
+   "zhSize": 36,
+   "align": "left"
+  },
+  {
+   "from": 11.484375,
+   "to": 14.765625,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 70,
+   "en": "Works on\nits own\nbranch.",
+   "zh": "在自己的分支上干活。",
+   "zhSize": 36,
+   "align": "left"
+  },
+  {
+   "from": 15.234375,
+   "to": 18.75,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 70,
+   "zhSize": 36,
+   "en": "Then it reports back:",
+   "gray": "status and PR.",
+   "zh": "状态和 PR，自己回到工单上。"
+  }
+ ],
+ "end": {
+  "from": 18.75,
+  "en": "Stop chasing your agents.\nLet them come to you.",
+  "zh": "别再追着 Agent 跑了，让它们来向你禀告。",
+  "url": "tomrade.com"
+ },
+ "fast": [
+  {
+   "from": 7.5,
+   "to": 11.25,
+   "label": "3×"
+  },
+  {
+   "from": 14.0625,
+   "to": 15,
+   "label": "39×"
+  }
+ ],
+ "sfx": [
+  {
+   "t": 0.4688,
+   "kind": "key"
+  },
+  {
+   "t": 0.5114,
+   "kind": "key"
+  },
+  {
+   "t": 0.554,
+   "kind": "key"
+  },
+  {
+   "t": 0.5966,
+   "kind": "key"
+  },
+  {
+   "t": 0.6392,
+   "kind": "key"
+  },
+  {
+   "t": 0.6818,
+   "kind": "key"
+  },
+  {
+   "t": 0.7244,
+   "kind": "key"
+  },
+  {
+   "t": 0.767,
+   "kind": "key"
+  },
+  {
+   "t": 0.8097,
+   "kind": "key"
+  },
+  {
+   "t": 0.8523,
+   "kind": "key"
+  },
+  {
+   "t": 0.8949,
+   "kind": "key"
+  },
+  {
+   "t": 0.9375,
+   "kind": "key"
+  },
+  {
+   "t": 0.9801,
+   "kind": "key"
+  },
+  {
+   "t": 1.0227,
+   "kind": "key"
+  },
+  {
+   "t": 1.0653,
+   "kind": "key"
+  },
+  {
+   "t": 1.108,
+   "kind": "key"
+  },
+  {
+   "t": 1.1506,
+   "kind": "key"
+  },
+  {
+   "t": 1.1932,
+   "kind": "key"
+  },
+  {
+   "t": 1.2358,
+   "kind": "key"
+  },
+  {
+   "t": 1.2784,
+   "kind": "key"
+  },
+  {
+   "t": 1.321,
+   "kind": "key"
+  },
+  {
+   "t": 1.3636,
+   "kind": "key"
+  },
+  {
+   "t": 1.875,
+   "kind": "boop",
+   "note": 72,
+   "gain": 0.75
+  },
+  {
+   "t": 2.34375,
+   "kind": "boop",
+   "note": 76,
+   "gain": 0.75
+  },
+  {
+   "t": 2.8125,
+   "kind": "boop",
+   "note": 79,
+   "gain": 0.75
+  },
+  {
+   "t": 3.4,
+   "kind": "whoosh",
+   "gain": 0.18
+  },
+  {
+   "t": 7.15,
+   "kind": "whoosh",
+   "gain": 0.1
+  },
+  {
+   "t": 11.71875,
+   "kind": "boop",
+   "note": 84,
+   "gain": 0.5
+  },
+  {
+   "t": 14.65,
+   "kind": "whoosh",
+   "gain": 0.12
+  },
+  {
+   "t": 16.40625,
+   "kind": "boop",
+   "note": 84,
+   "gain": 0.5
+  },
+  {
+   "t": 17.34375,
+   "kind": "boop",
+   "note": 88,
+   "gain": 0.5
+  },
+  {
+   "t": 18.75,
+   "kind": "chime"
+  }
+ ],
+ "sections": [
+  [
+   0,
+   "sparse"
+  ],
+  [
+   3.75,
+   "full"
+  ],
+  [
+   11.25,
+   "double"
+  ],
+  [
+   15,
+   "full"
+  ],
+  [
+   18.75,
+   "tail"
+  ]
+ ],
+ "cells": {
+  "branch": {
+   "x": 98,
+   "y": 438,
+   "w": 548,
+   "h": 74
+  },
+  "status": {
+   "x": 766,
+   "y": 426,
+   "w": 404,
+   "h": 54
+  },
+  "pr": {
+   "x": 558,
+   "y": 710,
+   "w": 136,
+   "h": 52
+  }
+ },
+ "flashes": [
+  {
+   "t": 11.71875,
+   "cell": "branch",
+   "to": 13.828125
+  },
+  {
+   "t": 16.40625,
+   "cell": "status",
+   "to": 18.515625
+  },
+  {
+   "t": 17.34375,
+   "cell": "pr",
+   "to": 18.515625
+  }
+ ],
+ "stage": "tall"
+}

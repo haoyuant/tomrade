@@ -1,0 +1,315 @@
+{
+ "seconds": 22.5,
+ "music": 0.8,
+ "src": {
+  "top": 0,
+  "width": 3008
+ },
+ "map": [
+  [
+   0,
+   2.6
+  ],
+  [
+   3.75,
+   2.6
+  ],
+  [
+   6.5625,
+   7.2
+  ],
+  [
+   6.5625,
+   31
+  ],
+  [
+   8.4375,
+   38.05
+  ],
+  [
+   9.375,
+   39.599
+  ],
+  [
+   9.375,
+   46
+  ],
+  [
+   13.125,
+   76
+  ],
+  [
+   13.125,
+   84.2
+  ],
+  [
+   15,
+   87.131
+  ],
+  [
+   15.9375,
+   88.331
+  ],
+  [
+   18.75,
+   90.331
+  ],
+  [
+   21.5625,
+   90.531
+  ],
+  [
+   22.5,
+   90.631
+  ]
+ ],
+ "shots": {
+  "head": {
+   "x": -540,
+   "y": 698,
+   "w": 2160,
+   "veilTop": 1
+  },
+  "input": {
+   "x": -2215,
+   "y": 110,
+   "w": 3509,
+   "veilTop": 1
+  },
+  "ask": {
+   "x": -2215,
+   "y": 565,
+   "w": 3509,
+   "veilTop": 1
+  }
+ },
+ "cam": [
+  [
+   0,
+   "input"
+  ],
+  [
+   6.5625,
+   "ask",
+   0.01
+  ],
+  [
+   9.375,
+   "head",
+   0.01
+  ]
+ ],
+ "title": {
+  "to": 3.75,
+  "blocks": [
+   {
+    "at": 0.234375,
+    "x": 80,
+    "y": 200,
+    "w": 920,
+    "size": 88,
+    "en": "A messy backlog.",
+    "zh": "需求池乱成一锅粥。",
+    "zhSize": 42
+   },
+   {
+    "at": 1.875,
+    "x": 80,
+    "y": 450,
+    "w": 920,
+    "size": 88,
+    "en": "Say tidy up.",
+    "zh": "说一句「整理一下」。",
+    "zhSize": 42
+   }
+  ],
+  "pile": {
+   "at": [
+    0.6375,
+    1.1062,
+    1.575,
+    2.0438,
+    2.5125
+   ],
+   "lines": [
+    "Dup.",
+    "Dup.",
+    "Too big.",
+    "Dup?",
+    "Mine!"
+   ],
+   "cards": [
+    {
+     "key": "FK-12",
+     "title": "Dark mode"
+    },
+    {
+     "key": "FK-13",
+     "title": "Dark mode, again"
+    },
+    {
+     "key": "FK-14",
+     "title": "Redo the whole form"
+    },
+    {
+     "key": "FK-15",
+     "title": "Night theme?"
+    },
+    {
+     "key": "FK-16",
+     "title": "The thing from Monday"
+    }
+   ]
+  }
+ },
+ "texts": [
+  {
+   "from": 3.984375,
+   "to": 9.2578125,
+   "x": 70,
+   "w": 940,
+   "y": 150,
+   "size": 62,
+   "en": "It merges duplicates,\nsplits the big ones.",
+   "gray": "\nYou pick.",
+   "zh": "合并重复，拆开大单，你来定。",
+   "zhSize": 34,
+   "align": "left"
+  },
+  {
+   "from": 9.609375,
+   "to": 13.0078125,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 78,
+   "zhSize": 36,
+   "en": "Done before your coffee cools.",
+   "zh": "一杯咖啡没凉，就弄好了。"
+  },
+  {
+   "from": 13.2421875,
+   "to": 16.7578125,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 70,
+   "zhSize": 36,
+   "en": "Not what you wanted?",
+   "gray": "One click takes it all back.",
+   "zh": "不满意？整次运行，一键撤回。"
+  },
+  {
+   "from": 16.875,
+   "to": 18.75,
+   "x": 70,
+   "y": 150,
+   "w": 940,
+   "align": "left",
+   "size": 58,
+   "zhSize": 34,
+   "en": "Reverts what Tomrade wrote. Never your code.",
+   "zh": "撤回的是 Tomrade 写的内容，不动你的代码。"
+  }
+ ],
+ "end": {
+  "from": 18.75,
+  "en": "Stop chasing your agents.\nLet them come to you.",
+  "zh": "别再追着 Agent 跑了，让它们来向你禀告。",
+  "url": "tomrade.com"
+ },
+ "fast": [
+  {
+   "from": 6.5625,
+   "to": 9.375,
+   "label": "2×"
+  },
+  {
+   "from": 9.375,
+   "to": 13.125,
+   "label": "8×"
+  }
+ ],
+ "sfx": [
+  {
+   "t": 0.9375,
+   "kind": "boop",
+   "note": 67,
+   "gain": 0.8
+  },
+  {
+   "t": 1.40625,
+   "kind": "boop",
+   "note": 64,
+   "gain": 0.8
+  },
+  {
+   "t": 1.875,
+   "kind": "boop",
+   "note": 60,
+   "gain": 0.8
+  },
+  {
+   "t": 2.34375,
+   "kind": "boop",
+   "note": 57,
+   "gain": 0.8
+  },
+  {
+   "t": 3.4,
+   "kind": "whoosh",
+   "gain": 0.18
+  },
+  {
+   "t": 2.8125,
+   "kind": "boop",
+   "note": 52,
+   "gain": 0.8
+  },
+  {
+   "t": 8.4375,
+   "kind": "boop",
+   "note": 79
+  },
+  {
+   "t": 9.375,
+   "kind": "boop",
+   "note": 84
+  },
+  {
+   "t": 15,
+   "kind": "undo"
+  },
+  {
+   "t": 18.75,
+   "kind": "chime"
+  }
+ ],
+ "sections": [
+  [
+   0,
+   "sparse"
+  ],
+  [
+   1.875,
+   "full"
+  ],
+  [
+   11.25,
+   "double"
+  ],
+  [
+   15,
+   "full"
+  ],
+  [
+   18.75,
+   "tail"
+  ]
+ ],
+ "cells": {},
+ "flashes": [],
+ "stage": "tall"
+}

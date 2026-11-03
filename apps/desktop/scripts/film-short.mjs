@@ -1,5 +1,5 @@
 /**
- * Cuts a short from a window take of film.mjs, one exact frame at a time: laid out at 1920×1080, rendered at 4K, 60 fps, everything on the beat of
+ * Cuts a short from a window take of film.mjs, one exact frame at a time: laid out at 1920×1080 (or 1080×1920), rendered at 4K, 60 fps, everything on the beat of
  * film-audio.mjs. An edit is all data, so a change is a line in edit.json and a render. There are no caption cards: big type sits on the paper, beside
  * or above the window, and the camera moves the window out of its way.
  *
@@ -7,7 +7,7 @@
  * FILM_STILLS=1.2,4.5 writes those moments next to <out> as PNGs and stops, for checking a layout without a render.
  *
  * edit.json:
- *   { "seconds", "music", "sections": [[from, name], …],
+ *   { "seconds", "music", "sections": [[from, name], …], "stage"?: "tall",
  *     "stages"?: [[from, "paper" | "night"], …],
  *     "src": { "top", "width" },           window chrome cut from the top, and the window's width in points
  *     "map": [[out, take, source?], …],    output time → take time, straight between points; source indexes the takes, given comma-separated
@@ -44,8 +44,12 @@ const [editFile, takes, out] = process.argv.slice(2);
 const sources = takes.split(",");
 const take = sources[0];
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const W = 1920;
-const H = 1080;
+// "stage": "tall" lays a short out at 1080×1920 for phone feeds; the title animations, drawn for the wide stage, are
+// moved into its lower half.
+const TALL = JSON.parse(fs.readFileSync(editFile, "utf8")).stage === "tall";
+const W = TALL ? 1080 : 1920;
+const H = TALL ? 1920 : 1080;
+const ART = TALL ? "translate(-1026 780) scale(1.08)" : "";
 const FPS = 60;
 // Laid out at 1920×1080 and rendered at this multiple: 4K by default, so small text in a wide shot stays readable.
 const OUT = Number(process.env.FILM_OUT_SCALE ?? 2);
@@ -102,6 +106,9 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
   #term .branch{color:#c9b6ff}
   #term .pr{color:#f4a66f}
   #end>div:not(.bgf),#end>img{position:relative}
+  ${TALL ? `#term{left:140px;top:1080px}
+  #end .en{font-size:80px !important;padding:0 60px}
+  #end .zh{font-size:40px !important;padding:0 60px}` : ""}
   #end{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
   #end .en{font-weight:700;font-size:104px;line-height:1.06;letter-spacing:-.022em;white-space:pre-line}
   #end .zh{font-weight:500;font-size:46px;color:#6e6e73;margin-top:26px}
@@ -312,22 +319,24 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
     }
     // A window wider than its place fades into the stage, so the type beside it reads on the stage alone.
     if (s.veil > 0) {
-      const edge = ctx.createLinearGradient(1250, 0, 1440, 0);
+      const edge = ctx.createLinearGradient(${W - 670}, 0, ${W - 480}, 0);
       const color = s.stage === 'night' ? '21,20,42' : '246,239,227';
       edge.addColorStop(0, 'rgba(' + color + ',0)');
       edge.addColorStop(1, 'rgba(' + color + ',' + s.veil + ')');
       ctx.fillStyle = edge;
-      ctx.fillRect(1250, 0, 670, 1080);
+      ctx.fillRect(${W - 670}, 0, 670, ${H});
     }
     if (s.veilTop > 0) {
-      const edge = ctx.createLinearGradient(0, 200, 0, 300);
+      // the band the type stands in: above the window, deeper on a tall stage
+      const band = ${TALL ? 500 : 200};
+      const edge = ctx.createLinearGradient(0, band, 0, band + 100);
       const color = s.stage === 'night' ? '21,20,42' : '246,239,227';
       edge.addColorStop(0, 'rgba(' + color + ',' + s.veilTop + ')');
       edge.addColorStop(1, 'rgba(' + color + ',0)');
       ctx.fillStyle = edge;
-      ctx.fillRect(0, 200, 1920, 100);
+      ctx.fillRect(0, band, ${W}, 100);
       ctx.fillStyle = 'rgba(' + color + ',' + s.veilTop + ')';
-      ctx.fillRect(0, 0, 1920, 200);
+      ctx.fillRect(0, 0, ${W}, band);
     }
     document.getElementById('texts').innerHTML = s.texts.map(textHtml).join('');
     const fast = document.getElementById('fast');
@@ -338,14 +347,14 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
     if (s.title) {
       title.classList.toggle('dusk', !!s.title.dusk);
       title.style.transform = 'translateY(' + s.title.y + 'px)';
-      title.querySelector('svg').innerHTML = s.title.bots.map(botSvg).join('') + (s.title.you ? youSvg(s.title.you) : '') + s.title.bots.filter((b) => b.q > 0).map(bubbleSvg).join('') + (s.title.pile || []).map(ticketSvg).join('')
+      title.querySelector('svg').innerHTML = '<g transform="${ART}">' + s.title.bots.map(botSvg).join('') + (s.title.you ? youSvg(s.title.you) : '') + s.title.bots.filter((b) => b.q > 0).map(bubbleSvg).join('') + (s.title.pile || []).map(ticketSvg).join('')
         + (s.title.mailbox ? mailboxSvg(s.title.mailbox) + s.title.mailbox.letters.map(letterSvg).join('') : '')
         + (s.title.idea ? ideaSvg(s.title.idea) : '')
         + (s.title.chat ? chatSvg(s.title.chat) : '')
         + (s.title.tiles ? s.title.tiles.map(tileSvg).join('') : '')
         + (s.title.folder ? s.title.folder.back.map(fileSvg).join('') + folderSvg(s.title.folder) + s.title.folder.front.map(fileSvg).join('') : '')
         + (s.title.branches ? '<path d="M' + s.title.branches.trunk.join(' L') + '" stroke="' + INK + '" stroke-width="9" stroke-linecap="round" fill="none"/>'
-          + s.title.branches.list.map(branchSvg).join('') + youSvg(s.title.branches.you) + s.title.branches.list.filter((b) => b.q > 0).map(tagSvg).join('') : '');
+          + s.title.branches.list.map(branchSvg).join('') + youSvg(s.title.branches.you) + s.title.branches.list.filter((b) => b.q > 0).map(tagSvg).join('') : '') + '</g>';
       const term = document.getElementById('term'), tm = s.title.terminal;
       term.style.display = tm ? 'block' : 'none';
       if (tm) {
@@ -610,7 +619,7 @@ async function run() {
     };
   };
 
-  const page = new BrowserWindow({ width: W * OUT, height: H * OUT, show: false, useContentSize: true, webPreferences: { offscreen: true, autoplayPolicy: "no-user-gesture-required" } });
+  const page = new BrowserWindow({ width: W * OUT, height: H * OUT, show: false, useContentSize: true, enableLargerThanScreen: true, webPreferences: { offscreen: true, autoplayPolicy: "no-user-gesture-required" } });
   page.webContents.setFrameRate(240);
   page.webContents.on("console-message", (event) => event.level === "error" && console.error(`[page] ${event.message} @${event.lineNumber}`));
   const html = path.join(tmp, "page.html");
