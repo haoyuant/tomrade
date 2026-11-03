@@ -49,7 +49,7 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 
 ## What's in the box
 
-**🗣️ From a sentence to a pull request.** Talk, plan, apply, build. Describe what you want in plain words and the assistant asks what it needs to know. It drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch, reading and updating the ticket as it works. *Approval queue: none. Vibes: immaculate.*
+**🗣️ From a sentence to a pull request.** Talk, plan, apply, build. Describe what you want in plain words and the assistant asks what it needs to know. It drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch, reading and updating the ticket as it works. When CI fails on its pull request, or someone reviews or comments on it, the agent working the ticket hears about it. *Approval queue: none. Vibes: immaculate.*
 
 **🌙 Auto run. Go to bed.** The agent reads the project and the backlog and lays out a plan on the dependency graph: what to run, what to leave for a person, which dependencies are missing. You pick the nodes, give any of them its own agent and merge setting or let work rules choose (docs tickets on a cheaper model, say), say whether they run in terminal panes you can watch or in background sessions, and set the limits: how many at once, how much to spend, how many failures in a row before it stops. Let it run until everything is done or stuck, or choose a night shift with a time limit. Tomrade works through the tickets in dependency order. A failure stays with its ticket and whatever depends on it, when an agent runs out of quota the next available agent takes the ticket on its branch (or it waits, if you said so), and nothing merges unless you said so and its checks pass. You hear about every step. When an agent finds a problem outside its ticket it files one, a second model decides whether it joins the run, and what joins is marked on the plan, up to a limit. Afterwards a report says which pull request to review first, how each delivery measures up against its ticket, and what is waiting for you.
 
@@ -59,7 +59,7 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 
 - **Split it your way:** `⌘D` to the right, `⇧⌘D` down. Save a layout you like and open every new window with it.
 - **Sessions connect on their own.** Start a ticket and it opens in a pane; when an agent in a plain terminal claims a ticket, that pane becomes its session.
-- **See who needs you.** Each pane's bar says Running, Needs you or Idle, and Continue nudges a session on without leaving the window.
+- **See who needs you.** Each pane's bar says Running, Needs you or Idle, and Continue nudges a session on without leaving the window. When an agent stops to ask whether to trust a folder, its session card answers it: Trust and continue, or Exit.
 - **Nothing gets lost.** Quit Tomrade and your agents keep working; restart herdr and the layout comes back, every agent resuming its conversation.
 
 The window is built on [herdr](https://herdr.dev), the open-source agent multiplexer. On Windows herdr can't attach directly yet, so a ticket you start runs in the assistant panel, in herdr's own client or in Windows Terminal, and its status still comes back to the board.
@@ -96,12 +96,15 @@ Tomrade on your computer talks to each chat app directly, with no server of ours
 
 - **Dependency graph:** see what blocks what, with a badge on every ticket still waiting on unfinished work.
 - **Code link:** each ticket knows its branches, worktrees and pull requests. Its status follows git.
+- **Take over existing work:** scan a repository's unmerged branches, idle worktrees and open GitHub issues (and your local Claude Code and Codex sessions, if you allow it) into a draft backlog. Only what you tick becomes a ticket.
+- **Public build page:** publish the roadmap and changelog you tick, with a feedback link, as one static page on your repository's GitHub Pages.
+- **Agent scorecard:** in Usage, merged pull requests by the engine that wrote them: how many passed the first time and what each cost, saved as a share image without project content.
 - **MCP client:** connect any MCP server over stdio or HTTP. Its tools join the built-in ones, for the assistant and every agent.
 - **Files on GitHub:** share a project's files through a GitHub repository, found or created for you.
 - **Scripted engine:** a menu of workflows that runs with no model at all. Offline, keyless, repeatable.
 - **Plugin Studio:** describe the plugin you want. An agent writes and tests it, and it loads only after you confirm the build.
 
-**🧩 Everything is a plugin, including yours.** The database, the tool registry, the MCP server and the assistant are each a plugin you can swap out. Write your own against the Apache-2.0 SDK and ship it under any license, or ask an agent to write one for you in Plugin Studio. Register a tool once and it appears in the assistant and on the MCP server. Official plugins live in [tomrade-plugins](https://github.com/haoyuant/tomrade-plugins).
+**🧩 Everything is a plugin, including yours.** The database, the tool registry, the MCP server and the assistant are each a plugin you can swap out. Write your own against the Apache-2.0 SDK and ship it under any license, or ask an agent to write one for you in Plugin Studio. Register a tool once and it appears in the assistant and on the MCP server. A plugin can also ask your own model for a JSON answer without ever seeing a key, and feed its own sources into the Inbox. Official plugins live in [tomrade-plugins](https://github.com/haoyuant/tomrade-plugins).
 
 **🍅 Lock in. Don't forget your Kegels.** *Your pelvic floor is calling.* A tomato lives in the status bar: 25 minutes of focus, 5 off, and a long break every fourth round. A desktop widget floats over every window and lets clicks through; your boss walks by and sees a clock. The alert can be any audio file. We recommend recording yourself saying "Kegels." Too comfy to click? Tell the assistant "start a pomodoro" and it presses the button. *Disclaimer: the timer reminds you to take a break. The clenching is on you.*
 
