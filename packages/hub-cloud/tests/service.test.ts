@@ -429,6 +429,25 @@ it("two machines on one account agree on its projects and settings, and then the
   for (const spy of told) expect(spy).not.toHaveBeenCalled();
 });
 
+it("two machines left to their own timers pass a change on, and then send nothing", async () => {
+  const a = await machine({ syncMs: 1_000 });
+  const b = await machine({ syncMs: 1_000 });
+  await a.cloud.sync();
+  await b.cloud.sync();
+  // Nobody syncs by hand from here on: a change is queued, sent, and read on the other machine by the timers.
+  a.ctx.settings.set({ ...a.ctx.settings.get(), theme: "matcha" });
+  for (let i = 0; i < 80 && b.ctx.settings.get().theme !== "matcha"; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(b.ctx.settings.get().theme).toBe("matcha");
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  const sent = remote.requests.length;
+  const told = [vi.spyOn(a.ctx.settings, "refreshUserStore"), vi.spyOn(b.ctx.settings, "refreshUserStore")];
+  // Several passes on each.
+  await new Promise((resolve) => setTimeout(resolve, 4_000));
+  expect(remote.requests).toHaveLength(sent);
+  for (const spy of told) expect(spy).not.toHaveBeenCalled();
+  for (const m of [a, b]) expect(m.cloud.info().status.state).toBe("synced");
+}, 30_000);
+
 it("persists a removal before the debounce timer or process exit, and explicit sign-out locks offline access", async () => {
   const { cloud, ctx, project, dir } = await machine();
   await cloud.sync();
