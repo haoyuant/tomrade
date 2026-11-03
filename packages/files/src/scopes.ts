@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { loadJson } from "./git-sync.js";
 
@@ -36,6 +37,32 @@ export function ensureStoreId(dir: string, created: boolean): void {
   const file = path.join(dir, ".git", ID);
   if (!fs.existsSync(file)) fs.writeFileSync(file, created ? randomUUID() : LEGACY_STORE_ID);
 }
+
+/** A folder as a remote may carry it: under the home folder as `~/…`, forward-slashed, so it names the same place on a machine laid out alike. */
+export function homeForm(abs: string): string {
+  const home = os.homedir();
+  const rel = abs === home || abs.startsWith(home + path.sep) ? `~${abs.slice(home.length)}` : abs;
+  return rel.split(path.sep).join("/");
+}
+
+const fromHomeForm = (folder: string): string => (folder === "~" || folder.startsWith("~/") ? path.join(os.homedir(), ...folder.slice(2).split("/")) : folder);
+
+const realpath = (p: string): string => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
+/** Whether that folder, on this machine, is the store with that id and not the one at `own`. */
+export function otherStoreHere(folder: string, id: string, own: string): boolean {
+  const abs = fromHomeForm(folder);
+  return fs.existsSync(path.join(abs, ".git", ID)) && storeId(abs) === id && realpath(abs) !== realpath(own);
+}
+
+/** One name per store and folder: two old stores both read the legacy id, and must not write over each other's line. */
+export const presenceKey = (dir: string): string => createHash("sha256").update(`${storeId(dir)}\0${realpath(dir)}`).digest("hex").slice(0, 16);
 
 /**
  * Where a project's earlier Files stores go when the remote scope moves

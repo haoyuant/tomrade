@@ -449,6 +449,12 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           </button>
         </div>
       )}
+      {!!status.data?.elsewhere?.length && (
+        <div className="banner files-elsewhere-banner" role="status">
+          <Icon className="b-mark" name="i-warn" size={15} />
+          <span>{t("files.elsewhere", { folders: status.data.elsewhere.join(", ") })}</span>
+        </div>
+      )}
       {newFolder && <NamePrompt ariaLabel={t("files.newFolderNameAria")} placeholder={t("files.folderNamePlaceholder")} busy={busy} onCommit={createFolder} onCancel={() => setNewFolder(false)} />}
       {newNote && (
         <NamePrompt

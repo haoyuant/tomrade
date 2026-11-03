@@ -142,6 +142,49 @@ describe("a dedicated repository", () => {
     expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Theirs", status: "done" });
   });
 
+  it("a merge keeps what the other side added outside the project's data, the shared files above all, and a removal there still travels", async () => {
+    const a = await machine("keep-a");
+    const remote = bareRemote();
+    a.items.create({ title: "A's", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const b = await machine("keep-b");
+    // Two machines, two device logs: each merge writes the other's into its folder.
+    b.hub.deviceId = "device-b";
+    const id = await b.storage.attachRemote("git", { remote, branch: "main" });
+    const bDir = b.hub.catalog.project(id)!.dir!;
+    // A already tracks B's device log when B adds to it: a merge on A writes it into A's folder before git merges.
+    b.items.create({ title: "B's first", projectId: id, boardId: b.board.id, by: "human" });
+    await b.storage.publish(id);
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    b.items.create({ title: "B's", projectId: id, boardId: b.board.id, by: "human" });
+    await b.storage.publish(id);
+    // What the Files projection pushes beside the project's data.
+    teammateEdits(remote, (work) => {
+      fs.mkdirSync(path.join(work, "project-files"), { recursive: true });
+      fs.writeFileSync(path.join(work, "project-files", "report.md"), "new on the remote\n");
+    });
+    a.items.create({ title: "A's again", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    expect((await a.storage.publish(a.project.id)).state).toBe("synced");
+    expect(git(["rev-list", "--parents", "-n", "1", "main"], remote).split(" ")).toHaveLength(3);
+    expect(git(["show", "main:project-files/report.md"], remote)).toBe("new on the remote");
+    expect(fs.existsSync(path.join(a.dir, "project-files", "report.md"))).toBe(true);
+    expect(a.items.list({ projectId: a.project.id }).map((i) => i.title).sort()).toEqual(["A's", "A's again", "B's", "B's first"]);
+
+    // B never saw the file and moved on meanwhile: its merge takes the file in rather than undoing it.
+    b.items.create({ title: "B's again", projectId: id, boardId: b.board.id, by: "human" });
+    expect((await b.storage.publish(id)).state).toBe("synced");
+    expect(git(["show", "main:project-files/report.md"], remote)).toBe("new on the remote");
+    expect(fs.existsSync(path.join(bDir, "project-files", "report.md"))).toBe(true);
+
+    // A removal made there is a change like any other, and reaches the folder that moved too.
+    teammateEdits(remote, (work) => fs.rmSync(path.join(work, "project-files", "report.md")));
+    a.items.create({ title: "A's third", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    expect((await a.storage.publish(a.project.id)).state).toBe("synced");
+    expect(git(["ls-tree", "--name-only", "-r", "main", "project-files"], remote)).toBe("");
+    expect(fs.existsSync(path.join(a.dir, "project-files", "report.md"))).toBe(false);
+    expect(git(["status", "--porcelain"], a.dir)).toBe("");
+  }, 30_000);
+
   it("goes on reading, merging and pushing where git checks files out with core.autocrlf=true", async () => {
     const a = await machine("crlf");
     const remote = bareRemote();

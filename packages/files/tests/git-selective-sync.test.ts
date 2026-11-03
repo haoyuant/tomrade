@@ -176,6 +176,59 @@ describe("selective Git projection", { timeout: 30000 }, () => {
     expect(await reopened.syncPolicy()).toEqual(await a.syncPolicy());
   });
 
+  it("an old copy never takes files it lacks for deletions, even after the remote is put back to its tree; a real deletion still travels", async () => {
+    const remote = bare();
+    const project = target(remote, "project-files");
+    const a = await open(project);
+    const b = await open(project);
+    await a.write("kept.md", text("from the start")); await a.sync(); await b.sync();
+    // B stops here; A goes on writing.
+    const stale = run(remote, "rev-parse", "main:").trim();
+    await a.write("report.md", text("new on A")); await a.write("plan/notes.md", text("new on A too")); await a.sync();
+    // Something outside Files (the project's own merge, keeping its tree) publishes the old tree on top.
+    const head = run(remote, "rev-parse", "main").trim();
+    run(remote, "update-ref", "refs/heads/main", run(remote, "-c", "user.name=T", "-c", "user.email=t@localhost", "commit-tree", stale, "-p", head, "-m", "merge that kept its own tree").trim());
+    for (let round = 0; round < 3; round++) {
+      expect((await b.sync()).state).toBe("synced");
+      expect((await a.sync()).state).toBe("synced");
+    }
+    for (const store of [a, b]) {
+      expect(await store.read("report.md")).toMatchObject({ body: "new on A" });
+      expect(await store.read("plan/notes.md")).toMatchObject({ body: "new on A too" });
+      expect(run(store.dir, "log", "--diff-filter=D", "--name-only", "--format=").trim()).toBe("");
+    }
+    expect(run(remote, "show", "main:project-files/report.md")).toBe("new on A");
+
+    await a.remove("report.md"); await a.sync();
+    await b.sync();
+    expect(await b.read("report.md")).toBeNull();
+    expect(await b.read("plan/notes.md")).toMatchObject({ body: "new on A too" });
+    await a.sync();
+    expect(await a.read("report.md")).toBeNull();
+  });
+
+  it("finds a second folder on this machine syncing the same files, once, and forgets it when that folder is gone", async () => {
+    const remote = bare();
+    const project = target(remote, "project-files");
+    const a = await open(project);
+    await a.write("a.md", text("a")); await a.sync();
+    expect((await a.status()).elsewhere).toBeUndefined();
+    const b = await open(project);
+    await b.sync(); await a.sync();
+    expect((await a.status()).elsewhere).toEqual([b.dir]);
+    expect((await b.status()).elsewhere).toEqual([a.dir]);
+    // Each store says where it is once; a sync with nothing new publishes nothing.
+    const head = run(remote, "rev-parse", "main").trim();
+    await a.sync(); await b.sync();
+    expect(run(remote, "rev-parse", "main").trim()).toBe(head);
+    expect(run(remote, "ls-tree", "--name-only", "main", "project-files/.tomrade-files/stores/").trim().split("\n")).toHaveLength(2);
+
+    b.close();
+    fs.rmSync(b.dir, { recursive: true, force: true });
+    await a.sync();
+    expect((await a.status()).elsewhere).toBeUndefined();
+  });
+
   it("persists content and delete conflicts through reopen, and retries a refused push", async () => {
     const remote = bare(); const a = await open(target(remote));
     await a.write("a.txt", text("base")); await a.sync();

@@ -1345,6 +1345,8 @@ export class Storage extends Service implements StorageReader {
       if (body !== null) theirLogs.push({ device: path.basename(rel, ".jsonl"), ops: parseLog(body) });
     }
     this.mergeWith(projectId, entry, base, theirs, theirLogs);
+    // Merge first: written before, their logs are local edits git refuses to merge over.
+    await g.beginMerge(branch);
     // Their log files are content we would otherwise overwrite: write them into our folder before the merge commit.
     for (const log of theirLogs) {
       if (log.device === this.hub.deviceId) continue;
@@ -1355,7 +1357,6 @@ export class Storage extends Service implements StorageReader {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, body, "utf8");
     }
-    await g.beginMerge(branch);
     await this.publishInTurn(projectId, "merge");
   }
 
