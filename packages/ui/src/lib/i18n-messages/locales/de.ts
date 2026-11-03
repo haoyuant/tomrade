@@ -3162,6 +3162,8 @@ export const de: PartialMessages = {
     waitQuestion: "Fragt dich etwas",
     allow: "Erlauben",
     deny: "Ablehnen",
+    trustContinue: "Vertrauen und fortfahren",
+    trustExit: "Beenden",
     seeInPane: "Im Bereich ansehen",
     openInMain: "Im Hauptfenster öffnen",
     peekHint: "Zeigen zum Vorschauen, Klick zum Anzeigen",

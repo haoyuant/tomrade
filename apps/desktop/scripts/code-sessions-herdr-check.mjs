@@ -1102,14 +1102,34 @@ app.whenReady().then(async () => {
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
     const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 仍停留在当前会话')`), 3000);
     check("允许之后提示「已允许「…」· 仍停留在当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
-    // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
+    // A folder's trust is no permission (Enter there would pick "No, exit"): its card answers it with its own two buttons, never Allow or Deny.
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: null, action: null, detail: null } });
     ctx.emit("codeLink/changed", project.id);
     const trustCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))`;
-    // the state that says it waits carries what its screen asks, so no buttons by then means none at all
-    const trustWaits = await wait(async () => tjs(`${trustCard}?.dataset.status === 'wait'`), 5000);
-    const trustButtons = await tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow], [data-testid=cs-deny]')`);
-    check("屏幕上不是权限提示（信任文件夹）时卡片照旧等你，但没有「允许」「拒绝」，一个键也不发", trustWaits && !trustButtons && typedIn.length === 1, JSON.stringify({ typedIn, trustWaits, trustButtons }));
+    const trustLi = `${trustCard}?.closest('li')`;
+    const trustOffered = await wait(async () => tjs(`(() => { const li = ${trustLi}; return ${trustCard}?.dataset.status === 'wait' && !!li && JSON.stringify([...li.querySelectorAll('[data-testid=cs-row-actions] button')].map((b) => b.textContent)) === JSON.stringify(['信任并继续', '退出', '先看看']); })()`), 8000);
+    const trustButtons = await tjs(`!!${trustLi}?.querySelector('[data-testid=cs-allow], [data-testid=cs-deny]')`);
+    check("屏幕上问是否信任文件夹时卡片下有「信任并继续」「退出」「先看看」，没有「允许」「拒绝」，一个键也不发", trustOffered && !trustButtons && typedIn.length === 1, JSON.stringify({ typedIn, trustOffered, trustButtons, text: await tjs(`${trustLi}?.textContent ?? null`) }));
+    // The arrows its buttons press move this pane's printed cursor, as the agent's menu would.
+    let trustAt = 0;
+    const trustMenu = () => `printf 'Do you trust the files in this folder?\\n${trustAt === 0 ? "❯" : " "} 1. No, exit\\n${trustAt === 1 ? "❯" : " "} 2. Yes, I trust this folder\\n'`;
+    ctx.herdr.sendInput = async (pane, input) => {
+      typedIn.push([pane, input]);
+      const arrows = pane === sessions[3].pane ? (input.keys ?? []).filter((k) => k === "up" || k === "down") : [];
+      if (arrows.length) {
+        for (const k of arrows) trustAt = Math.max(0, Math.min(1, trustAt + (k === "down" ? 1 : -1)));
+        await showsOnScreen(pane, trustMenu(), trustAt === 0 ? "❯ 1. No, exit" : "❯ 2. Yes, I trust this folder");
+      }
+      return true;
+    };
+    const typedTrust = () => typedIn.slice(1).filter(([pane]) => pane === sessions[3].pane).map(([, input]) => input);
+    await tjs(`${trustLi}?.querySelector('[data-testid=cs-trust]')?.click(); true`);
+    const trusted = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已信任「${sessions[3].item.key}」的文件夹')`), 8000);
+    check("点「信任并继续」在它的格子里把光标移到「Yes, I trust this folder」再按 Enter", trusted && JSON.stringify(typedTrust()) === JSON.stringify([{ keys: ["down"] }, { keys: ["enter"] }]), JSON.stringify({ typed: typedTrust(), toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
+    const exitShown = await wait(async () => tjs(`!!${trustLi}?.querySelector('[data-testid=cs-trust-exit]:not([disabled])')`), 8000);
+    await tjs(`${trustLi}?.querySelector('[data-testid=cs-trust-exit]')?.click(); true`);
+    const left = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('「${sessions[3].item.key}」没有信任文件夹，已退出')`), 8000);
+    check("点「退出」在它的格子里把光标移回「No, exit」再按 Enter", exitShown && left && JSON.stringify(typedTrust().slice(2)) === JSON.stringify([{ keys: ["up"] }, { keys: ["enter"] }]), JSON.stringify({ exitShown, typed: typedTrust(), toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
     ctx.herdr.sendInput = realSendInput;
     // An assistant conversation asking with choices: its card answers with one of them, or opens it in the app window first.
     ctx.agent.engine({ id: "chooser", title: "Chooser", author: "ai:chooser", available: async () => ({ ok: true }), async turn(input, io) { if (input.input.kind === "text") { await io.tools.execute("ask_user", { question: "取消这 3 张重复工单？", options: ["确认", "再看看"] }); return { stop: "asked" }; } io.emit({ type: "text", text: "取消了" }); return { stop: "end" }; } });

@@ -1572,6 +1572,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
     links = () => [];
     herdrInstall = async () => ({ command: null, guide: "https://herdr.dev/docs/install/" });
     sessionAnswer = async (projectId: string, sessionId: string, which: string) => (answered.push([projectId, sessionId, which]), takes);
+    sessionTrust = async (projectId: string, sessionId: string, which: string) => (answered.push([projectId, sessionId, `trust:${which}`]), takes);
   }
   class FakeAgent extends Service {
     static provide = "agent";
@@ -1689,6 +1690,16 @@ it("lists the assistant's conversations from a cache read when they change, neve
   tails.set("w1:p1", "Do you want to proceed?\n  1. Yes\n❯ 2. No, and tell Claude what to do differently (esc)");
   await say({ type: "answer", sessionId: "s1", which: "deny" });
   expect(win.states.at(-1)!.sessions.find((s) => s.id === "s1")!.prompt).toBe("deny");
+  // A folder's trust only its screen tells of: Trust and continue or Exit, answered on its pane's menu.
+  tails.set("w1:p1", "Do you trust the files in this folder?\n❯ 1. No, exit\n  2. Yes, I trust this folder");
+  sessions[0] = { ...sessions[0]!, ask: { kind: "permission", tool: null, action: null, detail: null }, lastEventAt: 70 };
+  await say({ type: "refresh" });
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "s1")!.prompt).toBe("trust");
+  await say({ type: "trust", sessionId: "s1", which: "trust", token: 9 });
+  expect(answered.at(-1)).toEqual([projectId, "s1", "trust:trust"]);
+  expect(win.posts.slice(-2)).toEqual([{ type: "toast", text: expect.stringMatching(/^Trusted the folder of “.+” · you stayed where you were$/) }, { type: "answered", token: 9 }]);
+  await say({ type: "trust", sessionId: "s1", which: "exit" });
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: expect.stringMatching(/^“.+” left without trusting the folder · you stayed where you were$/) });
   // An ended session's pane is never read for a prompt.
   expect(tailReads).not.toContain("w1:p2");
   // Closed, the window's conversations are let go; opened again, they are read afresh.

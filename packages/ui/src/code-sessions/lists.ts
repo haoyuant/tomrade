@@ -36,7 +36,10 @@ export function statusOf(r: HereRow): BarStatus {
 }
 
 /** The session waits on a permission its card can answer: its agent declared the keys, and its screen shows that prompt. */
-export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== null && live(s) && isApprovalAsk(s);
+export const canAnswer = (s: SessionRow): boolean => s.approval && (s.prompt === "allow" || s.prompt === "deny") && live(s) && isApprovalAsk(s);
+
+/** The session waits on the folder's trust its screen asks: its card answers with Trust and continue or Exit. */
+export const canTrust = (s: SessionRow): boolean => s.prompt === "trust" && live(s) && isApprovalAsk(s);
 
 /** The choices of the question the session waits on, when its screen shows them as its hook told of them: picked from its card. */
 export const choicesOf = (s: SessionRow): string[] => (s.prompt === "choice" && live(s) && s.state === "waiting" && s.ask?.kind === "question" ? (s.ask.options ?? []) : []);

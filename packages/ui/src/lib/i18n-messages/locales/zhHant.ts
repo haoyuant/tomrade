@@ -3236,6 +3236,8 @@ export const zhHant: PartialMessages = {
     waitQuestion: "在問你問題",
     allow: "允許",
     deny: "拒絕",
+    trustContinue: "信任並繼續",
+    trustExit: "退出",
     seeInPane: "在格子裡看",
     openInMain: "在主視窗開啟",
     peekHint: "懸停看一眼，點一下顯示",
