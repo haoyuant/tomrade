@@ -29,6 +29,9 @@ async function ingest(payload: unknown, headers: Record<string, string> = {}) {
 const count = async (table: string) => (await db.query<{ n: number }>(`select count(*)::int as n from public.${table}`)).rows[0]!.n;
 
 beforeAll(async () => {
+  // Supabase's sessions run in UTC; the WASM database would take the machine's zone, and a date range turned into
+  // timestamps there would miss the events of the hours its date and UTC's differ.
+  await db.exec("set timezone = 'UTC'");
   await db.exec("create role anon; create role authenticated; create role service_role;");
   await db.exec(migration("202610230001_analytics.sql"));
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
@@ -186,7 +189,8 @@ describe("analytics ingest", () => {
     const fr = { ...base(), install_seq: 3, event_id: randomUUID(), event: "feature.activate", feature_id: "backlog.board", action: "open", dim: null };
     await expect(ingest(batch([fr]), { "cf-ipcountry": "FR" })).rejects.toThrow(/does not accept eu/);
     expect((await ingest(batch([{ ...cn, event_id: randomUUID(), install_seq: 4 }]), { "cf-ipcountry": "CN" })).rows[0]!.result.accepted).toBe(1);
-    await db.exec("reset all");
+    // Only what this test set: `reset all` would take the session's UTC away too.
+    await db.exec("reset tomrade.analytics_scope");
   });
 
   it("drops only whole event partitions past 180 days and aggregates past 25 months", async () => {
