@@ -397,6 +397,38 @@ it("a project removed while the catalog is being written is not listed again aft
   expect(cloud.cache.data.outbox.filter((op) => op.key === other.id).at(-1)).toMatchObject({ value: null });
 });
 
+it("two machines on one account agree on its projects and settings, and then their passes send nothing and tell no window", async () => {
+  const a = await machine();
+  await a.cloud.sync();
+  const b = await machine();
+  await b.cloud.sync();
+  expect(b.cloud.info().conflicts).toEqual([]);
+  const made = a.ctx.projects.create({ name: "Made on A", keyPrefix: "MOA" });
+  await a.ctx.storage.writeHub();
+  b.ctx.settings.set({ ...b.ctx.settings.get(), theme: "matcha" });
+  for (let round = 0; round < 2; round++) for (const m of [a, b]) await m.cloud.sync();
+  a.ctx.settings.set({ ...a.ctx.settings.get(), language: "zh" });
+  for (let round = 0; round < 2; round++) for (const m of [a, b]) await m.cloud.sync();
+
+  for (const m of [a, b]) {
+    expect(m.cloud.info().conflicts).toEqual([]);
+    expect(m.cloud.info().status.state).toBe("synced");
+    expect(m.cloud.manifest().projects.map((p) => p.id).sort()).toEqual([a.project.id, b.project.id, made.id].sort());
+    expect(m.ctx.settings.get()).toMatchObject({ theme: "matcha", language: "zh" });
+  }
+
+  const sent = remote.requests.length;
+  const told = [vi.spyOn(a.ctx.settings, "refreshUserStore"), vi.spyOn(b.ctx.settings, "refreshUserStore")];
+  for (let round = 0; round < 3; round++) {
+    for (const m of [a, b]) {
+      await m.ctx.storage.writeHub();
+      await m.cloud.sync();
+    }
+  }
+  expect(remote.requests).toHaveLength(sent);
+  for (const spy of told) expect(spy).not.toHaveBeenCalled();
+});
+
 it("persists a removal before the debounce timer or process exit, and explicit sign-out locks offline access", async () => {
   const { cloud, ctx, project, dir } = await machine();
   await cloud.sync();
