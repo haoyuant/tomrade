@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GitFolder, SyncRecorder, cleanRemote, execGit, type Git } from "@tomradex/git";
+import { GitFolder, REMOTE_TIMEOUT_MS, SyncRecorder, cleanRemote, execGit, type Git } from "@tomradex/git";
 import { exchangeFailure, type ExchangeFailure, type ExchangeStep } from "./sync-failure.js";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
@@ -28,6 +28,12 @@ export interface SyncState {
   /** Baseline for the listing dimension; absent on a state written before it existed. */
   agents?: FilesAgentPolicy;
   head?: string;
+  /**
+   * Per shared path, the record of its version the remote held when this machine's last push landed. Only a record the
+   * remote once held and no longer does tells of a remote that went back; one never sent tells nothing. Absent on a
+   * state written before it existed.
+   */
+  published?: Record<string, string>;
 }
 
 export const emptySyncState = (): SyncState => ({ v: 2, baseline: {}, conflicts: {} });
@@ -218,8 +224,8 @@ export class GitProjection {
     adoptCredentialedKey(local, target, this.key);
   }
 
-  private run(args: string[], ok = false, onStderr?: (text: string) => void) {
-    return this.git(args, { cwd: this.dir, ok, onStderr });
+  private run(args: string[], ok = false, onStderr?: (text: string) => void, timeout?: number) {
+    return this.git(args, { cwd: this.dir, ok, onStderr, timeout });
   }
 
   /**
@@ -243,13 +249,18 @@ export class GitProjection {
     await this.folder.setRemote(this.target.url);
     recorder.step("reaching");
     // Exit 2 is a reachable remote without the branch yet: where every project starts.
-    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true, recorder.stderr);
-    if (probe.code !== 0 && probe.code !== 2) return this.refused(recorder, "reach", probe.stderr);
+    const probe = await this.run(["ls-remote", "--exit-code", "origin", `refs/heads/${this.target.branch}`], true, recorder.stderr, REMOTE_TIMEOUT_MS.ask);
+    if ((probe.code !== 0 && probe.code !== 2) || probe.timedOut) return this.refused(recorder, "reach", probe.stderr);
     if (probe.code === 0) {
-      recorder.step("fetching");
-      const filter = this.prefix ? ["--filter=blob:none"] : [];
-      const fetched = await this.run(["fetch", "--progress", "--depth", "1", ...filter, "origin", this.target.branch], true, recorder.stderr);
-      if (fetched.code !== 0) return this.refused(recorder, "fetch", fetched.stderr);
+      const tip = probe.stdout.split(/\s/)[0];
+      const fetchedTip = (await this.run(["rev-parse", "-q", "--verify", `refs/remotes/origin/${this.target.branch}`], true)).stdout.trim();
+      // The tip fetched last time is still the remote's: there is nothing new to download.
+      if (!tip || tip !== fetchedTip) {
+        recorder.step("fetching");
+        const filter = this.prefix ? ["--filter=blob:none"] : [];
+        const fetched = await this.run(["fetch", "--progress", "--depth", "1", ...filter, "origin", this.target.branch], true, recorder.stderr, REMOTE_TIMEOUT_MS.transfer);
+        if (fetched.code !== 0) return this.refused(recorder, "fetch", fetched.stderr);
+      }
       await this.run(["update-ref", "HEAD", `refs/remotes/origin/${this.target.branch}`]);
       await this.run(["read-tree", "HEAD"]);
     } else {
@@ -279,7 +290,7 @@ export class GitProjection {
     if (!wanted.length) return null;
     const fetched = await this.git(
       ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "--stdin", "origin"],
-      { cwd: this.dir, ok: true, stdin: `${wanted.join("\n")}\n` },
+      { cwd: this.dir, ok: true, stdin: `${wanted.join("\n")}\n`, timeout: REMOTE_TIMEOUT_MS.transfer },
     );
     return fetched.code === 0 ? null : exchangeFailure("fetch", fetched.stderr ?? "");
   }
@@ -337,19 +348,21 @@ export class GitProjection {
     return { theirs: theirs.code === 0 ? theirs.stdout.trim() : null, ours: ours.stdout.trim() };
   }
 
-  /** Commit what changed on top of the fetched tip and push, never forced; null once it landed, else why not. */
+  /**
+   * Commit what changed on top of the fetched tip and push, never forced; null once it landed, else why not. With
+   * nothing changed HEAD is that tip, which the remote already has: nothing is committed or sent.
+   */
   async push(recorder = new SyncRecorder()): Promise<ExchangeFailure | null> {
-    recorder.step("pushing");
     const changed = await this.run(["diff", "--cached", "--quiet"], true);
     const head = await this.run(["rev-parse", "--verify", "HEAD"], true);
-    if (changed.code !== 0 || head.code !== 0) {
-      // Not `git commit`: it refreshes the index and so downloads the blobs a filtered fetch left out.
-      const tree = (await this.run(["write-tree", "--missing-ok"])).stdout.trim();
-      const parent = head.code === 0 ? ["-p", head.stdout.trim()] : [];
-      const commit = await this.run(["commit-tree", tree, ...parent, "-m", "Synchronize shared files"]);
-      await this.run(["update-ref", "HEAD", commit.stdout.trim()]);
-    }
-    const pushed = await this.run(["push", "--progress", "origin", `HEAD:refs/heads/${this.target.branch}`], true, recorder.stderr);
+    if (changed.code === 0 && head.code === 0) return null;
+    recorder.step("pushing");
+    // Not `git commit`: it refreshes the index and so downloads the blobs a filtered fetch left out.
+    const tree = (await this.run(["write-tree", "--missing-ok"])).stdout.trim();
+    const parent = head.code === 0 ? ["-p", head.stdout.trim()] : [];
+    const commit = await this.run(["commit-tree", tree, ...parent, "-m", "Synchronize shared files"]);
+    await this.run(["update-ref", "HEAD", commit.stdout.trim()]);
+    const pushed = await this.run(["push", "--progress", "origin", `HEAD:refs/heads/${this.target.branch}`], true, recorder.stderr, REMOTE_TIMEOUT_MS.transfer);
     return pushed.code === 0 ? null : this.refused(recorder, "push", pushed.stderr);
   }
 

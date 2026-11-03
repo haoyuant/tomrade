@@ -77,8 +77,17 @@ export const GIT_ENV = {
 };
 
 export interface Git {
-  (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string; onStderr?: (text: string) => void }): Promise<{ stdout: string; stderr?: string; code: number }>;
+  (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string; onStderr?: (text: string) => void; timeout?: number }): Promise<{ stdout: string; stderr?: string; code: number; timedOut?: boolean }>;
 }
+
+/**
+ * How long a command that talks to a remote may run before it is cut off and read as unreachable. git sets no limit of
+ * its own, so a connection that stalls (a VPN that drops, a proxy that never answers) would hold the project's sync turn,
+ * and every sync queued behind it, for ever.
+ */
+export const REMOTE_TIMEOUT_MS = { ask: 60_000, transfer: 300_000, clone: 900_000 } as const;
+
+const timedOutWords = (ms: number): string => `timed out: no answer within ${Math.round(ms / 1000)} s`;
 
 /** git itself takes this lock for a moment even on a "read" like `status`, to opportunistically refresh its index cache. */
 const isIndexLockContention = (stderr: string): boolean => /Unable to create '.*index\.lock': File exists/.test(stderr);
@@ -104,10 +113,10 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
     const argv = [...credentialArgs(credentials?.() ?? []), ...args];
     for (let attempt = 0; ; attempt++) {
       try {
-        const { stdout, stderr } = await execGit(binary, argv, { cwd, maxBuffer: 16 * 1024 * 1024, stdin: opts.stdin, onStderr: opts.onStderr });
+        const { stdout, stderr } = await execGit(binary, argv, { cwd, maxBuffer: 16 * 1024 * 1024, stdin: opts.stdin, onStderr: opts.onStderr, timeout: opts.timeout });
         return { stdout, stderr, code: 0 };
       } catch (error) {
-        const e = error as { code?: number | string | null; signal?: string | null; stderr?: string | Buffer; stdout?: string | Buffer };
+        const e = error as { code?: number | string | null; signal?: string | null; killed?: boolean; stderr?: string | Buffer; stdout?: string | Buffer };
         if (e.code === "ENOENT") throw new GitMissingError(binary);
         const stderrText = String(e.stderr ?? "");
         // Nothing ran yet when index.lock collides, so a retry is never a
@@ -117,7 +126,8 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
           continue;
         }
         // `ok` means a non-zero exit is an answer, not a failure — `diff --quiet`, say.
-        if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: stderrText, code: typeof e.code === "number" ? e.code : 1 };
+        const timedOut = !!opts.timeout && !!e.killed;
+        if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: timedOut ? `${stderrText}\n${timedOutWords(opts.timeout!)}` : stderrText, code: typeof e.code === "number" ? e.code : 1, ...(timedOut ? { timedOut } : {}) };
         throw new GitError(args, stderrText, { stdout: String(e.stdout ?? ""), code: e.code ?? null, signal: e.signal ?? null });
       }
     }
@@ -221,24 +231,36 @@ export class GitFolder {
     await this.git(["remote", "remove", name], { cwd: this.dir, ok: true });
   }
 
-  /** Stage a subtree (or everything) and commit if anything is staged. Returns whether a commit was made. */
+  /**
+   * Stage a subtree (or everything) and commit if anything is staged. Returns whether a commit was made. A whole-folder
+   * commit also concludes a merge under way, whose tree may equal HEAD's: left open, HEAD would not descend from the
+   * remote and every push after it would be turned away. A subtree commit takes only the subtree, and never during
+   * someone's merge, which is theirs to conclude.
+   */
   async commit(message: string, subtree?: string): Promise<boolean> {
+    if (subtree && (await this.merging())) return false;
     await this.git(subtree ? ["add", "-A", "--", subtree] : ["add", "-A"], { cwd: this.dir });
     if (!subtree) await this.dropEmbeddedRepositories();
-    if (!(await this.staged())) return false;
+    const merge = !subtree && (await this.merging());
+    if (!merge && !(await this.staged(subtree))) return false;
     await this.ensureIdentity();
     try {
-      await this.git(["commit", "-q", "-m", message], { cwd: this.dir });
+      await this.git(["commit", "-q", "-m", message, ...(subtree ? ["--", subtree] : [])], { cwd: this.dir });
     } catch (error) {
       // Another git committed what we staged in between: nothing was left to record, which is no failure.
-      if (!(await this.staged())) return false;
+      if (!(merge ? await this.merging() : await this.staged(subtree))) return false;
       throw error;
     }
     return true;
   }
 
-  private async staged(): Promise<boolean> {
-    return (await this.git(["diff", "--cached", "--quiet"], { cwd: this.dir, ok: true })).code !== 0;
+  private async staged(subtree?: string): Promise<boolean> {
+    return (await this.git(["diff", "--cached", "--quiet", ...(subtree ? ["--", subtree] : [])], { cwd: this.dir, ok: true })).code !== 0;
+  }
+
+  /** A merge was begun here and not yet concluded. */
+  async merging(): Promise<boolean> {
+    return (await this.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: this.dir, ok: true })).code === 0;
   }
 
   /**
@@ -263,7 +285,7 @@ export class GitFolder {
    * last is "offline"; an empty repository is where every project starts.
    */
   async probe(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<"exists" | "absent" | "offline"> {
-    const r = await this.git(["ls-remote", "--exit-code", name, `refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr });
+    const r = await this.git(["ls-remote", "--exit-code", name, `refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr, timeout: REMOTE_TIMEOUT_MS.ask });
     if (r.code === 0) return "exists";
     return r.code === 2 ? "absent" : "offline";
   }
@@ -276,7 +298,7 @@ export class GitFolder {
 
   /** `ok`: an unreachable remote is an answer, not a failure. With `onStderr`, git reports its progress there. */
   async fetch(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<boolean> {
-    const r = await this.git(["fetch", onStderr ? "--progress" : "-q", name, branch], { cwd: this.dir, ok: true, onStderr });
+    const r = await this.git(["fetch", onStderr ? "--progress" : "-q", name, branch], { cwd: this.dir, ok: true, onStderr, timeout: REMOTE_TIMEOUT_MS.transfer });
     return r.code === 0;
   }
 
@@ -299,12 +321,17 @@ export class GitFolder {
     await this.git(["merge", "-q", "--ff-only", `${name}/${branch}`], { cwd: this.dir });
   }
 
-  /** A refusal (non-fast-forward, a hook, no access) or a lost connection is reported with git's words, never forced. With `onStderr`, git reports its progress there. */
+  /**
+   * A refusal (non-fast-forward, a hook, no access) or a lost connection is reported with git's words, never forced;
+   * `stale` marks the refusal that only says the remote moved since we last fetched. With `onStderr`, git reports its
+   * progress there.
+   */
   async push(branch: string, name = "origin", onStderr?: (text: string) => void): Promise<PushResult> {
-    const r = await this.git(["push", onStderr ? "--progress" : "-q", name, `HEAD:refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr });
+    const r = await this.git(["push", onStderr ? "--progress" : "-q", name, `HEAD:refs/heads/${branch}`], { cwd: this.dir, ok: true, onStderr, timeout: REMOTE_TIMEOUT_MS.transfer });
     if (r.code === 0) return { ok: true };
     const detail = pushWords(r.stderr ?? "");
-    return { ok: false, reach: detail && BROKE_OFF.test(detail) ? "offline" : reachOf(detail), detail };
+    if (r.timedOut) return { ok: false, reach: "offline", detail };
+    return { ok: false, reach: detail && BROKE_OFF.test(detail) ? "offline" : reachOf(detail), detail, ...(STALE.test(r.stderr ?? "") ? { stale: true } : {}) };
   }
 
   async mergeBase(branch: string, name = "origin"): Promise<string | null> {
@@ -401,6 +428,9 @@ const reachOf = (detail: string | undefined): "offline" | "denied" => (detail &&
 /** A push that began and lost the connection is the network too, not the server saying no. */
 const BROKE_OFF = /hung up unexpectedly|early EOF|RPC failed|unexpected disconnect/i;
 
+/** The remote has commits we have not fetched: a fetch and a merge, then the push goes. */
+const STALE = /\[rejected\].*\((?:fetch first|non-fast-forward)\)/;
+
 const PROGRESS = /^(?:remote: )?(?:Enumerating|Counting|Compressing|Writing|Resolving|Delta compression|Total \d)/i;
 
 /** The remote's own reason sits above git's closing line; hints and the `To <url>` line say nothing. */
@@ -413,35 +443,35 @@ const pushWords = (stderr: string): string | undefined =>
     .join(" ")
     .slice(0, 400) || undefined;
 
-export type PushResult = { ok: true } | { ok: false; reach: "offline" | "denied"; detail?: string };
+export type PushResult = { ok: true } | { ok: false; reach: "offline" | "denied"; detail?: string; stale?: true };
 
 export async function probeUrl(git: Git, url: string, branch: string): Promise<{ reach: RemoteReach; detail?: string }> {
-  const r = await git(["ls-remote", "--exit-code", url, `refs/heads/${branch}`], { ok: true });
+  const r = await git(["ls-remote", "--exit-code", url, `refs/heads/${branch}`], { ok: true, timeout: REMOTE_TIMEOUT_MS.ask });
   if (r.code === 0) return { reach: "exists" };
-  if (r.code === 2) return { reach: "absent" };
+  if (r.code === 2 && !r.timedOut) return { reach: "absent" };
   const detail = lastWords(r.stderr ?? "");
-  return { reach: reachOf(detail), detail };
+  return { reach: r.timedOut ? "offline" : reachOf(detail), detail };
 }
 
 /** Clone one branch, or say why not without leaving a half-made folder behind. */
 export async function cloneBranch(git: Git, url: string, branch: string, dir: string): Promise<{ ok: true } | { ok: false; reach: "offline" | "denied"; detail?: string }> {
   fs.mkdirSync(path.dirname(dir), { recursive: true });
-  const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true });
+  const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true, timeout: REMOTE_TIMEOUT_MS.clone });
   if (r.code === 0) return { ok: true };
   fs.rmSync(dir, { recursive: true, force: true });
   const detail = lastWords(r.stderr ?? "");
-  return { ok: false, reach: reachOf(detail), detail };
+  return { ok: false, reach: r.timedOut ? "offline" : reachOf(detail), detail };
 }
 
 export async function cloneInto(git: Git, url: string, branch: string, dir: string): Promise<void> {
   fs.mkdirSync(path.dirname(dir), { recursive: true });
-  const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true });
+  const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true, timeout: REMOTE_TIMEOUT_MS.clone });
   if (r.code === 0) return;
   // An empty repository, or a branch that does not exist yet: start it here.
   fs.mkdirSync(dir, { recursive: true });
   await git(["init", "-q", "-b", branch], { cwd: dir });
   await git(["remote", "add", "origin", url], { cwd: dir });
-  const fetched = await git(["fetch", "-q", "origin", branch], { cwd: dir, ok: true });
+  const fetched = await git(["fetch", "-q", "origin", branch], { cwd: dir, ok: true, timeout: REMOTE_TIMEOUT_MS.transfer });
   if (fetched.code === 0) await git(["reset", "-q", "--hard", `origin/${branch}`], { cwd: dir, ok: true });
 }
 

@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { fresh, settle } from "@tomradex/testkit";
-import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
+import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, probeUrl, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-git-"));
@@ -477,6 +477,43 @@ describe("a dedicated repository", () => {
     await expect(a.storage.bind(a.project.id, "git", { remote, branch: "main" })).rejects.toThrow(/never pushes/);
   });
 
+  it("a push turned away because a teammate pushed after our fetch goes again at once, merged; with nothing of ours to push, none goes", async () => {
+    const remote = bareRemote();
+    const mate = path.join(root, `mate-${n++}`);
+    const ran = path.join(root, `ran-${n++}.log`);
+    // git as Tomrade runs it, except that the first push lets the teammate's push land just before it.
+    const wrapper = path.join(root, `git-${n++}.sh`);
+    fs.writeFileSync(wrapper, `#!/bin/sh\necho "$*" >> '${ran}'\ncase " $* " in *" push "*) if [ -f '${mate}.ready' ]; then rm '${mate}.ready'; git -C '${mate}' push -q origin HEAD:refs/heads/main; fi;; esac\nexec git "$@"\n`, { mode: 0o755 });
+    const a = await machine("stale-push", { gitBinary: wrapper });
+    const item = a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    git(["clone", "-q", "--branch", "main", remote, mate], root);
+    git(["config", "user.email", "mate@localhost"], mate);
+    git(["config", "user.name", "Mate"], mate);
+    const state = readArtifact(mate)!;
+    state.tables.items.find((r) => r.id === item.id)!.title = "Theirs";
+    state.manifest.snapshot!.digest = digestState(state);
+    writeArtifact(mate, state);
+    git(["add", "-A"], mate);
+    git(["commit", "-q", "-m", "teammate"], mate);
+    const theirs = git(["rev-parse", "HEAD"], mate);
+    fs.writeFileSync(`${mate}.ready`, "");
+
+    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    const status = await a.storage.publish(a.project.id);
+    expect(fs.existsSync(`${mate}.ready`)).toBe(false);
+    expect(status.state).toBe("synced");
+    expect(git(["rev-list", "--parents", "-n", "1", "main"], remote).split(" ")).toContain(theirs);
+    expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Theirs", status: "done" });
+    expect(a.storage.pending(a.project.id)?.count).toBe(0);
+
+    fs.writeFileSync(ran, "");
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    const commands = fs.readFileSync(ran, "utf8").split("\n");
+    expect(commands.some((c) => c.startsWith("fetch"))).toBe(true);
+    expect(commands.filter((c) => c.startsWith("push") || c.startsWith("commit"))).toEqual([]);
+  });
+
   it("exports the same bytes whichever machine wrote them", async () => {
     const a = await machine("bytes-a");
     const remote = bareRemote();
@@ -595,6 +632,74 @@ describe("git itself", () => {
     };
     expect(await new GitFolder(racing, dir).commit("ours")).toBe(false);
     expect(git(["log", "--format=%s"], dir)).toBe("theirs");
+  });
+
+  it("concludes a merge whose tree is HEAD's own, so the push after it fast-forwards the remote", async () => {
+    const remote = bareRemote();
+    const dir = repo();
+    git(["remote", "add", "origin", remote], dir);
+    fs.writeFileSync(path.join(dir, "f.txt"), "a\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-q", "-m", "base"], dir);
+    git(["push", "-q", "origin", "HEAD:refs/heads/main"], dir);
+    const other = path.join(root, `other-${n++}`);
+    git(["clone", "-q", "--branch", "main", remote, other], root);
+    fs.writeFileSync(path.join(other, "f.txt"), "b\n");
+    git(["-c", "user.email=o@localhost", "-c", "user.name=O", "commit", "-q", "-am", "theirs"], other);
+    git(["push", "-q", "origin", "HEAD:refs/heads/main"], other);
+    // Ours arrives at the same content by another commit, as two machines that merged the same pair do.
+    fs.writeFileSync(path.join(dir, "f.txt"), "b\n");
+    git(["commit", "-q", "-am", "ours"], dir);
+    git(["fetch", "-q", "origin", "main"], dir);
+
+    const g = new GitFolder(gitRunner("git"), dir);
+    await g.beginMerge("main");
+    expect(await g.merging()).toBe(true);
+    expect(await g.commit("merge")).toBe(true);
+    expect(await g.merging()).toBe(false);
+    expect(await g.push("main")).toEqual({ ok: true });
+  });
+
+  it("commits only its own subtree, and never concludes someone's merge", async () => {
+    const dir = repo();
+    fs.writeFileSync(path.join(dir, "README.md"), "# code\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-q", "-m", "code"], dir);
+    fs.mkdirSync(path.join(dir, ".tomrade"));
+    fs.writeFileSync(path.join(dir, ".tomrade", "a.json"), "{}\n");
+    fs.writeFileSync(path.join(dir, "wip.ts"), "// staged by its owner\n");
+    git(["add", "wip.ts"], dir);
+    const g = new GitFolder(gitRunner("git"), dir);
+    expect(await g.commit("tomrade", ".tomrade")).toBe(true);
+    expect(git(["show", "--name-only", "--format=", "HEAD"], dir)).toBe(".tomrade/a.json");
+    expect(git(["diff", "--cached", "--name-only"], dir)).toBe("wip.ts");
+
+    git(["commit", "-q", "-m", "wip"], dir);
+    git(["checkout", "-q", "-b", "side"], dir);
+    fs.writeFileSync(path.join(dir, "side.ts"), "// side\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-q", "-m", "side"], dir);
+    git(["checkout", "-q", "main"], dir);
+    git(["merge", "-q", "--no-ff", "--no-commit", "side"], dir);
+    fs.writeFileSync(path.join(dir, ".tomrade", "b.json"), "{}\n");
+    const head = git(["rev-parse", "HEAD"], dir);
+    expect(await g.commit("tomrade", ".tomrade")).toBe(false);
+    expect(git(["rev-parse", "HEAD"], dir)).toBe(head);
+    expect(await g.merging()).toBe(true);
+  });
+
+  it("cuts off a command that hangs, and a remote that never answered reads as offline", async () => {
+    const slow = path.join(root, `slow-${n++}.sh`);
+    fs.writeFileSync(slow, "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+    const started = Date.now();
+    const r = await gitRunner(slow)(["ls-remote", "origin"], { ok: true, timeout: 200 });
+    expect(r.timedOut).toBe(true);
+    expect(r.code).not.toBe(0);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const hung: Git = async () => ({ stdout: "", stderr: "", code: 1, timedOut: true });
+    expect(await new GitFolder(hung, root).probe("main")).toBe("offline");
+    expect(await new GitFolder(hung, root).push("main")).toMatchObject({ ok: false, reach: "offline" });
+    expect(await probeUrl(hung, "https://example.invalid/p.git", "main")).toMatchObject({ reach: "offline" });
   });
 
   it("takes away an index.lock only when no git could still hold it", async () => {

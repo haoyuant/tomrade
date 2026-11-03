@@ -95,7 +95,16 @@ export class CloudCache {
   }
   /** The cloud's records: all of them, or with `partial` only those changed since the last read, laid over the ones kept. */
   ingest(records: CloudRecord[], partial = false): void {
-    this.data.records = partial ? [...this.data.records.filter(r => !records.some(n => recordKey(n) === recordKey(r))), ...records] : records;
+    let next = records;
+    if (partial) {
+      // In place: a row read again keeps its position, so reading it again unchanged changes nothing.
+      const read = new Map(records.map(r => [recordKey(r), r]));
+      const kept = new Set(this.data.records.map(recordKey));
+      next = [...this.data.records.map(r => read.get(recordKey(r)) ?? r), ...records.filter(r => !kept.has(recordKey(r)))];
+    }
+    // Each read overlaps the last by a minute, and the database orders a value's keys its own way: neither is a change.
+    if (JSON.stringify(canonical(next)) === JSON.stringify(canonical(this.data.records))) return;
+    this.data.records = next;
     this.save();
   }
   accept(op: Mutation, record: CloudRecord): void {

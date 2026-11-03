@@ -23,10 +23,12 @@ import {
   digestFiles,
   digestState,
   exportState,
+  hubProjectOf,
   importState,
   parseLog,
   readArtifact,
   readLogs,
+  sameHubProject,
   serializeState,
   stateFiles,
   writeArtifact
@@ -744,6 +746,16 @@ describe("ctx.storage", () => {
     expect((await storage.writeHub())?.projects.map((p) => p.id)).toContain("elsewhere");
     expect(fs.readFileSync(ignoreFile, "utf8")).toBe(ignore);
     expect((await storage.hubStatus()).state).toBe("local");
+  });
+
+  it("names where a project was last seen without its branch, and takes a record whose keys came back reordered as the same", () => {
+    const entry = { id: "p", name: "P", keyPrefix: "P", git: "shared", remote: null } as unknown as Parameters<typeof hubProjectOf>[0];
+    const seen = hubProjectOf(entry, { url: "github.com/acme/app", branch: "tom-1/a-ticket" }, 1);
+    expect(seen.hint).toBe("github.com/acme/app");
+    expect(hubProjectOf(entry, { url: "github.com/acme/app", branch: "main" }, 2)).toEqual({ ...seen, updatedAt: 2 });
+    const reordered = { updatedAt: 9, hint: seen.hint, keyPrefix: "P", remote: null, name: "P", id: "p" };
+    expect(sameHubProject(seen, reordered)).toBe(true);
+    expect(sameHubProject(seen, { ...reordered, name: "Q" })).toBe(false);
   });
 
   it("removing a project keeps its folder unless asked", async () => {

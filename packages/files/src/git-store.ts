@@ -186,6 +186,8 @@ export class GitFileStore implements FileStore {
   private quietUntil = 0;
   private syncing = false;
   private syncQueue: Promise<FilesStatus> | null = null;
+  /** A change asked for a push while a sync ran; one more follows it. */
+  private changedMidSync = false;
   private lastSyncAt: number | null = null;
   private problem: { state: "offline" | "error"; detail?: string; failure?: FilesSyncFailure } | null = null;
   private recorder: SyncRecorder | null = null;
@@ -484,6 +486,8 @@ export class GitFileStore implements FileStore {
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = setTimeout(() => {
       this.pushTimer = null;
+      // The sync under way may have taken its snapshot before this change: another follows it.
+      if (this.syncQueue) this.changedMidSync = true;
       void this.sync().catch((error) => this.opts.warn(`sync failed: ${errorMessage(error)}`));
     }, this.opts.pushMs ?? 3_000);
     this.pushTimer.unref?.();
@@ -1012,6 +1016,8 @@ export class GitFileStore implements FileStore {
       return this.status();
     })().finally(() => {
       this.syncQueue = null;
+      if (this.changedMidSync && !this.closed) this.schedulePush();
+      this.changedMidSync = false;
     });
     return this.syncQueue;
   }
@@ -1019,7 +1025,7 @@ export class GitFileStore implements FileStore {
   /**
    * Save, then — with a remote — probe, fetch, merge, push. Leaves `problem`
    * for `status()` to report. Only the steps that touch the index and working
-   * copy hold the store's lock: the network calls have no timeout, and a save,
+   * copy hold the store's lock: the network calls may take minutes before they are cut off, and a save,
    * a delete or an undo waiting behind an unreachable remote would read as the
    * app not responding. Fetch writes refs and objects only, and push reads
    * them, so a local commit landing beside either is safe.
@@ -1057,14 +1063,17 @@ export class GitFileStore implements FileStore {
         recorder.step("merging");
         const snapshot = await this.locked(() => this.reconcile(projection));
         if (!snapshot) return;
-        if (this.undoing(await projection.trees())) {
+        const trees = await projection.trees();
+        if (this.undoing(trees)) {
           this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
           return;
         }
         const unpushed = await projection.push(recorder);
         if (unpushed) return this.failed(unpushed);
+        this.published(trees);
         await this.locked(async () => {
           this.syncState.baseline = snapshot.baseline;
+          this.syncState.published = snapshot.published;
           this.syncState.policy = snapshot.policy;
           this.syncState.agents = snapshot.agents;
           this.syncState.head = snapshot.head;
@@ -1101,10 +1110,14 @@ export class GitFileStore implements FileStore {
    * each round is a commit on a branch people share.
    */
   private undoing({ theirs, ours }: { theirs: string | null; ours: string }): boolean {
-    if (theirs === ours) return false;
+    return theirs !== ours && theirs === this.flip.replaced && ours === this.flip.published && this.flip.rounds >= FLIP_ROUNDS;
+  }
+
+  /** Counted only once a push landed: one the remote turned away replaced nothing, however often it is tried. */
+  private published({ theirs, ours }: { theirs: string | null; ours: string }): void {
+    if (theirs === ours) return;
     if (theirs === this.flip.replaced && ours === this.flip.published) this.flip.rounds++;
     else this.flip = { replaced: theirs, published: ours, rounds: 1 };
-    return this.flip.rounds > FLIP_ROUNDS;
   }
 
   /**
@@ -1134,10 +1147,12 @@ export class GitFileStore implements FileStore {
       const chosen = mine !== was && yours !== was && mine !== yours ? settle(path) : mine !== was ? mine : yours;
       if (chosen) result.set(path, chosen);
     }
-    return { default: result.get("") ?? ours.default, rules: [...result].filter(([path]) => path).map(([path, mode]) => ({ path, mode })) };
+    // In path order: in the order each machine met them, two machines would publish the same rules as different bytes, every round.
+    const rules = [...result].filter(([path]) => path).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, mode]) => ({ path, mode }));
+    return { default: result.get("") ?? ours.default, rules };
   }
 
-  private async reconcile(projection: GitProjection): Promise<{ baseline: Record<string, string>; policy: FilesSyncPolicy; agents: FilesAgentPolicy; head: string } | null> {
+  private async reconcile(projection: GitProjection): Promise<{ baseline: Record<string, string>; published: Record<string, string>; policy: FilesSyncPolicy; agents: FilesAgentPolicy; head: string } | null> {
     this.loadSyncState(projection.key);
     await this.commitAll("Saved");
     const policyBytes = await projection.read(`${IDS_DIR}/policy.json`);
@@ -1239,6 +1254,7 @@ export class GitFileStore implements FileStore {
     const ledger = this.readLedger();
     const lines: LedgerLine[] = [];
     const baseline: Record<string, string> = {};
+    const records = new Map<string, string>();
     for (const [p, oid] of outgoing) {
       // Only what the remote lacks is read; an outside edit since the commit is simply what gets published.
       if (projection.oid(p) !== oid) await projection.write(p, fs.readFileSync(this.abs(p)));
@@ -1251,13 +1267,16 @@ export class GitFileStore implements FileStore {
       lines.push({ id: fileId, path: p, at });
       const versionId = await this.versionOf(p);
       if (versionId && !this.record({ fileId, versionId })) await this.archive({ fileId, versionId, path: p }, null);
+      const rel = versionId ? this.recordPath({ fileId, versionId }) : null;
+      if (rel) records.set(p, rel);
     }
     for (const p of remoteOids.keys()) if (!outgoing.has(p)) await projection.write(p, null);
     // Lines in another order say the same; rewriting them would only start another round.
     if (!sameLedger(lines, remoteIds)) await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
     await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify({ v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy)));
     await this.exportRecords(projection, selected);
-    return { baseline, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };
+    const published = Object.fromEntries([...records].filter(([, rel]) => projection.has(`${IDS_DIR}/${rel}.json`)));
+    return { baseline, published, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };
   }
 
   /** Say on the remote which folder this store is, once; and find the other stores of these files that live on this machine too. */
@@ -1297,6 +1316,9 @@ export class GitFileStore implements FileStore {
     if (!fileId) return false;
     const versionId = await this.versionOf(p);
     const rel = versionId ? this.recordPath({ fileId, versionId }) : null;
+    // A copy received here and never sent on — the sync stopped at a clash, or its push did not land — was never the remote's to lose.
+    const published = this.syncState.published;
+    if (published && rel && published[p] !== rel) return false;
     return !!rel && !!this.record({ fileId, versionId: versionId! }) && !projection.has(`${IDS_DIR}/${rel}.json`);
   }
 

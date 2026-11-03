@@ -30,7 +30,7 @@ export {
   type SnapshotInfo,
   type StateDb
 } from "./state.js";
-export { HUB_MANIFEST, HubManifestUnreadableError, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubProject, type HubBackend } from "./hub.js";
+export { HUB_MANIFEST, HubManifestUnreadableError, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, sameHubProject, writeHubManifest, type HubManifest, type HubProject, type HubBackend } from "./hub.js";
 export { appendLog, compactLog, logFile, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 // Moved to @tomradex/git; still here for full-mode plugins that import them from storage.
 export { GIT_ENV, GitError, GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, cloneBranch, cloneInto, credentialArgs, gitRunner, hasConflictMarkers, probeUrl, shortHash, type Git, type GitCredential, type RemoteReach } from "@tomradex/git";
