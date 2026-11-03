@@ -54,7 +54,9 @@ export const HubConfig = z.object({
   /** Offered on first run. Not ~/Documents: macOS may hand that folder to iCloud and evict files. */
   defaultDir: z.string().optional(),
   /** Tests: keep everything in RAM and treat the Hub as configured at `defaultDir`. */
-  memory: z.boolean().default(false)
+  memory: z.boolean().default(false),
+  /** With `memory`: this machine's id, for tests that play more than one machine. */
+  device: z.string().optional()
 });
 export type HubConfig = z.infer<typeof HubConfig>;
 
@@ -168,7 +170,7 @@ export class Hub extends Service implements HubReader {
   }
 
   private loadDevice(): string {
-    if (this.config.memory || !this.config.deviceFile) return this.config.memory ? "test-device" : randomBytes(6).toString("hex");
+    if (this.config.memory || !this.config.deviceFile) return this.config.memory ? (this.config.device ?? "test-device") : randomBytes(6).toString("hex");
     const existing = readJsonOr<{ id?: unknown } | undefined>(this.config.deviceFile, undefined);
     if (existing && typeof existing.id === "string" && existing.id) return existing.id;
     const id = randomBytes(6).toString("hex");

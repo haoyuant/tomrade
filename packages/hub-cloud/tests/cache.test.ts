@@ -15,6 +15,8 @@ describe("durable Hub outbox", () => {
     const location = file();
     const a = new CloudCache(location, "https://example.supabase.co");
     a.observe("project", "p1", project("One"));
+    // Sent, and its reply lost: the next edit is a request of its own.
+    a.sending(a.data.outbox[0].id);
     a.observe("project", "p1", project("Two"));
     const b = new CloudCache(location, "https://example.supabase.co");
     expect(b.data.outbox).toEqual(a.data.outbox);
@@ -23,6 +25,30 @@ describe("durable Hub outbox", () => {
     b.accept(first, { kind: "project", key: "p1", value: project("One"), version: 1 });
     expect(b.view()[0].value).toEqual(project("Two"));
     expect(new CloudCache(location, "https://example.supabase.co").data.outbox).toHaveLength(1);
+  });
+  it("folds edits made before any was sent into one request, and never changes one that may have gone", () => {
+    const location = file();
+    const cache = new CloudCache(location, "https://example.supabase.co");
+    cache.observe("project", "p1", project("One"));
+    cache.accept(cache.data.outbox[0], { kind: "project", key: "p1", value: project("One"), version: 1 });
+    cache.observe("project", "p1", project("Two"));
+    cache.observe("project", "p1", project("Three"));
+    expect(cache.data.outbox).toMatchObject([{ value: project("Three"), base_version: 1 }]);
+    // Back to what the cloud has: nothing to send.
+    cache.observe("project", "p1", project("One"));
+    expect(cache.data.outbox).toEqual([]);
+    cache.observe("project", "p1", project("Four"));
+    const gone = { ...cache.data.outbox[0] };
+    cache.sending(gone.id);
+    cache.observe("project", "p1", project("Five"));
+    expect(cache.data.outbox).toEqual([gone, expect.objectContaining({ value: project("Five"), base_version: 2 })]);
+    // After a restart too.
+    const again = new CloudCache(location, "https://example.supabase.co");
+    again.observe("project", "p1", project("Six"));
+    expect(again.data.outbox.map((p) => p.value)).toEqual([project("Four"), project("Six")]);
+    expect(again.data.outbox[0]).toEqual(gone);
+    again.accept(gone, { kind: "project", key: "p1", value: project("Four"), version: 2 });
+    expect(again.data.sent).toEqual([]);
   });
   it("does not overwrite a remote edit just because an unchanged local checkout was observed again", () => {
     const cache = new CloudCache(file(), "https://example.supabase.co");
@@ -76,6 +102,7 @@ describe("durable Hub outbox", () => {
   it("rebases queued follow-up edits when an equivalent value already exists at a later cloud revision", () => {
     const cache = new CloudCache(file(), "https://example.supabase.co");
     cache.observe("project", "p1", project("One"));
+    cache.sending(cache.data.outbox[0].id);
     cache.observe("project", "p1", project("Two"));
     const [first, second] = cache.data.outbox;
     cache.accept(first, { kind: "project", key: "p1", value: project("One"), version: 5 });

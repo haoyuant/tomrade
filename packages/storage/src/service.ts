@@ -196,6 +196,8 @@ export class Storage extends Service implements StorageReader {
   private attentionByProject = new Map<string, Attention[]>();
   /** Folders whose files do not match their manifest: since when, and whether the person has been told. */
   private torn = new Map<string, { since: number; told: boolean }>();
+  /** Each folder's logs as last taken in, so another machine's history is read once it moves, and only then. */
+  private logsSeen = new Map<string, string>();
   /** A folder's digest as status last read it, kept while its files are the ones it read. */
   private folderSeen = new Map<string, { stamp: string; verify: boolean; digest: string | null }>();
   /** The local digest as status last computed it, kept row by row. */
@@ -1027,7 +1029,9 @@ export class Storage extends Service implements StorageReader {
   private manifestChanged(dir: string, state: ProjectState): boolean {
     try {
       const current = JSON.parse(fs.readFileSync(path.join(dir, ARTIFACT_DIR, "project.json"), "utf8")) as ProjectState["manifest"];
-      const strip = (m: ProjectState["manifest"]) => JSON.stringify({ ...m, snapshot: m.snapshot ? { ...m.snapshot, at: 0 } : undefined });
+      // The checkpoint alone is no change worth a commit: each machine counts what it has taken in, and two writing their
+      // own count in turn would never stop.
+      const strip = (m: ProjectState["manifest"]) => JSON.stringify({ ...m, snapshot: m.snapshot ? { ...m.snapshot, at: 0, checkpoint: {} } : undefined });
       return strip(current) !== strip(state.manifest);
     } catch {
       return true;
@@ -1207,6 +1211,29 @@ export class Storage extends Service implements StorageReader {
     return false;
   }
 
+  /** The folder's logs as they stand, cheaply: whether another machine's history arrived since they were last read. */
+  private logStamp(dir: string): string {
+    const logs = path.join(dir, ARTIFACT_DIR, LOG_DIR);
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(logs).filter((name) => name.endsWith(".jsonl")).sort();
+    } catch {
+      return "";
+    }
+    return names.map((name) => {
+      const stat = fs.statSync(path.join(logs, name), { throwIfNoEntry: false });
+      return stat ? `${name}\0${stat.size}\0${stat.mtimeMs}` : name;
+    }).join("\n");
+  }
+
+  /** Another machine's history, taken in whenever its log moved, whether or not the project's state did. */
+  private takeForeignLogs(projectId: string, dir: string): void {
+    const stamp = this.logStamp(dir);
+    if (this.logsSeen.get(dir) === stamp) return;
+    this.importForeignLogs(projectId, dir);
+    this.logsSeen.set(dir, stamp);
+  }
+
   private importForeignLogs(projectId: string, dir: string): number {
     const own = this.hub.deviceId;
     let imported = 0;
@@ -1247,13 +1274,14 @@ export class Storage extends Service implements StorageReader {
     if (!entry.dir) return;
     // The folder unchanged since it was last read, and holding what was published: nothing to take, nothing to parse.
     const known = this.folderDigest(entry.dir, this.verifies(projectId));
-    if (!known.problem && known.digest !== null && known.digest === entry.lastPublishedDigest) return;
+    // The state as published, but another machine's log may have moved (a merge's notes, say): its history comes in all the same.
+    if (!known.problem && known.digest !== null && known.digest === entry.lastPublishedDigest) return this.takeForeignLogs(projectId, entry.dir);
     const { state, problem } = this.readFolder(entry.dir, this.verifies(projectId));
     if (problem) this.gaveUp(projectId, "not read", problem);
     if (!state) return;
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
-    if (onDisk === entry.lastPublishedDigest) return;
+    if (onDisk === entry.lastPublishedDigest) return this.takeForeignLogs(projectId, entry.dir);
     const local = this.localDigest(projectId, entry);
     if (local === entry.lastPublishedDigest) this.importInto(projectId, entry, state);
     else {
@@ -1276,7 +1304,10 @@ export class Storage extends Service implements StorageReader {
     const always = (ns: string) => registrations.some((r) => r.namespace === ns && Object.values(r.tables).some((t) => t.export && t.export.always));
     const additive = Object.keys(taken.plugins).filter((ns) => !entry.exports.includes(ns) && !always(ns));
     importState(this.db(projectId), taken, { registrations, additive });
-    if (entry.dir) this.importForeignLogs(projectId, entry.dir);
+    if (entry.dir) {
+      this.importForeignLogs(projectId, entry.dir);
+      this.logsSeen.set(entry.dir, this.logStamp(entry.dir));
+    }
     this.savePublished(projectId, base);
     const digest = base.manifest.snapshot?.digest ?? digestState(base);
     const patch: Partial<CatalogProject> = { lastPublishedDigest: digest, lastSyncAt: Date.now(), name: String(state.manifest.project.name ?? entry.name), keyPrefix: String(state.manifest.project.key_prefix ?? entry.keyPrefix) };
@@ -1368,6 +1399,8 @@ export class Storage extends Service implements StorageReader {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, body, "utf8");
     }
+    // The merge took their state in before their logs were here: their history comes in now.
+    this.takeForeignLogs(projectId, dir);
     await this.publishInTurn(projectId, "merge");
   }
 

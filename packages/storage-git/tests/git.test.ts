@@ -29,10 +29,10 @@ function bareRemote(): string {
 // The snapshot timers must never fire mid-test: a timed publish fetches, merges and pushes, and a loaded machine can run a test past a minute.
 const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, remoteFreshMs: 0, remoteRetryMs: 0 };
 
-async function machine(label: string, storage: Record<string, unknown> = {}) {
+async function machine(label: string, storage: Record<string, unknown> = {}, device?: string) {
   const hubDir = path.join(root, `${label}-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
-  const bag = await fresh({ hubDir, plugins: [[Storage, { ...QUIET, ...storage }], storageGit] });
+  const bag = await fresh({ hubDir, device, plugins: [[Storage, { ...QUIET, ...storage }], storageGit] });
   await settle();
   await bag.ctx.storage.ready;
   return { ...bag, storage: bag.ctx.storage, hubDir, dir: bag.hub.catalog.project(bag.project.id)!.dir! };
@@ -525,6 +525,59 @@ describe("a dedicated repository", () => {
     const two = readArtifact(b.hub.catalog.project(id)!.dir!)!;
     expect(digestState(two)).toBe(digestState(one));
   });
+});
+
+describe("two machines on one project", () => {
+  it("agree after both edit it, the same ticket and the same field included, and then commit nothing more", async () => {
+    // Two machines, each with a device of its own, as real ones are.
+    const a = await machine("pair-a", {}, "machine-a");
+    const remote = bareRemote();
+    const shared = a.items.create({ title: "Shared", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const b = await machine("pair-b", {}, "machine-b");
+    const id = await b.storage.attachRemote("git", { remote, branch: "main" });
+    expect(id).toBe(a.project.id);
+    const both = [a, b];
+
+    // A ticket each, and different fields of the same one, before either has heard of the other's.
+    a.items.create({ title: "From A", projectId: id, boardId: shared.boardId, by: "human" });
+    b.items.create({ title: "From B", projectId: id, boardId: shared.boardId, by: "human" });
+    a.items.update(id, shared.id, { status: "doing" }, "human");
+    b.items.update(id, shared.id, { priority: 3 }, "human");
+    await a.storage.publish(id);
+    await b.storage.publish(id);
+    await a.storage.sync(id);
+    // Then the same field.
+    a.items.update(id, shared.id, { title: "Title from A" }, "human");
+    b.items.update(id, shared.id, { title: "Title from B" }, "human");
+    await a.storage.publish(id);
+    await b.storage.publish(id);
+    for (let round = 0; round < 2; round++) for (const m of both) await m.storage.sync(id);
+    const view = (m: typeof a) => m.items.list({ projectId: id }).map((i) => ({ id: i.id, title: i.title, status: i.status, priority: i.priority, key: i.keyNum })).sort((x, y) => x.id.localeCompare(y.id));
+    expect(view(b)).toEqual(view(a));
+    expect(view(a).map((i) => i.title)).toEqual(expect.arrayContaining(["From A", "From B"]));
+    expect(new Set(view(a).map((i) => i.key)).size).toBe(view(a).length);
+    expect(a.items.get(id, shared.id)).toMatchObject({ status: "doing", priority: 3 });
+    expect(["Title from A", "Title from B"]).toContain(a.items.get(id, shared.id)!.title);
+    for (const m of both) expect((await m.storage.statusFor(id)).state).toBe("synced");
+
+    // Settled: syncing and sweeping again, on both, adds nothing to the remote.
+    const commits = () => git(["rev-list", "--count", "main"], remote);
+    const settled = commits();
+    for (let round = 0; round < 3; round++) {
+      for (const m of both) {
+        await m.storage.sync(id);
+        await m.storage.reconcile(id);
+      }
+    }
+    expect(commits()).toBe(settled);
+    for (const m of both) {
+      expect(m.storage.pending(id)?.count).toBe(0);
+      expect(git(["status", "--porcelain"], m.hub.catalog.project(id)!.dir!)).toBe("");
+      // Each has the other's history: what both count as taken in is the same.
+      expect(readArtifact(m.hub.catalog.project(id)!.dir!)!.manifest.snapshot?.checkpoint).toEqual(readArtifact(a.hub.catalog.project(id)!.dir!)!.manifest.snapshot?.checkpoint);
+    }
+  }, 60_000);
 });
 
 describe("the Hub as a repository", () => {

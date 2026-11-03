@@ -386,6 +386,7 @@ export class CloudHub extends Service implements CloudHubReader {
       if (this.closed || this.user?.id !== userId) return;
       if (!this.cache.data.outbox.some(p => p.id === op.id)) continue;
       if (this.cache.data.conflicts.some(r => recordKey(r) === recordKey(op)) || held.has(recordKey(op))) continue;
+      this.cache.sending(op.id);
       const { data, error: failure } = await this.client.rpc("tomrade_mutate_hub", { p_hub: hubId, p_mutation: op });
       // Without a code the request never reached the database — offline, timed out — and nothing else would either.
       if (failure && !failure.code) throw new Error(failure.message);
