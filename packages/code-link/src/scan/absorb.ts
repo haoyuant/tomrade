@@ -185,6 +185,7 @@ export class GitScan {
       `SELECT (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM plugin_code_link_links WHERE project_id = @p) AS links,
               (SELECT count(*) || ':' || coalesce(max(created_at), 0) || ':' || coalesce(max(resolved_at), 0) || ':' || sum(state = 'open') FROM plugin_code_link_proposals WHERE project_id = @p) AS proposals,
               (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM plugin_code_link_repos WHERE project_id = @p) AS repos,
+              (SELECT count(*) || ':' || coalesce(max(seen_at), 0) FROM plugin_code_link_repo_seen WHERE project_id = @p) AS seen,
               (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM deliveries WHERE project_id = @p) AS deliveries,
               (SELECT coalesce(max(last_commit_at), 0) FROM plugin_code_link_sessions WHERE project_id = @p) AS commits`
     ).get({ p: projectId });

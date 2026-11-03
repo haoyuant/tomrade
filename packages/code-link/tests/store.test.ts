@@ -201,6 +201,45 @@ describe("the repository's merge policy", () => {
   });
 });
 
+describe("this machine's look at a repository", () => {
+  it("stays on this machine: what travels changes only with what people chose and what the repository holds", async () => {
+    const { ctx, db, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    expect(TABLES.plugin_code_link_repo_seen.export).toBe(false);
+    store.upsertRepoState(project.id, "repo-1", { readiness: "scaffolded", remote: "ok", remoteAt: 1_000, scannedSha: "m1", defaultSha: "m1", scannedAt: 1_000 });
+    const travels = () => JSON.stringify(db.prepare("SELECT * FROM plugin_code_link_repos").all());
+    const before = travels();
+    // This machine cannot reach origin, and its checkout has fetched a newer tip: another machine sees neither.
+    const looked = store.upsertRepoState(project.id, "repo-1", { remote: "unreachable", remoteDetail: "fatal: Could not resolve host: github.com", scannedSha: "m2", defaultSha: "m2", scannedAt: 2_000 });
+    expect(travels()).toBe(before);
+    expect(looked).toMatchObject({ remote: "unreachable", remoteCause: "network", scannedSha: "m2", defaultSha: "m2" });
+    expect(store.repoState(project.id, "repo-1")).toMatchObject({ remote: "unreachable", scannedSha: "m2", defaultSha: "m2", scannedAt: 2_000, updatedAt: looked.updatedAt });
+    expect(store.repoStates(project.id)[0]).toMatchObject({ remote: "unreachable", scannedSha: "m2" });
+    store.upsertRepoState(project.id, "repo-1", { autoDone: false });
+    expect(travels()).not.toBe(before);
+    expect(travels()).not.toContain("Could not resolve host");
+    expect(store.repoState(project.id, "repo-1")).toMatchObject({ autoDone: false, remote: "unreachable" });
+
+    // A row another machine wrote: its choices come through, and this machine has not looked yet.
+    db.prepare("INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, scanned_sha, auto_done, updated_at) VALUES ('repo-2', ?, 'scaffolded', 'unreachable', 'seen elsewhere', 'x9', 0, 5)").run(project.id);
+    expect(store.repoState(project.id, "repo-2")).toMatchObject({ readiness: "scaffolded", autoDone: false, remote: "unknown", remoteDetail: null, remoteCause: null, scannedSha: null, defaultSha: null, scannedAt: null });
+    await ctx.fiber.dispose();
+  });
+
+  it("moves what this machine had seen out of the row that travels, keeping it here", async () => {
+    const { ctx, db, project } = await fresh();
+    const { plugin_code_link_repo_seen: _seen, ...before } = TABLES;
+    ctx.db.migrate("code_link", MIGRATIONS.filter((m) => m.version < 22), { tables: before });
+    db.prepare("INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at, branch_template, updated_at) VALUES ('repo-1', ?, 'scaffolded', 'unreachable', 'timed out', 7, 'm1', 'm1', 8, '{key}-{slug}', 9)").run(project.id);
+    db.exec(MIGRATIONS.find((m) => m.version === 22)!.up as string);
+    const store = new CodeLinkStore(ctx.db);
+    expect(store.repoState(project.id, "repo-1")).toMatchObject({ branchTemplate: "{key}-{slug}", remote: "unreachable", remoteDetail: "timed out", remoteAt: 7, scannedSha: "m1", defaultSha: "m1", scannedAt: 8 });
+    expect(db.prepare("SELECT remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at FROM plugin_code_link_repos").get()).toEqual({ remote: "unknown", remote_detail: null, remote_at: null, scanned_sha: null, default_sha: null, scanned_at: null });
+    await ctx.fiber.dispose();
+  });
+});
+
 describe("a scan that only looks again", () => {
   it("leaves a link and a repository row as they were, and refreshes the sighting once it is old", async () => {
     const { ctx, db, items, project, board } = await fresh();

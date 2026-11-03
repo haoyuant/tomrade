@@ -210,7 +210,28 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN marks_json TEXT NOT NULL DEFAUL
   // What a session waits on the person for, as a structure each window words in its own language.
   { version: 20, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN ask_json TEXT" },
   // The tool whose call just failed, for each window to word in its own language.
-  { version: 21, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN failed_tool TEXT" }
+  { version: 21, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN failed_tool TEXT" },
+  // What this machine saw of a repository stays on it: travelling, two machines that saw differently rewrote each
+  // other's on every scan. The row that travels keeps what people chose and what the repository holds.
+  {
+    version: 22,
+    up: `
+CREATE TABLE plugin_code_link_repo_seen (
+  repo_id        TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  remote         TEXT NOT NULL DEFAULT 'unknown',
+  remote_detail  TEXT,
+  remote_at      INTEGER,
+  scanned_sha    TEXT,
+  default_sha    TEXT,
+  scanned_at     INTEGER,
+  seen_at        INTEGER NOT NULL
+);
+INSERT INTO plugin_code_link_repo_seen (repo_id, project_id, remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at, seen_at)
+  SELECT repo_id, project_id, remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at, updated_at FROM plugin_code_link_repos;
+UPDATE plugin_code_link_repos SET remote = 'unknown', remote_detail = NULL, remote_at = NULL, scanned_sha = NULL, default_sha = NULL, scanned_at = NULL;
+`
+  }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -220,7 +241,8 @@ export const TABLES = {
   plugin_code_link_repos: { project: "project_id", export: { order: "repo_id" } },
   plugin_code_link_proposals: { project: "project_id", export: { order: "id" } },
   plugin_code_link_sessions: { project: "project_id", export: false },
-  plugin_code_link_hooks_heard: { project: "project_id", export: false }
+  plugin_code_link_hooks_heard: { project: "project_id", export: false },
+  plugin_code_link_repo_seen: { project: "project_id", export: false }
 } as const;
 
 export type LinkSource = "start" | "scan" | "mcp" | "manual";
@@ -441,6 +463,17 @@ interface RepoRow {
   updated_at: number;
 }
 
+/** This machine's own look at a repository. */
+interface SeenRow {
+  repo_id: string;
+  remote: string;
+  remote_detail: string | null;
+  remote_at: number | null;
+  scanned_sha: string | null;
+  default_sha: string | null;
+  scanned_at: number | null;
+}
+
 interface ProposalRow {
   id: string;
   project_id: string;
@@ -519,26 +552,27 @@ const toLink = (r: LinkRow): CodeLinkView => ({
   updatedAt: r.updated_at
 });
 
-const toRepo = (r: RepoRow): RepoStateView => ({
+/** The row that travels, with this machine's look laid over it; a machine that has not looked yet has seen nothing. */
+const toRepo = (r: RepoRow, seen: SeenRow | undefined): RepoStateView => ({
   repoId: r.repo_id,
   projectId: r.project_id,
   readiness: r.readiness as Readiness,
-  remote: r.remote as RemoteState,
-  remoteDetail: r.remote_detail,
-  remoteCause: r.remote === "unreachable" ? classifyRemoteFailure(r.remote_detail ?? "") : null,
-  remoteAt: r.remote_at,
+  remote: (seen?.remote ?? "unknown") as RemoteState,
+  remoteDetail: seen?.remote_detail ?? null,
+  remoteCause: seen?.remote === "unreachable" ? classifyRemoteFailure(seen.remote_detail ?? "") : null,
+  remoteAt: seen?.remote_at ?? null,
   hasBrief: r.has_brief === 1,
   manifests: JSON.parse(r.manifests_json) as string[],
   summary: r.summary,
-  scannedSha: r.scanned_sha,
-  defaultSha: r.default_sha,
+  scannedSha: seen?.scanned_sha ?? null,
+  defaultSha: seen?.default_sha ?? null,
   branchTemplate: r.branch_template,
   autoDone: r.auto_done === 1,
   agentPush: r.agent_push === 1,
   mergePolicy: mergePolicyOf(r),
   agentMerge: mergePolicyOf(r) === "agent",
   connectAgents: r.connect_agents_json ? (JSON.parse(r.connect_agents_json) as ConnectAgent[]) : null,
-  scannedAt: r.scanned_at,
+  scannedAt: seen?.scanned_at ?? null,
   updatedAt: r.updated_at
 });
 
@@ -567,10 +601,13 @@ export const BOOKKEEPING_REFRESH_MS = 24 * 60 * 60 * 1000;
 const bookkeepingStale = (was: number | null, now: number | null): boolean =>
   was !== now && (was === null || now === null || now < was || now - was >= BOOKKEEPING_REFRESH_MS);
 
-/** Whether a repository's next state says nothing its stored one does not, its look-again timestamps aside. */
-function sameRepoState(was: RepoStateView, next: RepoStateView): boolean {
-  const rest = ({ remoteAt, scannedAt, updatedAt, ...kept }: RepoStateView) => JSON.stringify(kept);
-  return rest(was) === rest(next) && !bookkeepingStale(was.remoteAt, next.remoteAt) && !bookkeepingStale(was.scannedAt, next.scannedAt);
+/** What travels of a repository's state: what people chose for it and what it holds. */
+const sharedOf = ({ remote, remoteDetail, remoteCause, remoteAt, scannedSha, defaultSha, scannedAt, updatedAt, ...shared }: RepoStateView) => JSON.stringify(shared);
+
+/** Whether this machine's look says nothing its stored one does not, its look-again timestamps aside. */
+function sameSeen(was: RepoStateView, next: RepoStateView): boolean {
+  const looked = (v: RepoStateView) => JSON.stringify([v.remote, v.remoteDetail, v.scannedSha, v.defaultSha]);
+  return looked(was) === looked(next) && !bookkeepingStale(was.remoteAt, next.remoteAt) && !bookkeepingStale(was.scannedAt, next.scannedAt);
 }
 
 const MERGE_POLICIES: ReadonlySet<string> = new Set<MergePolicy>(["human", "ask", "agent"]);
@@ -893,12 +930,15 @@ export class CodeLinkStore {
   // ── repositories ───────────────────────────────────────────────────────────
 
   repoStates(projectId: string): RepoStateView[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_repos WHERE project_id = ? ORDER BY repo_id ASC").all(projectId) as RepoRow[]).map(toRepo);
+    const db = this.db(projectId);
+    const seen = new Map((db.prepare("SELECT * FROM plugin_code_link_repo_seen WHERE project_id = ?").all(projectId) as SeenRow[]).map((r) => [r.repo_id, r]));
+    return (db.prepare("SELECT * FROM plugin_code_link_repos WHERE project_id = ? ORDER BY repo_id ASC").all(projectId) as RepoRow[]).map((r) => toRepo(r, seen.get(r.repo_id)));
   }
 
   repoState(projectId: string, repoId: string): RepoStateView | null {
-    const row = this.db(projectId).prepare("SELECT * FROM plugin_code_link_repos WHERE repo_id = ?").get(repoId) as RepoRow | undefined;
-    return row ? toRepo(row) : null;
+    const db = this.db(projectId);
+    const row = db.prepare("SELECT * FROM plugin_code_link_repos WHERE repo_id = ?").get(repoId) as RepoRow | undefined;
+    return row ? toRepo(row, db.prepare("SELECT * FROM plugin_code_link_repo_seen WHERE repo_id = ?").get(repoId) as SeenRow | undefined) : null;
   }
 
   upsertRepoState(projectId: string, repoId: string, patch: RepoStatePatch): RepoStateView {
@@ -929,39 +969,45 @@ export class CodeLinkStore {
       scannedAt: patch.scannedAt === undefined ? (existing?.scannedAt ?? null) : patch.scannedAt,
       updatedAt: now
     };
-    if (existing && sameRepoState(existing, next)) return existing;
-    this.db(projectId)
-      .prepare(
-        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, merge_policy, connect_agents_json, scanned_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const shared = !existing || sharedOf(existing) !== sharedOf(next);
+    const seen = !existing || !sameSeen(existing, next);
+    if (!shared && !seen) return existing!;
+    const db = this.db(projectId);
+    if (shared) {
+      // The row that travels carries none of this machine's look: those columns stay as the migration left them.
+      db.prepare(
+        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, has_brief, manifests_json, summary, branch_template, auto_done, agent_push, agent_merge, merge_policy, connect_agents_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id) DO UPDATE SET
-           readiness = excluded.readiness, remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at,
-           has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
-           scanned_sha = excluded.scanned_sha, default_sha = excluded.default_sha, branch_template = excluded.branch_template,
-           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, merge_policy = excluded.merge_policy, connect_agents_json = excluded.connect_agents_json, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
-      )
-      .run(
+           readiness = excluded.readiness, has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
+           branch_template = excluded.branch_template, auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge,
+           merge_policy = excluded.merge_policy, connect_agents_json = excluded.connect_agents_json, updated_at = excluded.updated_at`
+      ).run(
         repoId,
         projectId,
         next.readiness,
-        next.remote,
-        next.remoteDetail,
-        next.remoteAt,
         next.hasBrief ? 1 : 0,
         JSON.stringify(next.manifests),
         next.summary,
-        next.scannedSha,
-        next.defaultSha,
         next.branchTemplate,
         next.autoDone ? 1 : 0,
         next.agentPush ? 1 : 0,
         next.agentMerge ? 1 : 0,
         next.mergePolicy,
         next.connectAgents ? JSON.stringify(next.connectAgents) : null,
-        next.scannedAt,
         now
       );
-    return next;
+    }
+    if (seen) {
+      db.prepare(
+        `INSERT INTO plugin_code_link_repo_seen (repo_id, project_id, remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at, seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(repo_id) DO UPDATE SET
+           remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at, scanned_sha = excluded.scanned_sha,
+           default_sha = excluded.default_sha, scanned_at = excluded.scanned_at, seen_at = excluded.seen_at`
+      ).run(repoId, projectId, next.remote, next.remoteDetail, next.remoteAt, next.scannedSha, next.defaultSha, next.scannedAt, now);
+    }
+    return { ...next, updatedAt: shared ? now : existing!.updatedAt };
   }
 
   /** Each agent's last hook event from this repository on this machine, by agent id. */
