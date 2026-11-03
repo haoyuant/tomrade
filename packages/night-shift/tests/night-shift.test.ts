@@ -103,6 +103,24 @@ it("runs in the place the person chose, in order, and remembers it through a sav
   }
 });
 
+it("waits for a dependency at work outside the run, then starts what it blocks", async () => {
+  const t = await boot();
+  try {
+    const b = t.make("B");
+    const a = t.make("A", [b.id]);
+    t.items.update(t.project.id, a.id, { status: "doing" }, "human");
+    t.s.start(t.project.id, { itemIds: [b.id] });
+    await t.s.tick();
+    expect(t.code.starts).toEqual([]);
+    expect(t.s.current(t.project.id)?.tickets[0]).toMatchObject({ state: "queued", why: { kind: "waits-elsewhere", keys: [a.key] } });
+    t.items.update(t.project.id, a.id, { status: "done" }, "human");
+    await t.s.tick();
+    expect(t.code.starts.map((x) => x.itemId)).toEqual([b.id]);
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
 it("takes Start's last choice when none is given; a background shift keeps its permission mode, a terminal one has none to keep", async () => {
   const t = await boot();
   try {

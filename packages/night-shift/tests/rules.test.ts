@@ -73,6 +73,28 @@ describe("dependencies", () => {
     expect(shift.status).toBe("ended");
   });
 
+  it("waits for a ticket at work outside the shift, and starts once it lands", () => {
+    const away = { blockers: [{ itemId: "Z", key: "Z", elsewhere: true }] };
+    const first = advance(shiftOf([ticket("B")]), world({ B: away }), T0);
+    expect(first.actions).toEqual([]);
+    expect(first.shift.status).toBe("running");
+    expect(first.shift.tickets[0]).toMatchObject({ state: "queued", why: { kind: "waits-elsewhere", keys: ["Z"] } });
+    const landed = advance(first.shift, world({}), T0 + 1000);
+    expect(landed.actions).toEqual([{ kind: "start", itemId: "B" }]);
+  });
+
+  it("an outside ticket nobody works on still ends the wait, even beside one at work", () => {
+    const { shift } = advance(shiftOf([ticket("B")]), world({ B: { blockers: [{ itemId: "Z", key: "Z", elsewhere: true }, { itemId: "Y", key: "Y" }] } }), T0);
+    expect(shift.tickets[0]).toMatchObject({ state: "skipped", why: { kind: "waits-outside", keys: ["Y"] } });
+    expect(shift.status).toBe("ended");
+  });
+
+  it("the deadline still ends a wait on a ticket at work elsewhere", () => {
+    const { shift } = advance(shiftOf([ticket("B")]), world({ B: { blockers: [{ itemId: "Z", key: "Z", elsewhere: true }] } }), T0 + 3_600_000);
+    expect(shift.status).toBe("ended");
+    expect(shift.tickets[0]!.state).toBe("skipped");
+  });
+
   it("a cycle ends the shift rather than waiting forever", () => {
     const { shift } = advance(shiftOf(chain(), { autoMerge: true }), world({ A: { blockers: [{ itemId: "B", key: "B" }] }, B: onA }), T0);
     expect(shift.status).toBe("ended");

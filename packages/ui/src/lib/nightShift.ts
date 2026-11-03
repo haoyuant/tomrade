@@ -119,6 +119,9 @@ export const stopsAnAgent = (state: TicketState): boolean => AT_WORK.has(state);
 /** What is finished stays, as the run's history. */
 export const canLeave = (state: TicketState): boolean => state === "queued" || AT_WORK.has(state);
 
+/** Already at work outside the run: the run waits for it to land. */
+export const atWorkElsewhere = (item: Item): boolean => item.status === "doing" || item.status === "verifying";
+
 export type EditImpact =
   /** It waits on a ticket this change takes off the run. */
   | { kind: "orphaned"; key: string; keys: string[] }
@@ -141,7 +144,7 @@ export function editImpact(items: readonly Item[], run: readonly { itemId: strin
     const missing = item.blockedBy.filter((b) => open(b) && !stays.has(b));
     const keysOf = (ids: string[]) => ids.map((b) => byId.get(b)!.key);
     const removed = missing.filter((b) => removes.has(b));
-    const outside = missing.filter((b) => !removes.has(b));
+    const outside = missing.filter((b) => !removes.has(b) && !atWorkElsewhere(byId.get(b)!));
     return [
       ...(removed.length ? [{ kind: "orphaned" as const, key: item.key, keys: keysOf(removed) }] : []),
       ...(outside.length && adds.has(id) ? [{ kind: "outside" as const, key: item.key, keys: keysOf(outside), ids: outside }] : [])
@@ -181,13 +184,15 @@ export function shiftOrder(chosen: Item[]): Item[] {
   return out;
 }
 
-export type ShiftNote = { kind: "after" | "after-merge" | "outside"; keys: string[] } | null;
+export type ShiftNote = { kind: "after" | "after-merge" | "outside" | "elsewhere"; keys: string[] } | null;
 
 /** Why a chosen ticket will not start at once, or at all: `open` holds every ticket still open, chosen or not. */
 export function shiftNote(item: Item, chosen: ReadonlySet<string>, open: ReadonlyMap<string, Item>, autoMerge: boolean): ShiftNote {
   const waits = item.blockedBy.flatMap((id) => open.get(id) ?? []);
   const outside = waits.filter((b) => !chosen.has(b.id));
-  if (outside.length) return { kind: "outside", keys: outside.map((b) => b.key) };
+  const stranded = outside.filter((b) => !atWorkElsewhere(b));
+  if (stranded.length) return { kind: "outside", keys: stranded.map((b) => b.key) };
+  if (outside.length && outside.length === waits.length) return { kind: "elsewhere", keys: outside.map((b) => b.key) };
   if (!waits.length) return null;
   return { kind: autoMerge ? "after" : "after-merge", keys: waits.map((b) => b.key) };
 }
