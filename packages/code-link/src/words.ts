@@ -9,6 +9,7 @@ export const CODE_WORDS = defineWords("code-link", {
   en: {
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json, .cursor/hooks/tomrade and .cursor/hooks/tomrade.ps1 — or “Connect on this machine only”, which writes them into the checkout kept out of git — (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
     connected: "Connected",
+    repoSetupTitle: "This project has no code repository yet",
     terminalAuto: "No — Tomrade's own terminal (automatic)",
     terminalOwnHelp: "No: new sessions run in Tomrade's own terminal — herdr's panes, or on Windows its built-in terminal — and the system terminal where there is neither. A terminal app of your own runs them outside Tomrade: it follows their state through hooks, but they get no Terminal window cell, nothing is typed or allowed from the panel, and nothing is recorded. none only prepares the script.",
     terminalNone: "None — only prepare the script",
@@ -218,6 +219,7 @@ export const CODE_WORDS = defineWords("code-link", {
   zh: {
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json、.cursor/hooks/tomrade 和 .cursor/hooks/tomrade.ps1——或选「仅连接本机」，把它们写进本机仓库目录并不纳入 git——（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
     connected: "已连接",
+    repoSetupTitle: "这个项目还没有配置代码仓库",
     terminalAuto: "不用：Tomrade 自己的终端（自动）",
     terminalOwnHelp: "不用：新会话在 Tomrade 自己的终端里跑——herdr 的窗格，Windows 上是自带终端；都没有时用系统终端。选自己的终端 app：会话跑在 Tomrade 外面，只靠 hook 跟进状态，终端窗口里没有它的格子，面板里不能输入、不能允许，也没有录制。none 只准备脚本。",
     terminalNone: "不打开，只准备脚本",

@@ -2446,6 +2446,40 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
   }
 });
 
+it("puts the repository setup back in the conversation when the project has no code", async () => {
+  const { ctx, project, agent } = await machine(null);
+  const results: unknown[] = [];
+  ctx.agent.engine({
+    id: "asking",
+    title: "Asking",
+    author: "ai:test",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      results.push(input.repositories);
+      results.push(await io.tools.execute("offer_repository", { reason: "  Reading the login code needs the repository  " }));
+      return { stop: "end" };
+    }
+  });
+  try {
+    expect(ctx.tools.served("run").map((t) => t.name)).toContain("offer_repository");
+    expect(ctx.tools.served().map((t) => t.name)).not.toContain("offer_repository");
+    const thread = agent.newThread(project.id, "asking");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "how does login work?" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(results).toEqual([[], expect.objectContaining({ offered: true })]);
+    const cards = agent.thread(project.id, thread.id).messages.flatMap((m) => (m.block.type === "card" ? [m.block] : []));
+    expect(cards).toEqual([expect.objectContaining({ schema: "repo-setup", data: { reason: "Reading the login code needs the repository" } })]);
+    // Once there is one, nothing is put up again: what stands in the way is linking a workstream to it.
+    ctx.repos.create({ projectId: project.id, remote: "https://github.com/example/app.git" });
+    const again = agent.send(project.id, thread.id, { kind: "text", text: "and now?" });
+    await expect.poll(() => agent.store.run(project.id, again.runId)?.status).toBe("done");
+    expect(results.at(-1)).toMatchObject({ offered: false, repositories: ["app"] });
+    expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card")).toHaveLength(1);
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});
+
 describe("starting tickets from a conversation", () => {
   /** A conversation engine that can code: asked in chat, it starts tickets; on a ticket, it commits like the fake coding agent. */
   function chatty(id: string, say: (text: string, io: Parameters<Engine["turn"]>[1]) => Promise<unknown>, outcomes: unknown[]): Engine {
