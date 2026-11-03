@@ -72,6 +72,7 @@ export class CloudCache {
     if ((this.data.userId && this.data.userId !== userId) || (this.data.hubId && this.data.hubId !== hubId)) {
       throw new Error("This local Hub belongs to another account. Use a separate TOMRADE_USER_DATA directory to switch accounts.");
     }
+    if (this.data.userId === userId && this.data.hubId === hubId) return;
     this.data.userId = userId;
     this.data.hubId = hubId;
     this.save();
@@ -91,6 +92,17 @@ export class CloudCache {
       this.data.outbox.push({ id: randomUUID(), kind, key, value, base_version: current?.version ?? 0 });
     }
     this.data.observed[id] = fingerprint;
+    this.save();
+  }
+  /**
+   * What the person asked for, not something observed: queued whenever the Hub would show otherwise, even if this
+   * machine asked the same before and another machine has undone it since.
+   */
+  intend(kind: Kind, key: string, value: CloudRecord["value"]): void {
+    const id = recordKey({ kind, key });
+    const current = this.view().find(r => recordKey(r) === id);
+    if (!equal(current?.value ?? null, value)) this.data.outbox.push({ id: randomUUID(), kind, key, value, base_version: current?.version ?? 0 });
+    this.data.observed[id] = JSON.stringify(canonical(value));
     this.save();
   }
   /** The cloud's records: all of them, or with `partial` only those changed since the last read, laid over the ones kept. */

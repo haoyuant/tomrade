@@ -87,6 +87,7 @@ const UserSettings = z.object({
   sections: z.record(z.string(), z.object({ value: z.json(), updatedAt: z.number() }))
 });
 const SETTINGS_KEY = "settings";
+const RETRY_MAX_MS = 600_000;
 
 /**
  * A machine joining an account sends its settings as if the account had none. That is no concurrent edit, and no clock
@@ -128,6 +129,9 @@ export class CloudHub extends Service implements CloudHubReader {
   private active: Promise<void> | null = null;
   /** A change was queued while a pass ran; one more pass follows it. */
   private again = false;
+  /** When the last pass began, and how many in a row have failed. */
+  private triedAt = 0;
+  private failures = 0;
   /** The Hub read in full during this run, and the newest change time seen in it: later reads ask only what changed since. */
   private readHub: string | null = null;
   private cursor: string | null = null;
@@ -169,7 +173,7 @@ export class CloudHub extends Service implements CloudHubReader {
     const disableCloud = this.ctx.hub.enableCloud();
     const offStorage = this.ctx.storage.useHubBackend({
       read: () => this.manifest(), observe: m => this.observe(m),
-      removeProject: id => { this.cache.observe("project", id, null); this.schedule(); },
+      removeProject: id => { this.cache.intend("project", id, null); this.schedule(); },
       sync: async () => { await this.sync(); return this.status(); }, status: () => this.status()
     });
     const offSettings = settings.useUserStore({
@@ -238,8 +242,11 @@ export class CloudHub extends Service implements CloudHubReader {
       this.schedule();
     }).catch(e => { this.error = errorMessage(e); });
     const interval = setInterval(() => {
-      // While no window shows, the Hub is read every few minutes rather than every half minute.
-      if (!this.seen && Date.now() - (this.cache.data.lastSyncAt ?? 0) < this.config.hiddenSyncMs) return;
+      const since = Date.now() - this.triedAt;
+      // While no window shows, the Hub is read every few minutes rather than every half minute;
+      // after passes that failed, each wait is twice the last, up to ten minutes. A change or Sync now goes at once.
+      if (!this.seen && since < this.config.hiddenSyncMs) return;
+      if (this.failures && since < Math.min(this.config.syncMs * 2 ** (this.failures - 1), RETRY_MAX_MS)) return;
       this.schedule();
     }, this.config.syncMs);
     this.home.on("desktop/seen", (seen) => { this.seen = seen; });
@@ -319,10 +326,13 @@ export class CloudHub extends Service implements CloudHubReader {
     if (this.active) return this.active;
     if (this.closed || this.signingOut || !this.user) return Promise.resolve();
     const before = this.standing();
+    this.triedAt = Date.now();
     this.active = this.performSync().then(() => {
+      // A record the database refused is no reason to read the others less often.
+      this.failures = 0;
       // The catalog may name projects this machine has never had; bring them here.
       if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${errorMessage(e)}`));
-    }).catch(e => { this.error = errorMessage(e); }).finally(() => {
+    }).catch(e => { this.error = errorMessage(e); this.failures++; }).finally(() => {
       this.active = null;
       if (this.again) { this.again = false; this.schedule(); }
       // A pass that changed nothing tells no window: each would read the account and the Hub again.
@@ -355,10 +365,11 @@ export class CloudHub extends Service implements CloudHubReader {
     if (error) throw new Error(error.message);
     if (this.closed || this.user?.id !== userId) return;
     this.cache.bind(userId, z.uuid().parse(hubId));
-    this.cache.data.offlineAccess = true;
-    this.cache.data.localOnly = false;
-    this.cache.data.email = this.user?.email ?? this.cache.data.email;
-    this.cache.save();
+    const email = this.user?.email ?? this.cache.data.email;
+    if (!this.cache.data.offlineAccess || this.cache.data.localOnly || this.cache.data.email !== email) {
+      Object.assign(this.cache.data, { offlineAccess: true, localOnly: false, email });
+      this.cache.save();
+    }
     this.config.accounts?.claim({ id: userId, email: this.cache.data.email ?? "" });
     // Never over a newer version agreed on another computer. A failure here retries next time, without holding up sync.
     const agreed = this.cache.data.terms, recorded = this.user?.user_metadata?.terms_version;
@@ -368,12 +379,22 @@ export class CloudHub extends Service implements CloudHubReader {
       if (unrecorded) this.home.logger.warn(`terms: ${unrecorded.message}`);
       else this.user = data.user;
     }
+    // A request the database itself refused (it says why with a code) holds up only its own record: the rest still go.
+    let refused: string | null = null;
+    const held = new Set<string>();
     for (const op of [...this.cache.data.outbox]) {
       if (this.closed || this.user?.id !== userId) return;
       if (!this.cache.data.outbox.some(p => p.id === op.id)) continue;
-      if (this.cache.data.conflicts.some(r => recordKey(r) === recordKey(op))) continue;
+      if (this.cache.data.conflicts.some(r => recordKey(r) === recordKey(op)) || held.has(recordKey(op))) continue;
       const { data, error: failure } = await this.client.rpc("tomrade_mutate_hub", { p_hub: hubId, p_mutation: op });
-      if (failure) throw new Error(failure.message);
+      // Without a code the request never reached the database — offline, timed out — and nothing else would either.
+      if (failure && !failure.code) throw new Error(failure.message);
+      if (failure) {
+        refused ??= failure.message;
+        held.add(recordKey(op));
+        this.home.logger.warn(`hub: ${recordKey(op)} refused — ${failure.message}`);
+        continue;
+      }
       const result = Result.parse(data);
       if (result.ok || equal(op.value, result.record.value)) this.cache.accept(op, result.record);
       else if (!this.joined(op, result.record)) this.cache.conflict(result.record);
@@ -400,7 +421,7 @@ export class CloudHub extends Service implements CloudHubReader {
     this.cache.ingest(rows, since !== null);
     this.readHub = hubId;
     this.cursor = newest;
-    this.cache.data.lastSyncAt = Date.now(); this.cache.save(); this.error = null;
+    this.cache.data.lastSyncAt = Date.now(); this.cache.save(); this.error = refused;
   }
   /**
    * A client that keeps no session. Until the user is known, nobody knows whose

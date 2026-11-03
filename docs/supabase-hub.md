@@ -101,7 +101,11 @@ trust model.
 Settings enqueue changes immediately. Project references are derived from the
 existing machine catalog on startup, explicit sync and the periodic sync cycle;
 project removals enqueue a tombstone synchronously before debounce/exit. The
-default background interval is 30 seconds. File observations are remembered, so
+default background interval is 30 seconds; after a pass that could not reach the
+cloud each wait doubles, up to ten minutes, while a change or Sync now still goes
+at once. A request the database itself refuses holds up only its own record: the
+others are sent, the Hub is read, and the status says why. Removing a project from
+the Hub is an intent, sent again whenever the Hub shows it listed. File observations are remembered, so
 an unchanged local checkout does not overwrite another device's metadata edit.
 
 Each request carries a base version. A stale write retains both versions and
