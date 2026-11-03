@@ -61,6 +61,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [marketing, setMarketing] = useState(true);
   /** The signed-in panel's confirmation before the account is deleted, with the password it asks for. */
   const [deleting, setDeleting] = useState<{ password: string; problem: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -266,6 +267,10 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           <span>{tx("account.agree", { terms: legalLink("terms"), privacy: legalLink("privacy") })}</span>
         </label>
         {problem?.field === "terms" && <span id="account-problem" className="field-note is-error" role="alert">{problem.text}</span>}
+        <label className="account-agree account-marketing">
+          <input type="checkbox" checked={marketing} onChange={e => setMarketing(e.target.checked)} />
+          <span>{t("account.marketing")}</span>
+        </label>
       </div>
       {owner && email.trim() && email.trim().toLowerCase() !== owner.toLowerCase() && <p className="field-note">{t("account.otherAccount", { owner })}</p>}
       <div className="row" style={{ gap: "var(--space-2)" }}>
@@ -274,7 +279,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           if (!check("signUp")) return;
           const address = email.trim(), secret = password;
           void run(async () => {
-            const result = await invoke("account.signUp", address, secret, locale, true);
+            const result = await invoke("account.signUp", address, secret, locale, true, marketing);
             if (result.confirmationRequired) { cooldown.start(MAIL_INTERVAL); setStep({ kind: "confirm", email: address, password: secret }); }
           });
         }}>{t("account.signUp")}</button>

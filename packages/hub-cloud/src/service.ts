@@ -56,7 +56,7 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
     "account.signIn": (email: string, password: string, agreed?: boolean) => AccountInfo;
-    "account.signUp": (email: string, password: string, lang?: string, agreed?: boolean) => { confirmationRequired: boolean };
+    "account.signUp": (email: string, password: string, lang?: string, agreed?: boolean, marketingEmails?: boolean) => { confirmationRequired: boolean };
     "account.acceptTerms": () => AccountInfo;
     "account.resendConfirmation": (email: string, lang?: string) => void;
     "account.resetPassword": (email: string, lang?: string) => void;
@@ -175,7 +175,7 @@ export class CloudHub extends Service implements CloudHubReader {
         return this.info();
       });
       ctx.ipc.handle("account.signIn", (email, password, agreed) => this.signIn(email, password, agreed));
-      ctx.ipc.handle("account.signUp", (email, password, lang, agreed) => this.signUp(email, password, lang, agreed));
+      ctx.ipc.handle("account.signUp", (email, password, lang, agreed, marketingEmails) => this.signUp(email, password, lang, agreed, marketingEmails === true));
       ctx.ipc.handle("account.acceptTerms", () => this.acceptTerms());
       ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
       ctx.ipc.handle("account.resetPassword", (email, lang) => this.resetPassword(email, lang));
@@ -404,14 +404,15 @@ export class CloudHub extends Service implements CloudHubReader {
     await this.sync(); this.notify();
     return this.info();
   }
-  async signUp(email: string, password: string, lang?: string, agreed = false): Promise<{ confirmationRequired: boolean }> {
+  /** `marketingEmails`: the person left "email me news" ticked; the database keeps it with the new account. */
+  async signUp(email: string, password: string, lang?: string, agreed = false, marketingEmails = false): Promise<{ confirmationRequired: boolean }> {
     const owned = !!this.cache.data.userId;
     // Refuse before the account exists, not after.
     if (owned && !this.config.accounts) throw this.refusal();
     const parsed = credentials(email, password, 8);
     if (!agreed) throw new Error("[terms_required] Agree to the Terms of Service and Privacy Policy to create an account.");
     const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp({
-      ...parsed, options: { emailRedirectTo: this.page("confirmed", lang), data: termsRecord(TERMS_VERSION) }
+      ...parsed, options: { emailRedirectTo: this.page("confirmed", lang), data: { ...termsRecord(TERMS_VERSION), marketing_emails: marketingEmails } }
     });
     if (error) throw failure(error);
     if (!data.session) {
