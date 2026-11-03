@@ -2,6 +2,7 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/alerts";
 import type {} from "@tomradex/im";
+import type {} from "@tomradex/inbox";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
@@ -35,7 +36,8 @@ export const CORDIS: Record<ServiceName, string> = {
   oplog: "oplog",
   webSearch: "webSearch",
   terminals: "herdr",
-  models: "llm"
+  models: "llm",
+  inbox: "inbox"
 };
 
 export const cordisName = (name: ServiceName): string => CORDIS[name];
@@ -58,4 +60,5 @@ export interface Services {
   webSearch: Context["webSearch"];
   terminals: Context["herdr"];
   models: Context["llm"];
+  inbox: Context["inbox"];
 }

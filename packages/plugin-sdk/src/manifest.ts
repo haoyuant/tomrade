@@ -15,7 +15,7 @@ export const RESERVED_NAMESPACES = new Set([
 ]);
 export const OFFICIAL_PUBLISHER = "tomrade";
 
-const SERVICE = z.enum(["items", "fields", "boards", "views", "projects", "db", "settings", "tools", "contributions", "agent", "surfaces", "alerts", "oplog", "im", "webSearch", "terminals", "models"]);
+const SERVICE = z.enum(["items", "fields", "boards", "views", "projects", "db", "settings", "tools", "contributions", "agent", "surfaces", "alerts", "oplog", "im", "webSearch", "terminals", "models", "inbox"]);
 
 export const PermissionsSchema = z
   .object({
@@ -56,7 +56,9 @@ export const ContributesSchema = z
     /** SDK 0.2.17: the local agents it registers. */
     localAgents: z.array(z.string()).default([]),
     /** SDK 0.2.31: the backlog layouts it draws. */
-    layouts: z.array(z.string()).default([])
+    layouts: z.array(z.string()).default([]),
+    /** SDK 0.2.33: the inbox sources it registers. */
+    inboxSources: z.array(z.string()).default([])
   })
   .partial();
 

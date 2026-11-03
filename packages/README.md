@@ -117,7 +117,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
 | `plugin-sdk` | The extension contract: `definePlugin`, the async `PluginContext`, the manifest. SDK line on npm. | — | — |
-| `extensions` | The host side of that contract: namespaces, attribution, time-limited callbacks. | — | agent, alerts, boards, contributions, desktop-surface, fields, herdr, im, items, llm, oplog, plugin-sdk, projects, tools, web-search, write |
+| `extensions` | The host side of that contract: namespaces, attribution, time-limited callbacks. | — | agent, alerts, boards, contributions, desktop-surface, fields, herdr, im, inbox, items, llm, oplog, plugin-sdk, projects, tools, web-search, write |
 | `plugins` | Loads and manages the composition: rows, modules, installed extensions. | `plugins` | extensions, plugin-kit, plugin-sdk |
 | `plugin-kit` | Package format, digests, signatures, the lock file, the static analyzer. | — | plugin-sdk |
 | `plugin-cli` | `tomrade-plugin`: init, build, dev, test, check, pack. SDK line on npm. | — | plugin-host, plugin-kit, plugin-sdk |

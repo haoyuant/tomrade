@@ -5,6 +5,7 @@ import {
   ownsId,
   type AgentApi,
   type ImApi,
+  type InboxApi,
   type LocalAgentInstaller,
   type LocalAgentSpec,
   type BoardsApi,
@@ -43,6 +44,7 @@ export interface Recording {
   tables: string[];
   imAdapters: string[];
   webSearchProviders: string[];
+  inboxSources: string[];
   /** The CLI agent hook events it hears. */
   agentHooks: string[];
   modelProviders: string[];
@@ -63,7 +65,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], layouts: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], localAgentOneClick: [], localAgentArchives: [], invalid: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], layouts: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], inboxSources: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], localAgentOneClick: [], localAgentArchives: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -218,6 +220,9 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     },
     get webSearch(): WebSearchApi {
       return need("webSearch", { register: (provider) => note("webSearchProviders", provider.id, "web search provider") });
+    },
+    get inbox(): InboxApi {
+      return need("inbox", { source: (spec) => note("inboxSources", spec.id, "inbox source") });
     },
     get models(): ModelsApi {
       return need("models", {

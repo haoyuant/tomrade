@@ -31,6 +31,7 @@ export type {
 
 export * from "./im.js";
 export * from "./web-search.js";
+export * from "./inbox.js";
 export * from "./models.js";
 export * from "./terminals.js";
 export * from "./local-agents.js";

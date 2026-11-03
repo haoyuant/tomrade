@@ -105,3 +105,12 @@ it("takes a download page only as an https address, and a desktop app only with 
     'local agent "acme_two": setup.desktop needs a title and shipsCli, whether the app puts the CLI where Tomrade finds it'
   ]);
 });
+
+it("records the inbox sources a plugin registers, and refuses one that did not name inbox", async () => {
+  const rec = emptyRecording();
+  await recordingContext("muduo", ["inbox"], rec).inbox.source({ id: "muduo", title: "Muduo", pull: () => [] });
+  await recordingContext("muduo", ["inbox"], rec).inbox.source({ id: "other", title: "Other", pull: () => [] });
+  expect(rec.inboxSources).toEqual(["muduo", "other"]);
+  expect(rec.violations).toEqual([{ kind: "inbox source", id: "other" }]);
+  expect(() => recordingContext("muduo", [], rec).inbox).toThrow(/did not name "inbox"/);
+});

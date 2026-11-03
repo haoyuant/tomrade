@@ -28,6 +28,7 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/fields": "workspace:*",
     "@tomradex/im": "workspace:*",
+    "@tomradex/inbox": "workspace:*",
     "@tomradex/items": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/oplog": "workspace:*",

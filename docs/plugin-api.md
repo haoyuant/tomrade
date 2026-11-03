@@ -131,6 +131,7 @@ returns is disposed when the service goes.
 | `webSearch` | `register({ id, title, unavailable(), search(request, signal), read?(request, signal), settings? })` — a provider answering the agent's `web_search` / `web_fetch`, exactly as the app's own do; see [Web search](#web-search). SDK 0.2.9 |
 | `models` | `registerProvider({ id, title, baseURL, presets?, list(endpoint, signal), usable?, capabilities?, signIn?, build(profile) })` — a model provider serving the profiles that name it and offering its presets in the model setup, as the app's own do; see [Model providers](#model-providers). SDK 0.2.16; SDK 0.2.33: `completeJson(schema, request, label)`, one JSON document from the person's worker, see [Asking the worker](#asking-the-worker) |
 | `terminals` | `state()` — whether herdr can hand over a live terminal, and the fix when it cannot — and `open(paneId, { mode, cols, rows })`: a pane's terminal as frames in and `input` / `resize` / `scroll` / `mouse` out; see [Terminals](#terminals). SDK 0.2.10 |
+| `inbox` | `source({ id, title, keyPattern?, available?(projectId), pull(scope), reply?(entry, text), setStatus?(entry, change), options? })` — a source of feedback each project switches on in the inbox's Sources pane, exactly as the app's own are; registering only, triage stays with the person; see [The inbox](#the-inbox). SDK 0.2.33 |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
 | `id`, `namespace`, `dataDir`, `logger` | who it is, its prefix, a directory only it writes, its log |
@@ -1596,6 +1597,19 @@ The renderer reaches it over `inbox.list` (a status, `all`, or `activity`),
 `inbox.reply`, `inbox.triager`, `inbox.suggest` and `inbox.adopt`, and hears
 `inbox.changed`. Its sidebar module opens the
 inbox and counts what waits: untriaged entries and those with new activity.
+
+An extension provides one the same way with `inbox` in `inject` or
+`optional` (SDK 0.2.33): `ctx.inbox.source(…)` takes the same shape, its id
+carries the namespace, `title` and an option's words may be per-language text,
+and `pull`, `available`, `reply` and `setStatus` are called back in the
+plugin's scope with copies of what the inbox holds. A pull has 2 minutes and
+the others a minute; a pull that does not return entries fails with what is
+wrong, recorded on the source like any error. The source goes when the plugin
+unloads or is switched off — from the Sources pane and from pulling — and the
+entries it brought in stay, triaged or not. Accepting, merging and closing are
+not offered to an extension: a person triages. A plugin that did not name
+`inbox` is refused with that reason. The build records the source ids in
+`contributes.inboxSources`.
 
 `@tomradex/inbox-tomrade` is the source for Tomrade's own reports. It pulls
 for an account named in `tomrade_maintainers` (`tomrade-store maintainer add

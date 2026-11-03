@@ -1215,6 +1215,9 @@ importers:
       '@tomradex/im':
         specifier: workspace:*
         version: link:../im
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
