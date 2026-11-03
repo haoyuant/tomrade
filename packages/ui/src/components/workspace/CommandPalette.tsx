@@ -159,6 +159,7 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
     })),
     { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
     { label: t("takeover.commandLabel"), kb: undefined, run: () => actions.openSurface("takeover") },
+    { label: t("buildPage.commandLabel"), kb: undefined, run: () => actions.openSurface("build-page") },
     { label: t("commandPalette.switchProject"), kb: keyLabel("switchProject"), run: actions.openProjectMenu },
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
     { label: t("commandPalette.settings"), kb: keyLabel("settings"), run: actions.openSettings },

@@ -461,6 +461,10 @@ plugins:
   # issues and, with leave, local agent sessions) into a draft a person ticks.
   - id: takeover
     name: "@tomradex/takeover"
+  # The public build page: the roadmap, changelog and feedback link a person
+  # ticked, previewed, then published to their own repository's GitHub Pages.
+  - id: build-page
+    name: "@tomradex/build-page"
   # Failed CI, reviews and people's comments on a ticket's open pull request go
   # back to the agent working it. Off until Settings says so; runs on this machine.
   - id: pr-feedback

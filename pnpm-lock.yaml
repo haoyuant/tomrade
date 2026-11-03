@@ -71,6 +71,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../../packages/boards
+      '@tomradex/build-page':
+        specifier: workspace:*
+        version: link:../../packages/build-page
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../../packages/code-link
@@ -607,6 +610,58 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/build-page:
+    dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/inbox-github':
+        specifier: workspace:*
+        version: link:../inbox-github
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -3021,6 +3076,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/build-page':
+        specifier: workspace:*
+        version: link:../build-page
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link

@@ -1,0 +1,40 @@
+{
+  "name": "@tomradex/build-page",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The public build page: the roadmap, changelog and feedback link a person ticked, rendered to one static page and published to their own repository's GitHub Pages",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/inbox-github": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/inbox": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}
