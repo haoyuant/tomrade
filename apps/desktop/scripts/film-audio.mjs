@@ -31,7 +31,9 @@ function mi(f0, len) {
   };
 }
 
-function bed(seconds) {
+/** `sections` names what plays from each time on: sparse (plucks only), full, double (the same, busier), tail (chords ringing out). */
+function bed(seconds, sections = []) {
+  const sectionAt = (t) => sections.reduce((now, [from, name]) => (t + 1e-6 >= from ? name : now), "full");
   const n = Math.ceil(seconds * RATE);
   const L = new Float32Array(n);
   const R = new Float32Array(n);
@@ -57,8 +59,15 @@ function bed(seconds) {
     const t0 = bar * BEAT * 4;
     const chord = CHORDS[bar % CHORDS.length];
     const e8 = BEAT / 2;
+    const section = sectionAt(t0);
+    const sparse = section === "sparse";
+    const double = section === "double";
+    if (section === "tail") {
+      if (t0 < seconds) for (const [k, note] of chord.slice(1).entries()) add(t0, 2.4, marimba(midi(note + 12), 0.05), (k - 1) * 0.3);
+      continue;
+    }
     // Bass hops: root on the beat, octave on the "and".
-    for (let e = 0; e < 8; e++) {
+    if (!sparse) for (let e = 0; e < 8; e++) {
       const f = midi(chord[0] - 12 + (e % 2 ? 12 : 0));
       add(t0 + e * e8, e8 * 0.9, (t) => Math.min(1, t / 0.004) * Math.exp(-t * 9) * (Math.sin(2 * Math.PI * f * t) + 0.25 * Math.sin(4 * Math.PI * f * t)) * (e % 2 ? 0.055 : 0.085));
     }
@@ -70,13 +79,14 @@ function bed(seconds) {
       step = Math.max(0, Math.min(PENTA.length - 1, step + Math.round(tune() * 2)));
       const note = e === 0 ? chord[1] + 12 + (bar % 4 === 3 ? 7 : 0) : PENTA[step];
       add(t0 + e * e8, 0.8, kalimba(midi(note), 0.078), 0.15);
+      if (double) add(t0 + e * e8, 0.6, kalimba(midi(note + 12), 0.04), -0.2);
     });
     // Drums: kick on every beat, claps on 2 and 4, a shaker in sixteenths.
-    for (let b = 0; b < 4; b++) add(t0 + b * BEAT, 0.25, (t) => Math.sin(2 * Math.PI * (48 + 90 * Math.exp(-t * 35)) * t) * Math.exp(-t * 12) * 0.14);
-    for (const b of [1, 3]) for (const d of [0, 0.012, 0.024]) add(t0 + b * BEAT + d, 0.18, (t) => rnd() * Math.exp(-t * 30) * 0.05, d ? 0.2 : -0.2);
+    if (!sparse) for (let b = 0; b < 4; b++) add(t0 + b * BEAT, 0.25, (t) => Math.sin(2 * Math.PI * (48 + 90 * Math.exp(-t * 35)) * t) * Math.exp(-t * 12) * 0.14);
+    if (!sparse) for (const b of double ? [0.5, 1, 1.5, 2.5, 3, 3.5] : [1, 3]) for (const d of [0, 0.012, 0.024]) add(t0 + b * BEAT + d, 0.18, (t) => rnd() * Math.exp(-t * 30) * 0.05, d ? 0.2 : -0.2);
     for (let s16 = 0; s16 < 16; s16++) add(t0 + s16 * BEAT / 4, 0.04, (t) => rnd() * Math.exp(-t * 120) * (s16 % 2 ? 0.014 : 0.024), 0.4);
     // Every fourth bar ends on two "mi~"s.
-    if (bar % 4 === 3) {
+    if (bar % 4 === 3 || double) {
       add(t0 + 6 * e8, 0.22, mi(midi(81), 0.22), -0.1);
       add(t0 + 7 * e8, 0.3, mi(midi(84), 0.3), 0.1);
     }
@@ -109,12 +119,17 @@ const EFFECTS = {
     } };
   },
   chime: () => ({ len: 1.4, fn: (t) => [76, 83].reduce((s, n, i) => s + (t > i * 0.09 ? Math.sin(2 * Math.PI * midi(n) * (t - i * 0.09)) * Math.exp(-(t - i * 0.09) * 3.2) : 0), 0) * 0.09 }),
+  // A round little bubble of a note, for a press that lands on the beat.
+  boop: (_rnd, e) => ({ len: 0.34, fn: (t) => {
+    const f = midi(e.note ?? 76) * (1 + 0.22 * Math.exp(-t * 34));
+    return (Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(4 * Math.PI * f * t) * Math.exp(-t * 18)) * Math.exp(-t * 11) * Math.min(1, t / 0.003) * 0.2;
+  } }),
   undo: () => ({ len: 1.2, fn: (t) => [83, 76].reduce((s, n, i) => s + (t > i * 0.08 ? Math.sin(2 * Math.PI * midi(n) * (t - i * 0.08)) * Math.exp(-(t - i * 0.08) * 3.5) : 0), 0) * 0.08 })
 };
 
 /** Writes music under `seconds` plus each `{ t, kind }` effect to a 16-bit stereo WAV. */
-export function mix(file, seconds, effects = [], { music = 0.8 } = {}) {
-  const { L, R } = bed(seconds + 1);
+export function mix(file, seconds, effects = [], { music = 0.8, sections = [] } = {}) {
+  const { L, R } = bed(seconds + 1, sections);
   const n = Math.ceil(seconds * RATE);
   const rnd = noise(3);
   for (let i = 0; i < n; i++) {
@@ -126,7 +141,7 @@ export function mix(file, seconds, effects = [], { music = 0.8 } = {}) {
   for (const e of effects) {
     const make = EFFECTS[e.kind];
     if (!make) continue;
-    const { len, fn } = make(rnd);
+    const { len, fn } = make(rnd, e);
     const a = Math.floor(e.t * RATE);
     for (let i = 0; i < len * RATE && a + i < n; i++) {
       const v = fn(i / RATE) * (e.gain ?? 1);
