@@ -6,6 +6,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import { gitRunner, type Git } from "@tomradex/git";
 import { GitFileStore, type GitRemoteTarget } from "../src/git-store.js";
 
+/** The git command a runner was asked to run, past the config the store puts in front of it. */
+const verb = (args: string[]): string | undefined => {
+  let i = 0;
+  while (args[i] === "-c") i += 2;
+  return args[i];
+};
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "files-selective-"));
 let serial = 0;
 const stores: GitFileStore[] = [];
@@ -233,7 +240,7 @@ describe("selective Git projection", { timeout: 30000 }, () => {
     const remote = bare(); const a = await open(target(remote));
     await a.write("a.txt", text("base")); await a.sync();
     let rejectPush = false;
-    const runner: Git = async (args, options) => rejectPush && args[0] === "push" ? { code: 1, stdout: "", stderr: "injected rejection" } : git(args, options);
+    const runner: Git = async (args, options) => rejectPush && verb(args) === "push" ? { code: 1, stdout: "", stderr: "injected rejection" } : git(args, options);
     let b = await open(target(remote), undefined, runner);
     await a.write("a.txt", text("remote")); await a.sync();
     await b.remove("a.txt");

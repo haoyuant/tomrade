@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
 import { GitFolder, SyncRecorder, execGit, type Git, type SyncProgress, type SyncTrace } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, STORE_CONFIG, blobId, exclusiveTransport, isolated, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, homeForm, otherStoreHere, presenceKey, separateWorlds, storeId } from "./scopes.js";
 import type { ExchangeFailure } from "./sync-failure.js";
 import {
@@ -49,6 +49,7 @@ const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
 /** Pushes in a row that put back what the remote had just undone, before sharing stops to wait. */
 const FLIP_ROUNDS = 3;
+const UNREACHABLE = /fetch failed|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|socket hang up|network/i;
 
 export interface GitRemoteTarget {
   url: string;
@@ -150,7 +151,7 @@ export function contentOf(rel: string, bytes: Buffer, fileId: string | null, ver
 }
 
 const execBuffer = (binary: string, args: string[], cwd: string): Promise<Buffer | null> =>
-  execGit(binary, args, { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }).then(
+  execGit(binary, [...STORE_CONFIG, ...args], { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }).then(
     (r) => r.stdout,
     () => null
   );
@@ -179,6 +180,8 @@ const changeOf = (xy: string): FileChange | undefined => {
 export class GitFileStore implements FileStore {
   readonly dir: string;
   private readonly g: GitFolder;
+  private readonly runner: Git;
+  private readonly transport: Git;
   private branch = "main";
   private watcher: fs.FSWatcher | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -214,11 +217,13 @@ export class GitFileStore implements FileStore {
 
   constructor(private readonly opts: GitStoreOptions) {
     this.dir = opts.dir;
-    this.g = new GitFolder(opts.git, opts.dir);
+    this.runner = isolated(opts.git, true);
+    this.transport = isolated(opts.git);
+    this.g = new GitFolder(this.runner, opts.dir);
   }
 
   private git(args: string[], o: { ok?: boolean } = {}) {
-    return this.opts.git(args, { cwd: this.dir, ...o });
+    return this.runner(args, { cwd: this.dir, ...o });
   }
 
   /** Index-changing git calls run one at a time; an agent's write must not interleave with the watcher's save. */
@@ -258,7 +263,7 @@ export class GitFileStore implements FileStore {
     this.policy = stored.sync;
     this.agents = stored.agents;
     this.latest = loadJson(this.meta("latest.json"), {});
-    if (remote) this.loadSyncState(new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote).key);
+    if (remote) this.loadSyncState(new GitProjection(this.transport, this.opts.gitBinary, this.dir, remote).key);
     this.scaffold();
     const fresh = !(await this.head());
     if (fresh) await this.commitAll("Files store created");
@@ -754,7 +759,7 @@ export class GitFileStore implements FileStore {
 
   /** Exit 1 is "no match", not a failure; anything slower than this is a query not worth waiting for. */
   private grep(args: string[]): Promise<string> {
-    return execGit(this.opts.gitBinary, args, { cwd: this.dir, maxBuffer: 8 * 1024 * 1024, timeout: 10_000 }).then(
+    return execGit(this.opts.gitBinary, [...STORE_CONFIG, ...args], { cwd: this.dir, maxBuffer: 8 * 1024 * 1024, timeout: 10_000 }).then(
       (r) => r.stdout,
       (error: { stdout?: string }) => error.stdout ?? ""
     );
@@ -1056,10 +1061,14 @@ export class GitFileStore implements FileStore {
         await this.opts.ensureRemote();
         this.ensured = true;
       }
-      const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
+      const projection = new GitProjection(this.transport, this.opts.gitBinary, this.dir, remote);
       await exclusiveTransport(projection.dir, async () => {
+        // Closed meanwhile (rebound, or reopened after the project took another machine's changes): the folder is its
+        // successor's now, and this store touches it no more.
+        if (this.closed) return;
         const unfetched = await projection.fetch(recorder);
         if (unfetched) return this.failed(unfetched);
+        if (this.closed) return;
         recorder.step("merging");
         const snapshot = await this.locked(() => this.reconcile(projection));
         if (!snapshot) return;
@@ -1068,6 +1077,7 @@ export class GitFileStore implements FileStore {
           this.problem = { state: "error", detail: "Another machine keeps undoing what this one shares, and this one undoes it back; sharing waits until either side changes something" };
           return;
         }
+        if (this.closed) return;
         const unpushed = await projection.push(recorder);
         if (unpushed) return this.failed(unpushed);
         this.published(trees);
@@ -1087,7 +1097,9 @@ export class GitFileStore implements FileStore {
       });
     } catch (error) {
       recorder?.fail();
-      this.problem = { state: "error", detail: errorMessage(error) };
+      const detail = errorMessage(error);
+      // Making sure the remote exists asks its host over the network, which can be out of reach too.
+      this.problem = { state: UNREACHABLE.test(detail) ? "offline" : "error", detail };
       told = true;
     } finally {
       if (recorder) this.trace = recorder.finish();

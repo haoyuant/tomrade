@@ -38,6 +38,22 @@ export interface SyncState {
 
 export const emptySyncState = (): SyncState => ({ v: 2, baseline: {}, conflicts: {} });
 
+/**
+ * The store and its projection are Tomrade's, not the person's: their global git config must not change the bytes.
+ * Line-ending conversion and attributes made the ids recorded differ from the bytes shared (a change that is none,
+ * then a clash that is none) and could convert what is sent; a global ignore left a received file untracked, read next
+ * as deleted here and deleted from the remote; a hook of theirs could refuse or hold an exchange.
+ */
+export const STORE_CONFIG = ["-c", "core.autocrlf=false", "-c", "core.attributesFile=", "-c", "core.excludesFile=", "-c", "core.hooksPath="];
+
+/** The store's own history never leaves this machine, so it is never signed: a key would only prompt, or fail, while the store is locked. What is sent keeps the person's signing. */
+const LOCAL_CONFIG = [...STORE_CONFIG, "-c", "commit.gpgsign=false"];
+
+export const isolated = (git: Git, local = false): Git => {
+  const config = local ? LOCAL_CONFIG : STORE_CONFIG;
+  return (args, opts) => git([...config, ...args], opts);
+};
+
 /** The id git gives these bytes, so what the remote already holds is recognised without asking git. */
 export const blobId = (bytes: Buffer): string => createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 
@@ -317,7 +333,7 @@ export class GitProjection {
   async read(rel: string): Promise<Buffer | null> {
     const entry = this.entries.get(this.prefix + rel);
     if (!entry) return null;
-    return (await execGit(this.binary, ["cat-file", "blob", entry.oid], { cwd: this.dir, encoding: "buffer", maxBuffer: 128 * 1024 * 1024 })).stdout;
+    return (await execGit(this.binary, [...STORE_CONFIG, "cat-file", "blob", entry.oid], { cwd: this.dir, encoding: "buffer", maxBuffer: 128 * 1024 * 1024 })).stdout;
   }
 
   /** Put bytes at a path, or remove it with null. Bytes the remote already has there cost nothing. */
