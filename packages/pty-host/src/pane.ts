@@ -3,7 +3,7 @@ import type { IBufferCell, Terminal as HeadlessTerminal } from "@xterm/headless"
 import type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll } from "@tomradex/contracts";
 import type { DetectionInput } from "./detection.js";
 import { clampSize, type PaneInfo } from "./protocol.js";
-import { diffFrame, fullFrame, renderRow, type Screen } from "./render.js";
+import { diffFrame, fullFrame, RowCache, type Screen } from "./render.js";
 
 const { Terminal } = createRequire(import.meta.url)("@xterm/headless") as typeof import("@xterm/headless");
 
@@ -68,12 +68,16 @@ export class Pane {
   private seq = 0;
   /** Cancels the paint on its way, if one is. */
   private painting: (() => void) | null = null;
+  /** When the paint waiting on a timer is due; 0 while none does. */
+  private dueAt = 0;
   private paintedAt = 0;
   /** How far apart paints are now, and since when output has come within a frame of every paint (0 after a quiet frame). */
   private frameMs = FRAME_MS;
   private busySince = 0;
   private lastScroll: ScrollState | null = null;
   private readonly cell: IBufferCell;
+  /** The rows of the screen last read, so an unchanged one is not read again. */
+  private readonly rows = new RowCache();
   /** Modes the public API does not report, read off the program's own sequences. */
   private cursorVisible = true;
   private cursorStyle = 0;
@@ -125,9 +129,12 @@ export class Pane {
       hooks.onTitle?.(this);
     });
     // Its answers to the program's queries (device attributes, cursor position) go back to the program.
-    this.term.onData((data) => !this.exited && this.pty.write(data));
+    this.term.onData((data) => data && !this.exited && this.pty.write(data));
     pty.onData((data) => {
       const base = this.term.buffer.active.baseY;
+      // Parsed now, as xterm parses the write after a keystroke, not a timer later: a whole 15.6 ms tick on Windows,
+      // on every chunk an agent draws. A long flood is still sliced, past 12 ms of parsing, by xterm itself.
+      this.term.input("", true);
       this.term.write(data, () => {
         // A view up in the scrollback stays on what it showed while output goes on below.
         if (this.offset) this.offset = Math.min(this.offset + Math.max(0, this.term.buffer.active.baseY - base), this.maxOffset());
@@ -165,10 +172,11 @@ export class Pane {
     const top = buffer.baseY - offset;
     const out: Screen = { width: cols, height: rows, rows: [], widths: [], cursor: null, modes: this.modes(), alternate: buffer.type === "alternate" };
     for (let y = 0; y < rows; y++) {
-      const row = renderRow(buffer.getLine(top + y), cols, this.cell);
+      const row = this.rows.render(buffer.getLine(top + y), cols, this.cell);
       out.rows.push(row.text);
       out.widths.push(row.width);
     }
+    this.rows.done();
     if (!offset && this.cursorVisible) out.cursor = { x: Math.min(buffer.cursorX, cols - 1), y: buffer.cursorY };
     return out;
   }
@@ -214,10 +222,13 @@ export class Pane {
   /** The last lines with something on them, styling stripped. */
   tail(lines: number): string {
     const buffer = this.term.buffer.active;
+    const row = (y: number) => buffer.getLine(y)?.translateToString(true) ?? "";
+    // From the end up, so a full scrollback is not read whole for a few lines.
+    let last = buffer.length - 1;
+    while (last >= 0 && !row(last)) last--;
     const text: string[] = [];
-    for (let y = 0; y < buffer.length; y++) text.push(buffer.getLine(y)?.translateToString(true) ?? "");
-    while (text.length && !text.at(-1)) text.pop();
-    return text.slice(-Math.max(1, lines)).join("\n");
+    for (let y = Math.max(0, last - Math.max(1, lines) + 1); y <= last; y++) text.push(row(y));
+    return text.join("\n");
   }
 
   /** Attaches a window once everything written so far is on the screen: `ready` hears it took, then the window is painted the screen whole. */
@@ -263,8 +274,7 @@ export class Pane {
       this.frameMs = FRAME_MS;
       this.busySince = 0;
       if (this.painting) {
-        this.painting();
-        this.painting = null;
+        this.cancelPaint();
         this.schedule();
       }
     }
@@ -354,11 +364,13 @@ export class Pane {
    * every paint for `BUSY_MS` is painted every `BUSY_FRAME_MS`, until a frame goes by without any.
    */
   private schedule(): void {
-    if (this.painting || this.exited) return;
-    const paint = () => {
-      this.painting = null;
-      this.flush();
-    };
+    if (this.exited) return;
+    if (this.painting) {
+      // Windows fires a timer on its next 15.6 ms tick, so up to a tick late: output that comes once the paint is due
+      // paints it now. In a flood that keeps the frames on time.
+      if (this.dueAt && Date.now() >= this.dueAt) this.paintSoon();
+      return;
+    }
     const now = Date.now();
     if (now - this.paintedAt >= this.frameMs) {
       this.frameMs = FRAME_MS;
@@ -366,18 +378,27 @@ export class Pane {
     } else if (!this.busySince) this.busySince = this.paintedAt;
     else if (now - this.busySince >= BUSY_MS) this.frameMs = BUSY_FRAME_MS;
     const wait = this.paintedAt + this.frameMs - now;
-    if (wait <= 0) {
-      const soon = setImmediate(paint);
-      this.painting = () => clearImmediate(soon);
-    } else {
-      const timer = setTimeout(paint, wait);
-      this.painting = () => clearTimeout(timer);
-    }
+    if (wait <= 0) return this.paintSoon();
+    const timer = setTimeout(() => this.flush(), wait);
+    this.painting = () => clearTimeout(timer);
+    this.dueAt = now + wait;
+  }
+
+  /** Paints right after this turn of the event loop: what else came in this turn goes with it. */
+  private paintSoon(): void {
+    this.cancelPaint();
+    const soon = setImmediate(() => this.flush());
+    this.painting = () => clearImmediate(soon);
+  }
+
+  private cancelPaint(): void {
+    this.painting?.();
+    this.painting = null;
+    this.dueAt = 0;
   }
 
   private flush(): void {
-    this.painting?.();
-    this.painting = null;
+    this.cancelPaint();
     this.paintedAt = Date.now();
     const next = this.screen();
     if (this.shown && this.attachments.size) {
@@ -392,7 +413,7 @@ export class Pane {
   }
 
   private frame(screen: Screen, full: boolean, bytes = fullFrame(screen)): TerminalFrame {
-    return { seq: ++this.seq, width: screen.width, height: screen.height, full, bytes: new Uint8Array(Buffer.from(bytes, "utf8")) };
+    return { seq: ++this.seq, width: screen.width, height: screen.height, full, bytes: Buffer.from(bytes, "utf8") };
   }
 
   private tellScroll(): void {
@@ -414,8 +435,7 @@ export class Pane {
 
   dispose(): void {
     this.end();
-    this.painting?.();
-    this.painting = null;
+    this.cancelPaint();
     this.term.dispose();
   }
 }

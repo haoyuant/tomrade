@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 import type { IBufferCell, Terminal as HeadlessTerminal } from "@xterm/headless";
 import { Pane, type Pty } from "../src/pane.js";
-import { diffFrame, fullFrame, scrollOf, type Screen } from "../src/render.js";
+import { diffFrame, fullFrame, renderRow, RowCache, scrollOf, type Screen } from "../src/render.js";
 
 const { Terminal } = createRequire(import.meta.url)("@xterm/headless") as typeof import("@xterm/headless");
 
@@ -190,5 +190,68 @@ describe("a diff that sees scrolls", () => {
     await print("\x1b[0m\r\n\r\n");
     const after = p.screen();
     await applied(before, diffFrame(before, after), p);
+  });
+});
+
+describe("rows read again only when they changed", () => {
+  /** A seeded stream of what programs draw: colors, wide and combined characters, links, styled underlines, moves, erases, scrolls, the alternate screen. */
+  function drawing(seed: number) {
+    let s = seed;
+    const rand = (n: number) => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s % n;
+    };
+    const pieces = [
+      () => `\x1b[3${rand(8)}mword${rand(100)}\x1b[0m`,
+      () => `\x1b[38;2;${rand(256)};${rand(256)};${rand(256)}m\x1b[48;5;${rand(256)}mrgb\x1b[0m`,
+      () => "中文字",
+      () => "e\u0301 a\u0308",
+      () => "\u{1F469}\u200D\u{1F4BB}",
+      () => `\x1b]8;;https://example.com/${rand(9)}\x07link\x1b]8;;\x07`,
+      () => `\x1b[4:3m\x1b[58;5;${rand(16)}mcurly\x1b[0m`,
+      () => `\x1b[1;7;9mbold\x1b[0m`,
+      () => `\x1b[${rand(12) + 1};${rand(30) + 1}H`,
+      () => (rand(2) ? "\x1b[K" : "\x1b[J"),
+      () => "\r\n".repeat(rand(4) + 1),
+      () => (rand(2) ? `\x1b[${rand(3) + 1}L` : `\x1b[${rand(3) + 1}M`),
+      () => (rand(5) ? " ".repeat(rand(10)) : rand(2) ? "\x1b[?1049h" : "\x1b[?1049l")
+    ];
+    return () => Array.from({ length: rand(12) + 1 }, () => pieces[rand(pieces.length)]!()).join("");
+  }
+
+  it("reads the screen as reading every row afresh does, as it scrolls, recycles its scrollback and resizes", () => {
+    const term = new Terminal({ cols: 30, rows: 12, scrollback: 20, allowProposedApi: true });
+    terms.push(term);
+    const cache = new RowCache();
+    const cell = term.buffer.active.getNullCell();
+    const next = drawing(7);
+    for (let step = 0; step < 600; step++) {
+      // Parsed at once, as the pane has it parsed: no timer a step.
+      term.input("", true);
+      term.write(next());
+      if (step % 97 === 96) term.resize(20 + (step % 23), 8 + (step % 7));
+      const buffer = term.buffer.active;
+      for (let y = 0; y < term.rows; y++) {
+        const line = buffer.getLine(buffer.baseY + y);
+        expect(cache.render(line, term.cols, cell)).toEqual(renderRow(line, term.cols, cell));
+      }
+      cache.done();
+    }
+  });
+
+  it("finds xterm's own rows to compare, so an upgrade that moves them is noticed, and hands an unchanged row back as it was", async () => {
+    const { pane: p, print } = await pane(10, 3);
+    await print("hi");
+    const raw = (p.term.buffer.active.getLine(0) as unknown as { _line?: { _data?: unknown; length?: unknown } })._line;
+    expect(raw?._data).toBeInstanceOf(Uint32Array);
+    expect(raw?.length).toBe(10);
+    const cache = new RowCache();
+    const cell = p.term.buffer.active.getNullCell();
+    const first = cache.render(p.term.buffer.active.getLine(0), 10, cell);
+    cache.done();
+    expect(cache.render(p.term.buffer.active.getLine(0), 10, cell)).toBe(first);
+    cache.done();
+    await print("!");
+    expect(cache.render(p.term.buffer.active.getLine(0), 10, cell)).toEqual({ text: "hi!", width: 3 });
   });
 });

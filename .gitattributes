@@ -1,0 +1,2 @@
+# Agents' screens as a terminal shows them: tests read them byte for byte, so a Windows checkout keeps their LF.
+packages/pty-host/tests/fixtures/agent-screens/*.txt text eol=lf

@@ -201,8 +201,12 @@ describe("the host", () => {
     const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir(), cols: 20, rows: 4 });
     const pty = FakePty.last!;
     const scrolls: unknown[] = [];
-    const sub = hostStream(pipe, [{ type: "pane.scroll_changed", pane_id }], (e) => scrolls.push(e.data.scroll), () => undefined);
+    let subscribed = () => undefined as void;
+    const started = new Promise<void>((resolve) => (subscribed = resolve));
+    const sub = hostStream(pipe, [{ type: "pane.scroll_changed", pane_id }], (e) => scrolls.push(e.data.scroll), () => undefined, () => subscribed());
     closers.push(() => sub.close());
+    // Only what changes after the subscription is told: the output is parsed as it comes.
+    await started;
     pty.print(Array.from({ length: 12 }, (_, i) => `line${i}`).join("\r\n"));
     const t = await attached(pipe, pane_id, "control", 20, 4);
     await vi.waitFor(() => expect(scrolls.at(-1)).toEqual({ offset_from_bottom: 0, max_offset_from_bottom: 8, viewport_rows: 4 }));

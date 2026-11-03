@@ -1,4 +1,5 @@
 import net from "node:net";
+import type { TerminalFrame } from "@tomradex/contracts";
 import { agentIn, descendants, shortCommand, strippedTitle, type ProcessRow } from "./agents.js";
 import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type PaneInfo, type ProcessInfo, type Request, type TerminalCommand } from "./protocol.js";
 import { keyBytes } from "./keys.js";
@@ -40,6 +41,10 @@ export interface ScanTiming {
 export const SCAN_TIMING: ScanTiming = { minMs: 3_000, staleMs: 5_000, soonMs: 1_000 };
 
 type Subscription = { type: string; pane_id?: string };
+
+/** The last frame as it goes down a pipe: every window attached to its pane is sent the same one, encoded once. */
+let encoded: { frame: TerminalFrame; text: string } | null = null;
+const frameText = (frame: TerminalFrame) => (encoded?.frame === frame ? encoded.text : (encoded = { frame, text: line(frameLine(frame)) }).text);
 type Table = { rows: ProcessRow[]; at: number };
 
 class RequestError extends Error {
@@ -336,7 +341,7 @@ export class Host {
     const attachment: Attachment = {
       mode,
       send: (frame) => {
-        if (open && socket.writable) socket.write(line(frameLine(frame)));
+        if (open && socket.writable) socket.write(frameText(frame));
       },
       close: (reason) => {
         if (!open) return;
