@@ -232,7 +232,10 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
             throw new Error(DRY);
           }
         }),
-        listCompatible: async () => ({ ok: false, detail: DRY })
+        listCompatible: async () => ({ ok: false, detail: DRY }),
+        completeJson: async () => {
+          throw new Error(DRY);
+        }
       });
     },
     get terminals(): TerminalsApi {

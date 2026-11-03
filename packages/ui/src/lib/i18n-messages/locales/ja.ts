@@ -397,6 +397,7 @@ export const ja: PartialMessages = {
     purposeInbox: "受信箱の振り分け",
     purposePlaybook: "プレイブックの選択",
     purposeBranch: "ブランチ名",
+    purposePlugin: "{{label}} · プラグイン {{plugin}}",
     purposeOther: "その他"
   },
   webSearch: {

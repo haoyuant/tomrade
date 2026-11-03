@@ -16,5 +16,13 @@ export const modelsApi = ({ host }: Facade): ModelsApi => ({
       host.svc("models");
       const listed = await listModels({ provider: "openai-compatible", baseURL: String(endpoint.baseURL) }, String(endpoint.apiKey ?? ""), 15_000, signal, endpoint.headers ? strings(endpoint.headers) : undefined);
       return listed.ok ? { ok: true as const, models: listed.models, capabilities: listed.capabilities } : listed;
+    }),
+  // Only what the request may say is passed on: the worker is the person's pick, never the plugin's.
+  completeJson: (schema, request, label) =>
+    host.call(() => {
+      const llm = host.svc("models");
+      if (typeof label !== "string" || !label.trim() || label.length > 64) throw new Error(`${host.identity.id}: completeJson needs a label of 1–64 characters`);
+      const { system, user, maxTokens, temperature, signal, timeoutMs } = request;
+      return llm.completeJson(schema, { system: String(system), user: String(user), maxTokens, temperature, signal, timeoutMs, purpose: `plugin:${host.identity.id}:${label.trim()}` });
     })
 });

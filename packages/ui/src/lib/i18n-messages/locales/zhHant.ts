@@ -397,6 +397,7 @@ export const zhHant: PartialMessages = {
     purposeInbox: "收件匣分揀",
     purposePlaybook: "推薦 playbook",
     purposeBranch: "分支命名",
+    purposePlugin: "{{label}} · 外掛 {{plugin}}",
     purposeOther: "其他"
   },
   webSearch: {

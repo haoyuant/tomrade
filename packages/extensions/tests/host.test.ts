@@ -396,6 +396,84 @@ describe("the extension host", () => {
     expect(() => llm.for("worker")).toThrow(/No model provider "demo" is installed/);
   });
 
+  it("lets a plugin ask the person's worker for a document, on a profile or a signed-in CLI, kept in the Usage pane under its name and label", async () => {
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, `worker-${Math.random()}.json`) }], Llm] });
+    const llm = w.ctx.llm as Llm;
+    const schema = z.object({ title: z.string() });
+    const replies = ["not json", '{"title":"Profile"}'];
+    const asked: string[] = [];
+    let models: PluginContext["models"] | undefined;
+    await w.ctx.plugin(
+      ext(
+        definePlugin({
+          inject: ["models"],
+          async apply(p) {
+            models = p.models;
+            await p.models.registerProvider({
+              id: "demo",
+              title: "Demo AI",
+              baseURL: { default: "https://api.demo.example/v1" },
+              list: () => ({ ok: true, models: null }),
+              build: (profile) => ({
+                capabilities: { tools: false, streaming: true, json: false },
+                async *chat(request) {
+                  asked.push(`${profile.model} ${request.messages.length}`);
+                  yield { type: "text", delta: replies.shift() ?? "" };
+                  yield { type: "usage", inputTokens: 10, outputTokens: 2 };
+                  yield { type: "stop", reason: "end" };
+                }
+              })
+            });
+          }
+        })
+      )
+    );
+    await settle();
+    const ask = (label = "copy") => models!.completeJson(schema, { system: "Write copy.", user: "A MUD launch" }, label);
+
+    await expect(ask()).rejects.toThrow(/No model profile configured/);
+    await expect(ask(" ")).rejects.toThrow(/label of 1–64 characters/);
+
+    // The person's profile answers; output that does not fit gets the one repair round.
+    w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "d", title: "Demo", provider: "demo", apiKey: "k", model: "demo-large" }], roles: { worker: "" } } });
+    expect(await ask()).toEqual({ title: "Profile" });
+    expect(asked).toEqual(["demo-large 1", "demo-large 3"]);
+
+    // A signed-in CLI the person picked as the worker answers just the same.
+    llm.lend({
+      id: "cli",
+      title: "Signed-in CLI",
+      ready: async () => true,
+      model: {
+        capabilities: { tools: false, streaming: false, json: false },
+        async *chat() {
+          yield { type: "text", delta: '{"title":"Lent"}' };
+          yield { type: "stop", reason: "end" };
+        }
+      }
+    });
+    w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [], roles: { worker: "lent:cli" } } });
+    expect(await ask("tweet")).toEqual({ title: "Lent" });
+
+    expect(llm.workerUsage().today).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "profile:d", purpose: "plugin:someone/demo:copy", calls: 1, inputTokens: 20, outputTokens: 4 }),
+        expect.objectContaining({ source: "lent:cli", purpose: "plugin:someone/demo:tweet", calls: 1 })
+      ])
+    );
+  });
+
+  it("refuses worker calls from a plugin that did not name models", async () => {
+    let refused: unknown;
+    await world(definePlugin({
+      inject: ["contributions"],
+      async apply(p) {
+        refused = await p.models.completeJson(z.object({}), { system: "s", user: "u" }, "copy").catch((err: unknown) => err);
+      }
+    }));
+    expect(String(refused)).toMatch(/did not name "models"/);
+  });
+
   it("builds a plugin's models on the app's OpenAI-compatible adapter, with the vendor's own fields and its search on chat/completions", async () => {
     const sent: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {

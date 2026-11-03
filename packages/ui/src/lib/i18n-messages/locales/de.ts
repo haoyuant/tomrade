@@ -373,6 +373,7 @@ export const de: PartialMessages = {
     purposeInbox: "Inbox-Sichtung",
     purposePlaybook: "Playbook-Auswahl",
     purposeBranch: "Branch-Name",
+    purposePlugin: "{{label}} · Plugin {{plugin}}",
     purposeOther: "Sonstiges"
   },
   webSearch: {
