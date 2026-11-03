@@ -29,6 +29,8 @@ export interface FilesStatus {
   behind: number;
   /** The latest version, null until something has been saved. */
   head: string | null;
+  /** Other folders on this machine syncing the same shared files, as `~/…`: two copies of one project, the person should keep one. */
+  elsewhere?: string[];
   /** True for a store that keeps no versions — no git on this machine: no history, undo, ticket pins or sharing. */
   versionless?: boolean;
 }

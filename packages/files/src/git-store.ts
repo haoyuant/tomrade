@@ -5,7 +5,7 @@ import type { FileReference } from "@tomradex/domain";
 import { GitFolder, SyncRecorder, execGit, type Git, type SyncProgress, type SyncTrace } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, exclusiveTransport, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
-import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
+import { boundDirectory, ensureStoreId, homeForm, otherStoreHere, presenceKey, separateWorlds, storeId } from "./scopes.js";
 import type { ExchangeFailure } from "./sync-failure.js";
 import {
   FileChangedError,
@@ -37,6 +37,8 @@ import { errorMessage } from "@tomradex/contracts";
 
 export const IDS_DIR = ".tomrade-files";
 export const IDS_FILE = `${IDS_DIR}/ids.jsonl`;
+/** One line per store that ever synced here, so two folders on one machine serving the same project are found out. */
+const STORES_DIR = `${IDS_DIR}/stores`;
 const KEEP = ".keep";
 const TEXT_LIMIT = 2 * 1024 * 1024;
 /** The most of a binary file a read hands back; anything a ticket body links must fit. */
@@ -203,6 +205,10 @@ export class GitFileStore implements FileStore {
   private syncedHead: string | null = null;
   private policyDirty = false;
   private agentsDirty = false;
+  /** Other folders on this machine that sync the same shared files. */
+  private elsewhere: string[] = [];
+  /** What each store line the remote holds says, by blob id: read once. */
+  private presence = new Map<string, { store: string; folder: string } | null>();
 
   constructor(private readonly opts: GitStoreOptions) {
     this.dir = opts.dir;
@@ -984,7 +990,7 @@ export class GitFileStore implements FileStore {
   async status(): Promise<FilesStatus> {
     const conflicts = this.closed ? 0 : (await this.unmergedPaths()).length;
     const head = this.closed ? null : await this.head();
-    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head, ...(this.trace ? { trace: this.trace } : {}) };
+    const base: Omit<FilesStatus, "state"> = { location: this.opts.location ?? this.dir, lastSyncAt: this.lastSyncAt, conflicts, ahead: 0, behind: 0, head, ...(this.trace ? { trace: this.trace } : {}), ...(this.elsewhere.length ? { elsewhere: [...this.elsewhere] } : {}) };
     if (this.closed) return { ...base, state: "unavailable" };
     const progress = this.recorder?.progress();
     if (this.syncing) return { ...base, state: "syncing", ...(progress ? { progress } : {}) };
@@ -1024,6 +1030,7 @@ export class GitFileStore implements FileStore {
     let told = !!this.opts.remote && !quiet;
     const headBefore = this.syncedHead;
     const problemBefore = JSON.stringify(this.problem);
+    const elsewhereBefore = this.elsewhere.join("\n");
     // Only an exchange with a remote has steps worth following; a local save is over at once.
     const recorder = this.opts.remote ? new SyncRecorder((progress) => this.opts.onProgress?.(progress)) : null;
     this.recorder = recorder;
@@ -1077,7 +1084,7 @@ export class GitFileStore implements FileStore {
       if (recorder) this.trace = recorder.finish();
       this.recorder = null;
       this.syncing = false;
-      if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore)) told = true;
+      if (quiet && (this.syncedHead !== headBefore || JSON.stringify(this.problem) !== problemBefore || this.elsewhere.join("\n") !== elsewhereBefore)) told = true;
       if (told) this.opts.onChange();
     }
   }
@@ -1141,6 +1148,7 @@ export class GitFileStore implements FileStore {
     }
     this.mergePolicy(incomingPolicy);
     await this.importRecords(projection);
+    await this.notePresence(projection);
     // A clash waiting on a person is not synced over.
     if (Object.keys(this.syncState.conflicts).length) {
       this.problem = null;
@@ -1171,6 +1179,8 @@ export class GitFileStore implements FileStore {
     const outgoing = new Map<string, string>();
     const incomingBaseline: Record<string, string> = {};
     const selected = (p: string) => policyAt(this.policy, userPath(p)).mode === "shared";
+    const known = this.readLedger();
+    const rewound: string[] = [];
     for (const p of new Set([...Object.keys(this.syncState.baseline), ...remoteOids.keys(), ...localOids.keys()])) {
       const o = localOids.get(p);
       const t = remoteOids.get(p);
@@ -1187,7 +1197,12 @@ export class GitFileStore implements FileStore {
         this.syncState.conflicts[p] = { ours: ours?.toString("base64") ?? null, theirs: theirs?.toString("base64") ?? null, base: b ?? null };
         continue;
       }
-      const useRemote = o === b;
+      let useRemote = o === b;
+      if (useRemote && o !== t && o && (await this.lostOnRemote(p, known.byPath.get(p), projection))) {
+        // Not a change anyone made to this file: the remote went back to a copy from before ours was published.
+        useRemote = false;
+        rewound.push(p);
+      }
       if (useRemote && o !== t) {
         this.quiet(5_000);
         if (t) {
@@ -1208,6 +1223,7 @@ export class GitFileStore implements FileStore {
         if ((useRemote || o === t) && remoteIds.byPath.has(p)) carry.set(p, remoteIds.byPath.get(p)!);
       }
     }
+    if (rewound.length) this.opts.warn(`sync: the remote went back to an older copy of ${rewound.length} shared file(s), ${rewound.slice(0, 3).join(", ")}; publishing ours again rather than undoing them here`);
     // The baseline is the fetched remote until the push succeeds; a refused push is retried from here.
     this.syncState.baseline = incomingBaseline;
     if (incomingPolicy) {
@@ -1242,6 +1258,46 @@ export class GitFileStore implements FileStore {
     await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify({ v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy)));
     await this.exportRecords(projection, selected);
     return { baseline, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };
+  }
+
+  /** Say on the remote which folder this store is, once; and find the other stores of these files that live on this machine too. */
+  private async notePresence(projection: GitProjection): Promise<void> {
+    const own = `${STORES_DIR}/${presenceKey(this.dir)}.json`;
+    await projection.write(own, Buffer.from(JSON.stringify({ store: storeId(this.dir), folder: homeForm(this.dir) })));
+    const found: string[] = [];
+    for (const [p, entry] of projection.listing()) {
+      if (p === own || !p.startsWith(`${STORES_DIR}/`) || !p.endsWith(".json")) continue;
+      if (!this.presence.has(entry.oid)) {
+        let line: { store: string; folder: string } | null = null;
+        try {
+          const raw = JSON.parse((await projection.read(p))?.toString("utf8") ?? "null") as { store?: unknown; folder?: unknown } | null;
+          if (typeof raw?.store === "string" && typeof raw.folder === "string") line = { store: raw.store, folder: raw.folder };
+        } catch {
+          // another build's line, or a broken one: it names no folder
+        }
+        this.presence.set(entry.oid, line);
+      }
+      const line = this.presence.get(entry.oid);
+      if (line && otherStoreHere(line.folder, line.store, this.dir)) found.push(line.folder);
+    }
+    found.sort();
+    if (found.join("\n") !== this.elsewhere.join("\n")) {
+      this.elsewhere = found;
+      if (found.length) this.opts.warn(`sync: another folder on this machine also syncs these files: ${found.join(", ")}`);
+    }
+  }
+
+  /**
+   * Whether the remote lacks the record of the version of this file it last
+   * had from us. No sync ever takes a version record off the remote, a
+   * deletion included, so a missing one means the remote was put back to an
+   * older copy by something else, such as a merge that kept its own tree.
+   */
+  private async lostOnRemote(p: string, fileId: string | undefined, projection: GitProjection): Promise<boolean> {
+    if (!fileId) return false;
+    const versionId = await this.versionOf(p);
+    const rel = versionId ? this.recordPath({ fileId, versionId }) : null;
+    return !!rel && !!this.record({ fileId, versionId: versionId! }) && !projection.has(`${IDS_DIR}/${rel}.json`);
   }
 
   // ── conflicts ───────────────────────────────────────────────────────────────

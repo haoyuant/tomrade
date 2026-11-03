@@ -81,6 +81,11 @@ export function FilesBlock({ projectId }: { projectId: string }) {
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
           {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : hintOf(t, state, status.data)}
         </p>
+        {!!status.data?.elsewhere?.length && (
+          <p className="meta-txt dense files-elsewhere" style={{ marginTop: "var(--space-2)", color: "var(--danger)" }}>
+            {t("files.elsewhere", { folders: status.data.elsewhere.join(", ") })}
+          </p>
+        )}
         <SyncActivity id={`files:${projectId}`} progress={progress} trace={status.data?.trace} />
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary files-sync" disabled={sync.isPending || !dir} onClick={syncNow}>

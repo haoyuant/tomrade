@@ -139,6 +139,9 @@ export const cleanRemote = (remote: string): string => remote.replace(/\/\/[^@/]
 
 export type GitOrigin = "dedicated" | "shared" | "none";
 
+/** Paths in command-line-sized batches. */
+const chunks = (paths: string[], size = 200): string[][] => Array.from({ length: Math.ceil(paths.length / size) }, (_, i) => paths.slice(i * size, (i + 1) * size));
+
 const realpath = (p: string): string => {
   try {
     return fs.realpathSync(p);
@@ -330,18 +333,42 @@ export class GitFolder {
    * unrelated histories are allowed.
    */
   async beginMerge(branch: string, name = "origin"): Promise<void> {
-    const r = await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", `${name}/${branch}`], { cwd: this.dir, ok: true });
+    const theirs = `${name}/${branch}`;
+    const r = await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", theirs], { cwd: this.dir, ok: true });
     if (r.code === 0) return;
-    const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd: this.dir, ok: true })).stdout.split("\n").filter(Boolean);
+    const conflicted = await this.paths(["diff", "--name-only", "-z", "--diff-filter=U"]);
     if (!conflicted.length) {
-      // Not a content clash: fall back to a merge that keeps our tree outright.
+      // Not a content clash (a local edit or an untracked file in the way): record both parents over our tree, then take
+      // what only they changed. Our tree outright would undo their side, the shared files beside the artifact included.
       await this.git(["merge", "--abort"], { cwd: this.dir, ok: true });
-      await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", "-s", "ours", `${name}/${branch}`], { cwd: this.dir });
+      const base = await this.mergeBase(branch, name);
+      await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", "-s", "ours", theirs], { cwd: this.dir });
+      await this.takeOneSided(base, theirs);
       return;
     }
     // A clash outside the artifact keeps ours; inside it, the caller's merged files overwrite whatever git left.
-    for (const file of conflicted) await this.git(["checkout", "--ours", "--", file], { cwd: this.dir, ok: true });
-    await this.git(["add", "-A", "--", ...conflicted], { cwd: this.dir, ok: true });
+    for (const part of chunks(conflicted)) await this.git(["--literal-pathspecs", "checkout", "--ours", "--", ...part], { cwd: this.dir, ok: true });
+    for (const part of chunks(conflicted)) await this.git(["--literal-pathspecs", "add", "-A", "--", ...part], { cwd: this.dir, ok: true });
+  }
+
+  /** Every path they changed since the base and we did not, as theirs; a path with a local edit stays as it is. */
+  private async takeOneSided(base: string | null, theirs: string): Promise<void> {
+    const changed = (from: string) => (base ? this.paths(["diff", "--name-only", "-z", "--no-renames", base, from]) : this.paths(["ls-tree", "-r", "-z", "--name-only", from]));
+    const ours = new Set(base ? await changed("HEAD") : await this.paths(["ls-tree", "-r", "-z", "--name-only", "HEAD"]));
+    const local = new Set((await this.paths(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"])).map((entry) => entry.slice(3)));
+    const present = new Set(await this.paths(["ls-tree", "-r", "-z", "--name-only", theirs]));
+    const take: string[] = [];
+    const drop: string[] = [];
+    for (const p of await changed(theirs)) {
+      if (ours.has(p) || local.has(p)) continue;
+      (present.has(p) ? take : drop).push(p);
+    }
+    for (const part of chunks(take)) await this.git(["--literal-pathspecs", "checkout", theirs, "--", ...part], { cwd: this.dir });
+    for (const part of chunks(drop)) await this.git(["--literal-pathspecs", "rm", "-q", "--ignore-unmatch", "--", ...part], { cwd: this.dir });
+  }
+
+  private async paths(args: string[]): Promise<string[]> {
+    return (await this.git(args, { cwd: this.dir, ok: true })).stdout.split("\0").filter(Boolean);
   }
 
   /** The artifact's files at a commit, shaped like a folder's. */
