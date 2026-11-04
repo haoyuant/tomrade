@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { gitRunner, type Git, type SyncProgress } from "@tomradex/git";
 import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
+import { spawnBudget } from "@tomradex/testkit";
 
 /** The git command a runner was asked to run, past the config the store puts in front of it. */
 const verb = (args: string[]): string | undefined => {
@@ -186,7 +187,7 @@ describe("a local store", () => {
   });
 });
 
-describe("two machines sharing a remote", { timeout: 30_000 }, () => {
+describe("two machines sharing a remote", { timeout: spawnBudget(30_000) }, () => {
   it("adopts the remote, merges independent changes, and pushes back", async () => {
     const remote = bare();
     const a = await store(remote);
@@ -415,7 +416,9 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
     fs.writeFileSync(path.join(own, "ignore"), "*.log\n");
     fs.writeFileSync(path.join(own, "hooks", "pre-commit"), "#!/bin/sh\necho 'not in my repositories' >&2\nexit 1\n", { mode: 0o755 });
     const config = path.join(own, "gitconfig");
-    fs.writeFileSync(config, `[core]\n\tautocrlf = true\n\texcludesFile = ${path.join(own, "ignore")}\n\thooksPath = ${path.join(own, "hooks")}\n`);
+    // A backslash starts an escape in git's config, so a Windows path goes in with forward slashes, as git reads it.
+    const gitPath = (p: string) => p.replaceAll("\\", "/");
+    fs.writeFileSync(config, `[core]\n\tautocrlf = true\n\texcludesFile = ${gitPath(path.join(own, "ignore"))}\n\thooksPath = ${gitPath(path.join(own, "hooks"))}\n`);
     const was = process.env.GIT_CONFIG_GLOBAL;
     process.env.GIT_CONFIG_GLOBAL = config;
     try {
@@ -439,7 +442,7 @@ describe("two machines sharing a remote", { timeout: 30_000 }, () => {
       a.close();
       b.close();
       // Its own history never leaves the machine: a signing key that cannot sign stops nothing there.
-      fs.appendFileSync(config, `[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = ${path.join(own, "no-gpg")}\n`);
+      fs.appendFileSync(config, `[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = ${gitPath(path.join(own, "no-gpg"))}\n`);
       const local = await store();
       await local.write("signed.md", text("never signed\n"));
       expect((await local.read("signed.md"))?.body).toBe("never signed\n");
