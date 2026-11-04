@@ -45,7 +45,7 @@ export function bilingualGaps(srcDir: string): BilingualGap[] {
       const n = node as { type?: string; properties?: Parameters<typeof keyOf>[0][]; loc?: { start: { line: number } } };
       if (n.type === "ObjectExpression" && n.properties) {
         const keys = new Set(n.properties.map(keyOf));
-        if (keys.has("en") !== keys.has("zh")) gaps.push({ file: path.relative(path.dirname(srcDir), file), line: n.loc?.start.line ?? 0, missing: keys.has("en") ? "zh" : "en" });
+        if (keys.has("en") !== keys.has("zh")) gaps.push({ file: path.relative(path.dirname(srcDir), file).split(path.sep).join("/"), line: n.loc?.start.line ?? 0, missing: keys.has("en") ? "zh" : "en" });
       }
       for (const [k, v] of Object.entries(n)) if (k !== "loc" && k !== "start" && k !== "end") walk(v);
     };

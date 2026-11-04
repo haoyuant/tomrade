@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeRuntime } from "../src/node-runtime.js";
 
@@ -5,8 +6,8 @@ describe("the binary that runs Node for child processes", () => {
   it("is the app's Helper on macOS, so a child does not show in the Dock", () => {
     const seen: string[] = [];
     const exists = (file: string) => (seen.push(file), true);
-    expect(nodeRuntime("/Applications/Tomrade.app/Contents/MacOS/Tomrade", "darwin", exists)).toBe("/Applications/Tomrade.app/Contents/Frameworks/Tomrade Helper.app/Contents/MacOS/Tomrade Helper");
-    expect(nodeRuntime("/x/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron", "darwin", exists)).toBe("/x/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper");
+    expect(nodeRuntime("/Applications/Tomrade.app/Contents/MacOS/Tomrade", "darwin", exists)).toBe(path.normalize("/Applications/Tomrade.app/Contents/Frameworks/Tomrade Helper.app/Contents/MacOS/Tomrade Helper"));
+    expect(nodeRuntime("/x/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron", "darwin", exists)).toBe(path.normalize("/x/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper"));
     expect(seen).toHaveLength(2);
   });
 

@@ -63,14 +63,15 @@ export class FakeHerdr {
   /** A folder of its own, short: a Unix socket's path may not run past about a hundred characters. */
   constructor(dir = fs.mkdtempSync(path.join(os.tmpdir(), "h-"))) {
     fs.mkdirSync(dir, { recursive: true });
-    this.socket = path.join(dir, "s.sock");
+    // Windows listens on no socket file, only a named pipe: a fake made where herdr tests are skipped fails nothing there.
+    this.socket = herdrUnsupported ? `\\\\.\\pipe\\tomrade-${path.basename(dir)}` : path.join(dir, "s.sock");
     this.start();
   }
 
   /** Listen (again) on the socket, as a herdr server that came (back) up. */
   start(): void {
     if (this.server) return;
-    fs.rmSync(this.socket, { force: true });
+    if (!herdrUnsupported) fs.rmSync(this.socket, { force: true });
     this.server = net.createServer((connection) => this.serve(connection));
     this.server.listen(this.socket);
   }

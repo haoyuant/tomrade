@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fakeProgram } from "@tomradex/testkit";
 import { fishFile, launcherText, placeCommand, profileBlock, withoutBlock, type CommandPlace, type Runner } from "../src/tomrade-command.js";
 
+// These run the sh launcher, link into ~/.local/bin and source shell rc files with /bin/sh; Windows gets tomrade.cmd and the user PATH (tested below).
+const noPosixShell = process.platform === "win32";
 const roots: string[] = [];
 function tempDir(): string {
   // A space and a quote in every path, as "Application Support" has one and a person's name may have the other.
@@ -50,7 +52,7 @@ const mentioning = (dir: string) => {
 const pathAfter = (file: string) => execFileSync("/bin/sh", ["-c", `PATH=/usr/bin:/bin; . "$1"; . "$1"; printf '%s' "$PATH"`, "sh", file], { encoding: "utf8" });
 
 describe("the tomrade command on PATH", () => {
-  it("writes a launcher that runs the app's binary as Node on the command's script, whatever the paths hold", async () => {
+  it.skipIf(noPosixShell)("writes a launcher that runs the app's binary as Node on the command's script, whatever the paths hold", async () => {
     const place = machine();
     await placeCommand(true, place);
     const launcher = path.join(place.dir, "tomrade");
@@ -61,7 +63,7 @@ describe("the tomrade command on PATH", () => {
     // A file just written is checked by the system on its first run: slow on a busy machine.
   }, 20_000);
 
-  it("links it into ~/.local/bin when that is on PATH, and changes nothing when run again", async () => {
+  it.skipIf(noPosixShell)("links it into ~/.local/bin when that is on PATH, and changes nothing when run again", async () => {
     const place = machine();
     const bin = path.join(place.home, ".local", "bin");
     place.pathDirs = [...place.pathDirs, bin];
@@ -75,7 +77,7 @@ describe("the tomrade command on PATH", () => {
     expect(execFileSync(path.join(bin, "tomrade"), ["term"], { encoding: "utf8" })).toContain("term");
   }, 20_000);
 
-  it("adds Tomrade's folder to PATH in zsh's file when ~/.local/bin is not on it, keeping what the file had", async () => {
+  it.skipIf(noPosixShell)("adds Tomrade's folder to PATH in zsh's file when ~/.local/bin is not on it, keeping what the file had", async () => {
     const place = machine();
     const rc = path.join(place.home, ".zshrc");
     fs.writeFileSync(rc, "alias ll='ls -l'");
@@ -115,7 +117,7 @@ describe("the tomrade command on PATH", () => {
     expect(read(path.join(bin, "tomrade"))).toBe("#!/bin/sh\necho other\n");
   });
 
-  it("moves from the shell's file to the link once ~/.local/bin is on PATH", async () => {
+  it.skipIf(noPosixShell)("moves from the shell's file to the link once ~/.local/bin is on PATH", async () => {
     const place = machine();
     await placeCommand(true, place);
     expect(read(path.join(place.home, ".zshrc"))).toContain("tomrade command");
@@ -125,7 +127,7 @@ describe("the tomrade command on PATH", () => {
     expect(read(path.join(place.home, ".zshrc"))).toBeNull();
   });
 
-  it("takes everything of it off when turned off: the link, every block, the fish file and its own folder; the rest stays", async () => {
+  it.skipIf(noPosixShell)("takes everything of it off when turned off: the link, every block, the fish file and its own folder; the rest stays", async () => {
     const place = machine();
     const bin = path.join(place.home, ".local", "bin");
     fs.writeFileSync(path.join(place.home, ".bashrc"), "export A=1\n");
@@ -176,7 +178,7 @@ describe("the tomrade command on PATH", () => {
     expect(fs.existsSync(place.dir)).toBe(false);
   });
 
-  it("starts an AppImage that is not running and runs again once it rewrote the launcher", () => {
+  it.skipIf(noPosixShell)("starts an AppImage that is not running and runs again once it rewrote the launcher", () => {
     const place = machine({ platform: "linux", runtime: "/tmp/.mount_TomradeX/tomrade", appImage: "/home/me/Tomrade.AppImage" });
     const text = launcherText(place);
     expect(text).toContain(`if [ ! -x '/tmp/.mount_TomradeX/tomrade' ]; then`);

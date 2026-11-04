@@ -107,7 +107,7 @@ describe("the sample project", () => {
     expect(ctx.repos.checkout(repo.remote).problem).toBeUndefined();
 
     // One commit on main holding the timer, a clean tree, and nowhere to push.
-    expect(git(["rev-parse", "--show-toplevel"], dir)).toBe(fs.realpathSync(dir));
+    expect(path.normalize(git(["rev-parse", "--show-toplevel"], dir))).toBe(fs.realpathSync(dir));
     expect(git(["branch", "--show-current"], dir)).toBe("main");
     expect(git(["log", "--format=%s"], dir)).toBe(SAMPLE_REPO.message);
     expect(git(["ls-files"], dir).split("\n").sort()).toEqual(Object.keys(SAMPLE_REPO.files).sort());
@@ -320,7 +320,7 @@ describe("the sample project", () => {
     await ctx.storage.writeHub();
     expect(readHubManifest(hubDir)?.projects ?? []).toEqual([]);
     // Nor does a Hub folder kept in git: its folder is ignored there.
-    expect(fs.readFileSync(path.join(hubDir, ".gitignore"), "utf8").split("\n")).toContain(`${path.relative(hubDir, dir)}/`);
+    expect(fs.readFileSync(path.join(hubDir, ".gitignore"), "utf8").split("\n")).toContain(`${path.relative(hubDir, dir).split(path.sep).join("/")}/`);
   });
 
   it("registers the seen-hints as the person's settings, and the playbook that explains the app", async () => {

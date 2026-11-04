@@ -79,7 +79,7 @@ describe("a dedicated repository", () => {
     expect(status.state).toBe("synced");
     expect(status.location).toContain("remote-");
     expect(a.hub.catalog.project(a.project.id)?.git).toBe("dedicated");
-    expect(git(["rev-parse", "--show-toplevel"], a.dir)).toBe(fs.realpathSync(a.dir));
+    expect(path.normalize(git(["rev-parse", "--show-toplevel"], a.dir))).toBe(fs.realpathSync(a.dir));
     expect(git(["ls-tree", "--name-only", "main", ".tomrade/"], remote)).toContain(".tomrade/project.json");
     expect(JSON.parse(git(["show", "main:.tomrade/project.json"], remote)).repo).toBe("dedicated");
 

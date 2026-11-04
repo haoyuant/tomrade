@@ -87,14 +87,17 @@ describe("a terminal of herdr", () => {
     expect(opened).toHaveBeenLastCalledWith("Terminal", script, "/work/tom-9");
     // the same script any terminal app gets: the heartbeat, the token and the resume beside it
     const written = fs.readFileSync(script, "utf8");
-    expect(written).toContain("echo $$ >");
+    expect(written).toContain(process.platform === "win32" ? "/proc/$$/winpid" : "echo $$ >");
     expect(written).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
     expect(fs.readFileSync(path.join(dir, "resume.command"), "utf8")).toContain("claude --resume x");
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", absent)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", null)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
     // engine setup goes the same way
-    expect(await setupTerminal("npm i -g x", dir, "herdr", absent)).toEqual({ launched: true });
-    expect(opened).toHaveBeenCalledTimes(4);
+    // On Windows setup opens a PowerShell console of its own, not the script (setupOnWindows has its own tests).
+    if (process.platform !== "win32") {
+      expect(await setupTerminal("npm i -g x", dir, "herdr", absent)).toEqual({ launched: true });
+      expect(opened).toHaveBeenCalledTimes(4);
+    }
 
     // the system terminal failing too leaves the script for the person
     opened.mockRejectedValueOnce(new Error("no app"));
@@ -229,9 +232,11 @@ describe("Gemini CLI's session home", () => {
     expect(settings).toEqual({ theme: "Dracula", url: "http://x//y", mcpServers: { mine: { command: "mine" }, tomrade }, hooks: geminiHooks(eventUrl, ownHooks) });
     // The person's own hook still runs, before Tomrade's.
     expect(settings.hooks.BeforeTool).toEqual([ownHooks.BeforeTool[0], { hooks: [{ type: "command", name: "tomrade", command: hookCommand(eventUrl), timeout: 5000 }] }]);
-    expect(fs.realpathSync(path.join(home, ".gemini", "oauth_creds.json"))).toBe(fs.realpathSync(path.join(own, "oauth_creds.json")));
+    // Windows without the right to make file links gets a copy of a file instead.
+    const sameFile = (a: string, b: string) => process.platform === "win32" ? expect(fs.readFileSync(a, "utf8")).toBe(fs.readFileSync(b, "utf8")) : expect(fs.realpathSync(a)).toBe(fs.realpathSync(b));
+    sameFile(path.join(home, ".gemini", "oauth_creds.json"), path.join(own, "oauth_creds.json"));
     expect(fs.realpathSync(path.join(home, ".gemini", "extensions"))).toBe(fs.realpathSync(path.join(own, "extensions")));
-    expect(fs.realpathSync(path.join(home, ".env"))).toBe(fs.realpathSync(path.join(root, "me", ".env")));
+    sameFile(path.join(home, ".env"), path.join(root, "me", ".env"));
     // The person's own settings are read, never written.
     expect(fs.readFileSync(path.join(own, "settings.json"), "utf8")).toContain("// the person's own");
 

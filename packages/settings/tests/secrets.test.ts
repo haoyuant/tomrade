@@ -51,7 +51,8 @@ it("keeps keys, tokens, headers and env values encrypted in the file, and plain 
   expect(text).toContain("deepseek-chat");
   expect(text).toContain("https://api.deepseek.com");
   expect(JSON.parse(text).github.token).toMatch(/^tomrade-encrypted:v1:/);
-  expect(fs.statSync(p).mode & 0o777).toBe(0o600);
+  // POSIX modes only; Windows has no 0600.
+  if (process.platform !== "win32") expect(fs.statSync(p).mode & 0o777).toBe(0o600);
   expect(ctx.settings.secretStorage()).toBe("keychain");
 
   const again = await open(p, cipher);
@@ -70,7 +71,8 @@ it("seals a plain file the first time it is opened, and loosens nothing", async 
   expect(text).not.toContain("ghp_222");
   expect(text).not.toContain("sk-live-111");
   expect(JSON.parse(text).theme).toBe("dark");
-  expect(fs.statSync(p).mode & 0o777).toBe(0o600);
+  // POSIX modes only; Windows has no 0600.
+  if (process.platform !== "win32") expect(fs.statSync(p).mode & 0o777).toBe(0o600);
 });
 
 it("a key it can't decrypt reads as empty, with a warning, and is kept until it is set again", async () => {

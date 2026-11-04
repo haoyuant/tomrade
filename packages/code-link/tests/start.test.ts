@@ -549,8 +549,10 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   await ctx.repos.setCheckout(remote, local.checkout);
   await codeLink.scan(project.id);
   const config = fs.readFileSync(path.join(local.checkout, ".git/config"), "utf8");
-  expect(config).toContain(path.join(hubDir, "bin", "tomrade-credential"));
-  expect(config).not.toContain(legacy);
+  // git config writes a backslash in a value as two.
+  const inConfig = (file: string) => file.split("\\").join("\\\\");
+  expect(config).toContain(inConfig(path.join(hubDir, "bin", "tomrade-credential")));
+  expect(config).not.toContain(inConfig(legacy));
   expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account", tomrade: true });
   connection.mockRestore();
 });
@@ -1962,7 +1964,7 @@ describe("starting a ticket", () => {
 
     // The launch script leaves its pid; a pid that no longer answers ends the session at the next sweep, hook or no hook.
     const script = fs.readFileSync(path.join(codeLink.sessionDir(again.sessionId), "run.command"), "utf8");
-    expect(script).toContain("echo $$ >");
+    expect(script).toContain(process.platform === "win32" ? "/proc/$$/winpid" : "echo $$ >");
     fs.writeFileSync(path.join(codeLink.sessionDir(again.sessionId), "pid"), "99999\n");
     codeLink.sessions.sweep(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: again.sessionId, state: "ended" });

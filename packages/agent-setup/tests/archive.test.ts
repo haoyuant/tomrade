@@ -75,7 +75,8 @@ describe("reading an archive", () => {
     const landed = unpackArchive(TOP, "agy_acp_server.par", target, "darwin");
     expect(landed.file).toBe(path.join(dir, "bin", "agy_acp_server.par"));
     expect(fs.readFileSync(landed.file)).toEqual(EXE);
-    expect(fs.statSync(landed.file).mode & 0o111).not.toBe(0);
+    // Windows has no executable bit; the file landing whole, above, is what it has.
+    if (process.platform !== "win32") expect(fs.statSync(landed.file).mode & 0o111).not.toBe(0);
   });
 
   it("puts each release in its own folder under the app's agents folder", () => {

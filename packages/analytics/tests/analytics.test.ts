@@ -129,7 +129,8 @@ describe("anonymous identity", () => {
     const identity = new AnonIdentity(root, () => 1_700_000_000_000);
     const info = identity.info();
     expect(JSON.stringify(info)).not.toContain(fs.readFileSync(identity.secretFile, "utf8"));
-    expect(fs.statSync(identity.secretFile).mode & 0o777).toBe(0o600);
+    // POSIX modes only; Windows has no 0600.
+    if (process.platform !== "win32") expect(fs.statSync(identity.secretFile).mode & 0o777).toBe(0o600);
     identity.clear();
     expect(fs.existsSync(identity.secretFile)).toBe(false);
     fs.rmSync(root, { recursive: true, force: true });

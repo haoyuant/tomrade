@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { afterEach, describe, expect, it } from "vitest";
-import { fresh, sdk } from "@tomradex/testkit";
+import { fresh, sdk, useHome } from "@tomradex/testkit";
 import { Agent, type Engine } from "@tomradex/agent";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
@@ -66,6 +66,9 @@ async function boot() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "tomrade-im-checkout-"));
   const hubDir = path.join(dir, "hub");
   fs.mkdirSync(hubDir);
+  // The assistant shows a folder under the home as ~/…; a temp folder on Windows sits under the real home.
+  const restoreHome = useHome(path.join(dir, "home"));
+  cleanups.push(async () => restoreHome());
   const delivered: ImDelivery[] = [];
   const ios = new Map<string, AdapterIO>();
   let world!: Awaited<ReturnType<typeof fresh>>;

@@ -44,10 +44,10 @@ describe("how a managed copy starts", () => {
 
   it("runs a script with the runtime as Node, the person's PATH first and Tomrade's node last", () => {
     const file = write(root(), "codex.js", "1");
-    const launch = managedLaunch(copy(file, { env: { DISABLE_AUTOUPDATER: "1" } }), { platform: "darwin", env: {} })!;
+    const launch = managedLaunch(copy(file, { env: { DISABLE_AUTOUPDATER: "1" } }), { platform: process.platform, env: {} })!;
     expect(launch.argv(["--version"])).toEqual({ command: "/app/Tomrade Helper", args: [file, "--version"] });
-    const env = launch.env({ PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/h", PI_CODING_AGENT_DIR: "/data/pi" });
-    expect(env.PATH).toBe([path.dirname(file), "/opt/homebrew/bin", "/usr/bin", "/data/agents/node"].join(":"));
+    const env = launch.env({ PATH: ["/opt/homebrew/bin", "/usr/bin"].join(path.delimiter), HOME: "/h", PI_CODING_AGENT_DIR: "/data/pi" });
+    expect(env.PATH).toBe([path.dirname(file), "/opt/homebrew/bin", "/usr/bin", "/data/agents/node"].join(path.delimiter));
     expect(env).toMatchObject({ ELECTRON_RUN_AS_NODE: "1", DISABLE_AUTOUPDATER: "1", HOME: "/h" });
     // Built-in Pi's folder is its own; the person's Pi reads ~/.pi.
     expect(env.PI_CODING_AGENT_DIR).toBeUndefined();
