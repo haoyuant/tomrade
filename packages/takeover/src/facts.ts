@@ -99,8 +99,9 @@ export async function worktreeFolders(git: Git, checkout: string): Promise<{ dir
     .slice(1)
     .filter((entry) => !/^prunable/m.test(entry))
     .flatMap((entry) => {
+      // git spells a Windows path with forward slashes; the folder goes on in this platform's own spelling.
       const dir = /^worktree (.+)$/m.exec(entry)?.[1];
-      return dir ? [{ dir, branch: /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1] ?? null }] : [];
+      return dir ? [{ dir: path.normalize(dir), branch: /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1] ?? null }] : [];
     });
 }
 

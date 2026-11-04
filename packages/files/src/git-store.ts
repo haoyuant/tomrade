@@ -626,7 +626,15 @@ export class GitFileStore implements FileStore {
     await this.recordIds([...changes, ...identityChanges], carry);
     await this.g.ensureIdentity();
     this.quiet();
-    await this.git(["commit", "-q", "--no-edit", "-m", msg]);
+    try {
+      await this.git(["commit", "-q", "--no-edit", "-m", msg]);
+    } catch (error) {
+      // Another git committed what we staged in between (the store this one replaced, finishing its last step): nothing
+      // was left to record here, which is no failure, as GitFolder.commit has it.
+      const staged = (await this.git(["diff", "--cached", "--quiet"], { ok: true })).code !== 0;
+      if (!staged && !this.merging()) return false;
+      throw error;
+    }
     const versionId = (await this.head())!;
     const ledger = this.readLedger();
     for (const change of changes) {

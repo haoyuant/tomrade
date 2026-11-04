@@ -46,6 +46,8 @@ describe("a JSON-RPC peer over a process's stdio", () => {
 
   it("gives each request its own deadline, reads an empty result as the protocol says, and rejects everything open on close", async () => {
     const peer = new JsonLinePeer(start(), { name: "Fake", dialect: jsonRpc({ empty: () => ({}) }), timeoutMs: 100 });
+    // Up first, on its own time: the deadline is a request's, and a node starting on a loaded Windows can take longer.
+    expect(await peer.request("echo", { up: true }, 10_000)).toEqual({ up: true });
     expect(await peer.request("empty")).toEqual({});
     await expect(peer.request("hang")).rejects.toThrow("Fake did not answer hang within 0.1s");
     const open = peer.request("hang", {}, 0);

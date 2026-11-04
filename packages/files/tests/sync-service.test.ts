@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fakeProgram, fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle, spawnBudget } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
@@ -44,7 +44,7 @@ function git(dir: string, ...args: string[]): string {
   return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
 }
 
-describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
+describe("selective sync through ctx.files", { timeout: spawnBudget(60_000) }, () => {
   it("inherits the closest rule, preserves descendant exceptions, and resets to the default", async () => {
     const { ctx, project } = await machine();
     const id = project.id;
@@ -165,8 +165,11 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
   it("sweeps each project on its own: one whose remote is slow holds up no other", async () => {
     const flag = path.join(root, `slow-flag-${n++}`);
     const wrapper = path.join(root, `git-${n++}.sh`);
-    // git as the store runs it, except that asking a remote whose URL says "slow" takes a while.
-    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\ncase " $* " in *" ls-remote "*) if [ -f '${flag}' ] && git config --get remote.origin.url | grep -q slow; then sleep 4; fi;; esac\nexec git "$@"\n`);
+    // git as the store runs it, except that asking a remote whose URL says "slow" takes a while. Windows starts git an
+    // order slower, so the slow remote and the bound grow together there, the slow one always the longer.
+    const slowMs = spawnBudget(4_000);
+    const bound = slowMs - 500;
+    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\ncase " $* " in *" ls-remote "*) if [ -f '${flag}' ] && git config --get remote.origin.url | grep -q slow; then sleep ${slowMs / 1000}; fi;; esac\nexec git "$@"\n`);
     const hubDir = path.join(root, `hub-${n++}`);
     fs.mkdirSync(hubDir, { recursive: true });
     const { ctx, project } = await fresh({
@@ -203,9 +206,9 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
       const started = Date.now();
       const sweeping = ctx.files.syncAll();
       const arrived = async () => (await ctx.files.tree(other.id)).some((e) => e.path === "news.md");
-      for (let i = 0; i < 60 && !(await arrived()); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      while (!(await arrived()) && Date.now() - started < bound) await new Promise((resolve) => setTimeout(resolve, 50));
       expect(await arrived()).toBe(true);
-      expect(Date.now() - started).toBeLessThan(3_500);
+      expect(Date.now() - started).toBeLessThan(bound);
       fs.rmSync(flag);
       await sweeping;
     } finally {

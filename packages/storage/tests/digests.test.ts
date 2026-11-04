@@ -8,13 +8,18 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { ProjectDb } from "@tomradex/db";
-import { fresh } from "@tomradex/testkit";
+import { disposeFresh, fresh } from "@tomradex/testkit";
 import { exportState, stateFiles, writeArtifact, type ExportOptions } from "@tomradex/storage";
 import { restoreLf } from "../src/state.js";
 import { LocalDigests } from "../src/digests.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-digests-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
+  await disposeFresh();
+  // Retried a moment, without holding up the loop: git from storage's last step may still be in the folder.
+  await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+});
 
 async function setup() {
   const bag = await fresh({ cacheDir: fs.mkdtempSync(path.join(root, "cache-")) });

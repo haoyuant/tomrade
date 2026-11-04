@@ -19,11 +19,15 @@ import { NightShifts } from "@tomradex/night-shift";
 import { Repos } from "@tomradex/repos";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fresh, herdrUnsupported, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-night-real-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
+  await disposeFresh();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
@@ -179,7 +183,7 @@ it("in background sessions: two tickets on one file both land, the second after 
   await t.ctx.fiber.dispose();
 });
 
-it("in terminal panes: a conflict goes back to the agent in its own pane, not to a background session", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("in terminal panes: a conflict goes back to the agent in its own pane, not to a background session", { timeout: 60_000 }, async () => {
   const t = await machine();
   const { ctx, project } = t;
   await ctx.plugin(Mcp, { port: 0 });
@@ -232,7 +236,7 @@ it("in terminal panes: a conflict goes back to the agent in its own pane, not to
   await t.ctx.fiber.dispose();
 });
 
-it("in terminal panes: each ticket gets a pane, and a usage limit is waited out and the agent told to go on", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("in terminal panes: each ticket gets a pane, and a usage limit is waited out and the agent told to go on", { timeout: 60_000 }, async () => {
   const t = await machine();
   const { ctx, project } = t;
   await ctx.plugin(Mcp, { port: 0 });
@@ -343,7 +347,7 @@ it("in background sessions: with every agent out of balance the ticket stops for
   await t.ctx.fiber.dispose();
 });
 
-it("in terminal panes: a limit closes the agent's pane and a new session takes the ticket up, told where it stood", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("in terminal panes: a limit closes the agent's pane and a new session takes the ticket up, told where it stood", { timeout: 60_000 }, async () => {
   const t = await machine([stoppingEngine("spare", { stop: "end" })]);
   const { ctx, project } = t;
   await ctx.plugin(Mcp, { port: 0 });
