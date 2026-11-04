@@ -11,14 +11,24 @@ import { afterAll, describe, expect, it } from "vitest";
 import { Db, ProjectNotOpenError, projectPredicate } from "@tomradex/db";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pool-"));
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+// Each pool keeps its files open until its context goes; Windows will not delete an open file.
+const contexts: Context[] = [];
+const context = () => {
+  const ctx = new Context();
+  contexts.push(ctx);
+  return ctx;
+};
+afterAll(async () => {
+  for (const ctx of contexts) await ctx.fiber.dispose();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const STEPS = [{ version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }];
 const TABLES = { plugin_demo_notes: { project: "project_id", export: { order: "id" } as const } };
 
 describe("the pool", () => {
   it("opens one file per project and refuses a project that is not open", async () => {
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: ":memory:" });
     ctx.db.open("a");
     ctx.db.open("b");
@@ -32,7 +42,7 @@ describe("the pool", () => {
 
   it("keeps a project's cache on disk under the cache dir and removes it on remove()", async () => {
     const cache = path.join(dir, "cache");
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: cache });
     ctx.db.open("p1");
     expect(fs.existsSync(path.join(cache, "projects", "p1", "project.db"))).toBe(true);
@@ -42,7 +52,7 @@ describe("the pool", () => {
   });
 
   it("applies a plugin registration to open files, to files opened later, and once per file", async () => {
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: ":memory:" });
     ctx.db.open("a");
     const dispose = ctx.db.migrate("demo", STEPS, { tables: TABLES });
@@ -57,7 +67,7 @@ describe("the pool", () => {
   });
 
   it("hub-scope tables live in hub.db only", async () => {
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: ":memory:" });
     ctx.db.open("a");
     ctx.db.migrate("usage", [{ version: 1, up: "CREATE TABLE plugin_usage_days (day TEXT PRIMARY KEY, cost REAL)" }], { scope: "hub", tables: { plugin_usage_days: { export: { order: "day" } } } });
@@ -66,7 +76,7 @@ describe("the pool", () => {
   });
 
   it("refuses a registration without a declaration, an undeclared table, or a table outside the namespace", async () => {
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: ":memory:" });
     expect(() => ctx.db.migrate("demo", STEPS)).toThrow(/tables declaration/);
     expect(() => ctx.db.migrate("demo", STEPS, { tables: {} })).toThrow(/does not declare/);
@@ -78,7 +88,7 @@ describe("the pool", () => {
   });
 
   it("a failing step marks the namespace unhealthy for that file without taking the project down", async () => {
-    const ctx = new Context();
+    const ctx = context();
     await ctx.plugin(Db, { dir: ":memory:" });
     ctx.db.open("a");
     ctx.db.migrate("bad", [{ version: 1, up: () => { throw new Error("boom"); } }], { tables: { plugin_bad_t: { project: "project_id", export: false } } });

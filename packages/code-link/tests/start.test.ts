@@ -21,13 +21,17 @@ import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
 import { Herdr, herdrInstall } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-start-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
+  await disposeFresh();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
