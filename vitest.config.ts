@@ -39,6 +39,10 @@ export default defineConfig({
     reporters: ["default", "./packages/testkit/src/failure-kinds.ts"],
     // Every worker spawns processes the system checks one at a time, and other sessions run tests too: more workers only lengthen that queue.
     maxWorkers: Number(process.env.TOMRADE_TEST_WORKERS) || 4,
+    // Windows starts a process an order slower (git: 30-36 ms a call against a few on macOS), so a test that drives git a
+    // few hundred times takes 10-30 s there under a full run's load and outgrows the 5 s that fits elsewhere. It gets
+    // the time; a hang still fails. A test that sets its own limit scales it with testkit's spawnBudget.
+    ...(process.platform === "win32" ? { testTimeout: 60_000, hookTimeout: 60_000 } : {}),
     // A poll waits on work the test started; 1 s is too tight on a loaded machine, and the test's own timeout stays the ceiling.
     expect: { poll: { timeout: 30_000 } }
   }

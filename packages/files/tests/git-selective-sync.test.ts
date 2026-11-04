@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { gitRunner, type Git } from "@tomradex/git";
+import { spawnBudget } from "@tomradex/testkit";
 import { GitFileStore, type GitRemoteTarget } from "../src/git-store.js";
 
 /** The git command a runner was asked to run, past the config the store puts in front of it. */
@@ -37,7 +38,7 @@ function blobs(remote: string): string {
   return run(remote, "rev-list", "--objects", "--all").trim().split("\n").map((line) => line.split(" ")[0]!).filter((oid) => run(remote, "cat-file", "-t", oid).trim() === "blob").map((oid) => run(remote, "cat-file", "blob", oid)).join("\n");
 }
 
-describe("selective Git projection", { timeout: 30000 }, () => {
+describe("selective Git projection", { timeout: spawnBudget(30_000) }, () => {
   it("keeps private bytes and commits local, publishes only the current version when sharing a private draft", async () => {
     const remote = bare();
     const a = await open(target(remote));

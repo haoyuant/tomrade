@@ -14,6 +14,12 @@ export interface ExecGitOptions {
 }
 
 /**
+ * Git for Windows keeps to the old 260-character path limit unless told otherwise, and a store's pack under a person's
+ * data folder can run past it ("cannot write promisor file …: Filename too long").
+ */
+const PLATFORM_CONFIG = process.platform === "win32" ? ["-c", "core.longpaths=true"] : [];
+
+/**
  * One git command, never prompting. A failure rejects with execFile's error
  * carrying `stdout` and `stderr`; `encoding: "buffer"` keeps the output as bytes.
  */
@@ -22,7 +28,7 @@ export function execGit(binary: string, args: string[], opts?: ExecGitOptions & 
 export function execGit(binary: string, args: string[], opts: ExecGitOptions & { encoding?: "buffer" | "utf8" } = {}): Promise<{ stdout: string | Buffer; stderr: string | Buffer }> {
   const { env, stdin, onStderr, encoding = "utf8", ...rest } = opts;
   return new Promise((resolve, reject) => {
-    const child = execFile(binary, args, { ...rest, encoding, env: { ...process.env, ...GIT_ENV, ...env } }, (error, stdout, stderr) => {
+    const child = execFile(binary, [...PLATFORM_CONFIG, ...args], { ...rest, encoding, env: { ...process.env, ...GIT_ENV, ...env } }, (error, stdout, stderr) => {
       if (error) {
         Object.assign(error, { stdout, stderr });
         reject(error);

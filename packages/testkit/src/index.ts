@@ -34,6 +34,13 @@ export interface FreshOptions {
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/**
+ * A test's time limit for work that starts processes: as given elsewhere, three times it on Windows, which starts a
+ * process an order slower (git: 30-36 ms a call against a few on macOS). For a test or suite that sets its own limit;
+ * vitest.config.ts raises the global one there.
+ */
+export const spawnBudget = (ms: number): number => (process.platform === "win32" ? ms * 3 : ms);
+
 /** The contexts `fresh` booted, held weakly: a file that never disposes them keeps none alive. */
 const booted = new Set<WeakRef<Context>>();
 

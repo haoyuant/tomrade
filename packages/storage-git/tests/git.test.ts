@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { fresh, settle } from "@tomradex/testkit";
+import { fresh, settle, spawnBudget } from "@tomradex/testkit";
 import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, probeUrl, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 
@@ -183,7 +183,7 @@ describe("a dedicated repository", () => {
     expect(git(["ls-tree", "--name-only", "-r", "main", "project-files"], remote)).toBe("");
     expect(fs.existsSync(path.join(a.dir, "project-files", "report.md"))).toBe(false);
     expect(git(["status", "--porcelain"], a.dir)).toBe("");
-  }, 30_000);
+  }, spawnBudget(30_000));
 
   it("goes on reading, merging and pushing where git checks files out with core.autocrlf=true", async () => {
     const a = await machine("crlf");
@@ -577,7 +577,7 @@ describe("two machines on one project", () => {
       // Each has the other's history: what both count as taken in is the same.
       expect(readArtifact(m.hub.catalog.project(id)!.dir!)!.manifest.snapshot?.checkpoint).toEqual(readArtifact(a.hub.catalog.project(id)!.dir!)!.manifest.snapshot?.checkpoint);
     }
-  }, 60_000);
+  }, spawnBudget(60_000));
 });
 
 describe("the Hub as a repository", () => {

@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomradex/testkit";
+import { fresh, settle, spawnBudget } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
@@ -177,7 +177,7 @@ describe("two machines sharing a project's folder and its files", () => {
     }
     await a.ctx.fiber.dispose();
     await b.ctx.fiber.dispose();
-  }, 120_000);
+  }, spawnBudget(120_000));
 
   it("left to their own timers and watchers, agree on their own and then stay quiet", async () => {
     const a = await machine("live-a", LIVE);
