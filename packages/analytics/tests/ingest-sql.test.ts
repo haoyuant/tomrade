@@ -38,6 +38,7 @@ beforeAll(async () => {
   await db.exec(migration("202610290001_analytics_activation.sql"));
   await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
   await db.exec(migration("202611040001_analytics_internal_functions.sql"));
+  await db.exec(migration("202611040002_analytics_new_install_cap.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -230,6 +231,29 @@ describe("analytics ingest", () => {
     expect(result.rows[0]!.result.features).toBe(1);
     const left = await db.query<{ n: number }>("select count(*)::int as n from public.tomrade_analytics_event where ts < now() - interval '180 days'");
     expect(left.rows[0]!.n).toBe(0);
+  });
+
+  it("caps the installs it meets for the first time in an hour, never one it already knows", async () => {
+    const seen = async () => (await db.query<{ n: number }>(
+      "select coalesce(sum(installs), 0)::int as n from public.tomrade_analytics_new_installs where hour = date_trunc('hour', now(), 'UTC')"
+    )).rows[0]!.n;
+    const start = (anon: string) => ({ ...base(), anon_id: anon, event_id: randomUUID(), event: "app.start", feature_id: null });
+    await db.exec(`set tomrade.analytics_new_installs_per_hour = '${(await seen()) + 1}'`);
+    try {
+      expect((await ingest(batch([start("b".repeat(26))]))).rows[0]!.result.accepted).toBe(1);
+      const before = await count("tomrade_analytics_event");
+      await expect(ingest(batch([start("c".repeat(26))]))).rejects.toMatchObject({ code: "PT429" });
+      expect(await count("tomrade_analytics_event")).toBe(before);
+      expect((await ingest(batch([start(ANON)]))).rows[0]!.result.accepted).toBe(1);
+    } finally {
+      await db.exec("reset tomrade.analytics_new_installs_per_hour");
+    }
+    await db.exec("reset role; set role anon");
+    try {
+      await expect(db.query("select * from public.tomrade_analytics_new_installs")).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
   });
 });
 

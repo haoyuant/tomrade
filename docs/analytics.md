@@ -17,6 +17,7 @@ Apply `supabase/migrations/202610230001_analytics.sql`. It creates:
 | `tomrade_analytics_feature_daily` | Sessions, active milliseconds and actors per feature, day, region and client minor |
 | `tomrade_analytics_action_daily` | Events and counted events per action and dim |
 | `tomrade_analytics_rate` | Batch counts per anonymous id for the hourly cap |
+| `tomrade_analytics_new_installs` | Anonymous ids met for the first time, per hour, for the cap on new installs |
 | `tomrade_ingest_analytics(jsonb)` | The only write path; granted to `anon` |
 | `tomrade_analytics_retention()` | Drops whole event months past 180 days, actors past 180 days, aggregates past 25 months |
 
@@ -35,7 +36,12 @@ not know, drops an unregistered `dim` from an otherwise valid event, keeps an
 event for an unknown feature with `unknown_feature = true`, and answers
 `202` with `{"accepted": n, "duplicates": n, "rejected": n}`. A retried batch
 is safe: `(event_id, ts)` is the primary key. More than 500 events is `413`;
-more than 60 batches an hour for one anonymous id is `429`.
+more than 60 batches an hour for one anonymous id is `429`. So is a new
+anonymous id once the hour has met 500 of them, all installs together, which
+keeps a caller minting an id per batch from going around the first cap; ids
+already seen are untouched, and the client sends a refused batch again later.
+A deployment moves the cap with
+`alter database postgres set tomrade.analytics_new_installs_per_hour = 2000;`.
 
 The region is inferred at ingest from the edge's country header
 (`cf-ipcountry`, `x-vercel-ip-country` or `x-tomrade-country`) and reduced to
