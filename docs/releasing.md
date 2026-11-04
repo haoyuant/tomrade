@@ -107,7 +107,7 @@ An installed build asks download.tomrade.com for its channel's manifest (`apps/d
 
 To try a feed without publishing, point a build at any folder served over HTTP (`TOMRADE_UPDATE_URL=http://127.0.0.1:8080/`). A checkout then checks it too, though it can't install what it finds.
 
-It needs one secret here, `SITE_DISPATCH_TOKEN`: a fine-grained GitHub token for haoyuant/tomrade-site with Actions: Read and write. The site repository's own secrets are listed in its README.
+It needs one secret here, `SITE_DISPATCH_TOKEN`: a fine-grained GitHub token for haoyuant/tomrade-site with Actions: Read and write. The job names the site's branch (`--ref main`): without it, `gh workflow run` first looks up the default branch, which such a token is refused ("Resource not accessible by personal access token"). The site repository's own secrets are listed in its README.
 
 ## macOS: signing and notarizing
 
