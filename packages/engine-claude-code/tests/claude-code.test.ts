@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, type RunView } from "@tomradex/agent";
@@ -31,9 +31,9 @@ describe("the Claude Code engine", () => {
   it("ignores a saved cli transport, runs through the SDK with the picked model and effort, and opens coding threads unrestricted", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
     const log = path.join(dir, "requests.jsonl");
-    const bin = path.join(dir, "claude");
+    let bin = path.join(dir, "claude");
     const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
-    fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+    bin = fakeProgram(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`);
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
@@ -85,7 +85,7 @@ describe("the Claude Code engine", () => {
       expect(codeArgs).not.toContain("--max-turns");
     } finally {
       await ctx.fiber.dispose();
-      fs.rmSync(dir, { recursive: true, force: true });
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     }
   });
 });

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { expect, it } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { localCli } from "@tomradex/engine-kit";
 import { collect, userMessage } from "@tomradex/llm";
 import { piLentModel } from "@tomradex/engine-pi";
@@ -10,8 +11,8 @@ import { piLentModel } from "@tomradex/engine-pi";
 function setup(options: { model?: string; effort?: string } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-pi-lent-"));
   const log = path.join(dir, "log.jsonl");
-  const bin = path.join(dir, "pi");
-  fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${path.resolve("packages/engine-pi/tests/fake-pi-lent.mjs")}' "$@"\n`, { mode: 0o700 });
+  const bin0 = path.join(dir, "pi");
+  const bin = fakeProgram(bin0, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${path.resolve("packages/engine-pi/tests/fake-pi-lent.mjs")}' "$@"\n`);
   const agent = { settingsOf: () => ({ engines: { pi: { command: bin, ...options } } }) };
   const ctx = { get: (name: string) => (name === "agent" ? agent : undefined) } as unknown as Context;
   const lent = piLentModel(ctx, { cli: localCli("pi"), found: async () => true });

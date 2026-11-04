@@ -1,3 +1,4 @@
+import { fakeProgram } from "@tomradex/testkit";
 import { it, expect } from "vitest";
 import { Context } from "cordis";
 import fs from "node:fs";
@@ -18,9 +19,9 @@ const logged = (file: string): any[] => {
 it("drives the actual SDK across multiple messages, diffs cumulative cost, and retains its process after interrupt", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "claude");
+  let bin = path.join(dir, "claude");
   const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createClaudeCodeEngine(ctx);
@@ -63,15 +64,15 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     expect(users).toHaveLength(4);
     expect(users[1].message.content).toContain("brief v2");
     expect(requests.some((r) => r.request?.subtype === "interrupt")).toBe(true);
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { engine.release?.({ projectId: "project", threadId: "thread" }); await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 }, 15_000);
 
 it("reports a session Claude Code no longer has, and leads a new session's first message with the conversation so far", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-lost-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "claude");
+  let bin = path.join(dir, "claude");
   const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createClaudeCodeEngine(ctx);
@@ -91,14 +92,14 @@ it("reports a session Claude Code no longer has, and leads a new session's first
     input.input = { kind: "text", text: "next" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(sentTexts().at(-1)).not.toContain("RECAP OF EARLIER");
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { engine.release?.({ projectId: "project", threadId: "thread" }); await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
 it("reports the SDK's retries, drops the failed attempt from the live count, and traces its own tools with their results", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-retry-"));
-  const bin = path.join(dir, "claude");
+  let bin = path.join(dir, "claude");
   const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createClaudeCodeEngine(ctx);
@@ -120,15 +121,15 @@ it("reports the SDK's retries, drops the failed attempt from the live count, and
     expect(Math.max(...progressed)).toBe(34);
     expect(activity).toEqual(["Bash · ls -la", null]);
     expect(blocks).toContainEqual(expect.objectContaining({ type: "trace", tool: "Bash", ok: true, summary: "ls -la" }));
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { engine.release?.({ projectId: "project", threadId: "thread" }); await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 }, 15_000);
 
 it("steers a running turn at once through the SDK's input queue, cutting a running tool but not an MCP call in flight, waits out the CLI turn it starts, and drops unread ones on a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-steer-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "claude");
+  let bin = path.join(dir, "claude");
   const fake = path.resolve("packages/engine-claude-code/tests/fake-claude-steer.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createClaudeCodeEngine(ctx);
@@ -225,5 +226,5 @@ it("steers a running turn at once through the SDK's input queue, cutting a runni
     input.input = { kind: "text", text: "hello" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(requests().filter((r) => r.spawn)).toHaveLength(2);
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { engine.release?.({ projectId: "project", threadId: "thread" }); await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 }, 30_000);

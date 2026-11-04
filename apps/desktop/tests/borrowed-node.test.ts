@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { appendPath, borrowedNodeDirs, setUpBorrowedNode, shimFiles } from "../src/borrowed-node.js";
 
 const roots: string[] = [];
@@ -53,8 +54,8 @@ describe("the borrowed node and npm", () => {
     // A script standing in for the binary: copying node itself trips macOS's slow first-spawn check under load.
     const runtime = path.join(root, "My App", "helper");
     fs.mkdirSync(path.dirname(runtime), { recursive: true });
-    fs.writeFileSync(runtime, `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
-    const setup = setUpBorrowedNode({ userData: root, npmDir: fakeNpm(root), runtime, platform: process.platform, env });
+    const runnable = fakeProgram(runtime, `#!/bin/sh\nexec "${process.execPath}" "$@"\n`);
+    const setup = setUpBorrowedNode({ userData: root, npmDir: fakeNpm(root), runtime: runnable, platform: process.platform, env });
 
     const out = execFileSync(path.join(setup.binDir, "npm"), ["install", "-g", "x"], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } });
     expect(out.trim()).toBe(`fake npm ${setup.prefix} install -g x`);

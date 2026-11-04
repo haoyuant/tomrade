@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { CliLocator, machineHost, type CliHost } from "../src/locate.js";
 import { binKind, managedLaunch, type ManagedCli } from "../src/managed.js";
 
@@ -77,7 +78,8 @@ describe.skipIf(process.platform === "win32")("where the locator puts a managed 
   });
   const setup = () => {
     const dir = root();
-    const own = write(path.join(dir, "own"), NAME, '#!/bin/sh\necho "own 1.0.0"\n', 0o755);
+    fs.mkdirSync(path.join(dir, "own"), { recursive: true });
+    const own = fakeProgram(path.join(dir, "own", NAME), '#!/bin/sh\necho "own 1.0.0"\n');
     // Not executable: the runtime starts it, so it need not be.
     const managed = write(path.join(dir, "agents", "x", "2.0.0", "bin"), "cli.js", 'console.log("managed 2.0.0")\n');
     const copy = (prefer: boolean): ManagedCli => ({ file: managed, version: "2.0.0", runtime: process.execPath, nodeDir: path.join(dir, "agents", "node"), prefer });

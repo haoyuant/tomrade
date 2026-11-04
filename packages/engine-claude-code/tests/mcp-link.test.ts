@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import engineClaudeCode, { claudeConfigDirOf, claudeConfigDirs, claudeProjectServerApproval } from "@tomradex/engine-claude-code";
 
@@ -23,8 +23,8 @@ async function setup() {
   const config = path.join(dir, "config");
   fs.mkdirSync(config);
   process.env.CLAUDE_CONFIG_DIR = config;
-  const bin = path.join(dir, "claude");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-claude-code/tests/fake-claude-mcp.mjs")}' "$@"\n`, { mode: 0o700 });
+  let bin = path.join(dir, "claude");
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-claude-code/tests/fake-claude-mcp.mjs")}' "$@"\n`);
   const settingsPath = path.join(dir, "settings.json");
   fs.writeFileSync(settingsPath, JSON.stringify({ agent: { engines: { "claude-code": { command: bin } } } }));
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });

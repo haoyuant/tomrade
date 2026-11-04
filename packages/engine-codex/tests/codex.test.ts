@@ -7,7 +7,7 @@ import { Agent, type RunView } from "@tomradex/agent";
 import engineCodex, { codexInstall, codexSignedIn } from "@tomradex/engine-codex";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 
 async function settled(ctx: Context, projectId: string, runId: string): Promise<RunView> {
@@ -30,9 +30,9 @@ describe("the Codex engine", () => {
   it("migrates Tomrade's rejected legacy preset, ignores a saved cli transport, and runs through app-server", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-codex-"));
     const log = path.join(dir, "requests.jsonl");
-    const bin = path.join(dir, "codex");
+    let bin = path.join(dir, "codex");
     const fake = path.resolve("packages/engine-codex/tests/fake-app-server.mjs");
-    fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+    bin = fakeProgram(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`);
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
@@ -63,7 +63,7 @@ describe("the Codex engine", () => {
       expect(requests.filter((r) => r.method === "turn/start")).toHaveLength(2);
     } finally {
       await ctx.fiber.dispose();
-      fs.rmSync(dir, { recursive: true, force: true });
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     }
   });
 });

@@ -21,7 +21,7 @@ import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { disposeFresh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Herdr, herdrInstall } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
@@ -80,11 +80,12 @@ function localRepo(): string {
   return folder;
 }
 
+// The code under test may put `-c name=value` options before the git command (it does on Windows), so a fake reads its verb past them.
+const VERB = 'verb=; skip=; for a in "$@"; do if [ -n "$skip" ]; then skip=; elif [ "$a" = -c ]; then skip=1; else verb=$a; break; fi; done\n';
+
 function gitWithFailure(command: "ls-remote" | "push", stderr: string): string {
   const file = path.join(root, `git-${n++}`);
-  fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
-  fs.chmodSync(file, 0o755);
-  return file;
+  return fakeProgram(file, `#!/bin/sh\n${VERB}if [ "$verb" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
 }
 
 /** A code-capable engine that records what it was asked and makes one commit in the worktree. */
@@ -503,8 +504,8 @@ it("offers the connected account for credential failures, reprobes after switchi
   const remote = "https://github.com/example/private-app";
   git(["remote", "set-url", "origin", remote], local.checkout);
   const binary = path.join(root, `git-credential-probe-${n++}`);
-  fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$1" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`, { mode: 0o755 });
-  const world = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$verb" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`);
+  const world = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const { ctx, codeLink, project, repo, hubDir } = world;
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
@@ -535,8 +536,8 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   git(["remote", "set-url", "origin", remote], local.checkout);
   // The scan's fetch and remote probe answer here, as for a private repository, rather than from github.com.
   const binary = path.join(root, `git-offline-${n++}`);
-  fs.writeFileSync(binary, `#!/bin/sh\ncase "$1" in fetch|ls-remote|pull|push) echo 'Repository not found' >&2; exit 128;; esac\nexec git "$@"\n`, { mode: 0o755 });
-  const world = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}case "$verb" in fetch|ls-remote|pull|push) echo 'Repository not found' >&2; exit 128;; esac\nexec git "$@"\n`);
+  const world = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const { ctx, codeLink, project, hubDir } = world;
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
@@ -559,8 +560,8 @@ it("keeps an unsuccessful credential reprobe unreachable and does not offer acco
   const remote = "https://github.com/example/still-private";
   git(["remote", "set-url", "origin", remote], local.checkout);
   const binary = path.join(root, `git-denied-${n++}`);
-  fs.writeFileSync(binary, '#!/bin/sh\nif [ "$1" = "fetch" ] || [ "$1" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n', { mode: 0o755 });
-  const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ] || [ "$verb" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n`);
+  const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-token" } });
   await ctx.repos.setCheckout(remote, local.checkout);
@@ -1213,8 +1214,8 @@ describe("starting a ticket", () => {
 
   it("scans a repository added while a slower scan is still fetching", async () => {
     const slowGit = path.join(root, `git-slow-${n++}`);
-    fs.writeFileSync(slowGit, `#!/bin/sh\nif [ "$1" = "fetch" ]; then sleep 1; fi\nexec git "$@"\n`, { mode: 0o755 });
-    const world = await machine(codeRepo(), { gitBinary: slowGit });
+    const slowGitRun = fakeProgram(slowGit, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ]; then sleep 1; fi\nexec git "$@"\n`);
+    const world = await machine(codeRepo(), { gitBinary: slowGitRun });
     const { ctx, codeLink, project, repo, checkout } = world;
     await ctx.repos.setCheckout(repo!.remote, checkout!);
     const running = codeLink.scan(project.id);
