@@ -173,6 +173,25 @@ Var pid
     ${if} ${errors}
       !insertmacro IS_POWERSHELL_AVAILABLE
       !insertmacro _CHECK_APP_RUNNING
+      ; A process the check cannot see (one run as administrator hides its path) still holds the exe, and a busy
+      ; exe is not replaced: the install would finish on the old one and say nothing.
+      StrCpy $R1 0
+      ${do}
+        ClearErrors
+        FileOpen $R0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" a
+        ${ifNot} ${errors}
+          FileClose $R0
+          ${exitDo}
+        ${endif}
+        IntOp $R1 $R1 + 1
+        ${if} $R1 >= 10
+          ${ifNot} ${Cmd} `MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY`
+            Quit
+          ${endif}
+          StrCpy $R1 0
+        ${endif}
+        Sleep 500
+      ${loop}
     ${else}
       FileClose $R0
     ${endif}

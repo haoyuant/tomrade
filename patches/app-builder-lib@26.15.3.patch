@@ -1,0 +1,13 @@
+diff --git a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
+index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..19df36f60ca7bab57f9a491fd63eddbf613776ba 100644
+--- a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
++++ b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
+@@ -63,7 +63,7 @@
+ 
+ !macro FIND_PROCESS _FILE _RETURN
+   ${if} $IsPowerShellAvailable == 0
+-    nsExec::Exec `"$PowerShellPath" -C "if ((Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and $$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')}).Count -gt 0) { exit 0 } else { exit 1 }"`
++    nsExec::Exec `"$PowerShellPath" -C "if (@(Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and $$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')}).Count -gt 0) { exit 0 } else { exit 1 }"`
+     Pop ${_RETURN}
+   ${else}
+     !ifdef INSTALL_MODE_PER_ALL_USERS
