@@ -10,7 +10,7 @@ export const settingsApi = ({ host, ns }: Facade): SettingsApi => {
         host.own(id, "settings section");
         settings().register({ id, title: section.title, description: section.description, schema: section.schema, defaults: section.defaults, scope: section.scope, agent: section.agent, order: 100, ...(section.words ? { words: section.words } : {}) });
       }),
-    get: <T>(id?: string) => host.call(() => settings().get()[id ?? ns] as T),
+    get: <T>(id?: string) => host.call(() => settings().value(id ?? ns) as T),
     set: (value, id) =>
       host.call(() => {
         const key = id ?? ns;

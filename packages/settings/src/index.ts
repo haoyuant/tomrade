@@ -474,11 +474,19 @@ export class Settings extends Service implements SettingsReader {
 
   get(): AppSettings {
     const out: Record<string, unknown> = { ...this.stored };
-    for (const s of this.registry.values()) {
-      const stored = this.storedValue(s);
-      out[s.id] = isRecord(s.defaults) && isRecord(stored) ? { ...s.defaults, ...stored } : (stored ?? s.defaults);
-    }
+    for (const s of this.registry.values()) out[s.id] = this.complete(s);
     return out as AppSettings;
+  }
+
+  /** One section as `get()` has it, without building every other: for code that reads its own often. */
+  value(id: string): unknown {
+    const section = this.registry.get(id);
+    return section ? this.complete(section) : this.stored[id];
+  }
+
+  private complete(section: SettingsSection): unknown {
+    const stored = this.storedValue(section);
+    return isRecord(section.defaults) && isRecord(stored) ? { ...section.defaults, ...stored } : (stored ?? section.defaults);
   }
 
   set(next: AppSettings): AppSettings {

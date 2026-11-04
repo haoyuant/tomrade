@@ -108,7 +108,7 @@ export async function openStartWindows(ctx: Context, opens: { main: boolean; ter
 
 /** The key that opens the Terminal window inside Tomrade, as the person bound it; null once they took it away. */
 export function terminalChord(ctx: Context): string | null {
-  const overrides = (ctx.get("settings")?.get().keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;
+  const overrides = (ctx.get("settings")?.value("keybindings") as { overrides?: Record<string, string[]> } | undefined)?.overrides;
   return (overrides?.terminalWindow ?? DEFAULT_KEYS.terminalWindow)[0] ?? null;
 }
 

@@ -260,7 +260,7 @@ describe("the Dock and tray menus", () => {
           { id: "gone", name: "Gone", archived: true, updatedAt: 5 }
         ]
       },
-      settings: { get: () => ({ sessions: { openAtStart: opts.openAtStart ?? "main" } }), locale: () => "en" },
+      settings: { get: () => ({ sessions: { openAtStart: opts.openAtStart ?? "main" } }), value: (id: string) => (id === "sessions" ? { openAtStart: opts.openAtStart ?? "main" } : undefined), locale: () => "en" },
       ...opts.services
     };
     const ctx = {
