@@ -10,7 +10,7 @@ import CodeSessions, { BRIDGE_POLL_MS, cellNumbers, continuedIn, needingYou, ope
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -864,7 +864,7 @@ it("shows a session code link asks for: the window opens or comes forward with i
   expect(opened[0]!.posts.at(-1)).toEqual({ type: "toast", text: "Shown in herdr" });
 });
 
-it("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
+it.skipIf(herdrUnsupported)("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const attached: string[] = [];
@@ -975,7 +975,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   next.spec.onClose();
 }, 30_000);
 
-it("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
+it.skipIf(herdrUnsupported)("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
 
@@ -1049,7 +1049,7 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
   fake.close();
 });
 
-it("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
+it.skipIf(herdrUnsupported)("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const sessions: Session[] = [];

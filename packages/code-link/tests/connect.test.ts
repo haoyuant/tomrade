@@ -19,7 +19,7 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage, digestState, exportState } from "@tomradex/storage";
-import { FakeGh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { FakeGh, FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 import { Herdr } from "@tomradex/herdr";
 import { claudeRecord } from "@tomradex/engine-kit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -1172,7 +1172,7 @@ describe("outside clients, told apart by their connection", () => {
     await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
   });
 
-  it("finds the herdr pane of a session whose hooks name none, and a resumed conversation goes on in the session it had", async () => {
+  it.skipIf(herdrUnsupported)("finds the herdr pane of a session whose hooks name none, and a resumed conversation goes on in the session it had", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const fake = new FakeHerdr();
     onTestFinished(() => fake.close());
@@ -1232,7 +1232,7 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
   });
 
-  it("keeps a conversation whose hooks still name a pane herdr closed going without it, instead of ending and reviving it on every hook", async () => {
+  it.skipIf(herdrUnsupported)("keeps a conversation whose hooks still name a pane herdr closed going without it, instead of ending and reviving it on every hook", async () => {
     const { codeLink, ctx, project, checkout } = await machine();
     const fake = new FakeHerdr();
     onTestFinished(() => fake.close());

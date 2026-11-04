@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
 import { Herdr, HerdrError, herdrCall, herdrSocketPath } from "@tomradex/herdr";
+import { herdrUnsupported } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -42,7 +43,7 @@ describe("herdr socket client", () => {
     expect(herdrSocketPath({}, "/home/me")).toBe(path.join("/home/me", ".config", "herdr", "herdr.sock"));
   });
 
-  it("sends one request per connection and reads herdr's result, extra fields and all", async () => {
+  it.skipIf(herdrUnsupported)("sends one request per connection and reads herdr's result, extra fields and all", async () => {
     const fake = fakeHerdr((method, params) => (method === "ping" ? { result: { type: "pong", version: "0.9.5", protocol: 22, capabilities: { later: true } } } : { result: { type: "ok", echoed: params } }));
     expect(await herdrCall(fake.socket, "ping")).toEqual({ type: "pong", version: "0.9.5", protocol: 22, capabilities: { later: true } });
     expect(await herdrCall(fake.socket, "pane.focus", { pane_id: "w1:p1" })).toEqual({ type: "ok", echoed: { pane_id: "w1:p1" } });
@@ -50,14 +51,14 @@ describe("herdr socket client", () => {
     fake.close();
   });
 
-  it("turns herdr's error line into an error with its code, and an unknown method into an ordinary one", async () => {
+  it.skipIf(herdrUnsupported)("turns herdr's error line into an error with its code, and an unknown method into an ordinary one", async () => {
     const fake = fakeHerdr((method) => (method === "pane.get" ? { error: { code: "pane_not_found", message: "pane w9:p9 not found" } } : { error: { code: "invalid_request", message: `unknown method ${method}` } }));
     await expect(herdrCall(fake.socket, "pane.get", { pane_id: "w9:p9" })).rejects.toMatchObject({ name: "HerdrError", code: "pane_not_found", message: "pane w9:p9 not found" });
     await expect(herdrCall(fake.socket, "pane.graphics.show")).rejects.toMatchObject({ code: "invalid_request" });
     fake.close();
   });
 
-  it("reports a server that is not there, or answers with something else, as a HerdrError and nothing else", async () => {
+  it.skipIf(herdrUnsupported)("reports a server that is not there, or answers with something else, as a HerdrError and nothing else", async () => {
     await expect(herdrCall(path.join(root, "nobody.sock"), "ping")).rejects.toMatchObject({ code: "unreachable" });
     const odd = fakeHerdr(() => "not json at all\n");
     const error = await herdrCall(odd.socket, "ping").catch((err: unknown) => err);
@@ -77,7 +78,7 @@ describe("herdr service", () => {
     return ctx.herdr;
   }
 
-  it("focuses a pane through its workspace, and says so when the pane or the server is gone", async () => {
+  it.skipIf(herdrUnsupported)("focuses a pane through its workspace, and says so when the pane or the server is gone", async () => {
     const fake = fakeHerdr((method, params) => {
       if (method === "pane.get") return params.pane_id === "w2:p1" ? { result: { type: "pane_info", pane: { pane_id: "w2:p1", workspace_id: "w2", tab_id: "w2:t1" } } } : { error: { code: "pane_not_found", message: "no" } };
       return { result: { type: "ok" } };

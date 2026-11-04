@@ -6,7 +6,7 @@ import { Context } from "cordis";
 import { inputsOf, promptOnScreen, SessionPanel, type CodeLinkStore, type SessionView } from "@tomradex/code-link";
 import { arrowsTo, choiceOnScreen, tailLines, trustOnScreen } from "@tomradex/code-link/prompt";
 import { Herdr } from "@tomradex/herdr";
-import { FakeHerdr } from "@tomradex/testkit";
+import { FakeHerdr, herdrUnsupported } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-panel-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -208,7 +208,7 @@ async function panelOn(fake: FakeHerdr, sessions: Record<string, SessionView>, o
 }
 
 describe("the panel's side of a terminal session", () => {
-  it("pastes dropped files' paths into the pane, escaped and without Enter, and only into a live one", async () => {
+  it.skipIf(herdrUnsupported)("pastes dropped files' paths into the pane, escaped and without Enter, and only into a live one", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     const panel = await panelOn(fake, { s1: session({}) });
@@ -223,7 +223,7 @@ describe("the panel's side of a terminal session", () => {
     expect(await panel.drop("p", "s1", ["/tmp/b.png"])).toBe(false);
   });
 
-  it("types into the pane with Enter and presses the agent's own keys for Allow and Deny, through the pane surface only", async () => {
+  it.skipIf(herdrUnsupported)("types into the pane with Enter and presses the agent's own keys for Allow and Deny, through the pane surface only", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     const panel = await panelOn(fake, { s1: session({}), s2: session({ id: "s2", agent: "codex" }), s3: session({ id: "s3", agent: "mute" }) });
@@ -268,7 +268,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("reads the pane's last lines, as many as asked within reason, and none without a pane", async () => {
+  it.skipIf(herdrUnsupported)("reads the pane's last lines, as many as asked within reason, and none without a pane", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     pane.text = "one\ntwo\nthree";
@@ -284,7 +284,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("glances at a live session's pane for its card: its last lines, and the prompt only where its agent declared keys", async () => {
+  it.skipIf(herdrUnsupported)("glances at a live session's pane for its card: its last lines, and the prompt only where its agent declared keys", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     pane.text = CLAUDE_ASKS;
@@ -330,7 +330,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("answers a folder's trust by moving the cursor to the option first and pressing Enter only once it is there", async () => {
+  it.skipIf(herdrUnsupported)("answers a folder's trust by moving the cursor to the option first and pressing Enter only once it is there", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     // the agent's screen follows the arrows it is sent, as Claude Code's does, after `lag` ms (never, at Infinity)
@@ -368,7 +368,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("picks a question's choice by moving the cursor to it and pressing Enter only once it is there", async () => {
+  it.skipIf(herdrUnsupported)("picks a question's choice by moving the cursor to it and pressing Enter only once it is there", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     let lag = 0;
@@ -403,7 +403,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("glances a question's menu for its card only while the screen shows the choices its hook told of", async () => {
+  it.skipIf(herdrUnsupported)("glances a question's menu for its card only while the screen shows the choices its hook told of", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     pane.text = CLAUDE_QUESTION;
@@ -415,7 +415,7 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("glances a folder's trust for the card of a session only its screen said waits, its agent's keys or none", async () => {
+  it.skipIf(herdrUnsupported)("glances a folder's trust for the card of a session only its screen said waits, its agent's keys or none", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     pane.text = CLAUDE_TRUST_LIVE;

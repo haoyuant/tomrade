@@ -6,6 +6,7 @@ import { Context } from "cordis";
 import { Herdr, herdrClientIn, type HerdrConfig, type HerdrPaneEvent, type HerdrScroll } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
+import { herdrUnsupported } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-service-"));
 /** Stand-in servers a test started; detached, so nothing else ends them. */
@@ -71,7 +72,7 @@ const until = async (check: () => boolean, timeout = 3000) => {
 };
 
 describe("herdr service", () => {
-  it("launches a command in a workspace of its own, unfocused, typed with Enter, and reads and prompts the pane", async () => {
+  it.skipIf(herdrUnsupported)("launches a command in a workspace of its own, unfocused, typed with Enter, and reads and prompts the pane", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const launched = await herdr.launch({ cwd: "/work/tom-7", label: "TOM-7", command: "bash '/sessions/s1/run.command'" });
@@ -109,7 +110,7 @@ describe("herdr service", () => {
     expect(await herdr.server()).toBeNull();
   });
 
-  it("opens a plain shell when there is no command, and closes a pane", async () => {
+  it.skipIf(herdrUnsupported)("opens a plain shell when there is no command, and closes a pane", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const launched = await herdr.launch({ cwd: "/work", label: "work", workspace: { key: "p1", label: "Project" } });
@@ -124,7 +125,7 @@ describe("herdr service", () => {
     expect(await herdr.closePane("w1:p1")).toBe(false);
   });
 
-  it("follows a pane's status per pane, once per change, hears its end, and lets it go", async () => {
+  it.skipIf(herdrUnsupported)("follows a pane's status per pane, once per change, hears its end, and lets it go", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const heard: HerdrPaneEvent[] = [];
@@ -160,7 +161,7 @@ describe("herdr service", () => {
     expect(herdr.watching()).toEqual([]);
   });
 
-  it("follows a pane while anyone holds it, and reads each pane's status with the list", async () => {
+  it.skipIf(herdrUnsupported)("follows a pane while anyone holds it, and reads each pane's status with the list", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const heard: HerdrPaneEvent[] = [];
@@ -179,7 +180,7 @@ describe("herdr service", () => {
     fake.close();
   });
 
-  it("reads CodeBuddy, which herdr names no agent for, off its pane with Tomrade's manifest, and lets herdr read what it knows", async () => {
+  it.skipIf(herdrUnsupported)("reads CodeBuddy, which herdr names no agent for, off its pane with Tomrade's manifest, and lets herdr read what it knows", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake, { ownLookMs: 40, ownReadMs: 10 });
     const heard: HerdrPaneEvent[] = [];
@@ -211,7 +212,7 @@ describe("herdr service", () => {
     fake.close();
   });
 
-  it("tells where a pane's view is in its scrollback, now and on each change, moves it, and stops when asked", async () => {
+  it.skipIf(herdrUnsupported)("tells where a pane's view is in its scrollback, now and on each change, moves it, and stops when asked", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const pane = fake.createPane("/work");
@@ -241,7 +242,7 @@ describe("herdr service", () => {
     fake.close();
   });
 
-  it("subscribes again when herdr comes back, and reports a watched pane that went while it was away", async () => {
+  it.skipIf(herdrUnsupported)("subscribes again when herdr comes back, and reports a watched pane that went while it was away", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const heard: HerdrPaneEvent[] = [];
@@ -265,7 +266,7 @@ describe("herdr service", () => {
     fake.close();
   });
 
-  it("tells herdr how to resume a pane's agent, what to show on the pane, and what to say to the person", async () => {
+  it.skipIf(herdrUnsupported)("tells herdr how to resume a pane's agent, what to show on the pane, and what to say to the person", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const pane = fake.createPane("/work");
@@ -280,7 +281,7 @@ describe("herdr service", () => {
     expect(await herdr.notify("gone")).toBe(false);
   });
 
-  it("watches a pane herdr no longer has as already over", async () => {
+  it.skipIf(herdrUnsupported)("watches a pane herdr no longer has as already over", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const heard: HerdrPaneEvent[] = [];
@@ -312,7 +313,7 @@ describe("herdr service", () => {
     }
   });
 
-  it("shows a pane, and says when no herdr client is attached to see it", async () => {
+  it.skipIf(herdrUnsupported)("shows a pane, and says when no herdr client is attached to see it", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const pane = fake.createPane("/work");

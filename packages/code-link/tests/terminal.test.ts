@@ -267,6 +267,7 @@ describe("Gemini CLI's session home", () => {
   });
 });
 
+// herdr is the default on macOS and Linux; Windows has its own case below.
 describe("an unset terminal", () => {
   const herdrThat = (version: string | null) => ({ kind: "herdr" as const, installed: async () => version });
 
@@ -278,16 +279,16 @@ describe("an unset terminal", () => {
   });
 
   it("reads herdr or the built-in terminal picked by name, from when they were choices, as automatic", async () => {
-    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat(null), "darwin")).terminal).toBe(SYSTEM_TERMINAL);
     expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
     expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, { kind: "builtin", installed: async () => "1" }, "win32")).terminal).toBe(BUILTIN_TERMINAL);
   });
 
   it("is herdr where herdr is installed, and the system terminal where it is not", async () => {
-    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings({ terminal: AUTO_TERMINAL }, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings(undefined, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: AUTO_TERMINAL }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings(undefined, herdrThat(null), "darwin")).terminal).toBe(SYSTEM_TERMINAL);
     // Without the herdr plugin there is nothing to run herdr through.
     expect((await machineTerminalSettings({}, null)).terminal).toBe(SYSTEM_TERMINAL);
     expect(SYSTEM_TERMINAL).toBe("Terminal");
@@ -309,9 +310,9 @@ describe("an unset terminal", () => {
     let version: string | null = null;
     const herdr = { kind: "herdr" as const, installed: async () => version };
     const stored = { terminal: AUTO_TERMINAL, claudeCommand: "claude" };
-    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
+    expect(await machineTerminalSettings(stored, herdr, "darwin")).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
     version = "0.9.5";
-    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
+    expect(await machineTerminalSettings(stored, herdr, "darwin")).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
     expect(stored.terminal).toBe(AUTO_TERMINAL);
   });
 });

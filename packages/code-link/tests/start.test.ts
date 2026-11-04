@@ -21,7 +21,7 @@ import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { disposeFresh, FakeHerdr, fakeProgram, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fakeProgram, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 import { Herdr, herdrInstall } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
@@ -177,7 +177,7 @@ it("offers no terminal app of your own first in Settings — automatic — and k
   expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
 });
 
-it("continues a ticket a terminal agent claimed itself as a prompt in that agent's pane, and in a new pane once it closed", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("continues a ticket a terminal agent claimed itself as a prompt in that agent's pane, and in a new pane once it closed", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const { Mcp } = await import("@tomradex/mcp");
@@ -222,7 +222,7 @@ it("continues a ticket a terminal agent claimed itself as a prompt in that agent
   expect(fake.of("agent.prompt")).toHaveLength(2);
 });
 
-it("ends a session whose agent exited to its pane's shell as soon as herdr reads the pane again, and starts the ticket afresh", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("ends a session whose agent exited to its pane's shell as soon as herdr reads the pane again, and starts the ticket afresh", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const { Mcp } = await import("@tomradex/mcp");
@@ -252,7 +252,7 @@ it("ends a session whose agent exited to its pane's shell as soon as herdr reads
 });
 
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
-it("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
   const { codeLink, ctx, project, repo, checkout, ticket } = world;
   await ctx.repos.setCheckout(repo!.remote, checkout!);
@@ -422,7 +422,7 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   fake.close();
 });
 
-it("takes the id herdr's own integration reported on an agent's pane when the agent's hooks never reach Tomrade, and keeps one the hooks gave", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("takes the id herdr's own integration reported on an agent's pane when the agent's hooks never reach Tomrade, and keeps one the hooks gave", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const fake = new FakeHerdr();
@@ -470,7 +470,7 @@ it("takes the id herdr's own integration reported on an agent's pane when the ag
   fake.close();
 });
 
-it("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
+it.skipIf(herdrUnsupported)("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
   // No herdr on this machine: the terminal setting, left on automatic, is the system terminal.
   const { codeLink } = await machine(null);
   const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
@@ -2708,7 +2708,7 @@ describe("starting tickets from a conversation", () => {
     expect(agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")?.data).toMatchObject({ results: [{ key: item.key, ok: false, gate: "checkout", remote: expect.any(String), repo: { id: expect.any(String) } }] });
   });
 
-  it("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
+  it.skipIf(herdrUnsupported)("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
     const { codeLink, ctx, project, repo, checkout, ticket, turns, agent } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);
     const { Mcp } = await import("@tomradex/mcp");
