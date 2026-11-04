@@ -37,6 +37,7 @@ beforeAll(async () => {
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
   await db.exec(migration("202610290001_analytics_activation.sql"));
   await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
+  await db.exec(migration("202611040001_analytics_internal_functions.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -175,6 +176,21 @@ describe("analytics ingest", () => {
     await expect(db.query("select * from public.tomrade_analytics_event")).rejects.toThrow();
     await expect(db.query("insert into public.tomrade_analytics_event(event_id, schema, registry, event, anon_id, install_seq, ts, client, platform, region) values (gen_random_uuid(), 1, 1, 'app.start', $1, 1, now(), '0.1.0', 'macos', 'other')", [ANON])).rejects.toThrow();
     await db.exec("reset role");
+  });
+
+  // The ingests above ran as anon after these were closed, so ingest still reaches them.
+  it("keeps ingest's helpers closed to the public roles", async () => {
+    for (const role of ["anon", "authenticated"]) {
+      await db.exec(`reset role; set role ${role}`);
+      try {
+        await expect(db.query("select public.tomrade_analytics_ensure_month('1999-01-01'::timestamptz)")).rejects.toThrow(/permission denied/);
+        await expect(db.query("select public.tomrade_analytics_region()")).rejects.toThrow(/permission denied/);
+        await expect(db.query("select public.tomrade_analytics_scope_allows('cn')")).rejects.toThrow(/permission denied/);
+      } finally {
+        await db.exec("reset role");
+      }
+    }
+    expect((await db.query("select to_regclass('public.tomrade_analytics_event_1999_01') is null as absent")).rows[0]).toEqual({ absent: true });
   });
 
   it("keeps each deployment's detail on its side", async () => {
