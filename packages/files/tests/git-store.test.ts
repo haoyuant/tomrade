@@ -603,3 +603,26 @@ describe("two machines sharing a remote", { timeout: spawnBudget(30_000) }, () =
     s.close();
   });
 });
+
+describe("a commit another git makes first", () => {
+  it("is no failure: a save whose staged changes someone else committed in between goes on", async () => {
+    const dir = path.join(root, `store-${n++}`);
+    let race = false;
+    // As the store this one replaced might, finishing its last step: it commits what this store just staged.
+    const racing: Git = async (args, opts) => {
+      const verb = args.find((a, i) => a !== "-c" && args[i - 1] !== "-c");
+      if (race && verb === "commit") {
+        race = false;
+        execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "theirs"], { cwd: dir });
+      }
+      return git(args, opts);
+    };
+    const s = await store(null, noop, dir, racing);
+    race = true;
+    await s.write("notes/a.md", text("hello\n"));
+    expect(race).toBe(false);
+    expect((await s.read("notes/a.md"))?.body.toString("utf8")).toBe("hello\n");
+    expect(execFileSync("git", ["log", "-1", "--format=%s"], { cwd: dir, encoding: "utf8" }).trim()).toBe("theirs");
+    s.close();
+  });
+});

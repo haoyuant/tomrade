@@ -194,9 +194,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   live.frame("l");
   live.frame("lo");
   expect(shown()).toEqual(["he"]);
-  await batched();
+  // The batch goes on its own timer, which a loaded machine (and Windows' coarse ticks) may run after a fixed wait.
+  await expect.poll(() => win.posts.filter((p) => p.type === "frame")).toHaveLength(2);
   const drawn = win.posts.filter((p) => p.type === "frame");
-  expect(drawn).toHaveLength(2);
   expect(drawn[1]).toMatchObject({ type: "frame", cell: "c1", seq: 1, width: 80, height: 24, full: true });
   expect(shown()).toEqual(["he", "llo"]);
   // Another size paints another screen: what waited goes first, under the paint it started with.
@@ -204,8 +204,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   live.frame("v", { full: false });
   live.frame("x", { width: 100, full: false });
   live.frame("y", { width: 100, full: false });
-  await batched();
-  expect(win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
+  await expect.poll(() => win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
     [80, true, "he"],
     [80, true, "llo"],
     [80, false, "w"],

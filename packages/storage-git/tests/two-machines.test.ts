@@ -27,7 +27,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 const REAL = process.env.TOMRADE_E2E_REMOTE || null;
 /** A real network is slower, and drops: longer to agree in, and a longer quiet to be sure of. */
-const PACE = REAL ? { agree: 600_000, finish: 15_000, quiet: 45_000, test: 1_200_000 } : { agree: 30_000, finish: 2_000, quiet: 5_000, test: 120_000 };
+const PACE = REAL ? { agree: 600_000, finish: 15_000, quiet: 45_000, test: 1_200_000 } : { agree: 30_000, finish: spawnBudget(2_000), quiet: 5_000, test: 120_000 };
 
 /** Where a remote branch stands, by asking the remote, as another machine would. */
 const tipOf = (url: string, branch: string) => git(["ls-remote", url, `refs/heads/${branch}`], root).split(/\s/)[0] ?? "";
