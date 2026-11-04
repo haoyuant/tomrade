@@ -514,6 +514,39 @@ describe("a dedicated repository", () => {
     expect(commands.filter((c) => c.startsWith("push") || c.startsWith("commit"))).toEqual([]);
   });
 
+  it("a push or a fetch that loses the connection midway reads as offline, keeps what waits, and the next sync delivers it", async () => {
+    const remote = bareRemote();
+    const cut = path.join(root, `cut-${n++}`);
+    // git as Tomrade runs it, except that while a flag names a command, that command breaks off once, as a dropped link does.
+    const wrapper = path.join(root, `git-${n++}.sh`);
+    fs.writeFileSync(wrapper, `#!/bin/sh\nfor verb in push fetch; do case " $* " in *" $verb "*) if [ -f '${cut}.'$verb ]; then rm '${cut}.'$verb; echo 'error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502' >&2; echo 'fatal: the remote end hung up unexpectedly' >&2; exit 128; fi;; esac; done\nexec git "$@"\n`, { mode: 0o755 });
+    // The app's own wait before asking an unreachable remote again: within one sync, a fetch that broke off is not retried at once.
+    const a = await machine("cut-off", { gitBinary: wrapper, remoteRetryMs: 15_000 });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const head = git(["rev-parse", "main"], remote);
+
+    // The push breaks off.
+    a.items.create({ title: "Waits for the link", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    fs.writeFileSync(`${cut}.push`, "");
+    const pushed = await a.storage.publish(a.project.id);
+    expect(fs.existsSync(`${cut}.push`)).toBe(false);
+    expect(pushed.state).toBe("offline");
+    expect(git(["rev-parse", "main"], remote)).toBe(head);
+    expect(a.storage.pending(a.project.id)?.count).toBe(1);
+
+    // The fetch breaks off on the next try: still offline, still waiting, still nothing lost.
+    fs.writeFileSync(`${cut}.fetch`, "");
+    expect((await a.storage.sync(a.project.id)).state).toBe("offline");
+    expect(fs.existsSync(`${cut}.fetch`)).toBe(false);
+    expect(git(["rev-parse", "main"], remote)).toBe(head);
+    expect(a.storage.pending(a.project.id)?.count).toBe(1);
+
+    // The link is back: one sync delivers it.
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    expect(a.storage.pending(a.project.id)?.count).toBe(0);
+    expect(git(["show", "main:.tomrade/state/items.jsonl"], remote)).toContain("Waits for the link");
+  });
+
   it("exports the same bytes whichever machine wrote them", async () => {
     const a = await machine("bytes-a");
     const remote = bareRemote();
