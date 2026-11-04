@@ -2949,6 +2949,7 @@ button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .theme-seg:hover { background: var(--surface); color: var(--fg); }
 .theme-seg[aria-pressed="true"] { background: var(--accent); color: var(--accent-on); }
 .theme-seg[aria-pressed="true"]:hover { background: var(--accent-active); color: var(--accent-on); }
+.theme-seg:disabled, .theme-seg:disabled:hover { background: transparent; color: var(--muted); opacity: .5; cursor: default; }
 
 /* ─── generic surfaces used by the secondary screens ─────────────────── */
 .sheet { overflow-y: auto; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }

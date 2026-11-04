@@ -18,6 +18,9 @@ export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey
 ];
 /** Built-ins offered by the command palette; automatic switching lives in Appearance settings. */
 export const THEME_OPTIONS = BUILT_IN_THEME_OPTIONS;
+/** The built-ins made as one theme's light and dark: only these follow the system. */
+export const THEME_PAIRS: readonly { light: BuiltInTheme; dark: BuiltInTheme }[] = [{ light: "sunrise", dark: "daybreak" }, { light: "light", dark: "dark" }];
+export const pairOf = (theme: string) => THEME_PAIRS.find(pair => pair.light === theme || pair.dark === theme);
 const AUTOMATION_DEFAULT: ThemeAutomation = { mode: "none", defaultTheme: "sunrise", schedule: [], shuffleMinutes: 60 };
 
 interface ThemeContext {
@@ -45,7 +48,11 @@ const choices = (themes: CustomTheme[]): Exclude<ThemePreference, "system">[] =>
 function activePreference(manual: ThemePreference, automation: ThemeAutomation, themes: CustomTheme[], now = new Date()): Exclude<ThemePreference, "system"> {
   const fallback = choices(themes).includes(automation.defaultTheme) ? automation.defaultTheme : "sunrise";
   if (automation.mode === "none") return manual === "system" ? fallback : manual;
-  if (automation.mode === "system") return mq().matches ? "dark" : "light";
+  if (automation.mode === "system") {
+    // A setting saved before pairs, naming another theme, keeps switching Paper and Ink.
+    const pair = pairOf(manual) ?? THEME_PAIRS[1]!;
+    return mq().matches ? pair.dark : pair.light;
+  }
   if (automation.mode === "schedule") {
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     return automation.schedule.find(rule => {
@@ -119,7 +126,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [automation.mode]);
   const mutate = useCallback((patch: Partial<AppSettings>) => { const current = qc.getQueryData<AppSettings>(keys.settings); if (current) save.mutate({ ...current, ...patch }); }, [qc, save]);
   const setPreference = useCallback((next: Exclude<ThemePreference, "system">) => mutate({ theme: next, themeAutomation: { ...automation, mode: "none" } }), [mutate, automation]);
-  const setAutomation = useCallback((next: ThemeAutomation) => mutate({ themeAutomation: next }), [mutate]);
+  // Following the system starts from the theme on screen, which a schedule or shuffle may have picked.
+  const setAutomation = useCallback((next: ThemeAutomation) => mutate(next.mode === "system" && automation.mode !== "system" ? { themeAutomation: next, theme: active } : { themeAutomation: next }), [mutate, automation.mode, active]);
   const createCustomTheme = useCallback((onCreated?: (theme: CustomTheme) => void) => {
     const styles = getComputedStyle(document.documentElement), id = `custom:${crypto.randomUUID()}` as const;
     const tokens = Object.fromEntries(THEME_TOKEN_NAMES.map(name => [name, cssColorToHex(styles.getPropertyValue(`--${name}`).trim())]));

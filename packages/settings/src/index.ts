@@ -202,7 +202,7 @@ const CUSTOM_THEMES: SettingsSection<unknown[]> = {
   defaults: [], order: 0.5, scope: "user", agent: "write"
 };
 const THEME_AUTOMATION: SettingsSection<unknown> = {
-  id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching.", scope: "user", order: 0.25, agent: "write",
+  id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching. \"system\" follows the system's light or dark mode within the chosen theme's pair, Sunrise/Daybreak or Paper/Ink; other themes cannot follow the system.", scope: "user", order: 0.25, agent: "write",
   schema: z.object({
     mode: z.enum(["none", "system", "schedule", "shuffle"]),
     defaultTheme: themeName(),
