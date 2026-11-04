@@ -1381,9 +1381,9 @@ export class Storage extends Service implements StorageReader {
     }
     if (projectIdOf(theirs) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(theirs));
     const theirLogs: DeviceLog[] = [];
-    for (const rel of await g.listAt(`origin/${branch}`, path.join(ARTIFACT_DIR, LOG_DIR))) {
-      if (!rel.endsWith(".jsonl")) continue;
-      const body = await g.show(`origin/${branch}`, rel);
+    // Read once: the merge below takes the same commit, so its files are written from what was read here.
+    const logBodies = await g.showMany(`origin/${branch}`, (await g.listAt(`origin/${branch}`, path.join(ARTIFACT_DIR, LOG_DIR))).filter((rel) => rel.endsWith(".jsonl")));
+    for (const [rel, body] of logBodies) {
       if (body !== null) theirLogs.push({ device: path.basename(rel, ".jsonl"), ops: parseLog(body) });
     }
     this.mergeWith(projectId, entry, base, theirs, theirLogs);
@@ -1393,7 +1393,7 @@ export class Storage extends Service implements StorageReader {
     for (const log of theirLogs) {
       if (log.device === this.hub.deviceId) continue;
       const rel = `${ARTIFACT_DIR}/${LOG_DIR}/${log.device}.jsonl`;
-      const body = await g.show(`origin/${branch}`, rel);
+      const body = logBodies.get(rel) ?? null;
       if (body === null) continue;
       const file = path.join(dir, ARTIFACT_DIR, LOG_DIR, `${log.device}.jsonl`);
       fs.mkdirSync(path.dirname(file), { recursive: true });
