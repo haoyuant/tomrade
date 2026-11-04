@@ -15,7 +15,8 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "bench:latency": "tsc -b && node scripts/bench-latency.mjs"
   },
   "dependencies": {
     "@tomradex/contracts": "workspace:*",

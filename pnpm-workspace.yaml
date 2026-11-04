@@ -27,3 +27,4 @@ overrides:
 # and the page washed dim text out.
 patchedDependencies:
   '@xterm/addon-webgl@0.18.0': patches/@xterm__addon-webgl@0.18.0.patch
+  cordis@4.0.0-rc.8: patches/cordis@4.0.0-rc.8.patch

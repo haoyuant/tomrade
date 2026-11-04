@@ -423,6 +423,8 @@ plugins:
     config:
       # Machine-local: whether Tomrade has started herdr's server here before, so the person is told once.
       statePath: "${userData}/herdr.json"
+      # The observers an earlier Tomrade left when it crashed or was killed: herdr paints for each on every change.
+      endStrays: true
   # On native Windows, where herdr cannot attach, the Terminal window's panes
   # come from a pty host Tomrade runs itself: started detached on demand
   # (node-pty over ConPTY), so terminals outlive a restart of the app, and gone

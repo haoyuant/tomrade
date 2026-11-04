@@ -7,7 +7,7 @@ import { findCommand } from "@tomradex/engine-kit";
 import { detect, manifestOf, ownAgentOfCommand } from "@tomradex/pty-host/screens";
 import type {} from "@tomradex/ipc";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
-import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
+import { endStrayStreams, openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
 import { type Check, type CheckResult, contract, errorMessage, type TerminalBridge, type TerminalInput, type TerminalPaneEvent, type TerminalPaneInfo, type TerminalProcess, type TerminalProvider, type TerminalRevive, type TerminalScrollPosition, type TerminalStatus, type TerminalWorkspaceRef } from "@tomradex/contracts";
 
@@ -152,7 +152,12 @@ export interface HerdrConfig {
   /** OWN_LOOK_MS and OWN_READ_MS; tests make them short. */
   ownLookMs?: number;
   ownReadMs?: number;
+  /** End, shortly after start, the streams an earlier Tomrade left running when it crashed or was killed. tomrade.yml turns it on; tests leave the machine's processes alone. */
+  endStrays?: boolean;
 }
+
+/** How long after start the streams an earlier Tomrade left are looked for: off the start's own path. */
+const STRAYS_AFTER_MS = 10_000;
 
 /** What Tomrade remembers about herdr on this machine. */
 interface HerdrState {
@@ -212,12 +217,15 @@ export class Herdr extends Service implements TerminalProvider {
   private readonly reviveLimit: number;
   private readonly ownLookMs: number;
   private readonly ownReadMs: number;
+  private readonly endStrays: boolean;
   /** The server start under way, shared by every launch that wants one meanwhile. */
   private starting: Promise<HerdrUp | null> | null = null;
   /** When `revive` started the server, oldest first. */
   private revived: number[] = [];
   private reviving: Promise<HerdrRevive> | null = null;
   private toldStarted = false;
+  /** The CLI's version as last read, with the build of the file it was read from. */
+  private versionRead: { build: string; version: Promise<string | null> } | null = null;
   /** The last reading of herdr's own clients, for `CLIENTS_TTL_MS`. */
   private clientsRead: { at: number; attached: Promise<boolean> } | null = null;
   /** The terminals open now, closed with the service. */
@@ -237,6 +245,7 @@ export class Herdr extends Service implements TerminalProvider {
     this.reviveLimit = config.reviveLimit ?? REVIVE_LIMIT;
     this.ownLookMs = config.ownLookMs ?? OWN_LOOK_MS;
     this.ownReadMs = config.ownReadMs ?? OWN_READ_MS;
+    this.endStrays = config.endStrays ?? false;
   }
 
   [Service.init]() {
@@ -244,6 +253,13 @@ export class Herdr extends Service implements TerminalProvider {
     if (process.platform !== "win32") this.ctx.provide("terminals", this);
     this.ctx.inject(["doctor"], (ctx) => contract(ctx, "doctor")?.check(this.check(ctx)));
     this.ctx.inject(["ipc"], (ctx) => this.serveTerminals(ctx));
+    if (this.endStrays && process.platform !== "win32") {
+      const timer = setTimeout(() => {
+        void endStrayStreams().then((n) => n && this.ctx.logger.info(`ended ${n} herdr terminal stream${n === 1 ? "" : "s"} an earlier Tomrade left running`));
+      }, STRAYS_AFTER_MS);
+      timer.unref();
+      this.ctx.effect(() => () => clearTimeout(timer));
+    }
     this.ctx.effect(() => () => {
       this.disposed = true;
       this.stopGlobal();
@@ -261,16 +277,32 @@ export class Herdr extends Service implements TerminalProvider {
     return this.bin || findCommand("herdr");
   }
 
-  /** The herdr CLI's version, or null when herdr is not installed. */
+  /**
+   * The herdr CLI's version, or null when herdr is not installed. Asked of the CLI once per build of it: every attach
+   * and every poll of a Terminal window asks, and an upgrade puts another file where it was.
+   */
   installed(): Promise<string | null> {
     const bin = this.binary();
     if (!bin) return Promise.resolve(null);
-    return new Promise((resolve) => {
+    let build: string;
+    try {
+      const file = fs.statSync(bin);
+      build = `${bin}:${file.ino}:${file.size}:${file.mtimeMs}`;
+    } catch {
+      return Promise.resolve(null);
+    }
+    if (this.versionRead?.build === build) return this.versionRead.version;
+    const version = new Promise<string | null>((resolve) => {
       execFile(bin, ["--version"], { timeout: 5000 }, (err, stdout) => {
         if (err) return resolve(null);
         resolve(String(stdout).trim().replace(/^herdr\s+/, "") || null);
       });
     });
+    const read = { build, version };
+    this.versionRead = read;
+    // Only an answer is kept: a CLI that did not answer in time is asked again.
+    void version.then((v) => v === null && this.versionRead === read && (this.versionRead = null));
+    return version;
   }
 
   /**

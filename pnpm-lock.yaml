@@ -12,6 +12,7 @@ overrides:
 
 patchedDependencies:
   '@xterm/addon-webgl@0.18.0': f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9
+  cordis@4.0.0-rc.8: 5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d
 
 importers:
 
@@ -271,7 +272,7 @@ importers:
         version: link:../../packages/write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       electron-updater:
         specifier: 6.8.10
         version: 6.8.10(supports-color@8.1.1)
@@ -351,7 +352,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -403,7 +404,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -446,7 +447,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -471,7 +472,7 @@ importers:
         version: link:../ipc
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -487,7 +488,7 @@ importers:
     dependencies:
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -509,7 +510,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -543,7 +544,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -568,7 +569,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -605,7 +606,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -648,7 +649,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@tomradex/contributions':
         specifier: workspace:*
@@ -733,7 +734,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
@@ -788,7 +789,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -843,7 +844,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -884,7 +885,7 @@ importers:
         version: link:../items
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -903,7 +904,7 @@ importers:
         version: 13.0.3
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -929,7 +930,7 @@ importers:
     dependencies:
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -966,7 +967,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1013,7 +1014,7 @@ importers:
         version: link:../plugin-sdk
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1059,7 +1060,7 @@ importers:
         version: link:../mcp
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1093,7 +1094,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
@@ -1136,7 +1137,7 @@ importers:
         version: link:../mcp
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -1164,7 +1165,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1201,7 +1202,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1229,7 +1230,7 @@ importers:
         version: link:../agent
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -1302,7 +1303,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1333,7 +1334,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1391,7 +1392,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1416,7 +1417,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1453,7 +1454,7 @@ importers:
         version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1484,7 +1485,7 @@ importers:
         version: link:../pty-host
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -1503,7 +1504,7 @@ importers:
         version: link:../ipc
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1540,7 +1541,7 @@ importers:
         version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1579,7 +1580,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1622,7 +1623,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1659,7 +1660,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -1687,7 +1688,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -1718,7 +1719,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1734,7 +1735,7 @@ importers:
     dependencies:
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -1774,7 +1775,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1793,7 +1794,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1830,7 +1831,7 @@ importers:
         version: link:../web-search
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1855,7 +1856,7 @@ importers:
         version: link:../ipc
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1889,7 +1890,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       express:
         specifier: ^4.22.2
         version: 4.22.2(supports-color@8.1.1)
@@ -1929,7 +1930,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1987,7 +1988,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2042,7 +2043,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2103,7 +2104,7 @@ importers:
         version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2134,7 +2135,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -2165,7 +2166,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2193,7 +2194,7 @@ importers:
         version: link:../plugin-sdk
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
@@ -2248,7 +2249,7 @@ importers:
         version: link:../web-search
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -2326,7 +2327,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2357,7 +2358,7 @@ importers:
         version: link:../plugin-sdk
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -2400,7 +2401,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2440,7 +2441,7 @@ importers:
         version: 13.0.3
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2468,7 +2469,7 @@ importers:
         version: 5.5.0
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       node-pty:
         specifier: 1.1.0
         version: 1.1.0
@@ -2514,7 +2515,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2560,7 +2561,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2597,7 +2598,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2625,7 +2626,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2677,7 +2678,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2696,7 +2697,7 @@ importers:
         version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2724,7 +2725,7 @@ importers:
         version: link:../storage-git
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2785,7 +2786,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2846,7 +2847,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@tomradex/domain':
         specifier: workspace:*
@@ -2892,7 +2893,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2914,7 +2915,7 @@ importers:
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -3207,7 +3208,7 @@ importers:
         version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -3241,7 +3242,7 @@ importers:
         version: link:../tools
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -3266,7 +3267,7 @@ importers:
         version: link:../web-search
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -3285,7 +3286,7 @@ importers:
         version: link:../domain
       cordis:
         specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -9280,7 +9281,7 @@ snapshots:
 
   cookie@0.7.2: {}
 
-  cordis@4.0.0-rc.8:
+  cordis@4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d):
     dependencies:
       '@standard-schema/spec': 1.1.0
       cosmokit: 1.8.1

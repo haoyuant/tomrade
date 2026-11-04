@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Context } from "cordis";
-import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, openTerminal, parseTerminalLine, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
+import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, endEveryObserver, openTerminal, parseTerminalLine, strayStreams, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
 
@@ -128,6 +128,32 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(cli.stdin()).toEqual([]);
   });
 
+  it("ends every observer's herdr as Tomrade exits, since an observer reads no stdin to hear it", async () => {
+    const cli = terminalCli();
+    const stream = openTerminal({ bin: cli.bin, paneId: "w1:p1", mode: "observe", cols: 80, rows: 24 });
+    let frames = 0;
+    stream.onFrame(() => frames++);
+    await until(() => frames === 1);
+    endEveryObserver();
+    await until(() => stream.closed);
+  });
+
+  it("finds the streams an earlier Tomrade left, and only those", () => {
+    const ps = [
+      "  2834     1 /opt/homebrew/bin/herdr terminal session observe wM:pB --cols 55 --rows 19",
+      "  2835     1 /Applications/My Tools/herdr terminal session control w1:p2 --takeover --cols 86 --rows 24",
+      // Its Tomrade still runs.
+      " 59116 57008 /opt/homebrew/bin/herdr terminal session control wK:p20 --takeover --cols 86 --rows 24",
+      // Not started the way Tomrade starts them.
+      "  2836     1 /opt/homebrew/bin/herdr terminal session observe wM:pB",
+      "  2837     1 /opt/homebrew/bin/herdr server",
+      "  2838     1 /usr/bin/myherdr terminal session observe wM:pB --cols 55 --rows 19",
+      "  2839     1 vim herdr terminal session observe x --cols 1 --rows 1 notes.txt",
+      ""
+    ].join("\n");
+    expect(strayStreams(ps)).toEqual([2834, 2835]);
+  });
+
   it("says why when herdr will not attach, and when herdr itself ends the stream", async () => {
     const cli = terminalCli();
     const missing = openTerminal({ bin: cli.bin, paneId: "w9:p1", mode: "control", cols: 80, rows: 24 });
@@ -150,6 +176,30 @@ async function herdrOn(fake: FakeHerdr, config: HerdrConfig = {}): Promise<{ ctx
 }
 
 describe.skipIf(process.platform === "win32")("herdr service terminals", SPAWNS, () => {
+  it("asks the CLI its version once per build of it, again once another file stands there, and again after no answer", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "version-"));
+    const bin = path.join(dir, "herdr");
+    const cli = (body: string) => fs.writeFileSync(bin, `#!/bin/sh\necho asked >> '${dir}/calls'\n${body}\n`, { mode: 0o755 });
+    const calls = () => fs.readFileSync(path.join(dir, "calls"), "utf8").trim().split("\n").length;
+    cli('echo "herdr 0.9.5"');
+    const ctx = new Context();
+    await ctx.plugin(Herdr, { bin });
+    expect(await ctx.herdr.installed()).toBe("0.9.5");
+    expect(await ctx.herdr.installed()).toBe("0.9.5");
+    expect(calls()).toBe(1);
+    // An upgrade: another file in its place.
+    fs.rmSync(bin);
+    cli('echo "herdr 0.10.1"');
+    expect(await ctx.herdr.installed()).toBe("0.10.1");
+    expect(calls()).toBe(2);
+    fs.rmSync(bin);
+    cli("exit 1");
+    expect(await ctx.herdr.installed()).toBeNull();
+    expect(await ctx.herdr.installed()).toBeNull();
+    expect(calls()).toBe(4);
+    await ctx.dispose?.();
+  });
+
   it("compares versions by their numbers", () => {
     expect(compareVersions("0.9.10", "0.9.2")).toBe(1);
     expect(compareVersions("0.9.2", "0.9.2-preview")).toBe(0);
