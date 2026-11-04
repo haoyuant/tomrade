@@ -19,7 +19,7 @@ function start(data: ChartPayload): void {
   for (let d = Date.parse(data.from); d <= Date.parse(data.to); d += 86400000) days.push(new Date(d).toISOString().slice(0, 10));
   // The category is the full day, marked when it is still being counted; the axis shows MM-DD.
   const label = (day: string) => (day === data.to ? `${day} · ${t("today")}` : day);
-  const align = <T extends { day: string }>(rows: T[], pick: (row: T) => number) => {
+  const align = <T extends { day: string }>(rows: T[], pick: (row: T) => number | null) => {
     const byDay = new Map(rows.map((r) => [r.day, pick(r)]));
     return days.map((d) => byDay.get(d) ?? null);
   };
@@ -105,6 +105,22 @@ function start(data: ChartPayload): void {
       series: [
         { name: t("duration"), type: "line", yAxisIndex: 0, data: align(rows, (d) => d.duration_ms / 60000), smooth: true, showSymbol: days.length <= 31, lineStyle: { width: 2.5 }, areaStyle: area(c.series[1]!), ...(today ? { markArea: today } : {}) },
         { name: t("uses"), type: "bar", yAxisIndex: 1, data: align(rows, (d) => d.uses), barMaxWidth: 14, itemStyle: { borderRadius: [4, 4, 0, 0], opacity: 0.85 } }
+      ]
+    });
+
+    const growth = data.growth ?? [];
+    const bar = (name: string, values: (number | null)[]) => ({ name, type: "bar" as const, data: values, barMaxWidth: 10, itemStyle: { borderRadius: [3, 3, 0, 0] } });
+    make("chart-growth", {
+      color: [c.series[0], c.series[1], `${c.series[1]}66`, c.series[2]], legend,
+      grid: { left: 8, right: 8, top: 40, bottom: 8, containLabel: true },
+      tooltip: { ...tooltip, trigger: "axis", valueFormatter: value },
+      xAxis: axis.category,
+      yAxis: [axis.value, { ...axis.value, splitLine: { show: false } }],
+      series: [
+        bar(t("newAccounts"), align(growth, (d) => d.accounts)),
+        bar(t("siteInstalls"), align(growth, (d) => d.installs)),
+        bar(t("updates"), align(growth, (d) => d.updates)),
+        { name: t("pageviews"), type: "line", yAxisIndex: 1, data: align(growth, (d) => d.pageviews), smooth: true, showSymbol: days.length <= 31, lineStyle: { width: 2.5 } }
       ]
     });
 
