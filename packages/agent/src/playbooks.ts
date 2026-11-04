@@ -18,7 +18,8 @@ export function missingPlaybookCapabilities(playbook: Pick<Playbook, "requires">
 }
 
 export const frontmatter = (raw: string): { meta: Record<string, unknown>; body: string } => {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(raw);
+  // A file saved on Windows ends its lines in CRLF, a SKILL.md or decision note as much as any.
+  const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(raw);
   if (!match) return { meta: {}, body: raw.trim() };
   const meta = parseYaml(match[1]) as Record<string, unknown> | null;
   return { meta: meta ?? {}, body: raw.slice(match[0].length).trim() };

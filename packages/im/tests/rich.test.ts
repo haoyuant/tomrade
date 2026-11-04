@@ -86,6 +86,8 @@ describe("rich IM replies", () => {
     const item = w.ctx.items.list({ projectId: w.project.id })[0];
     const reply = w.delivered.findLast(d => d.content.text === "Filed and started it.")!;
     expect(reply.content.elements).toEqual([{ type: "section", title: `Created · ${item.key} Explain local setup`, fields: [{ label: "Status", value: "Doing" }, { label: "Priority", value: "High" }] }]);
+    // The question goes on its own, and may land after the reply.
+    await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("Where should the checkout go?")), { timeout: 5000 }).toBeDefined();
     const question = w.delivered.find(d => d.content.text.startsWith("Where should the checkout go?"))!;
     expect(question.content.actions?.map(a => [a.label, a.style])).toEqual([["Clone it (Recommended)", "primary"], ["Use an existing folder", undefined]]);
     // The progress message, the question and the reply: no status news, no card of its own.
