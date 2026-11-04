@@ -42,7 +42,7 @@ Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 ## Internal usage dashboard
 
 Apply the analytics migrations (`202610230001` onward, including
-`202611040001_site_daily` and `202611040002_accounts_platforms`) to each
+`202611040003_site_daily` and `202611040004_accounts_platforms`) to each
 analytics database and schedule aggregation as described in
 [analytics operations](../../docs/analytics.md). The report RPCs are granted
 only to `service_role`; public and signed-in clients cannot read them. A
