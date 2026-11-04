@@ -149,6 +149,30 @@ export const cleanRemote = (remote: string): string => remote.replace(/\/\/[^@/]
 
 export type GitOrigin = "dedicated" | "shared" | "none";
 
+/** How much one `cat-file --batch` reads: well under what a git call hands back (16 MB). */
+const SHOW_MANY_BYTES = 12 * 1024 * 1024;
+
+/**
+ * `git cat-file --batch`'s answer as each blob's text, or null when it is not exactly `count` blobs whose sizes add up:
+ * the output came as UTF-8 text, so bytes that were not UTF-8 no longer measure what git said.
+ */
+function splitBatch(stdout: string, count: number): string[] | null {
+  const buf = Buffer.from(stdout, "utf8");
+  const bodies: string[] = [];
+  let at = 0;
+  for (let i = 0; i < count; i++) {
+    const nl = buf.indexOf(10, at);
+    if (nl < 0) return null;
+    const size = /^[0-9a-f]+ blob (\d+)$/.exec(buf.toString("utf8", at, nl))?.[1];
+    if (size === undefined) return null;
+    const end = nl + 1 + Number(size);
+    if (end >= buf.length || buf[end] !== 10) return null;
+    bodies.push(buf.toString("utf8", nl + 1, end));
+    at = end + 1;
+  }
+  return at === buf.length ? bodies : null;
+}
+
 /** Paths in command-line-sized batches. */
 const chunks = (paths: string[], size = 200): string[][] => Array.from({ length: Math.ceil(paths.length / size) }, (_, i) => paths.slice(i * size, (i + 1) * size));
 
@@ -345,6 +369,56 @@ export class GitFolder {
     return r.code === 0 ? r.stdout : null;
   }
 
+  /**
+   * Several files' content at a commit, as `show` gives each, from one `git cat-file --batch` per ~12 MB rather than a
+   * process per file. Anything the batch does not answer as plainly as `show` would — not a file, bytes that are not
+   * UTF-8, more than git hands over at once — is read with `show` after all.
+   */
+  async showMany(commit: string, rels: string[]): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    const one = async (list: string[]) => {
+      for (const rel of list) out.set(rel, await this.show(commit, rel));
+    };
+    const ask = (list: string[]) => list.map((rel) => `${commit}:${rel.split(path.sep).join("/")}\n`).join("");
+    if (!rels.length) return out;
+    const check = await this.git(["cat-file", "--batch-check"], { cwd: this.dir, ok: true, stdin: ask(rels) });
+    const heads = check.stdout.split("\n");
+    if (check.code !== 0 || heads.length < rels.length) {
+      await one(rels);
+      return out;
+    }
+    const groups: string[][] = [];
+    const odd: string[] = [];
+    let group: string[] = [];
+    let bytes = 0;
+    rels.forEach((rel, i) => {
+      const head = heads[i]!;
+      const size = /^[0-9a-f]+ blob (\d+)$/.exec(head)?.[1];
+      if (size === undefined) {
+        // Not there at all reads as `show` reads it; a tree or anything else is `show`'s to say.
+        if (head.endsWith(" missing")) out.set(rel, null);
+        else odd.push(rel);
+        return;
+      }
+      if (group.length && bytes + Number(size) > SHOW_MANY_BYTES) {
+        groups.push(group);
+        group = [];
+        bytes = 0;
+      }
+      group.push(rel);
+      bytes += Number(size);
+    });
+    if (group.length) groups.push(group);
+    for (const list of groups) {
+      const r = await this.git(["cat-file", "--batch"], { cwd: this.dir, ok: true, stdin: ask(list) });
+      const read = r.code === 0 ? splitBatch(r.stdout, list.length) : null;
+      if (!read) await one(list);
+      else list.forEach((rel, i) => out.set(rel, read[i]!));
+    }
+    await one(odd);
+    return out;
+  }
+
   /** Files under a path at a commit. */
   async listAt(commit: string, rel: string): Promise<string[]> {
     const r = await this.git(["ls-tree", "-r", "--name-only", commit, "--", rel.split(path.sep).join("/")], { cwd: this.dir, ok: true });
@@ -401,11 +475,8 @@ export class GitFolder {
   /** The artifact's files at a commit, shaped like a folder's. */
   async filesAt(commit: string, dir: string): Promise<Map<string, string>> {
     const files = new Map<string, string>();
-    for (const rel of await this.listAt(commit, dir)) {
-      if (!rel.endsWith(".jsonl") && !rel.endsWith("project.json")) continue;
-      const body = await this.show(commit, rel);
-      if (body !== null) files.set(rel.split("/").join(path.sep), body);
-    }
+    const rels = (await this.listAt(commit, dir)).filter((rel) => rel.endsWith(".jsonl") || rel.endsWith("project.json"));
+    for (const [rel, body] of await this.showMany(commit, rels)) if (body !== null) files.set(rel.split("/").join(path.sep), body);
     return files;
   }
 
