@@ -29,6 +29,19 @@ describe("settings", () => {
     expect(reopened.ctx.settings.get().theme).toBe("dark");
   });
 
+  it("reads one section as get() has it, a fresh copy each time, and a stored value nothing registered", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
+    ctx.settings.register({ id: "demo", title: "Demo", schema: z.object({ days: z.number(), label: z.string() }), defaults: { days: 14, label: "stale" } });
+    ctx.settings.set({ ...ctx.settings.get(), demo: { days: 3, label: "stale" }, loose: { kept: true } } as never);
+    const all = ctx.settings.get() as unknown as Record<string, unknown>;
+    for (const id of Object.keys(all)) expect(ctx.settings.value(id)).toEqual(all[id]);
+    expect(ctx.settings.value("loose")).toEqual({ kept: true });
+    expect(ctx.settings.value("nothing")).toBeUndefined();
+    const first = ctx.settings.value("demo") as { days: number };
+    first.days = 99;
+    expect(ctx.settings.value("demo")).toEqual({ days: 3, label: "stale" });
+  });
+
   it("persists Dawn as a selected theme and in automatic schedules", async () => {
     const p = file();
     const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });

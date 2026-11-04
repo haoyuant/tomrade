@@ -119,7 +119,7 @@ export class Watchdog extends Service {
   }
 
   private prefs(): Prefs {
-    return { ...SECTION.defaults, ...(this.home.settings.get().watchdog as Partial<Prefs> | undefined) };
+    return { ...SECTION.defaults, ...(this.home.settings.value("watchdog") as Partial<Prefs> | undefined) };
   }
 
   /** What seems wrong with the runs going now, in the person's language. */

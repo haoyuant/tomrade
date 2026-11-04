@@ -219,7 +219,7 @@ export class Analytics extends Service implements AnalyticsReader {
   }
 
   private enabled(): boolean {
-    const section = this.ctx.settings.get().analytics as AnalyticsSettings | undefined;
+    const section = this.ctx.settings.value("analytics") as AnalyticsSettings | undefined;
     return (section ?? ANALYTICS_SECTION.defaults).enabled;
   }
 

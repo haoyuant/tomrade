@@ -435,7 +435,7 @@ function apply(ctx: Context, config: Config) {
   const stateOf = (): Saved => readState().saved;
 
   const projectName = (projectId: string) => (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? projectId;
-  const terminal = () => (ctx.settings.get().codeLink as { terminal?: string } | undefined)?.terminal ?? "auto";
+  const terminal = () => (ctx.settings.value("codeLink") as { terminal?: string } | undefined)?.terminal ?? "auto";
 
   /** The terminal backend: herdr, or Tomrade's own pty host on native Windows. */
   const backend = () => ctx.get("terminals");
@@ -443,7 +443,7 @@ function apply(ctx: Context, config: Config) {
   // Without a backend on Windows, a new terminal opens in the system terminal; elsewhere herdr is what is missing.
   const bridge = async (): Promise<TerminalBridge> => (await backend()?.bridge()) ?? (process.platform === "win32" ? { state: "unsupported" } : { state: "notInstalled" });
 
-  const recordingSettings = () => RecordingSettings.parse(ctx.settings.get().terminalRecording ?? {});
+  const recordingSettings = () => RecordingSettings.parse(ctx.settings.value("terminalRecording") ?? {});
   /** What the panes show, recorded while a cell shows them and, by the setting, while none does; off by the setting, or without a folder to record in. */
   const recorder = new Recorder({
     dir: config.recordingsDir ?? null,

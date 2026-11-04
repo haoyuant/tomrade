@@ -487,6 +487,7 @@ describe("the service's switch", () => {
     const ctx = new Context();
     (ctx as unknown as { provide(name: string, value: unknown): void }).provide("settings", {
       get: () => store,
+      value: (id: keyof typeof store) => store[id],
       set: (next: typeof store) => {
         const previous = { analytics: { ...store.analytics } };
         store.analytics = next.analytics;
