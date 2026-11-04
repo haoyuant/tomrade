@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 import { localCli } from "@tomradex/engine-kit";
+import { fakeProgram } from "@tomradex/testkit";
 import type { Block, Engine, SteerInput, TurnIO, TurnInput } from "@tomradex/agent";
 import { createAcpEngine, isTomradeTool, PERMISSION_CHOICES, policyOf, type AcpAgent } from "../src/index.js";
 import { innermost, resolveChoice } from "../src/runtime.js";
@@ -63,16 +64,17 @@ describe("an ACP agent as an engine", () => {
   let dir: string;
   let log: string;
   let bin: string;
+  let base: string;
   let ctx: Context;
   beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-acp-"));
     log = path.join(dir, "requests.jsonl");
-    bin = path.join(dir, "fake-acp");
-    fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+    base = path.join(dir, "fake-acp");
+    bin = fakeProgram(base, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`);
     ctx = new Context();
     await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   });
-  afterEach(async () => { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); });
+  afterEach(async () => { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 
   const requests = (): any[] => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
   const sent = (method: string) => requests().filter((r) => r.method === method);
@@ -153,7 +155,7 @@ describe("an ACP agent as an engine", () => {
 
     it("leaves the list empty, says why, and does not ask again at once, when the agent cannot answer", async () => {
       const runs = path.join(dir, "runs");
-      fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
+      fakeProgram(base, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`);
       const engine = createAcpEngine(ctx, spec());
       expect((await engine.available()).ok).toBe(true);
       await until(() => fs.existsSync(runs) && !engine.local!.picks!()[0]!.pending);
@@ -166,12 +168,12 @@ describe("an ACP agent as an engine", () => {
 
     it("asks again once the person rechecks, say after signing in, and again on the next start when nothing was learned", async () => {
       const runs = path.join(dir, "runs");
-      fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
+      fakeProgram(base, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`);
       const engine = createAcpEngine(ctx, spec());
       await engine.available();
       await until(() => fs.existsSync(runs) && !engine.local!.picks!()[0]!.pending);
       // Signed in now: Recheck asks at once, and the list comes.
-      fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+      fakeProgram(base, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`);
       await engine.available({ fresh: true });
       await until(() => engine.local!.picks!()[0]!.choices.length > 0);
       expect(engine.local!.picks!()[0]!.choices).toEqual(LISTED);
@@ -185,12 +187,14 @@ describe("an ACP agent as an engine", () => {
 
     it("says nothing failed once the agent answers", async () => {
       const runs = path.join(dir, "runs");
-      const real = fs.readFileSync(bin, "utf8");
-      fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
+      const real = `#!/bin/sh
+exec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"
+`;
+      fakeProgram(base, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`);
       const engine = createAcpEngine(ctx, spec());
       await engine.available();
       await until(() => !!engine.local!.picks!()[0]!.failed);
-      fs.writeFileSync(bin, real, { mode: 0o700 });
+      fakeProgram(base, real);
       await engine.available({ fresh: true });
       await until(() => engine.local!.picks!()[0]!.choices.length > 0);
       expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED, fallback: '["fake","small"]' });

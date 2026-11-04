@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Agent, type Block, type Engine, type EngineSetupProgress, type TurnIO, type TurnInput } from "@tomradex/agent";
 import AgentSetup, { machineSetupHost } from "@tomradex/agent-setup";
@@ -15,10 +16,10 @@ import { LocalAgents } from "@tomradex/engine-acp";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
-import { fresh } from "@tomradex/testkit";
+import { fakeProgram, fresh } from "@tomradex/testkit";
 import AcpRegistry, { addedOf, NpxPackage, RegistryAgent, specOf } from "@tomradex/acp-registry";
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-registry-setup-"));
 const bin = path.join(dir, "bin");
 const root = path.join(dir, "global");
@@ -28,7 +29,7 @@ const PATH = process.env.PATH;
 
 beforeAll(() => {
   fs.mkdirSync(bin);
-  const wrap = (name: string, script: string) => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\nexec '${process.execPath}' '${path.join(here, script)}' "$@"\n`, { mode: 0o755 });
+  const wrap = (name: string, script: string) => fakeProgram(path.join(bin, name), `#!/bin/sh\nexec '${process.execPath}' '${path.join(here, script)}' "$@"\n`);
   wrap("npx", "fake-agent.mjs");
   wrap("npm", "fake-npm.mjs");
   Object.assign(process.env, { PATH: `${bin}${path.delimiter}${PATH}`, FAKE_NPM_ROOT: root, FAKE_LOG: log, FAKE_SIGNED: signed });
@@ -36,7 +37,7 @@ beforeAll(() => {
 afterAll(() => {
   process.env.PATH = PATH;
   for (const key of ["FAKE_NPM_ROOT", "FAKE_LOG", "FAKE_SIGNED"]) delete process.env[key];
-  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 const entry = (version: string) => ({ id: "fake-agent", name: "Fake Agent", version, description: "", distribution: { npx: { package: `fake-agent@${version}`, args: ["--acp"] } } });
@@ -91,7 +92,9 @@ it("installs the pinned package before it counts as found, signs in the agent's 
   const asked = logged().find((line) => line.method === "initialize");
   expect(asked?.params.clientCapabilities).toMatchObject({ auth: { terminal: true }, _meta: { "terminal-auth": true } });
   // Its terminal method is the agent's own command with the method's args, for the terminal step and the manual guide.
-  expect(state.setup?.signIn).toBe(`FAKE_LOGIN=1 ${path.join(bin, "npx")} --yes --prefer-offline fake-agent@1.0.0 --acp --login`);
+  expect(state.setup?.signIn).toBe(process.platform === "win32"
+    ? `$env:FAKE_LOGIN='1'; & '${path.join(bin, "npx.exe")}' '--yes' '--prefer-offline' 'fake-agent@1.0.0' '--acp' '--login'`
+    : `FAKE_LOGIN=1 ${path.join(bin, "npx")} --yes --prefer-offline fake-agent@1.0.0 --acp --login`);
 
   const signIn = await finish(ctx, id, ctx.agentSetup.start(id, "sign-in"));
   const methods = signIn.at(-1)!.methods;

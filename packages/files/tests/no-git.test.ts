@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { Tools } from "@tomradex/tools";
@@ -50,7 +50,7 @@ describe.skipIf(process.platform === "win32")("files on a machine without git", 
       await expect(ctx.files.attach(project.id, ticket.id, { path: "docs/plan.md", role: "input" })).rejects.toThrow(/git/);
 
       fs.mkdirSync(path.dirname(gitBinary), { recursive: true });
-      fs.writeFileSync(gitBinary, '#!/bin/sh\nexec git "$@"\n', { mode: 0o755 });
+      fakeProgram(gitBinary, '#!/bin/sh\nexec git "$@"\n');
       const after = await ctx.files.sync(project.id);
       expect(after.state).toBe("local");
       expect(after.versionless).toBeUndefined();

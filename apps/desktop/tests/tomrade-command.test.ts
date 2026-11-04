@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { fishFile, launcherText, placeCommand, profileBlock, withoutBlock, type CommandPlace, type Runner } from "../src/tomrade-command.js";
 
 const roots: string[] = [];
@@ -22,14 +23,14 @@ function machine(over: Partial<CommandPlace> = {}): CommandPlace {
   const home = path.join(root, "home");
   fs.mkdirSync(home);
   const runtime = path.join(root, "runtime");
-  fs.writeFileSync(runtime, `#!/bin/sh\nprintf '%s\\n' "node=$ELECTRON_RUN_AS_NODE" "config=$TOMRADE_CLI_CONFIG" "$@"\n`, { mode: 0o755 });
+  const runnable = fakeProgram(runtime, `#!/bin/sh\nprintf '%s\\n' "node=$ELECTRON_RUN_AS_NODE" "config=$TOMRADE_CLI_CONFIG" "$@"\n`);
   return {
     platform: "darwin",
     home,
     shell: "/bin/zsh",
     pathDirs: ["/usr/bin", "/bin"],
     dir: path.join(root, "Application Support", "Tomrade", "cli"),
-    runtime,
+    runtime: runnable,
     script: path.join(root, "app", "dist", "tomrade-cli.js"),
     config: { url: "http://127.0.0.1:19090", open: "/Applications/Tomrade.app", locale: "en" },
     ...over

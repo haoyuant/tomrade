@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import {
   archiveFolder,
   CliLocator,
@@ -30,6 +31,7 @@ const NAME = "tomrade-fake-cli";
 function cli(dir: string, body: string, name = NAME, mode = 0o755): string {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, name);
+  if (mode & 0o100) return fakeProgram(file, `#!/bin/sh\n${body}\n`);
   fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode });
   return file;
 }

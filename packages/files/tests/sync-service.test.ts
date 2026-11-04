@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
@@ -166,7 +166,7 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
     const flag = path.join(root, `slow-flag-${n++}`);
     const wrapper = path.join(root, `git-${n++}.sh`);
     // git as the store runs it, except that asking a remote whose URL says "slow" takes a while.
-    fs.writeFileSync(wrapper, `#!/bin/sh\ncase " $* " in *" ls-remote "*) if [ -f '${flag}' ] && git config --get remote.origin.url | grep -q slow; then sleep 4; fi;; esac\nexec git "$@"\n`, { mode: 0o755 });
+    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\ncase " $* " in *" ls-remote "*) if [ -f '${flag}' ] && git config --get remote.origin.url | grep -q slow; then sleep 4; fi;; esac\nexec git "$@"\n`);
     const hubDir = path.join(root, `hub-${n++}`);
     fs.mkdirSync(hubDir, { recursive: true });
     const { ctx, project } = await fresh({
@@ -174,7 +174,7 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
       plugins: [
         [Settings, { path: path.join(hubDir, "settings.json") }],
         [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
-        [Files, { watch: false, autoSyncMs: 0, gitBinary: wrapper }]
+        [Files, { watch: false, autoSyncMs: 0, gitBinary: wrapperRun }]
       ]
     });
     await settle();

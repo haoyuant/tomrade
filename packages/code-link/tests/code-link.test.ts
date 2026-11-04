@@ -16,7 +16,7 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { gitRunner } from "@tomradex/git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-link-"));
@@ -446,8 +446,8 @@ describe("code link", () => {
   it("asks git once about a link whose branch is gone, not on every pass", async () => {
     const wrapper = path.join(root, `git-counting-${n++}`);
     const calls = `${wrapper}.log`;
-    fs.writeFileSync(wrapper, `#!/bin/sh\necho "$*" >> "${calls}"\nexec git "$@"\n`, { mode: 0o755 });
-    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo(), { gitBinary: wrapper });
+    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\necho "$*" >> "${calls}"\nexec git "$@"\n`);
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo(), { gitBinary: wrapperRun });
     try {
       const item = ticket("Branch dropped before merging", "todo");
       const branch = `tom-${item.keyNum}/dropped`;
@@ -461,7 +461,7 @@ describe("code link", () => {
       await codeLink.scan(project.id);
       await codeLink.scan(project.id);
       await codeLink.scan(project.id);
-      const asked = fs.readFileSync(calls, "utf8").split("\n").filter((line) => line.startsWith("log ") && line.endsWith(`..${head}`));
+      const asked = fs.readFileSync(calls, "utf8").split("\n").map((line) => line.replace(/^-c core\.longpaths=true /, "")).filter((line) => line.startsWith("log ") && line.endsWith(`..${head}`));
       expect(asked).toHaveLength(1);
       expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, mergedSha: null });
     } finally {

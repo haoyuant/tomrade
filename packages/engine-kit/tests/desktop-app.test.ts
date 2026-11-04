@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { Context } from "cordis";
 import { Mcp } from "@tomradex/mcp";
+import { fakeProgram } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { desktopAppPaths, localAvailability, localCli } from "@tomradex/engine-kit";
 import { CliLocator, machineHost } from "../src/locate.js";
@@ -33,15 +34,15 @@ it("says the desktop app is there but not its CLI, and only then", async () => {
   } finally { await ctx.fiber.dispose(); }
 }, 60_000);
 
-it.skipIf(process.platform === "win32")("names the desktop app whose own copy of the CLI it found", async () => {
+it("names the desktop app whose own copy of the CLI it found", async () => {
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   try {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-desktop-app-"));
     const bin = path.join(dir, "WorkBuddy.app", "Contents", "bin");
     fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, "tomrade-bundled-cli"), '#!/bin/sh\necho "1.0.0"\n', { mode: 0o755 });
-    const host = { ...machineHost(), env: { PATH: `${bin}:/usr/bin:/bin` }, freshPath: async () => [] };
+    fakeProgram(path.join(bin, "tomrade-bundled-cli"), '#!/bin/sh\necho "1.0.0"\n');
+    const host = { ...machineHost(), env: { PATH: [bin, "/usr/bin", "/bin"].join(path.delimiter) }, freshPath: async () => [] };
     const engine = (paths: string[]) => localAvailability(ctx, { engineId: "wb", title: "WorkBuddy", cli: new CliLocator("tomrade-bundled-cli", host), install: "install it", desktopApp: { title: "WorkBuddy", paths } });
     expect((await engine([path.join(dir, "WorkBuddy.app")])({ fresh: true })).cli).toMatchObject({ state: "ready", insideApp: "WorkBuddy" });
     expect((await engine([path.join(dir, "Other.app")])({ fresh: true })).cli?.insideApp).toBeUndefined();

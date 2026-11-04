@@ -10,7 +10,7 @@ import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { localCli } from "@tomradex/engine-kit";
 import { NotSignedIn, PERMISSION_CHOICES, definePlugin, type LocalAgentSpec, type PluginContext } from "@tomradex/plugin-sdk";
-import { fresh, sdk, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, sdk, settle } from "@tomradex/testkit";
 import { LocalAgents } from "../src/index.js";
 
 const Options = z.object({ command: z.string().default("tomrade-fake-local-acp"), model: z.string().optional() });
@@ -22,13 +22,12 @@ describe("a plugin's local agent, run by the app's conductor", () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-local-"));
     log = path.join(dir, "requests.jsonl");
-    bin = path.join(dir, "fake-acp");
-    fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+    bin = fakeProgram(path.join(dir, "fake-acp"), `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`);
     process.env.TOMRADE_TEST_LOG = log;
   });
   afterEach(() => {
     delete process.env.TOMRADE_TEST_LOG;
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
 
   async function world(apply: (p: PluginContext) => Promise<void>) {
@@ -243,10 +242,9 @@ describe("a plugin's local agent, run by the app's conductor", () => {
       expect(missing).toMatchObject({ ok: false, need: "install", cli: { name: "tomrade-fake-acp-server", state: "missing" } });
       expect(missing.reason).toBe("Demo: tomrade-fake-acp-server not found — download tomrade-fake-acp-server");
 
-      const server = path.join(agents, "demo", "server-1.0", "bin", "tomrade-fake-acp-server");
+      let server = path.join(agents, "demo", "server-1.0", "bin", "tomrade-fake-acp-server");
       fs.mkdirSync(path.dirname(server), { recursive: true });
-      fs.copyFileSync(bin, server);
-      fs.chmodSync(server, 0o700);
+      server = fakeProgram(server, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`);
       expect(await engine.available({ fresh: true })).toMatchObject({ ok: true, cli: { name: "node", state: "ready" } });
       // A turn starts it from there, though the app's PATH lacks the folder.
       expect((await localCli("node").launch("tomrade-fake-acp-server")).file).toBe(server);
@@ -304,9 +302,9 @@ describe("a plugin's local agent, run by the app's conductor", () => {
   });
 
   it("stops using an earlier version's bundled CLI once the plugin is loaded again without one", async () => {
-    const copy = path.join(dir, "App", "cli", "tomrade-no-such-bundled-cli");
+    let copy = path.join(dir, "App", "cli", "tomrade-no-such-bundled-cli");
     fs.mkdirSync(path.dirname(copy), { recursive: true });
-    fs.writeFileSync(copy, '#!/bin/sh\necho "1.0.0"\n', { mode: 0o700 });
+    copy = fakeProgram(copy, '#!/bin/sh\necho "1.0.0"\n');
     const spec = (bundled: boolean): LocalAgentSpec => ({
       id: "demo_bundled",
       title: "Demo",
@@ -331,8 +329,7 @@ describe("a plugin's local agent, run by the app's conductor", () => {
   it("fails a try whose only reply is the ACP agent reporting its own provider's failure", { timeout: 20_000 }, async () => {
     // Hermes 0.21.7 ends its turn with "end_turn" and puts the provider's failure where the
     // answer would go, so that text is the only evidence the try has.
-    const down = path.join(dir, "fake-acp-down");
-    fs.writeFileSync(down, `#!/bin/sh\nFAKE_REPLY=bedrock exec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+    const down = fakeProgram(path.join(dir, "fake-acp-down"), `#!/bin/sh\nFAKE_REPLY=bedrock exec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`);
     const w = await world((p) => p.agent.localAgent({
       id: "demo_down",
       title: "Demo Down",

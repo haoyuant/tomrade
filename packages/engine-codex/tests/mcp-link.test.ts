@@ -6,7 +6,7 @@ import { afterEach, expect, it } from "vitest";
 import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import engineCodex from "@tomradex/engine-codex";
 
@@ -23,8 +23,8 @@ it("puts Tomrade in CODEX_HOME's config.toml, updates an old address and takes i
   process.env.CODEX_HOME = home;
   const file = path.join(home, "config.toml");
   fs.writeFileSync(file, 'model = "gpt-x"\n\n[mcp_servers.tomrade]\nurl = "http://127.0.0.1:1/mcp"\n');
-  const bin = path.join(dir, "codex");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-codex/tests/fake-codex-mcp.mjs")}' "$@"\n`, { mode: 0o700 });
+  let bin = path.join(dir, "codex");
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-codex/tests/fake-codex-mcp.mjs")}' "$@"\n`);
   const settingsPath = path.join(dir, "settings.json");
   fs.writeFileSync(settingsPath, JSON.stringify({ agent: { engines: { codex: { command: bin } } } }));
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineCodex] });
