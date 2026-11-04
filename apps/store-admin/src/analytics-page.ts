@@ -1,4 +1,4 @@
-import { translator, type MessageKey } from "./analytics-messages.js";
+import { en, translator, type MessageKey } from "./analytics-messages.js";
 import { FUNNEL_STEPS, regions, type DashboardData, type Filters } from "./analytics-data.js";
 
 const escape = (value: unknown) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -13,8 +13,10 @@ export interface ChartPayload {
   features: DashboardData["report"]["features"];
   days: { day: string; feature_id: string; duration_ms: number; uses: number }[];
   retention: { day: string; cohort: number; d1: number; mature: boolean }[];
+  /** Days with site or account rows; the chart is left out when there are none. */
+  growth: { day: string; accounts: number | null; installs: number | null; updates: number | null; pageviews: number | null }[];
 }
-const CHART_WORDS: MessageKey[] = ["duration", "uses", "activeIds", "rate", "cohort", "returned", "pending", "today"];
+const CHART_WORDS: MessageKey[] = ["duration", "uses", "activeIds", "rate", "cohort", "returned", "pending", "today", "newAccounts", "siteInstalls", "updates", "pageviews"];
 
 export function renderDashboard(f: Filters, data?: DashboardData, error?: "failed" | "invalid"): string {
   const t = translator(f.lang);
@@ -47,21 +49,39 @@ export function renderDashboard(f: Filters, data?: DashboardData, error?: "faile
       t: Object.fromEntries(CHART_WORDS.map((k) => [k, t(k)])),
       daily: report.daily, features,
       days: data.days.map(({ day, feature_id, duration_ms, uses }) => ({ day, feature_id, duration_ms, uses })),
-      retention
+      retention, growth: growthDays(data)
     };
     const fill = (text: string, slots: Record<string, number | string>) => text.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(slots[k] ?? ""));
     const percent = (part: number, whole: number) => (whole ? `${n(part / whole * 100)}%` : "—");
     const span = (ms: number) => ms < 3600000 ? fill(t("minutesShort"), { n: n(ms / 60000) }) : ms < 86400000 ? fill(t("hoursShort"), { n: n(ms / 3600000) }) : fill(t("daysShort"), { n: n(ms / 86400000) });
     const { activation } = data;
     const stepNames: Record<typeof FUNNEL_STEPS[number], MessageKey> = { installs: "installs", setup_done: "setupDone", start: "firstStart", open_pr: "openPr", merge: "merged" };
+    const stat = (label: string, value: string, sub: string) => `<article class="stat"><span class="label">${escape(label)}</span><strong>${escape(value)}</strong><span class="sub">${escape(sub)}</span></article>`;
+    // The site's installer downloads come first when the sync has run: installs over downloads is the conversion.
+    const downloads = data.site?.totals.installs ?? null;
     const funnel = FUNNEL_STEPS.map((step, i) => {
       const reached = activation.funnel[step];
       const installs = activation.funnel.installs;
-      const previous = i ? activation.funnel[FUNNEL_STEPS[i - 1]!] : installs;
+      const previous = i ? activation.funnel[FUNNEL_STEPS[i - 1]!] : downloads;
       const width = installs ? reached / installs * 100 : 0;
-      return [escape(t(stepNames[step])), n(reached), `<span class="share"><span style="width:${width.toFixed(1)}%"></span></span>${percent(reached, installs)}`, i ? percent(reached, previous) : "—"];
+      return [escape(t(stepNames[step])), n(reached), `<span class="share"><span style="width:${width.toFixed(1)}%"></span></span>${percent(reached, installs)}`, previous === null ? "—" : percent(reached, previous)];
     });
-    const stat = (label: string, value: string, sub: string) => `<article class="stat"><span class="label">${escape(label)}</span><strong>${escape(value)}</strong><span class="sub">${escape(sub)}</span></article>`;
+    if (downloads !== null) funnel.unshift([escape(t("downloads")), n(downloads), "—", "—"]);
+    const label = (key: string) => (key in en ? t(key as MessageKey) : key);
+    const shareCell = (part: number, whole: number) => `<span class="share"><span style="width:${(whole ? part / whole * 100 : 0).toFixed(1)}%"></span></span>${percent(part, whole)}`;
+    const { site, accounts } = data;
+    const growthCard = card(t("growth"), t("growthHint"), `<div class="stats four">
+        ${stat(t("accounts"), accounts ? n(accounts.total) : "—", accounts ? fill(t("accountsSub"), { confirmed: n(accounts.confirmed) }) : t("accountsMissing"))}
+        ${stat(t("newAccounts"), accounts ? n(accounts.new) : "—", t("newAccountsSub"))}
+        ${stat(t("siteInstalls"), site ? n(site.totals.installs) : "—", site ? fill(t("siteInstallsSub"), { updates: n(site.totals.updates) }) : t("siteMissing"))}
+        ${stat(t("pageviews"), site ? n(site.totals.pageviews) : "—", site ? fill(t("pageviewsSub"), { visits: n(site.totals.visits) }) : "")}
+      </div>${payloadHasGrowth(data) ? `<div class="chart" id="chart-growth" role="img" aria-label="${escape(t("growth"))}"></div>` : ""}
+      ${site?.platforms.length ? `<h3>${escape(t("downloadsByPlatform"))}</h3>${table([t("platform"), t("siteInstalls"), t("share"), t("updates")], site.platforms.map((d) => [escape(label(d.platform)), n(d.installs), shareCell(d.installs, site.totals.installs), n(d.updates)]))}` : ""}`,
+      `<span class="pill">${escape(t("synced"))} · ${escape(site?.synced_at ? site.synced_at.replace("T", " ").slice(0, 16) : t("notSynced"))}</span>`, true);
+    const usedIds = data.platforms.reduce((sum, d) => sum + d.aai, 0);
+    const usedTime = data.platforms.reduce((sum, d) => sum + d.duration_ms, 0);
+    const platformCard = data.platforms.length ? card(t("platforms"), t("platformsHint"), table([t("platform"), t("activeIds"), t("ofIds"), t("duration"), t("ofTime")],
+      data.platforms.map((d) => [escape(label(d.platform)), n(d.aai), shareCell(d.aai, usedIds), n(d.duration_ms / 60000), shareCell(d.duration_ms, usedTime)]))) : "";
     const activationCard = card(t("activation"), t("activationHint"), `<div class="stats">
         ${stat(t("timeToStart"), activation.first_start.median_ms === null ? "—" : span(activation.first_start.median_ms), fill(t("timeToStartSub"), { n: n(activation.first_start.n) }))}
         ${stat(t("merged7d"), percent(activation.merged_7d.merged, activation.merged_7d.cohort), fill(t("merged7dSub"), { merged: n(activation.merged_7d.merged), cohort: n(activation.merged_7d.cohort) }))}
@@ -81,6 +101,8 @@ export function renderDashboard(f: Filters, data?: DashboardData, error?: "faile
         `<label class="pick"><span>${escape(t("feature"))}</span><select id="feature-pick">${features.map((d) => `<option value="${escape(d.feature_id)}"${d.feature_id === selected ? " selected" : ""}>${escape(d.feature_id)}</option>`).join("")}</select></label>`, true)}
       ${card(t("retention"), t("retentionHint"), `<div class="chart" id="chart-retention" role="img" aria-label="${escape(t("retention"))}"></div>`)}
     </div>
+    ${growthCard}
+    ${platformCard}
     ${activationCard}
     ${card(t("features"), "", table([t("feature"), t("duration"), t("uses"), t("activeIds"), t("share"), `${t("minutes")} / ${t("perDay")}`, `${t("uses")} / ${t("perDay")}`], features.map((d) => {
       const share = total ? d[f.metric] / total * 100 : 0;
@@ -111,6 +133,15 @@ export function renderDashboard(f: Filters, data?: DashboardData, error?: "faile
 ${content}<p class="note">${t("note")}</p></main></body></html>`;
 }
 
+function growthDays(data: DashboardData): ChartPayload["growth"] {
+  const days = new Map<string, ChartPayload["growth"][number]>();
+  const row = (day: string) => days.get(day) ?? days.set(day, { day, accounts: null, installs: null, updates: null, pageviews: null }).get(day)!;
+  for (const d of data.accounts?.daily ?? []) row(d.day).accounts = d.new;
+  for (const d of data.site?.daily ?? []) Object.assign(row(d.day), { installs: d.installs, updates: d.updates, pageviews: d.pageviews });
+  return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+const payloadHasGrowth = (data: DashboardData) => Boolean(data.site || data.accounts);
+
 const STYLE = `
 :root{--bg:#f4f6fa;--surface:#fff;--raised:#f8fafc;--line:#e4e8ef;--text:#111827;--muted:#64748b;--accent:#4f46e5;--accent-soft:#eef2ff;
 --c1:#4f46e5;--c2:#0ea5a4;--c3:#f59e0b;--danger:#be123c;--danger-soft:#fff1f2;--ok:#16a34a;--shadow:0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.05)}
@@ -132,7 +163,8 @@ main{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
 .seg a[aria-current]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chips a{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px}
 .chips a:hover{text-decoration:none;color:var(--text)}.chips a[aria-current]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
-.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}.stats.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+h3{margin:16px 0 4px;font-size:13px;font-weight:600;color:var(--muted)}
 .stat{display:flex;flex-direction:column;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--raised)}
 .stat .label{color:var(--muted);font-size:12px}.stat strong{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}.stat .sub{color:var(--muted);font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
@@ -157,6 +189,6 @@ details>summary{cursor:pointer;font-weight:620;font-size:15px}details[open]>summ
 .notice{padding:48px 24px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:14px}
 .notice.error{color:var(--danger);background:var(--danger-soft);border:1px solid var(--danger)}
 .note{color:var(--muted);font-size:12px;max-width:760px}
-@media (max-width:1000px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid,.split{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:560px){.kpis,.stats{grid-template-columns:minmax(0,1fr)}.range{margin-left:0}.top{position:static}}
+@media (max-width:1000px){.kpis,.stats.four{grid-template-columns:repeat(2,minmax(0,1fr))}.grid,.split{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.kpis,.stats,.stats.four{grid-template-columns:minmax(0,1fr)}.range{margin-left:0}.top{position:static}}
 `;

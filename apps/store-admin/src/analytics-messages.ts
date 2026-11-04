@@ -21,7 +21,15 @@ export const en = {
   timeToStart: "Time to first ticket start", timeToStartSub: "Median, {{n}} IDs",
   merged7d: "Merged within 7 days", merged7dSub: "{{merged}} of {{cohort}} IDs at least 7 days old",
   weekReturn: "First-week return", weekReturnSub: "{{returned}} of {{cohort}} IDs whose first week is over",
-  minutesShort: "{{n}} min", hoursShort: "{{n}} h", daysShort: "{{n}} d"
+  minutesShort: "{{n}} min", hoursShort: "{{n}} h", daysShort: "{{n}} d",
+  growth: "Accounts and site", growthHint: "Accounts count registrations in the account project (no region). Site numbers are copied daily from Cloudflare and stop at yesterday.",
+  accounts: "Registered accounts", accountsSub: "{{confirmed}} confirmed, by the end of the period", newAccounts: "New accounts", newAccountsSub: "Registered in the period",
+  siteInstalls: "Installer downloads", siteInstallsSub: "{{updates}} more fetched by the app's updater", pageviews: "Site page views", pageviewsSub: "{{visits}} visits",
+  updates: "Updater downloads", visits: "Visits", platform: "Platform", synced: "Site data copied", notSynced: "Not copied yet",
+  siteMissing: "No site data: apply the site migration and run tomrade-site's Analytics workflow.", accountsMissing: "Accounts are not reported by this deployment.",
+  downloadsByPlatform: "Downloads by platform", downloads: "Installer downloads (site)",
+  platforms: "Usage by platform", platformsHint: "Active anonymous IDs and active time per operating system in the period.", ofIds: "Share of IDs", ofTime: "Share of time",
+  macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS (Apple silicon)", "mac-x64": "macOS (Intel)", "windows-arm64": "Windows (Arm)", "linux-arm64": "Linux (Arm)"
 };
 export const zh: typeof en = {
   title: "使用分析", subtitle: "内部使用 · 匿名统计 · UTC 日期",
@@ -46,7 +54,15 @@ export const zh: typeof en = {
   timeToStart: "首次开始工单耗时", timeToStartSub: "中位数，{{n}} 个 ID",
   merged7d: "7 天内合并", merged7dSub: "满 7 天的 {{cohort}} 个 ID 中有 {{merged}} 个",
   weekReturn: "首周回访率", weekReturnSub: "首周已过的 {{cohort}} 个 ID 中有 {{returned}} 个回来",
-  minutesShort: "{{n}} 分钟", hoursShort: "{{n}} 小时", daysShort: "{{n}} 天"
+  minutesShort: "{{n}} 分钟", hoursShort: "{{n}} 小时", daysShort: "{{n}} 天",
+  growth: "账户与官网", growthHint: "账户数来自账户项目的注册记录，不分地区。官网数据每天从 Cloudflare 复制一次，截至昨天。",
+  accounts: "注册用户", accountsSub: "截至期末，其中 {{confirmed}} 个已验证邮箱", newAccounts: "新增注册", newAccountsSub: "所选期间内注册",
+  siteInstalls: "安装包下载", siteInstallsSub: "另有 {{updates}} 次由应用自动更新下载", pageviews: "官网页面浏览", pageviewsSub: "{{visits}} 次访问",
+  updates: "自动更新下载", visits: "访问", platform: "平台", synced: "官网数据复制于", notSynced: "尚未复制",
+  siteMissing: "暂无官网数据：请先应用官网数据迁移，并运行 tomrade-site 的 Analytics 工作流。", accountsMissing: "此部署不提供账户数据。",
+  downloadsByPlatform: "各平台下载", downloads: "官网安装包下载",
+  platforms: "各平台使用占比", platformsHint: "所选期间各操作系统的活跃匿名 ID 与有效使用时长。", ofIds: "ID 占比", ofTime: "时长占比",
+  macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS（Apple 芯片）", "mac-x64": "macOS（Intel）", "windows-arm64": "Windows（Arm）", "linux-arm64": "Linux（Arm）"
 };
 export type MessageKey = keyof typeof en;
 export const translator = (lang: "en" | "zh") => (key: MessageKey): string => (lang === "zh" ? zh : en)[key];

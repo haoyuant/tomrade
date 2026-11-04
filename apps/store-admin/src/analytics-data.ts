@@ -35,7 +35,23 @@ export interface Activation {
   week_return: { cohort: number; returned: number };
 }
 export const FUNNEL_STEPS = ["installs", "setup_done", "start", "open_pr", "merge"] as const;
-export interface DashboardData { report: Report; days: FeatureDay[]; activation: Activation }
+/** tomrade_site_report: the copy of Cloudflare's numbers that tomrade-site's sync job writes. */
+export interface SiteCounts { installs: number; updates: number; pageviews: number; visits: number }
+export interface SiteReport {
+  totals: SiteCounts;
+  daily: (SiteCounts & { day: string })[];
+  platforms: { platform: string; installs: number; updates: number }[];
+  synced_at: string | null;
+}
+/** tomrade_accounts_report: registered accounts; they carry no region. */
+export interface Accounts { total: number; confirmed: number; new: number; daily: { day: string; new: number }[] }
+/** tomrade_analytics_platforms: active IDs and active time per operating system. */
+export interface PlatformUse { platform: string; aai: number; duration_ms: number }
+export interface DashboardData {
+  report: Report; days: FeatureDay[]; activation: Activation;
+  /** Null where a deployment has not applied the migration (or the sync never ran there). */
+  site: SiteReport | null; accounts: Accounts | null; platforms: PlatformUse[];
+}
 export interface Endpoint { url: string; key: string }
 export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
   const result: Endpoint[] = [];
@@ -53,22 +69,34 @@ export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
   return result;
 }
 export async function loadDashboard(sources: Endpoint[], f: Filters, request: typeof fetch = fetch): Promise<DashboardData> {
-  const rpc = async <T>(source: Endpoint, name: string): Promise<T> => {
-    const response = await request(`${source.url}/rest/v1/rpc/${name}`, {
-      method: "POST", headers: { apikey: source.key, Authorization: `Bearer ${source.key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_from: f.from, p_to: f.to, p_region: f.region === "all" ? null : f.region }),
-      signal: AbortSignal.timeout(15000)
-    });
+  const range = { p_from: f.from, p_to: f.to };
+  const regional = { ...range, p_region: f.region === "all" ? null : f.region };
+  const call = (source: Endpoint, name: string, body: object) => request(`${source.url}/rest/v1/rpc/${name}`, {
+    method: "POST", headers: { apikey: source.key, Authorization: `Bearer ${source.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
+  });
+  const rpc = async <T>(source: Endpoint, name: string, body: object = regional): Promise<T> => {
+    const response = await call(source, name, body);
+    if (!response.ok) throw new Error("analytics query failed");
+    return response.json() as Promise<T>;
+  };
+  // A function this deployment does not have yet (404) leaves its section empty instead of the whole view.
+  const optional = async <T>(source: Endpoint, name: string, body: object = regional): Promise<T | null> => {
+    const response = await call(source, name, body);
+    if (response.status === 404) return null;
     if (!response.ok) throw new Error("analytics query failed");
     return response.json() as Promise<T>;
   };
   const rows = await Promise.all(sources.map(async (source) => {
-    const [report, series, activation] = await Promise.all([
+    const [report, series, activation, site, accounts, platforms] = await Promise.all([
       rpc<Report>(source, "tomrade_analytics_report"),
       rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"),
-      rpc<Activation>(source, "tomrade_analytics_activation")
+      rpc<Activation>(source, "tomrade_analytics_activation"),
+      optional<SiteReport>(source, "tomrade_site_report"),
+      optional<Accounts>(source, "tomrade_accounts_report", range),
+      optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms")
     ]);
-    return { report, days: series.days, activation };
+    return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [] };
   }));
   return mergeReports(rows);
 }
@@ -84,6 +112,13 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
     merged_7d: { cohort: 0, merged: 0 },
     week_return: { cohort: 0, returned: 0 }
   };
+  let site: SiteReport | null = null;
+  let accounts: Accounts | null = null;
+  const siteDays = new Map<string, SiteReport["daily"][number]>();
+  const sitePlatforms = new Map<string, SiteReport["platforms"][number]>();
+  const accountDays = new Map<string, number>();
+  const platforms = new Map<string, PlatformUse>();
+  const addSite = (a: SiteCounts, b: SiteCounts) => { a.installs += b.installs; a.updates += b.updates; a.pageviews += b.pageviews; a.visits += b.visits; };
   // Medians do not add: across deployments, each one's median weighted by how many it covers.
   let startWeighted = 0;
   const add = (a: Metrics, b: Metrics) => { a.duration_ms += b.duration_ms; a.uses += b.uses; a.aai += b.aai; };
@@ -113,11 +148,41 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
     }
     activation.merged_7d.cohort += row.activation.merged_7d.cohort; activation.merged_7d.merged += row.activation.merged_7d.merged;
     activation.week_return.cohort += row.activation.week_return.cohort; activation.week_return.returned += row.activation.week_return.returned;
+    if (row.site) {
+      site ??= { totals: { installs: 0, updates: 0, pageviews: 0, visits: 0 }, daily: [], platforms: [], synced_at: null };
+      addSite(site.totals, row.site.totals);
+      for (const d of row.site.daily) {
+        const target = siteDays.get(d.day) ?? { day: d.day, installs: 0, updates: 0, pageviews: 0, visits: 0 };
+        addSite(target, d); siteDays.set(d.day, target);
+      }
+      for (const d of row.site.platforms) {
+        const target = sitePlatforms.get(d.platform) ?? { platform: d.platform, installs: 0, updates: 0 };
+        target.installs += d.installs; target.updates += d.updates; sitePlatforms.set(d.platform, target);
+      }
+      if (row.site.synced_at && (!site.synced_at || row.site.synced_at > site.synced_at)) site.synced_at = row.site.synced_at;
+    }
+    if (row.accounts) {
+      accounts ??= { total: 0, confirmed: 0, new: 0, daily: [] };
+      accounts.total += row.accounts.total; accounts.confirmed += row.accounts.confirmed; accounts.new += row.accounts.new;
+      for (const d of row.accounts.daily) accountDays.set(d.day, (accountDays.get(d.day) ?? 0) + d.new);
+    }
+    for (const d of row.platforms) {
+      const target = platforms.get(d.platform) ?? { platform: d.platform, aai: 0, duration_ms: 0 };
+      target.aai += d.aai; target.duration_ms += d.duration_ms; platforms.set(d.platform, target);
+    }
     if (row.report.latest && (!report.latest || row.report.latest > report.latest)) report.latest = row.report.latest;
   }
   report.daily = [...daily.values()].sort((a, b) => a.day.localeCompare(b.day));
   report.features = [...features.values()];
   report.retention = [...retention.values()].sort((a, b) => a.day.localeCompare(b.day));
   if (activation.first_start.n) activation.first_start.median_ms = Math.round(startWeighted / activation.first_start.n);
-  return { report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)), activation };
+  if (site) {
+    site.daily = [...siteDays.values()].sort((a, b) => a.day.localeCompare(b.day));
+    site.platforms = [...sitePlatforms.values()].sort((a, b) => b.installs - a.installs || a.platform.localeCompare(b.platform));
+  }
+  if (accounts) accounts.daily = [...accountDays].map(([day, n]) => ({ day, new: n })).sort((a, b) => a.day.localeCompare(b.day));
+  return {
+    report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)), activation, site, accounts,
+    platforms: [...platforms.values()].sort((a, b) => b.aai - a.aai || a.platform.localeCompare(b.platform))
+  };
 }
