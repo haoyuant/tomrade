@@ -93,17 +93,39 @@ export class FilesArchive {
    * here, so switching back and forth restores each view as it was. Returns
    * how to put things back, for a bind that then fails.
    */
-  rotate(live: string, directory: string): () => void {
+  async rotate(live: string, directory: string): Promise<() => Promise<void>> {
     fs.mkdirSync(this.root, { recursive: true });
     const returning = this.dirs().find((dir) => boundDirectory(dir) === directory) ?? null;
     let parked = path.join(this.root, storeId(live));
     while (fs.existsSync(parked)) parked = path.join(this.root, `${storeId(live)}-${randomUUID().slice(0, 8)}`);
-    fs.renameSync(live, parked);
-    if (returning) fs.renameSync(returning, live);
-    return () => {
-      if (returning) fs.renameSync(live, returning);
+    await renameWhenFree(live, parked);
+    if (returning) await renameWhenFree(returning, live);
+    return async () => {
+      if (returning) await renameWhenFree(live, returning);
       else fs.rmSync(live, { recursive: true, force: true });
-      fs.renameSync(parked, live);
+      await renameWhenFree(parked, live);
     };
+  }
+}
+
+/** How long a rename waits for a folder Windows calls busy before it fails as it would have at once. */
+export const RENAME_PATIENCE_MS = 10_000;
+
+/**
+ * Renames a folder, waiting while Windows calls it busy. Windows will not rename a folder a process works in or holds
+ * a file of, and a store closed for a rebind may still run its last git command there (it stops only between steps),
+ * as a virus scanner may hold a file a moment; elsewhere the rename goes through underneath them, so it never waits.
+ */
+export async function renameWhenFree(from: string, to: string, patienceMs = RENAME_PATIENCE_MS): Promise<void> {
+  const until = Date.now() + patienceMs;
+  for (;;) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      const busy = process.platform === "win32" && ["EBUSY", "EPERM", "EACCES"].includes((err as NodeJS.ErrnoException).code ?? "");
+      if (!busy || Date.now() >= until) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 }
