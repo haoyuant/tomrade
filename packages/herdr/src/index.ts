@@ -224,6 +224,8 @@ export class Herdr extends Service implements TerminalProvider {
   private revived: number[] = [];
   private reviving: Promise<HerdrRevive> | null = null;
   private toldStarted = false;
+  /** The CLI's version as last read, with the build of the file it was read from. */
+  private versionRead: { build: string; version: Promise<string | null> } | null = null;
   /** The last reading of herdr's own clients, for `CLIENTS_TTL_MS`. */
   private clientsRead: { at: number; attached: Promise<boolean> } | null = null;
   /** The terminals open now, closed with the service. */
@@ -275,16 +277,32 @@ export class Herdr extends Service implements TerminalProvider {
     return this.bin || findCommand("herdr");
   }
 
-  /** The herdr CLI's version, or null when herdr is not installed. */
+  /**
+   * The herdr CLI's version, or null when herdr is not installed. Asked of the CLI once per build of it: every attach
+   * and every poll of a Terminal window asks, and an upgrade puts another file where it was.
+   */
   installed(): Promise<string | null> {
     const bin = this.binary();
     if (!bin) return Promise.resolve(null);
-    return new Promise((resolve) => {
+    let build: string;
+    try {
+      const file = fs.statSync(bin);
+      build = `${bin}:${file.ino}:${file.size}:${file.mtimeMs}`;
+    } catch {
+      return Promise.resolve(null);
+    }
+    if (this.versionRead?.build === build) return this.versionRead.version;
+    const version = new Promise<string | null>((resolve) => {
       execFile(bin, ["--version"], { timeout: 5000 }, (err, stdout) => {
         if (err) return resolve(null);
         resolve(String(stdout).trim().replace(/^herdr\s+/, "") || null);
       });
     });
+    const read = { build, version };
+    this.versionRead = read;
+    // Only an answer is kept: a CLI that did not answer in time is asked again.
+    void version.then((v) => v === null && this.versionRead === read && (this.versionRead = null));
+    return version;
   }
 
   /**

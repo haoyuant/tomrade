@@ -176,6 +176,30 @@ async function herdrOn(fake: FakeHerdr, config: HerdrConfig = {}): Promise<{ ctx
 }
 
 describe.skipIf(process.platform === "win32")("herdr service terminals", SPAWNS, () => {
+  it("asks the CLI its version once per build of it, again once another file stands there, and again after no answer", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "version-"));
+    const bin = path.join(dir, "herdr");
+    const cli = (body: string) => fs.writeFileSync(bin, `#!/bin/sh\necho asked >> '${dir}/calls'\n${body}\n`, { mode: 0o755 });
+    const calls = () => fs.readFileSync(path.join(dir, "calls"), "utf8").trim().split("\n").length;
+    cli('echo "herdr 0.9.5"');
+    const ctx = new Context();
+    await ctx.plugin(Herdr, { bin });
+    expect(await ctx.herdr.installed()).toBe("0.9.5");
+    expect(await ctx.herdr.installed()).toBe("0.9.5");
+    expect(calls()).toBe(1);
+    // An upgrade: another file in its place.
+    fs.rmSync(bin);
+    cli('echo "herdr 0.10.1"');
+    expect(await ctx.herdr.installed()).toBe("0.10.1");
+    expect(calls()).toBe(2);
+    fs.rmSync(bin);
+    cli("exit 1");
+    expect(await ctx.herdr.installed()).toBeNull();
+    expect(await ctx.herdr.installed()).toBeNull();
+    expect(calls()).toBe(4);
+    await ctx.dispose?.();
+  });
+
   it("compares versions by their numbers", () => {
     expect(compareVersions("0.9.10", "0.9.2")).toBe(1);
     expect(compareVersions("0.9.2", "0.9.2-preview")).toBe(0);
