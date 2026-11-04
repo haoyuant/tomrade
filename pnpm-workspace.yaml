@@ -25,6 +25,9 @@ overrides:
 # opaque block on a clear terminal: its rectangles read colour bits only.
 # Its glyphs blend alpha apart from colour: on a clear canvas alpha came out squared,
 # and the page washed dim text out.
+# The Windows installer counts Tomrade's running processes with .Count, which Windows
+# PowerShell leaves empty for a single one: a lone pty host or Pi was never closed.
 patchedDependencies:
   '@xterm/addon-webgl@0.18.0': patches/@xterm__addon-webgl@0.18.0.patch
+  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   cordis@4.0.0-rc.8: patches/cordis@4.0.0-rc.8.patch
