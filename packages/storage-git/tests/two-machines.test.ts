@@ -21,6 +21,17 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 let n = 0;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * `TOMRADE_E2E_REMOTE=<git url>` runs the live test over that repository — the project on its `main`, Files on a
+ * `files` branch — through a real host and network; it must be empty, or hold only an earlier run of this test.
+ */
+const REAL = process.env.TOMRADE_E2E_REMOTE || null;
+/** A real network is slower, and drops: longer to agree in, and a longer quiet to be sure of. */
+const PACE = REAL ? { agree: 600_000, finish: 15_000, quiet: 45_000, test: 1_200_000 } : { agree: 30_000, finish: 2_000, quiet: 5_000, test: 120_000 };
+
+/** Where a remote branch stands, by asking the remote, as another machine would. */
+const tipOf = (url: string, branch: string) => git(["ls-remote", url, `refs/heads/${branch}`], root).split(/\s/)[0] ?? "";
+
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 function bareRemote(): string {
@@ -171,13 +182,14 @@ describe("two machines sharing a project's folder and its files", () => {
   it("left to their own timers and watchers, agree on their own and then stay quiet", async () => {
     const a = await machine("live-a", LIVE);
     const id = a.project.id;
-    const projectRemote = bareRemote();
-    const filesRemote = bareRemote();
+    const projectRemote = REAL ?? bareRemote();
+    const filesRemote = REAL ?? bareRemote();
+    const filesBranch = REAL ? "files" : "main";
     const shared = a.items.create({ title: "Shared", projectId: id, boardId: a.board.id, by: "human" });
     await a.ctx.files.write(id, "Specs/brief.md", "# Brief\n");
     await a.storage.setExports(id, ["inbox"]);
     await a.storage.bind(id, "git", { remote: projectRemote, branch: "main" });
-    expect((await a.ctx.files.bind(id, "folder", { path: filesRemote })).state).toBe("synced");
+    expect((await a.ctx.files.bind(id, "folder", { path: filesRemote, branch: filesBranch })).state).toBe("synced");
     const b = await machine("live-b", LIVE);
     expect(await b.storage.attachRemote("git", { remote: projectRemote, branch: "main" })).toBe(id);
     // A window shows on both, so each sweep asks its remotes.
@@ -201,7 +213,7 @@ describe("two machines sharing a project's folder and its files", () => {
       backlog(a) === backlog(b) && inbox(a) === inbox(b) && (await files(a)) === (await files(b)) && a.items.list({ projectId: id }).length === 3 &&
       (await files(a)).includes("Notes/b.md") && (await files(b)).includes("Notes/a.md") && inbox(a).includes("f1");
     let together = false;
-    for (let i = 0; i < 300 && !together; i++) {
+    for (const until = Date.now() + PACE.agree; !together && Date.now() < until; ) {
       await sleep(100);
       together = await agreed();
     }
@@ -209,18 +221,18 @@ describe("two machines sharing a project's folder and its files", () => {
     expect(a.items.get(id, shared.id)).toMatchObject({ status: "doing", priority: 3 });
 
     // Let what is under way finish, then watch many idle cycles: nothing is committed anywhere.
-    await sleep(2_000);
+    await sleep(PACE.finish);
     const heads = async () => [
-      git(["rev-parse", "main"], projectRemote),
-      git(["rev-parse", "main"], filesRemote),
+      tipOf(projectRemote, "main"),
+      tipOf(filesRemote, filesBranch),
       ...(await Promise.all([a, b].map(async (m) => [git(["rev-parse", "HEAD"], m.hub.catalog.project(id)!.dir!), (await m.ctx.files.status(id)).head]))).flat()
     ];
     const settled = await heads();
-    await sleep(5_000);
+    await sleep(PACE.quiet);
     expect(await heads()).toEqual(settled);
     expect(await agreed()).toBe(true);
     for (const m of [a, b]) expect(m.storage.pending(id)?.count).toBe(0);
     await a.ctx.fiber.dispose();
     await b.ctx.fiber.dispose();
-  }, 120_000);
+  }, PACE.test);
 });
