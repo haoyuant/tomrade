@@ -75,7 +75,7 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 - **See who needs you.** Each pane's bar says Running, Needs you or Idle, and Continue nudges a session on without leaving the window. When an agent stops to ask whether to trust a folder, its session card answers it: Trust and continue, or Exit.
 - **Nothing gets lost.** Quit Tomrade and your agents keep working; restart herdr and the layout comes back, every agent resuming its conversation.
 
-The window is built on [herdr](https://herdr.dev), the open-source agent multiplexer. On Windows herdr can't attach directly yet, so a ticket you start runs in the assistant panel, in herdr's own client or in Windows Terminal, and its status still comes back to the board.
+The window is built on [herdr](https://herdr.dev), the open-source agent multiplexer. On Windows, where herdr doesn't run, the window runs on Tomrade's own terminal backend (on ConPTY, opening PowerShell) and works much as it does on macOS: split panes, sessions that connect on their own, each pane's status, and terminals that keep running after you quit Tomrade. There's nothing else to install.
 
 **📓 A notebook that lives next to your board.** Each project carries a folder of files: Markdown, HTML, images, anything. `[[Wiki links]]` and backlinks that follow a rename, `#tags`, full-text search across every file, and today's journal page in one click. Read, Edit or Split, with the preview scrolling in step. Every save is versioned and can sync to a GitHub repo. Attach files to tickets as deliverables, and let agents search your notes.
 
