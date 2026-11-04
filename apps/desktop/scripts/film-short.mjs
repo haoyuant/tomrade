@@ -68,9 +68,10 @@ const probe = (file) => JSON.parse(spawnSync("ffprobe", ["-v", "error", "-select
 
 const INK = "#1d1d1f";
 const SANS = `-apple-system,"SF Pro Display","PingFang SC",sans-serif`;
+// The stage is the app's Sunrise by day (a lilac morning, the sun's glow below) and Daybreak by night.
 const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
-  html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:#f6efe3;font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased}
-  .bg{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 118%,#f7cfa8 0%,#f6e3cd 38%,#f6efe3 70%)}
+  html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:#f6f3f8;font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased}
+  .bg{position:absolute;inset:0;background:radial-gradient(70% 60% at 8% 0%,rgba(185,168,236,.2),transparent 70%),radial-gradient(120% 90% at 50% 118%,#f7c9a8 0%,#f2dcd8 38%,#f6f3f8 70%)}
   canvas{position:absolute;left:0;top:0}
   video{position:absolute;left:-99999px;width:10px}
   .t{position:absolute;box-sizing:border-box}
@@ -80,20 +81,20 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
   .t.inline{display:flex;align-items:baseline;gap:18px}
   .t.inline .zh{margin:0}
   .t.hot .en{color:#c4492c}
-  body.night{background:#15142a}
-  .night .bg{background:radial-gradient(120% 90% at 50% 118%,#7a5270 0%,#3a2f5c 34%,#1b1a35 66%,#15142a 100%)}
+  body.night{background:#120f24}
+  .night .bg{background:radial-gradient(120% 90% at 50% 118%,#7a5270 0%,#3a2f5c 34%,#1a1532 66%,#120f24 100%)}
   .night .t .en{color:#f5f5f7}
   .night .t .zh{color:#b6b6c0}
   .night .t.hot .en{color:#ff8a5c}
   .night #fast{color:#b6b6c0}
-  #title.dusk .bgf{background:radial-gradient(90% 70% at 50% 112%,#a56a6a 0%,#5b4270 34%,#2a2748 62%,#15142a 92%)}
+  #title.dusk .bgf{background:radial-gradient(90% 70% at 50% 112%,#a56a6a 0%,#5b4270 34%,#2a2748 62%,#120f24 92%)}
   #title.dusk .t .en{color:#f5f5f7}
   #title.dusk .t .zh{color:#b6b6c0}
   #title:not(.dusk) .t .en{color:${INK}}
   #title:not(.dusk) .t .zh{color:#6e6e73}
   #fast{position:absolute;right:48px;top:34px;font:600 24px "SF Mono",Menlo,monospace;color:#6e6e73;transform-origin:right center}
   .full{position:absolute;inset:0;opacity:0}
-  .full .bgf{position:absolute;inset:0;background:radial-gradient(90% 70% at 50% 112%,#f4a66f 0%,#f7cfa8 34%,#f6e3cd 62%,#f6efe3 88%)}
+  .full .bgf{position:absolute;inset:0;background:radial-gradient(90% 70% at 50% 112%,#f4a66f 0%,#f7c9a8 34%,#f2dcd8 62%,#f6f3f8 88%)}
   #title svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 10px 18px rgba(70,40,20,.14))}
   #term{position:absolute;left:1010px;top:330px;width:800px;box-sizing:border-box;border-radius:22px;background:#1c1b2b;box-shadow:0 30px 70px rgba(70,40,20,.32);overflow:hidden;transform-origin:50% 60%}
   #term .bar{height:44px;display:flex;align-items:center;gap:10px;padding:0 20px;background:#2a2939}
@@ -270,7 +271,7 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
     ctx.drawImage(video, s.src.x + sx, s.src.y + sy, sw, sh, Math.max(0, d.x), Math.max(0, d.y), sw * k, sh * k);
     // A grid of cards: the stage between them, rounded corners, and each card's name on its white bar.
     if (s.cards) {
-      const paper = s.stage === 'night' ? '#15142a' : '#f6efe3';
+      const paper = s.stage === 'night' ? '#120f24' : '#f6f3f8';
       ctx.beginPath();
       ctx.rect(d.x, d.y, d.w, d.h);
       for (const c of s.cards) ctx.roundRect(c.x, c.y, c.w, c.h, c.bar * 0.32);
