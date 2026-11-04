@@ -11,14 +11,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, fresh, settle } from "@tomradex/testkit";
 import { Storage } from "@tomradex/storage";
 import storageGit, { createRemoteProvider } from "@tomradex/storage-git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-credential-"));
 const servers: http.Server[] = [];
-afterAll(() => {
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
   for (const s of servers) s.close();
+  await disposeFresh();
   fs.rmSync(root, { recursive: true, force: true });
 });
 

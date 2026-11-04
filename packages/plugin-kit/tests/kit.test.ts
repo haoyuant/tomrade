@@ -49,7 +49,13 @@ describe("the plugin package", () => {
     const evil = path.join(tmp, "evil");
     fs.mkdirSync(evil, { recursive: true });
     fs.writeFileSync(path.join(evil, MANIFEST_FILE), JSON.stringify({ id: "someone/evil", version: "1.0.0", title: "evil", license: "MIT", engines: { sdk: "^0.2.0" } }));
-    fs.symlinkSync("/etc/hosts", path.join(evil, "hosts"));
+    try {
+      fs.symlinkSync("/etc/hosts", path.join(evil, "hosts"));
+    } catch (err) {
+      // Windows lets only an administrator or developer mode link a file; a directory junction is a link all the same.
+      if ((err as NodeJS.ErrnoException).code !== "EPERM") throw err;
+      fs.symlinkSync(os.tmpdir(), path.join(evil, "hosts"), "junction");
+    }
     const file = path.join(tmp, "evil.tomrade-plugin");
     await tar.c({ gzip: true, file, cwd: evil, portable: true }, [MANIFEST_FILE, "hosts"]);
     await expect(unpackPlugin(file)).rejects.toThrow(/SymbolicLink/);

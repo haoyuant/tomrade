@@ -34,9 +34,24 @@ export interface FreshOptions {
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** The contexts `fresh` booted, held weakly: a file that never disposes them keeps none alive. */
+const booted = new Set<WeakRef<Context>>();
+
+/**
+ * Disposes every context `fresh` booted, closing the database files they hold: before a test file removes its folder,
+ * since Windows will not delete a file that is still open.
+ */
+export async function disposeFresh(): Promise<void> {
+  for (const ref of [...booted]) {
+    booted.delete(ref);
+    await ref.deref()?.fiber.dispose();
+  }
+}
+
 /** A fresh context with one project, its board and views seeded. */
 export async function fresh(opts: FreshOptions = {}) {
   const ctx = new Context();
+  booted.add(new WeakRef(ctx));
   const failures: unknown[] = [];
   ctx.logger.exporter({ export: (m) => { if (m.type === "error") failures.push(m.args[0]); } });
 

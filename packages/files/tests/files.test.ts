@@ -146,8 +146,17 @@ describe("ctx.files", { timeout: 30_000 }, () => {
       await refuse({ path: "notes.md", base64: Buffer.from("# hi").toString("base64") }, /write_file/);
       fs.writeFileSync(path.join(work, "big.png"), Buffer.alloc(8 * 1024 * 1024 + 1));
       await refuse({ sourcePath: "big.png" }, /larger than 8 MB/);
-      fs.symlinkSync(outside, path.join(work, "link.png"));
-      await refuse({ sourcePath: "link.png" }, /outside the working directory/);
+      // A link out of the working directory. Windows lets only an administrator or developer mode link a file; a directory
+      // junction anyone may make, and it leads out just the same.
+      let linked = "link.png";
+      try {
+        fs.symlinkSync(outside, path.join(work, linked));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EPERM") throw err;
+        fs.symlinkSync(path.dirname(outside), path.join(work, "out"), "junction");
+        linked = path.join("out", path.basename(outside));
+      }
+      await refuse({ sourcePath: linked }, /outside the working directory/);
     } finally {
       await ctx.fiber.dispose();
     }

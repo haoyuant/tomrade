@@ -18,11 +18,15 @@ import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-handoff-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
+  await disposeFresh();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 async function until(check: () => boolean, timeout = 5000): Promise<void> {
   const started = Date.now();

@@ -11,7 +11,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
 import { ProjectDb, migrateCore } from "@tomradex/db";
-import { fresh } from "@tomradex/testkit";
+import { disposeFresh, fresh } from "@tomradex/testkit";
 
 const LEGACY_SQL = `
 CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -26,7 +26,11 @@ CREATE TABLE oplog (seq INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT NOT NULL,
 `;
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-db-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+// The contexts first: Windows will not delete the database files they still hold.
+afterAll(async () => {
+  await disposeFresh();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 let n = 0;
 /** A cache dir and a legacy file inside it, the way userData holds both. */
