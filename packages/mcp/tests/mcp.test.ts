@@ -1,3 +1,5 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -124,14 +126,16 @@ describe("the MCP surface", () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();
     ctx.tools.register(defineTool({ name: "where", title: "Where", description: "test", input: z.object({}), execute: async (_args, inv) => ({ roots: inv.roots ? await inv.roots() : null }) }));
+    // A root URI is absolute on every platform (a drive letter on Windows).
+    const tree = path.resolve("/tmp/work tree");
     const rooted = new Client({ name: "rooted", version: "0" }, { capabilities: { roots: {} } });
-    rooted.setRequestHandler(ListRootsRequestSchema, () => ({ roots: [{ uri: "file:///tmp/work%20tree", name: "work" }] }));
+    rooted.setRequestHandler(ListRootsRequestSchema, () => ({ roots: [{ uri: pathToFileURL(tree).href, name: "work" }] }));
     const plain = new Client({ name: "plain", version: "0" });
     const text = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0]!.text);
     try {
       await rooted.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
       await plain.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
-      expect(text(await rooted.callTool({ name: "where", arguments: {} }))).toEqual({ roots: ["/tmp/work tree"] });
+      expect(text(await rooted.callTool({ name: "where", arguments: {} }))).toEqual({ roots: [tree] });
       expect(text(await plain.callTool({ name: "where", arguments: {} }))).toEqual({ roots: null });
     } finally { await rooted.close(); await plain.close(); await ctx.fiber.dispose(); }
   });

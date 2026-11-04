@@ -5,16 +5,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
-import { fakeProgram, fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle, useHome } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import engineClaudeCode, { claudeConfigDirOf, claudeConfigDirs, claudeProjectServerApproval } from "@tomradex/engine-claude-code";
 
 const saved = process.env.CLAUDE_CONFIG_DIR;
-const savedHome = process.env.HOME;
+let restoreHome = () => undefined as void;
 afterEach(() => {
   if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = saved;
-  process.env.HOME = savedHome;
+  restoreHome();
   delete process.env.FAKE_MCP_FAIL;
 });
 
@@ -97,9 +97,11 @@ describe("whether Claude Code loads a repository's .mcp.json server", () => {
 
 describe("Claude Code accounts kept in separate config folders", () => {
   it("knows a session's config folder by where its transcript is", () => {
-    expect(claudeConfigDirOf("/Users/a/.claude-tom/projects/-Users-a-repo/d5095123.jsonl")).toBe("/Users/a/.claude-tom");
-    expect(claudeConfigDirOf("/Users/a/.claude/projects/-Users-a-repo/x.jsonl")).toBe("/Users/a/.claude");
-    expect(claudeConfigDirOf("/Users/a/notes/x.jsonl")).toBeNull();
+    // An absolute path as this platform spells it: /Users/a, or C:\Users\a on Windows.
+    const a = path.resolve("/Users/a");
+    expect(claudeConfigDirOf(path.join(a, ".claude-tom", "projects", "-Users-a-repo", "d5095123.jsonl"))).toBe(path.join(a, ".claude-tom"));
+    expect(claudeConfigDirOf(path.join(a, ".claude", "projects", "-Users-a-repo", "x.jsonl"))).toBe(path.join(a, ".claude"));
+    expect(claudeConfigDirOf(path.join(a, "notes", "x.jsonl"))).toBeNull();
   });
 
   it("finds the folders beside the default one, those sessions reported, and its own first", () => {
@@ -115,12 +117,16 @@ describe("Claude Code accounts kept in separate config folders", () => {
     expect(all[0]).toBe(path.join(home, ".claude"));
     expect(all.slice(1).sort()).toEqual([path.join(home, ".claude-alt"), path.join(home, ".claude-tom")]);
     expect(claudeConfigDirs({ CLAUDE_CONFIG_DIR: path.join(home, ".claude-tom") }, home)[0]).toBe(path.join(home, ".claude-tom"));
-    expect(claudeConfigDirs({}, home, ["/Volumes/work/claude"])).toContain("/Volumes/work/claude");
+    const reported = path.resolve("/Volumes/work/claude");
+    expect(claudeConfigDirs({}, home, [reported])).toContain(reported);
   });
+
+  /** How a command the person runs by hand picks an account: a POSIX shell's prefix, or a PowerShell statement on Windows. */
+  const asProfile = (dir: string) => (process.platform === "win32" ? `$env:CLAUDE_CONFIG_DIR='${dir}'; ` : `CLAUDE_CONFIG_DIR=~/${path.basename(dir)} `);
 
   async function accounts() {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-claude-home-"));
-    process.env.HOME = home;
+    restoreHome = useHome(home);
     for (const name of [".claude-tom", ".claude-alt"]) {
       fs.mkdirSync(path.join(home, name));
       fs.writeFileSync(path.join(home, name, ".claude.json"), JSON.stringify({ numStartups: 1 }));
@@ -140,7 +146,7 @@ describe("Claude Code accounts kept in separate config folders", () => {
     expect(view.profile).toBe(path.join(home, ".claude"));
     expect(view.profiles!.map((p) => p.profile)).toEqual(expect.arrayContaining([tom, path.join(home, ".claude-alt")]));
     expect(view.profiles!.find((p) => p.profile === tom)).toMatchObject({ state: "missing", file: path.join(tom, ".claude.json") });
-    expect(view.profiles!.find((p) => p.profile === tom)!.manual.connect).toBe(`CLAUDE_CONFIG_DIR=~/.claude-tom claude mcp add --scope user --transport http tomrade ${ctx.mcp.url}`);
+    expect(view.profiles!.find((p) => p.profile === tom)!.manual.connect).toBe(`${asProfile(tom)}claude mcp add --scope user --transport http tomrade ${ctx.mcp.url}`);
 
     const after = await link.connect(tom);
     expect(after.profiles!.find((p) => p.profile === tom)).toMatchObject({ state: "connected" });
@@ -159,7 +165,7 @@ describe("Claude Code accounts kept in separate config folders", () => {
     const tom = path.join(home, ".claude-tom");
     fs.writeFileSync(path.join(tom, ".claude.json"), JSON.stringify({ projects: { [repo]: { enabledMcpjsonServers: ["tomrade"] } } }));
     const approvals = link.projectApprovals!(repo);
-    expect(approvals.find((a) => a.profile === tom)).toEqual({ profile: tom, state: "approved", command: "CLAUDE_CONFIG_DIR=~/.claude-tom claude" });
+    expect(approvals.find((a) => a.profile === tom)).toEqual({ profile: tom, state: "approved", command: `${asProfile(tom)}claude` });
     expect(approvals.find((a) => a.profile === path.join(home, ".claude-alt"))).toMatchObject({ state: "pending" });
     expect(approvals.find((a) => a.profile === path.join(home, ".claude"))).toEqual({ profile: path.join(home, ".claude"), state: "pending", command: "claude" });
 

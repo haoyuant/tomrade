@@ -82,7 +82,7 @@ describe("the install command and its environment", () => {
     const managed = new ManagedCopies({ dir: "/data/agents", runtime: "/app/rt", npmCli: "/nowhere/npm-cli.js" }, "linux", () => {});
     const npm = managed.npm(bareLaunch("npm"))!;
     expect(npm.argv(["install"])).toEqual({ command: "npm", args: ["install"] });
-    expect(managed.installing(npm).env({ PATH: "/usr/bin", npm_config_prefix: "/usr" })).toEqual({ PATH: "/data/agents/node:/usr/bin", ELECTRON_RUN_AS_NODE: "1" });
+    expect(managed.installing(npm).env({ PATH: "/usr/bin", npm_config_prefix: "/usr" })).toEqual({ PATH: `${path.join("/data/agents", "node")}:/usr/bin`, ELECTRON_RUN_AS_NODE: "1" });
   });
 
   it("writes a node shim that runs the runtime as Node", () => {

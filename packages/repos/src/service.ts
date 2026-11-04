@@ -126,7 +126,9 @@ interface RepoRow {
 
 const rowToRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, remote: r.remote, name: r.name, defaultBranch: r.default_branch, createdAt: r.created_at, updatedAt: r.updated_at });
 
-const nameOf = (remote: string): string => normalizeRemote(remote).split(/[/:]/).filter(Boolean).pop() ?? "repo";
+// A local remote on Windows is a path with backslashes.
+const nameSeparators = process.platform === "win32" ? /[\\/:]/ : /[/:]/;
+const nameOf = (remote: string): string => normalizeRemote(remote).split(nameSeparators).filter(Boolean).pop() ?? "repo";
 
 /** Keep ordinary remote basenames intact, but never allow a remote to escape the selected parent. */
 const checkoutFolderNameOf = (remote: string): string => {

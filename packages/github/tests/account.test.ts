@@ -73,7 +73,8 @@ it("hands git a personal token that settings.json keeps sealed", async () => {
   await ctx.github.connection.connect("ghp_sealed");
   expect(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).not.toContain("ghp_sealed");
   expect(fill(credentialArgs([ctx.github.credential()!]))).toContain("username=x-access-token\npassword=ghp_sealed");
-  expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
+  // POSIX modes only; Windows has no 0600.
+  if (process.platform !== "win32") expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
   await ctx.github.connection.disconnect!();
   expect(fs.existsSync(path.join(userData, "github-token.json"))).toBe(false);
 });

@@ -32,7 +32,8 @@ static class Launcher {
   [DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
 
   static string Quote(string a) {
-    if (a.Length > 0 && a.IndexOfAny(new[] { ' ', '\t', '"' }) < 0) return a;
+    // A ' too: sh strips bare single quotes from its command line, keeps them inside double quotes.
+    if (a.Length > 0 && a.IndexOfAny(new[] { ' ', '\t', '"', '\'' }) < 0) return a;
     var s = new StringBuilder("\"");
     int slashes = 0;
     foreach (char c in a) {

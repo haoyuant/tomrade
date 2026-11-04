@@ -35,8 +35,8 @@ describe("the app icon preference", () => {
   });
 
   it("draws both choices from assets the app ships", () => {
-    expect(appIconPath("transparent")).toMatch(/assets\/icon\.png$/);
-    expect(appIconPath("sun")).toMatch(/assets\/icon-mac\.png$/);
+    expect(appIconPath("transparent")).toMatch(/assets[\\/]icon\.png$/);
+    expect(appIconPath("sun")).toMatch(/assets[\\/]icon-mac\.png$/);
     expect(fs.existsSync(appIconPath("transparent"))).toBe(true);
     expect(fs.existsSync(appIconPath("sun"))).toBe(true);
   });

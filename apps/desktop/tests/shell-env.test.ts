@@ -34,7 +34,8 @@ describe("reading a login shell", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("sees what the profile exports, values with newlines included", async () => {
+  // Windows has no login shell to read (readShellEnvSoon returns early there).
+  it.skipIf(process.platform === "win32")("sees what the profile exports, values with newlines included", async () => {
     fs.writeFileSync(path.join(home, ".profile"), `export PATH="/fixture/bin:$PATH"\nexport TOMRADE_TWO_LINES="a\nb"\necho noise from the profile\n`);
     const { env } = await readShellEnv("/bin/sh", { ...launchd, HOME: home, ENV: path.join(home, ".profile") });
     expect(env?.PATH?.split(":")[0]).toBe("/fixture/bin");

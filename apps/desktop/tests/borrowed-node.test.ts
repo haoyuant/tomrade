@@ -39,7 +39,8 @@ describe("the borrowed node and npm", () => {
     const npm = fs.readFileSync(path.join(setup.binDir, "npm"), "utf8");
     expect(npm).toContain("npm-cli.js");
     expect(npm).toContain(`NPM_CONFIG_PREFIX="${setup.prefix}"`);
-    expect(fs.statSync(path.join(setup.binDir, "npm")).mode & 0o100).toBeTruthy();
+    // Windows has no executable bit.
+    if (process.platform !== "win32") expect(fs.statSync(path.join(setup.binDir, "npm")).mode & 0o100).toBeTruthy();
     // Last on PATH, so a system Node always wins; the prefix's bin too, so installed agents are found.
     expect(env.PATH).toBe(`/usr/bin:/bin:${setup.binDir}:${setup.prefixBin}`);
     expect(env.TOMRADE_NPM_PREFIX).toBe(setup.prefix);
@@ -65,20 +66,24 @@ describe("the borrowed node and npm", () => {
   });
 
   it("rewrites the shims from the app's current path at every start, and drops npm ones when the bundle is gone", () => {
+    // The host's own platform: PATH entries, shim names and the delimiter all follow it.
+    const platform = process.platform;
+    const sep = path.delimiter;
+    const nodeShim = platform === "win32" ? "node.cmd" : "node";
     const root = tempDir();
     const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
     const npmDir = fakeNpm(root);
-    setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/a/tomrade", platform: "linux", env });
+    setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/a/tomrade", platform, env });
     // The AppImage mounted somewhere new.
-    const moved = setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/b/tomrade", platform: "linux", env });
-    expect(fs.readFileSync(path.join(moved.binDir, "node"), "utf8")).toContain("/mount/b/tomrade");
+    const moved = setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/b/tomrade", platform, env });
+    expect(fs.readFileSync(path.join(moved.binDir, nodeShim), "utf8")).toContain("/mount/b/tomrade");
     // PATH already carries the folders; they are not added again.
-    expect(env.PATH).toBe(`/usr/bin:${moved.binDir}:${moved.prefixBin}`);
+    expect(env.PATH).toBe(["/usr/bin", moved.binDir, moved.prefixBin].join(sep));
 
     fs.rmSync(npmDir, { recursive: true });
-    const without = setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/c/tomrade", platform: "linux", env });
+    const without = setUpBorrowedNode({ userData: root, npmDir, runtime: "/mount/c/tomrade", platform, env });
     expect(without.problem).toContain("no bundled npm");
-    expect(fs.readdirSync(without.binDir)).toEqual(["node"]);
+    expect(fs.readdirSync(without.binDir)).toEqual([nodeShim]);
   });
 
   it("writes .cmd shims for Windows that hand the prefix and arguments on", () => {
