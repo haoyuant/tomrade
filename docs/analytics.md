@@ -156,8 +156,8 @@ sums, and distinct-actor counts are added region by region.
 
 ## Site, accounts and platforms
 
-Three more reports sit beside the usage report (`202611040001_site_daily.sql`,
-`202611040002_accounts_platforms.sql`), each granted to `service_role` only.
+Three more reports sit beside the usage report (`202611040003_site_daily.sql`,
+`202611040004_accounts_platforms.sql`), each granted to `service_role` only.
 
 - `tomrade_site_daily` holds the site's daily numbers per region: installer
   downloads and updater downloads from download.tomrade.com (by platform and

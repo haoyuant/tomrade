@@ -15,7 +15,7 @@ beforeAll(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
     create schema auth;
     create table auth.users (id uuid primary key, created_at timestamptz, email_confirmed_at timestamptz, deleted_at timestamptz, is_anonymous boolean not null default false);`);
-  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202611040002_accounts_platforms.sql"]) await db.exec(migration(name));
+  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202611040004_accounts_platforms.sql"]) await db.exec(migration(name));
   const user = (created: string, confirmed: boolean, extra = "") =>
     db.query(`insert into auth.users (id, created_at, email_confirmed_at${extra ? ", " + extra.split("=")[0] : ""}) values ($1, $2::timestamptz, $3::timestamptz${extra ? ", " + extra.split("=")[1] : ""})`, [randomUUID(), created, confirmed ? created : null]);
   await user("2026-09-01T10:00:00Z", true);

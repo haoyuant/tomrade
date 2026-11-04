@@ -15,7 +15,7 @@ const install = (day: string, country: string, platform: string, downloads: numb
 
 beforeAll(async () => {
   await db.exec("create role anon; create role authenticated; create role service_role;");
-  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202611040001_site_daily.sql"]) await db.exec(migration(name));
+  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202611040001_analytics_internal_functions.sql", "202611040003_site_daily.sql"]) await db.exec(migration(name));
 }, 60_000);
 
 afterAll(async () => {
@@ -90,6 +90,13 @@ describe("site sync", () => {
     } finally {
       await db.exec("reset role");
     }
+  });
+
+  it("keeps ingest's region helper closed to the public roles after replacing it", async () => {
+    const granted = await db.query<{ anon: boolean; authenticated: boolean }>(
+      "select has_function_privilege('anon', 'public.tomrade_analytics_region()', 'execute') as anon, has_function_privilege('authenticated', 'public.tomrade_analytics_region()', 'execute') as authenticated"
+    );
+    expect(granted.rows[0]).toEqual({ anon: false, authenticated: false });
   });
 
   it("still buckets ingest's header the way it did", async () => {
