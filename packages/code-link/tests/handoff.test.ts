@@ -18,7 +18,7 @@ import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { disposeFresh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-handoff-"));
@@ -81,7 +81,7 @@ async function machine() {
   return { ...bag, codeLink: bag.ctx.codeLink, agent: bag.ctx.agent, turns, released, fake, held: () => holding, letGo: () => letGo() };
 }
 
-it("takes a free conversation to a terminal cell in the folder its runs use, keeps a second process off its session, and brings it back once the CLI exited", { timeout: 30_000 }, async () => {
+it.skipIf(herdrUnsupported)("takes a free conversation to a terminal cell in the folder its runs use, keeps a second process off its session, and brings it back once the CLI exited", { timeout: 30_000 }, async () => {
   const { ctx, project, codeLink, agent, turns, released, fake } = await machine();
   try {
     // an agent that runs only inside Tomrade has no way to a terminal; a conversation that never ran has nothing to resume
@@ -142,7 +142,7 @@ it("takes a free conversation to a terminal cell in the folder its runs use, kee
   }
 });
 
-it("lets a built-in assistant's conversation claim a ticket for the code it turns to, and hands it to a CLI agent in a terminal cell with what it came to", { timeout: 30_000 }, async () => {
+it.skipIf(herdrUnsupported)("lets a built-in assistant's conversation claim a ticket for the code it turns to, and hands it to a CLI agent in a terminal cell with what it came to", { timeout: 30_000 }, async () => {
   const { ctx, project, codeLink, agent, fake } = await machine();
   try {
     const thread = agent.newThread(project.id, "inside", null, { title: "Dedupe script" });
@@ -183,7 +183,7 @@ it("lets a built-in assistant's conversation claim a ticket for the code it turn
   }
 });
 
-it("takes an ended session on no ticket up again in the background, as the same session, and only once", { timeout: 30_000 }, async () => {
+it.skipIf(herdrUnsupported)("takes an ended session on no ticket up again in the background, as the same session, and only once", { timeout: 30_000 }, async () => {
   const { ctx, project, codeLink, fake } = await machine();
   try {
     const cwd = path.join(root, "loose");
@@ -202,7 +202,7 @@ it("takes an ended session on no ticket up again in the background, as the same 
   }
 });
 
-it("starts a coding agent on the person's own words with no ticket: a terminal session in the project's folder, the words its first prompt", { timeout: 30_000 }, async () => {
+it.skipIf(herdrUnsupported)("starts a coding agent on the person's own words with no ticket: a terminal session in the project's folder, the words its first prompt", { timeout: 30_000 }, async () => {
   const { ctx, project, codeLink, fake } = await machine();
   try {
     expect(await codeLink.startLoose(project.id, { engine: "fake-cli", prompt: "  " })).toMatchObject({ ok: false, gate: "prompt" });
@@ -225,7 +225,7 @@ it("starts a coding agent on the person's own words with no ticket: a terminal s
   }
 });
 
-it("ends a terminal session and cuts its link when its conversation is deleted, so nothing lists a thread that is gone", { timeout: 30_000 }, async () => {
+it.skipIf(herdrUnsupported)("ends a terminal session and cuts its link when its conversation is deleted, so nothing lists a thread that is gone", { timeout: 30_000 }, async () => {
   const { ctx, project, codeLink, agent, fake } = await machine();
   try {
     const thread = agent.newThread(project.id, "fake-cli", null, { title: "Doomed chat" });

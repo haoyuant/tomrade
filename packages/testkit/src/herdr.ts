@@ -32,6 +32,13 @@ export interface FakeHerdrCall {
 type Reply = { result: unknown } | { error: { code: string; message: string } };
 
 /**
+ * herdr has no Windows build, and Tomrade offers it nowhere there: Windows' panes are the pty host's, and the herdr plugin
+ * provides no terminals (packages/herdr/src/index.ts). A test of what herdr does is skipped there, rather than fail on a
+ * Unix socket Windows cannot listen on, or on code link opening a real terminal window in herdr's absence.
+ */
+export const herdrUnsupported = process.platform === "win32";
+
+/**
  * A server that speaks herdr's socket protocol as herdr 0.9.5 does: one JSON
  * request per line, one reply per line, and subscriptions that keep their
  * connection and receive events — enough of workspaces, panes and agents for
