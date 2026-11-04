@@ -17,7 +17,8 @@ jobs:
     # A release published from a draft fires both; `released` alone is a
     # pre-release promoted later, and `published` alone a pre-release.
     if: github.event.action == 'released' || github.event.release.prerelease
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 5
     steps:
       - name: Start the site's Deploy workflow
