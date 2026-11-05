@@ -133,8 +133,41 @@ export function SkyLight({ sky, part }: { sky: Sky; part: Exclude<Part, "stars">
     <>
       <Light part={part} />
       {sky === "daybreak" && part === "sky" ? <Light part="stars" /> : null}
+      {part === "sky" ? <RestAway /> : null}
     </>
   );
+}
+
+/** How long a window stays out of focus before its lights hold still: a glance at another app does not count. */
+const REST_AFTER_MS = 30_000;
+
+/**
+ * The lights cost about 7% of a core per window while they move (TOM-1016), and over a long run the person is mostly in
+ * other apps: a window out of focus a while holds them where they are (styles/sunrise.css), and focus resumes them.
+ */
+function RestAway() {
+  useEffect(() => {
+    const root = document.documentElement;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const away = () => {
+      clearTimeout(timer);
+      // Focus inside one of the page's own frames still counts as here.
+      timer = setTimeout(() => root.toggleAttribute("data-resting", !document.hasFocus()), REST_AFTER_MS);
+    };
+    const back = () => {
+      clearTimeout(timer);
+      root.removeAttribute("data-resting");
+    };
+    if (!document.hasFocus()) away();
+    window.addEventListener("blur", away);
+    window.addEventListener("focus", back);
+    return () => {
+      back();
+      window.removeEventListener("blur", away);
+      window.removeEventListener("focus", back);
+    };
+  }, []);
+  return null;
 }
 
 function Light({ part }: { part: Part }) {
