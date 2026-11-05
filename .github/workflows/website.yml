@@ -26,5 +26,6 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::Secret SITE_DISPATCH_TOKEN is not set"; exit 1; fi
-          gh workflow run deploy.yml -R haoyuant/tomrade-site -f tag="$TAG"
+          # --ref spares gh its default-branch lookup, which an Actions-only token is refused.
+          gh workflow run deploy.yml -R haoyuant/tomrade-site --ref main -f tag="$TAG"
           echo "Mirroring $TAG: https://github.com/haoyuant/tomrade-site/actions/workflows/deploy.yml" >> "$GITHUB_STEP_SUMMARY"
