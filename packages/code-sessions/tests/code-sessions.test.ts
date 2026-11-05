@@ -1021,6 +1021,8 @@ it.skipIf(herdrUnsupported)("shows how herdr reads the agent in a plain terminal
     for (let i = 0; i < 100 && status() !== want; i++) await new Promise((r) => setTimeout(r, 20));
     return status();
   };
+  // The row shows before its pane opens, already with no agent: wait for the pane, which a loaded machine opens later.
+  for (let i = 0; i < 250 && !(win.states.at(-1)!.terminals[0]?.pane && herdr.watching().length); i++) await new Promise((r) => setTimeout(r, 20));
   expect(await shows(null)).toBeNull();
   expect(win.states.at(-1)!.herdrClient).toBe(false);
   const pane = win.states.at(-1)!.terminals[0]!.pane!;
