@@ -320,8 +320,10 @@ if (publish) {
       console.log(`${name}@${version} is on npm already`);
       continue;
     }
+    // A prerelease goes under its suffix's first word (0.28.0-beta.1 → beta), so `latest` stays a release; npm refuses one without --tag.
+    const pre = /^[^-+]+-([A-Za-z]+)/.exec(version)?.[1];
     // npm backs off up to a minute on each retry; a refused new package would hold the job for that long, one by one.
-    const published = spawnSync("npm", ["publish", "--access", "public", "--fetch-retry-mintimeout=1000", "--fetch-retry-maxtimeout=3000", ...(dryRun ? ["--dry-run"] : [])], { cwd: dir, stdio: ["ignore", "inherit", "pipe"], encoding: "utf8" });
+    const published = spawnSync("npm", ["publish", "--access", "public", ...(pre ? ["--tag", pre.toLowerCase()] : []), "--fetch-retry-mintimeout=1000", "--fetch-retry-maxtimeout=3000", ...(dryRun ? ["--dry-run"] : [])], { cwd: dir, stdio: ["ignore", "inherit", "pipe"], encoding: "utf8" });
     process.stderr.write(published.stderr ?? "");
     if (published.status === 0) continue;
     // npm limits how many new packages an account creates in a while; the rest wait for .github/workflows/npm-packages.yml.
