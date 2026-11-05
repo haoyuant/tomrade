@@ -232,6 +232,7 @@ Tomrade 是我一个人下班后折腾出来的，免费用。
 猫猫监工不要钱，Agent 打工要。
 
 - ⚡ [爱发电](https://afdian.com/a/haoyuant)
+- 💖 [GitHub Sponsors](https://github.com/sponsors/haoyuant)
 - ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
 - 支付宝 / 微信扫下面的码
 

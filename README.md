@@ -234,6 +234,7 @@ Honestly, the agents do most of the work now. I review PRs and drink coffee. Pro
 
 The cat supervises for free. The agents don't.
 
+- 💖 [GitHub Sponsors](https://github.com/sponsors/haoyuant)
 - ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
 - ⚡ [Afdian (爱发电)](https://afdian.com/a/haoyuant)
 - Alipay / WeChat Pay: scan below
