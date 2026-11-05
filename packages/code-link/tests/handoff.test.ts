@@ -76,7 +76,7 @@ async function machine() {
   bag.ctx.codeLink.pulls = async () => null;
   await bag.ctx.plugin(Mcp, { port: 0 });
   const fake = new FakeHerdr();
-  await bag.ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await bag.ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: fake.bin });
   await settle();
   return { ...bag, codeLink: bag.ctx.codeLink, agent: bag.ctx.agent, turns, released, fake, held: () => holding, letGo: () => letGo() };
 }

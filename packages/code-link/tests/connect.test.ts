@@ -646,7 +646,10 @@ describe("connecting a repository", () => {
     expect(result.message).toContain("this machine only");
     // Nothing for git to see: the files are excluded in this clone; the tracked one, the instructions and the team's settings file are untouched.
     expect(git(["status", "--porcelain"], checkout)).toBe("");
-    expect(fs.readFileSync(path.join(checkout, ".git/info/exclude"), "utf8")).toContain("# Tomrade: agent connection files for this machine only\n/.mcp.json\n/.codex/config.toml\n");
+    // Which other lines land here depends on this machine's git template and global excludes.
+    const exclude = fs.readFileSync(path.join(checkout, ".git/info/exclude"), "utf8");
+    expect(exclude).toContain("# Tomrade: agent connection files for this machine only\n");
+    expect(exclude.split("\n")).toEqual(expect.arrayContaining(["/.mcp.json", "/.codex/config.toml"]));
     // Ignored either by Tomrade's exclude or already by this machine's global git excludes (Claude Code adds one when it writes the file).
     expect(git(["check-ignore", ".claude/settings.local.json"], checkout)).toBe(".claude/settings.local.json");
     expect(fs.readFileSync(path.join(checkout, ".cursor/mcp.json"), "utf8")).not.toContain("tomrade");

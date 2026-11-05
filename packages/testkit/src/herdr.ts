@@ -2,6 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { fakeProgram } from "./fake-program.js";
 
 /** A pane the fake herdr holds: a shell, perhaps with an agent herdr "detected" in it. */
 export interface FakePane {
@@ -46,6 +47,8 @@ export const herdrUnsupported = process.platform === "win32";
  */
 export class FakeHerdr {
   readonly socket: string;
+  /** A herdr CLI that answers only `--version`, as this build: a test passes it as `bin`, so whether the machine has herdr installed changes nothing. */
+  readonly bin: string;
   readonly calls: FakeHerdrCall[] = [];
   readonly panes = new Map<string, FakePane>();
   private server: net.Server | null = null;
@@ -65,6 +68,8 @@ export class FakeHerdr {
     fs.mkdirSync(dir, { recursive: true });
     // Windows listens on no socket file, only a named pipe: a fake made where herdr tests are skipped fails nothing there.
     this.socket = herdrUnsupported ? `\\\\.\\pipe\\tomrade-${path.basename(dir)}` : path.join(dir, "s.sock");
+    // No stub where herdr tests are skipped: Windows fakes a program only through Git's sh.
+    this.bin = herdrUnsupported ? path.join(dir, "herdr") : fakeProgram(path.join(dir, "herdr"), `#!/bin/sh\n[ "$1" = --version ] && echo "herdr ${this.version}" && exit 0\nexit 1\n`);
     this.start();
   }
 

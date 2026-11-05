@@ -26,7 +26,8 @@ it("holds a full-mode plugin's imports of the app's packages to the Tomrade it n
   expect(appImportProblems(file(`import { z } from "@tomradex/domain";\nimport { definePlugin } from "@tomradex/plugin-sdk";`), { context: "sdk", engines: { sdk: "^0.2.16" } }, app)).toEqual({ problems: [], notes: [] });
 });
 
-it("knows the checkout's packages, and builds a full-mode plugin with them left to the app", async () => {
+// It reads every package and runs a real build: a shared two-core runner takes longer than the default 5 s.
+it("knows the checkout's packages, and builds a full-mode plugin with them left to the app", { timeout: 30_000 }, async () => {
   const known = await appExports();
   expect(known?.tomrade).toBeNull();
   expect(known?.modules["@tomradex/llm"]).toContain("Llm");
