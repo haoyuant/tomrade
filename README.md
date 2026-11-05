@@ -20,13 +20,17 @@
 
 # Tomrade
 
-**Tom + comrade.** From idea to merged PR, with the agents you already use.
+**Tom + comrade.** From idea to delivery, side by side.
 
-Your agents write the code. Tomrade remembers what to build, how far it got and what changed, so every session picks up where the last one stopped, and any run can be undone in one click. It's a local-first workspace for solo makers and small teams who build with Claude Code, Codex and the other coding agents.
+Tickets, terminals, sessions, notes: Tomrade weaves together everything you need and reports in on its own. You? Smooth sailing. It's a local-first workspace for indie developers and small teams who build with AI agents (Claude Code, Codex and the rest) and run their days with them.
 
+What your agents can't give you, Tomrade does:
+
+- **No babysitting.** Agents claim their tickets, branch, and report back on their own. When a pull request goes up the ticket moves along; they only come to you when they need your call.
 - **A backlog that lasts.** Every session starts from zero; the backlog doesn't. Ideas, tickets, decisions and what's already done stay in one place across sessions and agents.
 - **Keep the tools you have.** Claude Code, Codex or Cursor stay in the terminal you already use. Tomrade connects over MCP and git, and the board keeps up on its own.
 - **See it, undo it.** Every agent write is attributed and grouped by run. One click takes a whole run back: tickets, notes and settings alike.
+- **All in one place.** Files and notes, everyday to-dos and the inbox of feedback live in the same workspace as your tickets, and your agents can read them too. Less switching, a smoother day.
 
 <p align="center">
   <a href="https://tomrade.com/#films"><img src="docs/images/film.jpg" alt="Play the 87-second film: one idea becomes linked tickets, agents ask their questions, an auto run works through the night, and one click undoes it all." width="820"></a><br>
@@ -47,9 +51,9 @@ One loop from an idea to a merged pull request: **talk, split, build, merge.**
 1. **Talk.** Say what you want in plain words, at your desk or from your phone. It becomes a ticket on the board.
 2. **Split.** Say "tidy up" and the assistant merges duplicates and splits the big ones into tickets sized for one pull request. You pick; one click takes it back.
 3. **Build.** Name a ticket to Claude Code, Codex or another agent in your own terminal, or press **Start**. It claims the ticket, works on its own branch and reports back.
-4. **Merge.** Leave the rest to an auto run: it works down the dependency graph overnight, merges what passes and writes you a report by morning.
+4. **Merge.** Once the pull request's checks pass, take a look and press **Merge**: the ticket is done. Or let the agent merge it itself when the checks pass, and the loop closes without you. An auto run can do this overnight, down the dependency graph, with a report by morning.
 
-Each step has a short film on [tomrade.com](https://tomrade.com/#how).
+Each step plays as a short scene on [tomrade.com](https://tomrade.com/#how).
 
 ## Not just for code
 
@@ -59,6 +63,7 @@ Every project is a board plus a folder of files. Connect it to a repository, or 
 - **Run your week.** Errands, chores and plans on a board or a table. Brain-dump to the assistant and it sorts the mess into tasks.
 - **Keep a journal.** Today's note opens a dated page in your Journal folder. Tag the days and link them with `[[wiki links]]`.
 - **Write docs.** Markdown with a live preview, backlinks and full-text search. Every save is versioned and can sync to a GitHub repo.
+- **Routines.** A daily to-do, the week's chores, a regular review: save them as routines, run one whenever you like, or give it a schedule and let it make the tickets or ask the assistant on its own.
 
 ## What's in the box
 
@@ -179,7 +184,7 @@ Free to use, on macOS, Windows and Linux. Get the installer for your system from
 | System | Installer | Notes |
 |---|---|---|
 | macOS 12+ (Apple silicon or Intel) | `.dmg` | Signed and notarized. Drag it to Applications and go. |
-| Windows 10 / 11, 64-bit | `.exe` | Not code-signed yet, so SmartScreen will clutch its pearls: **More info → Run anyway**. Smart App Control blocks unsigned apps outright; read the [download page](https://tomrade.com/download) first. |
+| Windows 10 / 11, 64-bit | `.exe` | Not code-signed yet, so SmartScreen will clutch its pearls: **More info → Run anyway**. Smart App Control blocks unsigned apps outright; read the [download page](https://tomrade.com/download) first. Signing is planned through SignPath Foundation; see the [code signing policy](https://tomrade.com/code-signing/). |
 | Linux, x86-64 or arm64 | `.AppImage` | `chmod +x` and run. No `libfuse2` needed; where FUSE is missing altogether, run it with `--appimage-extract-and-run`. |
 
 An installed copy checks for updates and installs one only when you say so. The interface speaks English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français and Русский.
@@ -230,6 +235,7 @@ Honestly, the agents do most of the work now. I review PRs and drink coffee. Pro
 The cat supervises for free. The agents don't.
 
 - ☕ [Buy Me a Coffee](https://buymeacoffee.com/tomrade)
+- ⚡ [Afdian (爱发电)](https://afdian.com/a/haoyuant)
 - Alipay / WeChat Pay: scan below
 
 <p>
