@@ -183,7 +183,7 @@ it.skipIf(herdrUnsupported)("continues a ticket a terminal agent claimed itself 
   const { Mcp } = await import("@tomradex/mcp");
   await ctx.plugin(Mcp, { port: 0 });
   const fake = new FakeHerdr();
-  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: fake.bin });
   await settle();
   // One agent's pane, where it claimed this ticket over MCP (no thread of Tomrade's) beside others, and handed its merge over.
   const pane = fake.createPane(checkout!);
@@ -426,7 +426,7 @@ it.skipIf(herdrUnsupported)("takes the id herdr's own integration reported on an
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const fake = new FakeHerdr();
-  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: fake.bin });
   await settle();
   // Antigravity's panes: herdr's agy integration reported the conversation on the first; the second reported nothing.
   const pane = (id: string, conversation: string | null) =>
@@ -2716,7 +2716,7 @@ describe("starting tickets from a conversation", () => {
     const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
     const fake = new FakeHerdr();
-    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: fake.bin });
     await settle();
     const item = ticket("Hand off to a cell");
     const started = await codeLink.start(project.id, item.id, { mode: "run" });
