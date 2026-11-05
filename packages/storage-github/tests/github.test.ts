@@ -11,7 +11,7 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { GitError } from "@tomradex/storage-git";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import storageGithub, { GitHub, GitHubError } from "@tomradex/storage-github";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-gh-"));
@@ -26,9 +26,7 @@ let n = 0;
  */
 function fakeGit(home: string): string {
   const file = path.join(home, "fake-git");
-  fs.writeFileSync(file, ['#!/bin/sh', 'echo "fake git: $@" >&2', 'case "$1" in', '  init|config) exit 0 ;;', '  *) exit 1 ;;', 'esac', ''].join("\n"), "utf8");
-  fs.chmodSync(file, 0o755);
-  return file;
+  return fakeProgram(file, ['#!/bin/sh', 'echo "fake git: $@" >&2', 'case "$1" in', '  init|config) exit 0 ;;', '  *) exit 1 ;;', 'esac', ''].join("\n"));
 }
 
 async function machine(token = "") {

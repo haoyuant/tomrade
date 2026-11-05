@@ -19,7 +19,7 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage, digestState, exportState } from "@tomradex/storage";
-import { FakeGh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { FakeGh, FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 import { Herdr } from "@tomradex/herdr";
 import { claudeRecord } from "@tomradex/engine-kit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -268,7 +268,7 @@ describe("connecting a repository", () => {
     expect(cursorHooks.hooks.afterFileEdit).toEqual([{ command: "prettier" }]);
     const script = path.join(dir, ".cursor/hooks/tomrade");
     expect(fs.readFileSync(script, "utf8")).toContain(`-H 'X-Tomrade-Agent: cursor' --data-binary @- '${input.eventUrl}'`);
-    expect(fs.statSync(script).mode & 0o111).not.toBe(0);
+    if (process.platform !== "win32") expect(fs.statSync(script).mode & 0o111).not.toBe(0);
     expect(fs.readFileSync(`${script}.ps1`, "utf8")).toContain(`$headers = @{ 'X-Tomrade-Agent' = 'cursor' }`);
     expect(fs.readFileSync(`${script}.ps1`, "utf8")).toContain(`-Uri '${input.eventUrl}'`);
     expect(read(".gemini/settings.json")).toMatchObject({ theme: "dark", mcpServers: { existing: { command: "custom" }, tomrade: { httpUrl: input.mcpUrl } } });
@@ -536,6 +536,8 @@ describe("connecting a repository", () => {
 
   it("chooses the agents installed here until someone chooses, and keeps what it connected for", async () => {
     const { codeLink, ctx, project, repo } = await machine();
+    // The pass that writes an installed agent's files into the checkout runs 300 ms after an engine registers: on a slow git it lands mid-connect.
+    (codeLink as unknown as { scheduleAutoConnectRepos: () => void }).scheduleAutoConnectRepos = () => {};
     const engine = (id: string, available: () => Promise<{ ok: boolean; cli?: never }>) =>
       ctx.agent.engine({ id, title: id, author: `ai:${id}`, available, turn: async () => ({ stop: "end" }) });
     engine("claude-code", async () => ({ ok: true }));
@@ -1172,7 +1174,7 @@ describe("outside clients, told apart by their connection", () => {
     await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
   });
 
-  it("finds the herdr pane of a session whose hooks name none, and a resumed conversation goes on in the session it had", async () => {
+  it.skipIf(herdrUnsupported)("finds the herdr pane of a session whose hooks name none, and a resumed conversation goes on in the session it had", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const fake = new FakeHerdr();
     onTestFinished(() => fake.close());
@@ -1203,7 +1205,7 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.sessionsOf(project.id).filter((s) => s.state !== "ended").map((s) => s.itemIds)).toEqual([[]]);
   });
 
-  it("keeps the session working its ticket when another process of its conversation ends in another pane (claude --continue)", async () => {
+  it.skipIf(herdrUnsupported)("keeps the session working its ticket when another process of its conversation ends in another pane (claude --continue)", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const fake = new FakeHerdr();
     onTestFinished(() => fake.close());
@@ -1232,7 +1234,7 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
   });
 
-  it("keeps a conversation whose hooks still name a pane herdr closed going without it, instead of ending and reviving it on every hook", async () => {
+  it.skipIf(herdrUnsupported)("keeps a conversation whose hooks still name a pane herdr closed going without it, instead of ending and reviving it on every hook", async () => {
     const { codeLink, ctx, project, checkout } = await machine();
     const fake = new FakeHerdr();
     onTestFinished(() => fake.close());

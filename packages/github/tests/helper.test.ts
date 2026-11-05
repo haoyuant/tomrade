@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { GIT_ENV, type Git } from "@tomradex/git";
+import { fakeProgram } from "@tomradex/testkit";
 import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/helper.js";
 
 const exec = (command: string, args: string[], cwd: string, env: Record<string, string> = {}) =>
@@ -185,8 +186,8 @@ it("runs on the Node binary it is given, so on macOS git's requests start the ap
   const f = await fixture();
   const marker = path.join(f.dir, "ran");
   const node = path.join(f.dir, "Tomrade Helper");
-  fs.writeFileSync(node, `#!/bin/sh\ntouch '${marker}'\nexec '${process.execPath}' "$@"\n`, { mode: 0o700 });
-  await installGithubCredential(f.git, f.dir, f.settings, node);
+  const nodeRun = fakeProgram(node, `#!/bin/sh\ntouch '${marker}'\nexec '${process.execPath}' "$@"\n`);
+  await installGithubCredential(f.git, f.dir, f.settings, nodeRun);
   expect((await f.fill()).stdout).toContain("password=test-token-one");
   expect(fs.existsSync(marker)).toBe(true);
 });

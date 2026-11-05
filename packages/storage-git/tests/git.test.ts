@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { fresh, settle, spawnBudget } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle, spawnBudget } from "@tomradex/testkit";
 import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, probeUrl, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 
@@ -79,7 +79,7 @@ describe("a dedicated repository", () => {
     expect(status.state).toBe("synced");
     expect(status.location).toContain("remote-");
     expect(a.hub.catalog.project(a.project.id)?.git).toBe("dedicated");
-    expect(git(["rev-parse", "--show-toplevel"], a.dir)).toBe(fs.realpathSync(a.dir));
+    expect(path.normalize(git(["rev-parse", "--show-toplevel"], a.dir))).toBe(fs.realpathSync(a.dir));
     expect(git(["ls-tree", "--name-only", "main", ".tomrade/"], remote)).toContain(".tomrade/project.json");
     expect(JSON.parse(git(["show", "main:.tomrade/project.json"], remote)).repo).toBe("dedicated");
 
@@ -381,8 +381,8 @@ describe("a dedicated repository", () => {
   it("asks the remote once for status reads that overlap or follow closely, and at once on Sync now", async () => {
     const log = path.join(root, `git-calls-${n++}.log`);
     const counting = path.join(root, `git-counting-${n++}`);
-    fs.writeFileSync(counting, `#!/bin/sh\necho "$*" >> '${log}'\nexec git "$@"\n`, { mode: 0o755 });
-    const a = await machine("asks", { gitBinary: counting, remoteFreshMs: 60_000, remoteRetryMs: 0 });
+    const countingRun = fakeProgram(counting, `#!/bin/sh\necho "$*" >> '${log}'\nexec git "$@"\n`);
+    const a = await machine("asks", { gitBinary: countingRun, remoteFreshMs: 60_000, remoteRetryMs: 0 });
     const remote = bareRemote();
     a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
     await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
@@ -483,8 +483,8 @@ describe("a dedicated repository", () => {
     const ran = path.join(root, `ran-${n++}.log`);
     // git as Tomrade runs it, except that the first push lets the teammate's push land just before it.
     const wrapper = path.join(root, `git-${n++}.sh`);
-    fs.writeFileSync(wrapper, `#!/bin/sh\necho "$*" >> '${ran}'\ncase " $* " in *" push "*) if [ -f '${mate}.ready' ]; then rm '${mate}.ready'; git -C '${mate}' push -q origin HEAD:refs/heads/main; fi;; esac\nexec git "$@"\n`, { mode: 0o755 });
-    const a = await machine("stale-push", { gitBinary: wrapper });
+    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\necho "$*" >> '${ran}'\ncase " $* " in *" push "*) if [ -f '${mate}.ready' ]; then rm '${mate}.ready'; git -C '${mate}' push -q origin HEAD:refs/heads/main; fi;; esac\nexec git "$@"\n`);
+    const a = await machine("stale-push", { gitBinary: wrapperRun });
     const item = a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
     await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
     git(["clone", "-q", "--branch", "main", remote, mate], root);
@@ -509,7 +509,7 @@ describe("a dedicated repository", () => {
 
     fs.writeFileSync(ran, "");
     expect((await a.storage.sync(a.project.id)).state).toBe("synced");
-    const commands = fs.readFileSync(ran, "utf8").split("\n");
+    const commands = fs.readFileSync(ran, "utf8").split("\n").map((c) => c.replace(/^-c core\.longpaths=true /, ""));
     expect(commands.some((c) => c.startsWith("fetch"))).toBe(true);
     expect(commands.filter((c) => c.startsWith("push") || c.startsWith("commit"))).toEqual([]);
   });
@@ -519,9 +519,9 @@ describe("a dedicated repository", () => {
     const cut = path.join(root, `cut-${n++}`);
     // git as Tomrade runs it, except that while a flag names a command, that command breaks off once, as a dropped link does.
     const wrapper = path.join(root, `git-${n++}.sh`);
-    fs.writeFileSync(wrapper, `#!/bin/sh\nfor verb in push fetch; do case " $* " in *" $verb "*) if [ -f '${cut}.'$verb ]; then rm '${cut}.'$verb; echo 'error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502' >&2; echo 'fatal: the remote end hung up unexpectedly' >&2; exit 128; fi;; esac; done\nexec git "$@"\n`, { mode: 0o755 });
+    const wrapperRun = fakeProgram(wrapper, `#!/bin/sh\nfor verb in push fetch; do case " $* " in *" $verb "*) if [ -f '${cut}.'$verb ]; then rm '${cut}.'$verb; echo 'error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502' >&2; echo 'fatal: the remote end hung up unexpectedly' >&2; exit 128; fi;; esac; done\nexec git "$@"\n`);
     // The app's own wait before asking an unreachable remote again: within one sync, a fetch that broke off is not retried at once.
-    const a = await machine("cut-off", { gitBinary: wrapper, remoteRetryMs: 15_000 });
+    const a = await machine("cut-off", { gitBinary: wrapperRun, remoteRetryMs: 15_000 });
     await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
     const head = git(["rev-parse", "main"], remote);
 
@@ -776,9 +776,9 @@ describe("git itself", () => {
 
   it("cuts off a command that hangs, and a remote that never answered reads as offline", async () => {
     const slow = path.join(root, `slow-${n++}.sh`);
-    fs.writeFileSync(slow, "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+    const slowRun = fakeProgram(slow, "#!/bin/sh\nsleep 30\n");
     const started = Date.now();
-    const r = await gitRunner(slow)(["ls-remote", "origin"], { ok: true, timeout: 200 });
+    const r = await gitRunner(slowRun)(["ls-remote", "origin"], { ok: true, timeout: 200 });
     expect(r.timedOut).toBe(true);
     expect(r.code).not.toBe(0);
     expect(Date.now() - started).toBeLessThan(10_000);

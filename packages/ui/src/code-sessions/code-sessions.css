@@ -160,7 +160,9 @@ li.cs-ended > .fold-box { --collapse-gap: 4px; }
 .cs-divider[data-direction="column"] { height: var(--space-2); cursor: row-resize; }
 .cs-divider:hover { background: var(--border-soft); }
 
-.cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
+/* Clipped, not hidden: a hidden box still scrolls to bring a focused child into view, and an IME composing at the
+   right edge widens xterm's textarea past it, which slid the whole pane sideways for good. */
+.cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: clip; background: var(--surface); }
 .cs-cell[data-focused] { border-color: var(--accent); }
 .cs-cell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border-soft); font-size: var(--text-xs); min-height: 28px; }
 .cs-cell-no { flex: none; min-width: 1ch; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }

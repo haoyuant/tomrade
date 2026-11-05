@@ -87,14 +87,17 @@ describe("a terminal of herdr", () => {
     expect(opened).toHaveBeenLastCalledWith("Terminal", script, "/work/tom-9");
     // the same script any terminal app gets: the heartbeat, the token and the resume beside it
     const written = fs.readFileSync(script, "utf8");
-    expect(written).toContain("echo $$ >");
+    expect(written).toContain(process.platform === "win32" ? "/proc/$$/winpid" : "echo $$ >");
     expect(written).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
     expect(fs.readFileSync(path.join(dir, "resume.command"), "utf8")).toContain("claude --resume x");
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", absent)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", null)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
     // engine setup goes the same way
-    expect(await setupTerminal("npm i -g x", dir, "herdr", absent)).toEqual({ launched: true });
-    expect(opened).toHaveBeenCalledTimes(4);
+    // On Windows setup opens a PowerShell console of its own, not the script (setupOnWindows has its own tests).
+    if (process.platform !== "win32") {
+      expect(await setupTerminal("npm i -g x", dir, "herdr", absent)).toEqual({ launched: true });
+      expect(opened).toHaveBeenCalledTimes(4);
+    }
 
     // the system terminal failing too leaves the script for the person
     opened.mockRejectedValueOnce(new Error("no app"));
@@ -229,9 +232,11 @@ describe("Gemini CLI's session home", () => {
     expect(settings).toEqual({ theme: "Dracula", url: "http://x//y", mcpServers: { mine: { command: "mine" }, tomrade }, hooks: geminiHooks(eventUrl, ownHooks) });
     // The person's own hook still runs, before Tomrade's.
     expect(settings.hooks.BeforeTool).toEqual([ownHooks.BeforeTool[0], { hooks: [{ type: "command", name: "tomrade", command: hookCommand(eventUrl), timeout: 5000 }] }]);
-    expect(fs.realpathSync(path.join(home, ".gemini", "oauth_creds.json"))).toBe(fs.realpathSync(path.join(own, "oauth_creds.json")));
+    // Windows without the right to make file links gets a copy of a file instead.
+    const sameFile = (a: string, b: string) => process.platform === "win32" ? expect(fs.readFileSync(a, "utf8")).toBe(fs.readFileSync(b, "utf8")) : expect(fs.realpathSync(a)).toBe(fs.realpathSync(b));
+    sameFile(path.join(home, ".gemini", "oauth_creds.json"), path.join(own, "oauth_creds.json"));
     expect(fs.realpathSync(path.join(home, ".gemini", "extensions"))).toBe(fs.realpathSync(path.join(own, "extensions")));
-    expect(fs.realpathSync(path.join(home, ".env"))).toBe(fs.realpathSync(path.join(root, "me", ".env")));
+    sameFile(path.join(home, ".env"), path.join(root, "me", ".env"));
     // The person's own settings are read, never written.
     expect(fs.readFileSync(path.join(own, "settings.json"), "utf8")).toContain("// the person's own");
 
@@ -267,6 +272,7 @@ describe("Gemini CLI's session home", () => {
   });
 });
 
+// herdr is the default on macOS and Linux; Windows has its own case below.
 describe("an unset terminal", () => {
   const herdrThat = (version: string | null) => ({ kind: "herdr" as const, installed: async () => version });
 
@@ -278,16 +284,16 @@ describe("an unset terminal", () => {
   });
 
   it("reads herdr or the built-in terminal picked by name, from when they were choices, as automatic", async () => {
-    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: "herdr" }, herdrThat(null), "darwin")).terminal).toBe(SYSTEM_TERMINAL);
     expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
     expect((await machineTerminalSettings({ terminal: BUILTIN_TERMINAL }, { kind: "builtin", installed: async () => "1" }, "win32")).terminal).toBe(BUILTIN_TERMINAL);
   });
 
   it("is herdr where herdr is installed, and the system terminal where it is not", async () => {
-    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings({ terminal: AUTO_TERMINAL }, herdrThat("0.9.5"))).terminal).toBe("herdr");
-    expect((await machineTerminalSettings(undefined, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: AUTO_TERMINAL }, herdrThat("0.9.5"), "darwin")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings(undefined, herdrThat(null), "darwin")).terminal).toBe(SYSTEM_TERMINAL);
     // Without the herdr plugin there is nothing to run herdr through.
     expect((await machineTerminalSettings({}, null)).terminal).toBe(SYSTEM_TERMINAL);
     expect(SYSTEM_TERMINAL).toBe("Terminal");
@@ -309,9 +315,9 @@ describe("an unset terminal", () => {
     let version: string | null = null;
     const herdr = { kind: "herdr" as const, installed: async () => version };
     const stored = { terminal: AUTO_TERMINAL, claudeCommand: "claude" };
-    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
+    expect(await machineTerminalSettings(stored, herdr, "darwin")).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
     version = "0.9.5";
-    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
+    expect(await machineTerminalSettings(stored, herdr, "darwin")).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
     expect(stored.terminal).toBe(AUTO_TERMINAL);
   });
 });

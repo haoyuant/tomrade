@@ -20,11 +20,13 @@ import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream
 import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
 import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
+import { IDLE_SECTION, IDLE_SWEEP_MS, IDLE_TAIL_LINES, IdleSettings, IdleTracker } from "./idle.js";
 import type { ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
 export type * from "./protocol.js";
+export { IDLE_SECTION, IDLE_SWEEP_MS, IdleSettings, IdleTracker } from "./idle.js";
 export { Recorder, Recording, RECORDING_SECTION, RecordingSettings, REPLAY_MAX, SEGMENT_MAX, manualStretches, parseSegment, sliceOf } from "./recorder.js";
 
 export const Config = z.object({
@@ -451,6 +453,8 @@ function apply(ctx: Context, config: Config) {
     warn: (message) => ctx.logger.warn(message)
   });
   ctx.settings.register(RECORDING_SECTION);
+  const idleSettings = () => IdleSettings.parse(ctx.settings.value("terminalIdle") ?? {});
+  ctx.settings.register(IDLE_SECTION);
 
   /** What code link guesses a live session on no ticket works on, from what the person first said to it. */
   const guessOf = (projectId: string, r: SessionRow): SessionRow["guess"] => {
@@ -1142,6 +1146,93 @@ function apply(ctx: Context, config: Config) {
     }, BACKGROUND_SETTLE_MS);
     watchTimer.unref?.();
   };
+
+  /**
+   * The panes Tomrade opened that are still there, by project: the window's terminals, and the panes of sessions this
+   * machine launched. A pane's newest session decides, so a pane id herdr gave again to one of the person's own is left.
+   */
+  const ownPanes = (present: Set<string>): Map<string, string> => {
+    const out = new Map<string, string>();
+    for (const [projectId, list] of Object.entries(stateOf().terminals ?? {})) for (const t of list) if (t.pane && present.has(t.pane)) out.set(t.pane, projectId);
+    const device = ctx.get("hub")?.deviceId;
+    let projects: string[] = [];
+    try {
+      projects = ctx.db.openIds();
+    } catch {
+      // no project open: only the terminals
+    }
+    for (const projectId of projects) {
+      let rows: SessionView[] = [];
+      try {
+        rows = ctx.codeLink.sessionsOf(projectId, undefined, { panes: [...present] });
+      } catch {
+        continue;
+      }
+      const newest = new Map<string, SessionView>();
+      for (const s of rows) if (s.herdrPane && (newest.get(s.herdrPane)?.startedAt ?? -1) < s.startedAt) newest.set(s.herdrPane, s);
+      for (const [pane, s] of newest) if (!out.has(pane) && (!device || !s.device || s.device === device) && ctx.codeLink.launchedHere?.(s.id)) out.set(pane, projectId);
+    }
+    return out;
+  };
+
+  /** The panes a cell shows: attached now, or laid out in any project's window, open or not. */
+  const cellPanes = (): Set<string> => {
+    const out = new Set<string>();
+    for (const win of open.values()) for (const stream of win.terminals.values()) out.add(stream.paneId);
+    const saved = stateOf();
+    for (const projectId of new Set([...Object.keys(saved.layouts ?? {}), ...open.keys()])) {
+      try {
+        for (const id of leafIds(layoutOf(saved, projectId).layout)) {
+          const pane = paneOf(projectId, id);
+          if (pane) out.add(pane);
+        }
+      } catch {
+        // a project not open here shows nothing of this machine's
+      }
+    }
+    return out;
+  };
+
+  /** Tomrade's panes no cell shows, closed once idle past the setting (TOM-1005); herdr is never started for it. */
+  const idle = new IdleTracker();
+  const sweepIdle = async () => {
+    const settings = idleSettings();
+    const provider = backend();
+    if (!settings.enabled || !provider || disposed || (await bridge()).state !== "ready") return idle.clear();
+    const panes = await provider.panes();
+    if (!panes) return;
+    const byPane = new Map(panes.map((p) => [p.paneId, p]));
+    const ours = ownPanes(new Set(byPane.keys()));
+    const shown = cellPanes();
+    const looks = await Promise.all(
+      [...ours.keys()].filter((pane) => !shown.has(pane)).map(async (pane) => {
+        const info = byPane.get(pane)!;
+        const [tail, fg] = await Promise.all([provider.readTail(pane, IDLE_TAIL_LINES).catch(() => null), info.agent ? [] : provider.processes(pane).catch(() => [])]);
+        // A command still running is never idle, however quiet: a build, a server, an agent herdr cannot name.
+        const busy = fg.some((p) => {
+          const program = p.cmdline?.trim().split(/\s+/)[0];
+          return !!program && !SHELL.test(program);
+        });
+        return { pane, status: info.status, tail, busy };
+      })
+    );
+    for (const pane of idle.look(looks, Date.now(), settings.minutes * 60_000)) {
+      // a cell may have taken it while the panes were read
+      if (disposed || cellPanes().has(pane)) continue;
+      if (!(await provider.closePane(pane))) continue;
+      idle.forget(pane);
+      const projectId = ours.get(pane)!;
+      ctx.logger.info(`code sessions: closed pane ${pane}, idle for ${settings.minutes} min with no cell showing it`);
+      const t = savedTerminals(projectId).find((x) => x.pane === pane);
+      if (t) {
+        rememberClosed(projectId, [t]);
+        saveTerminals(projectId, savedTerminals(projectId).filter((x) => x.id !== t.id));
+      }
+      if (open.has(projectId)) refreshSoon(projectId, true);
+    }
+  };
+  const idleTimer = setInterval(() => void sweepIdle().catch((error: unknown) => ctx.logger.warn(`code sessions: closing idle terminals: ${errorMessage(error)}`)), IDLE_SWEEP_MS);
+  idleTimer.unref?.();
 
   // Presets and the auto-place switch belong to every project's window.
   const refreshAll = async () => {
@@ -2007,6 +2098,7 @@ function apply(ctx: Context, config: Config) {
   ctx.effect(() => () => {
     disposed = true;
     if (watchTimer) clearTimeout(watchTimer);
+    clearInterval(idleTimer);
     for (const pane of [...background.keys()]) unwatch(pane);
     for (const win of open.values()) stopTimers(win);
     for (const win of open.values()) win.surface.close();

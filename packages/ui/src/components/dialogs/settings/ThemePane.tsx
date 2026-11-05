@@ -10,7 +10,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useFrosted } from "~/lib/frost";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
 import type { useSaveSettings, useSettings } from "~/lib/queries";
-import { cssColorToHex, useTheme } from "~/lib/theme";
+import { BUILT_IN_THEME_OPTIONS, cssColorToHex, pairOf, useTheme } from "~/lib/theme";
 import { backdropFills, veilOver } from "@tomradex/theme-image/colors";
 import { useThemeFromImage, useThemeImageUrl } from "~/lib/theme-image";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -176,13 +176,21 @@ function ThemeIconMenu({ value, onChange }: { value: CustomTheme["icon"]; onChan
     </div>}
   </div>;
 }
-function ThemeAutomationPanel({ automation, themes, onChange }: { automation: ThemeAutomation; themes: CustomTheme[]; onChange: (next: ThemeAutomation) => void }) {
+function ThemeAutomationPanel({ automation, current, themes, onChange }: { automation: ThemeAutomation; current: ThemePreference; themes: CustomTheme[]; onChange: (next: ThemeAutomation) => void }) {
   const { t } = useI18n();
+  const pair = pairOf(current);
+  const nameOf = (theme: string) => { const option = BUILT_IN_THEME_OPTIONS.find(o => o.value === theme); return option ? t(option.labelKey) : theme; };
   return <div className="theme-automation">
     <div className="theme-automation-row"><div className="theme-switch" role="group" aria-label={t("settingsDialog.themeSwitchMode")}>
-      {AUTOMATION_MODES.map(mode => <button key={mode.value} type="button" className="theme-seg" aria-pressed={automation.mode === mode.value}
-        onClick={() => onChange({ ...automation, mode: mode.value })}><Icon name={mode.icon} size={13} />{t(mode.label)}</button>)}
+      {AUTOMATION_MODES.map(mode => {
+        const unpaired = mode.value === "system" && automation.mode !== "system" && !pair;
+        return <button key={mode.value} type="button" className="theme-seg" aria-pressed={automation.mode === mode.value} disabled={unpaired}
+          title={unpaired ? t("settingsDialog.automationSystemUnpaired") : undefined}
+          onClick={() => onChange({ ...automation, mode: mode.value })}><Icon name={mode.icon} size={13} />{t(mode.label)}</button>;
+      })}
     </div></div>
+    {automation.mode === "system" && pair && <div className="automation-detail"><p className="automation-field-label">
+      {t("settingsDialog.automationSystemPair", { light: nameOf(pair.light), dark: nameOf(pair.dark) })}</p></div>}
     {automation.mode === "schedule" && <div className="automation-detail schedule-config">
       <div className="automation-detail-head"><div><span className="eyebrow">{t("settingsDialog.scheduleEyebrow")}</span><p>{t("settingsDialog.scheduleLede")}</p></div><label>{t("settingsDialog.scheduleDefault")} <ThemeChoices themes={themes} value={automation.defaultTheme} onChange={defaultTheme => onChange({ ...automation, defaultTheme })} /></label></div>
       <div className="schedule-columns"><span>{t("settingsDialog.scheduleFrom")}</span><span>{t("settingsDialog.scheduleUntil")}</span><span>{t("settingsDialog.scheduleTheme")}</span><span /></div>
@@ -424,7 +432,7 @@ export function ThemePane({
       <Collapse open={pictureOpen} className="picture-form-fold"><PictureThemeForm onClose={() => setPictureOpen(false)} onConversation={onLeave} /></Collapse>
       <hr className="rule" />
       <AppearanceGroupHead title={t("settingsDialog.themeSwitchMode")} />
-      <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
+      <ThemeAutomationPanel automation={automation} current={preference} themes={customThemes} onChange={setAutomation} />
       <hr className="rule" />
       <AppearanceGroupHead title={t("settingsDialog.unifiedSkyTitle")}>{t("settingsDialog.unifiedSkyLede")}</AppearanceGroupHead>
       <div className="row">

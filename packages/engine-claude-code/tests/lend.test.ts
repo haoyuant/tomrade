@@ -1,3 +1,4 @@
+import { fakeProgram } from "@tomradex/testkit";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,9 +13,9 @@ afterEach(() => closers.splice(0).forEach((close) => close()));
 function setup(idleMs?: number) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-lent-"));
   const log = path.join(dir, "log.jsonl");
-  const bin = path.join(dir, "claude");
+  let bin = path.join(dir, "claude");
   const fake = path.resolve("packages/engine-claude-code/tests/fake-claude-lent.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`);
   const agent = { settingsOf: () => ({ engines: { "claude-code": { command: bin } } }) };
   const ctx = { get: (name: string) => (name === "agent" ? agent : undefined) } as unknown as Context;
   const lent = claudeLentModel(ctx, async () => true, { idleMs });

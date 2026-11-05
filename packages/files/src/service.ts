@@ -540,7 +540,7 @@ export class Files extends Service implements FilesReader {
     this.ensureIgnored(projectId);
     // A repository root and a folder in it are different enough that each keeps a store of its own.
     const directory = backend ? remoteDirectory((config as { directory?: string }).directory) : null;
-    const undo = directory !== null && FilesArchive.rotates(boundDirectory(dir), directory) ? this.park(projectId, dir, directory) : null;
+    const undo = directory !== null && FilesArchive.rotates(boundDirectory(dir), directory) ? await this.park(projectId, dir, directory) : null;
     let store: FileStore;
     try {
       store = await chosen.open({
@@ -555,7 +555,7 @@ export class Files extends Service implements FilesReader {
         env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
       });
     } catch (error) {
-      undo?.();
+      await undo?.();
       if (!(error instanceof GitMissingError)) throw error;
       // No git here: the folder still works as it is, and versions and sharing wait for git.
       if (backend) this.warn(projectId, `git is not installed; sharing through "${chosen.id}" waits for it`);
@@ -579,11 +579,11 @@ export class Files extends Service implements FilesReader {
   }
 
   /** Put the live store aside for a scope it should not feed, and say where it went. */
-  private park(projectId: string, dir: string, directory: string): () => void {
+  private async park(projectId: string, dir: string, directory: string): Promise<() => Promise<void>> {
     const archive = this.archiveOf(projectId);
     // Stores parked here must not be committed as embedded repositories; storage's template lists them too.
     ensureIgnoreLine(path.join(path.dirname(archive.root), ".gitignore"), "files-archive/");
-    const undo = archive.rotate(dir, directory);
+    const undo = await archive.rotate(dir, directory);
     this.warn(projectId, `Files now show ${directory ? `${directory}/` : "the repository root"}; the previous files and their history are kept under ${archive.root}`);
     return undo;
   }

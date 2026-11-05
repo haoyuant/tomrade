@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -54,6 +55,17 @@ export function stdioEnv(platform: NodeJS.Platform = process.platform, env: Node
   return out;
 }
 
+/**
+ * Whether Windows finds no file for `command`, a path taken from `cwd`. cross-spawn hands a command it cannot find to
+ * cmd.exe, whose failure surfaces as a closed connection rather than ENOENT, so a server that failed to start is asked
+ * this to say why. Only then: an app execution alias (the Store's python.exe) runs although no file is there to see.
+ */
+export function windowsCommandMissing(command: string, searchDirs: string[], pathExt = ".COM;.EXE;.BAT;.CMD", cwd = process.cwd()): boolean {
+  const exts = ["", ...pathExt.split(";").filter(Boolean)];
+  const dirs = /[\\/]/.test(command) ? [cwd] : searchDirs;
+  return !dirs.some((dir) => exts.some((ext) => fs.existsSync(path.resolve(dir, command + ext))));
+}
+
 /** One live connection to one server. Each attempt gets a fresh `Client`: a client that failed to connect is not reused. */
 export class Connection {
   private client: Client | null = null;
@@ -68,10 +80,11 @@ export class Connection {
   async open(): Promise<void> {
     const t = this.config.transport;
     if (t.type === "stdio") {
+      const env: Record<string, string> = { ...stdioEnv(), PATH: searchPath().join(path.delimiter), ...t.env };
       const transport = new StdioClientTransport({
         command: t.command,
         args: t.args,
-        env: { ...stdioEnv(), PATH: searchPath().join(path.delimiter), ...t.env },
+        env,
         cwd: t.cwd,
         stderr: "pipe"
       });
@@ -79,6 +92,7 @@ export class Connection {
         this.stderr = (this.stderr + chunk.toString("utf8")).slice(-STDERR_KEEP);
       });
       await this.attach(transport).catch((e) => {
+        if (process.platform === "win32" && windowsCommandMissing(t.command, env.PATH.split(path.delimiter).filter(Boolean), env.PATHEXT, t.cwd)) throw new Error(`command not found: ${t.command}`);
         throw new Error(this.explain(e));
       });
       return;

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { CliLocator, machineHost, type CliHost } from "../src/locate.js";
 import { binKind, managedLaunch, type ManagedCli } from "../src/managed.js";
 
@@ -43,10 +44,10 @@ describe("how a managed copy starts", () => {
 
   it("runs a script with the runtime as Node, the person's PATH first and Tomrade's node last", () => {
     const file = write(root(), "codex.js", "1");
-    const launch = managedLaunch(copy(file, { env: { DISABLE_AUTOUPDATER: "1" } }), { platform: "darwin", env: {} })!;
+    const launch = managedLaunch(copy(file, { env: { DISABLE_AUTOUPDATER: "1" } }), { platform: process.platform, env: {} })!;
     expect(launch.argv(["--version"])).toEqual({ command: "/app/Tomrade Helper", args: [file, "--version"] });
-    const env = launch.env({ PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/h", PI_CODING_AGENT_DIR: "/data/pi" });
-    expect(env.PATH).toBe([path.dirname(file), "/opt/homebrew/bin", "/usr/bin", "/data/agents/node"].join(":"));
+    const env = launch.env({ PATH: ["/opt/homebrew/bin", "/usr/bin"].join(path.delimiter), HOME: "/h", PI_CODING_AGENT_DIR: "/data/pi" });
+    expect(env.PATH).toBe([path.dirname(file), "/opt/homebrew/bin", "/usr/bin", "/data/agents/node"].join(path.delimiter));
     expect(env).toMatchObject({ ELECTRON_RUN_AS_NODE: "1", DISABLE_AUTOUPDATER: "1", HOME: "/h" });
     // Built-in Pi's folder is its own; the person's Pi reads ~/.pi.
     expect(env.PI_CODING_AGENT_DIR).toBeUndefined();
@@ -77,7 +78,8 @@ describe.skipIf(process.platform === "win32")("where the locator puts a managed 
   });
   const setup = () => {
     const dir = root();
-    const own = write(path.join(dir, "own"), NAME, '#!/bin/sh\necho "own 1.0.0"\n', 0o755);
+    fs.mkdirSync(path.join(dir, "own"), { recursive: true });
+    const own = fakeProgram(path.join(dir, "own", NAME), '#!/bin/sh\necho "own 1.0.0"\n');
     // Not executable: the runtime starts it, so it need not be.
     const managed = write(path.join(dir, "agents", "x", "2.0.0", "bin"), "cli.js", 'console.log("managed 2.0.0")\n');
     const copy = (prefer: boolean): ManagedCli => ({ file: managed, version: "2.0.0", runtime: process.execPath, nodeDir: path.join(dir, "agents", "node"), prefer });

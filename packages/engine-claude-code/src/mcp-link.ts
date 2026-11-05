@@ -62,6 +62,8 @@ export function claudeMcpLink(ctx: Context, cli: CliLocator): EngineMcpLink {
   const prefixOf = (profile: string) => {
     if (profile === own()) return "";
     const dir = claudeProfileEnv(profile).CLAUDE_CONFIG_DIR;
+    // A Windows terminal is PowerShell: it sets a variable as a statement of its own, and keeps a quoted `~` as it is.
+    if (process.platform === "win32") return dir ? `$env:CLAUDE_CONFIG_DIR='${dir.replace(/'/g, "''")}'; ` : "Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction Ignore; ";
     const home = os.homedir();
     const shown = dir && dir.startsWith(home + path.sep) ? `~${dir.slice(home.length)}` : dir;
     return dir ? `CLAUDE_CONFIG_DIR=${/\s/.test(shown!) ? `"${shown}"` : shown} ` : "env -u CLAUDE_CONFIG_DIR ";

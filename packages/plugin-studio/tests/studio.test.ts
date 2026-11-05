@@ -124,7 +124,7 @@ describe("Plugin Studio", () => {
     expect(again.previous?.version).toBe("0.1.0");
     expect(again.diff).toEqual({ added: 1, removed: 1 });
     const confirmed = await call<{ snapshot: string | null }>("studio.confirm", "notes", again.digest);
-    expect(confirmed.snapshot).toMatch(/snapshots\/\d+\.json$/);
+    expect(confirmed.snapshot).toMatch(/snapshots[\\/]\d+\.json$/);
     expect(ctx.tools.has("notes_add")).toBe(true);
 
     await tool("notes_add", { itemId: item.id, note: "second" });

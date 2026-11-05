@@ -1,3 +1,4 @@
+import { fakeProgram } from "@tomradex/testkit";
 import { it, expect } from "vitest";
 import { Context } from "cordis";
 import fs from "node:fs";
@@ -11,9 +12,9 @@ import type { Block, SteerInput, TurnIO, TurnInput } from "@tomradex/agent";
 it("uses one process for two turns, attributes counters per turn, and interrupts without killing the session", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-protocol-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "codex");
+  let bin = path.join(dir, "codex");
   const fake = path.resolve("packages/engine-codex/tests/fake-app-server.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}'\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}'\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createCodexEngine(ctx);
@@ -98,15 +99,15 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     expect((await engine.turn(input, io)).stop).toBe("end");
     const changed = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
     expect(changed.filter((r) => r.method === "thread/resume").at(-1).params).toMatchObject({ approvalPolicy: "never", sandbox: "danger-full-access" });
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
 it("steers a running turn with turn/steer and records the message where Codex adds it", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-steer-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "codex");
+  let bin = path.join(dir, "codex");
   const fake = path.resolve("packages/engine-codex/tests/fake-app-server.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}'\n`, { mode: 0o700 });
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}'\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createCodexEngine(ctx);
@@ -132,6 +133,6 @@ it("steers a running turn with turn/steer and records the message where Codex ad
     expect(order).toEqual(["steered:s1", "agent:took: make it blue"]);
     expect(requests().find((r) => r.method === "turn/steer").params).toMatchObject({ threadId: "fake-session", expectedTurnId: "1", clientUserMessageId: "s1", input: [{ type: "text", text: "make it blue" }, { type: "image", url: "data:image/png;base64,cG5n" }] });
     expect(await forward!({ id: "late", text: "too late" })).toBe(false);
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 }, 30_000);
 

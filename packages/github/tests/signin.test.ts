@@ -118,7 +118,8 @@ it("signs in with a device code, asks for repository access, and hands the sessi
   // Kept encrypted; only the short-lived token sits where the helper can read it.
   const kept = fs.readFileSync(path.join(userData, "github-session.enc"), "utf8");
   expect(kept).not.toMatch(/ghu_1|ghr_1/);
-  expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
+  // POSIX modes only; Windows has no 0600.
+  if (process.platform !== "win32") expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
   const settings = path.join(userData, "settings.json");
   expect(fs.existsSync(settings) ? fs.readFileSync(settings, "utf8") : "").not.toContain("ghu_1");
 

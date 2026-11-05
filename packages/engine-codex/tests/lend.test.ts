@@ -1,3 +1,4 @@
+import { fakeProgram } from "@tomradex/testkit";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,8 +10,8 @@ import { codexLentModel } from "@tomradex/engine-codex";
 
 function fakeCodex() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-lent-"));
-  const bin = path.join(dir, "codex");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-codex/tests/fake-codex-exec.mjs")}' "$@"\n`, { mode: 0o700 });
+  let bin = path.join(dir, "codex");
+  bin = fakeProgram(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-codex/tests/fake-codex-exec.mjs")}' "$@"\n`);
   const ctx = new Context();
   ctx.provide("agent", { settingsOf: () => ({ engines: { codex: { command: bin, effort: "low" } } }) } as never);
   return { dir, model: codexLentModel(ctx, async () => true).model };

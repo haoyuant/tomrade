@@ -17,6 +17,7 @@ Apply `supabase/migrations/202610230001_analytics.sql`. It creates:
 | `tomrade_analytics_feature_daily` | Sessions, active milliseconds and actors per feature, day, region and client minor |
 | `tomrade_analytics_action_daily` | Events and counted events per action and dim |
 | `tomrade_analytics_rate` | Batch counts per anonymous id for the hourly cap |
+| `tomrade_analytics_new_installs` | Anonymous ids met for the first time, per hour, for the cap on new installs |
 | `tomrade_ingest_analytics(jsonb)` | The only write path; granted to `anon` |
 | `tomrade_analytics_retention()` | Drops whole event months past 180 days, actors past 180 days, aggregates past 25 months |
 
@@ -35,7 +36,12 @@ not know, drops an unregistered `dim` from an otherwise valid event, keeps an
 event for an unknown feature with `unknown_feature = true`, and answers
 `202` with `{"accepted": n, "duplicates": n, "rejected": n}`. A retried batch
 is safe: `(event_id, ts)` is the primary key. More than 500 events is `413`;
-more than 60 batches an hour for one anonymous id is `429`.
+more than 60 batches an hour for one anonymous id is `429`. So is a new
+anonymous id once the hour has met 500 of them, all installs together, which
+keeps a caller minting an id per batch from going around the first cap; ids
+already seen are untouched, and the client sends a refused batch again later.
+A deployment moves the cap with
+`alter database postgres set tomrade.analytics_new_installs_per_hour = 2000;`.
 
 The region is inferred at ingest from the edge's country header
 (`cf-ipcountry`, `x-vercel-ip-country` or `x-tomrade-country`) and reduced to
@@ -147,3 +153,35 @@ the page can say the data is behind. A day with no data is absent from
 
 The dashboard adds the two deployments' reports: totals and daily rows are
 sums, and distinct-actor counts are added region by region.
+
+## Site, accounts and platforms
+
+Three more reports sit beside the usage report (`202611040003_site_daily.sql`,
+`202611040004_accounts_platforms.sql`), each granted to `service_role` only.
+
+- `tomrade_site_daily` holds the site's daily numbers per region: installer
+  downloads and updater downloads from download.tomrade.com (by platform and
+  version) and page views and visits of tomrade.com. tomrade-site's daily
+  **Analytics** workflow copies them from Cloudflare's edge analytics through
+  `tomrade_site_sync(from, to, rows)`, which replaces those days, so a re-run or
+  a backfill lands once. The job sends a country per row; the function reduces
+  it to the five regions (`tomrade_analytics_bucket`, which ingest now uses too)
+  and stores no country. Rows of the other deployment's side are dropped, as
+  ingest refuses them. Each sync also drops rows past 25 months. Cloudflare
+  keeps 31 days, so a gap the job missed for longer is lost; how downloads are
+  counted is in tomrade-site's README (Analytics).
+  `tomrade_site_report(from, to, region)` answers totals, daily rows, platforms,
+  versions and `synced_at`, the newest copy.
+- `tomrade_accounts_report(from, to)` counts the registered accounts in
+  `auth.users` by the end of the range (and how many confirmed their address)
+  and the new ones inside it, per UTC day. Accounts carry no region, so the
+  dashboard's region filter does not apply; anonymous sign-ins and deleted
+  accounts are not counted.
+- `tomrade_analytics_platforms(from, to, region)` counts active anonymous IDs
+  and active time per operating system, read from the event detail (kept 180
+  days, longer than any dashboard range).
+
+The dashboard adds both deployments' answers, as for the usage report. Its
+activation funnel starts at the site's installer downloads once the sync has
+run, so installs over downloads is the conversion.
+

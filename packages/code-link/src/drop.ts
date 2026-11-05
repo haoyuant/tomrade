@@ -20,7 +20,8 @@ export function droppedPaste(paths: readonly string[]): string | null {
 }
 
 // macOS gives /var as /private/var too.
-const bare = (p: string) => path.resolve(p).replace(/^\/private(?=\/var\/)/, "");
+// Forward slashes on Windows too, so the "/" the callers append matches.
+const bare = (p: string) => (path.sep === "\\" ? path.resolve(p).replace(/\\/g, "/") : path.resolve(p)).replace(/^((?:[A-Za-z]:)?)\/private(?=\/var\/)/, "$1");
 
 /**
  * Whether a dropped file sits in the temp folder's TemporaryItems, where macOS keeps what is dragged out of a

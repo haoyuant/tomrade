@@ -54,7 +54,8 @@ it("copies what only Tomrade may read where the terminal can, under its own name
 });
 
 it("knows macOS's private folders from the home folder, and none off macOS", () => {
-  expect(privateFolders("/Users/me")).toEqual(["/Users/me/Downloads", "/Users/me/Desktop", "/Users/me/Documents", "/Users/me/Library/Mobile Documents", "/Volumes"]);
+  const under = (d: string) => path.resolve("/Users/me", d).replace(/\\/g, "/");
+  expect(privateFolders("/Users/me")).toEqual([under("Downloads"), under("Desktop"), under("Documents"), under("Library/Mobile Documents"), "/Volumes"]);
   expect(privateFolders(null)).toEqual([]);
 });
 

@@ -10,7 +10,7 @@ import CodeSessions, { BRIDGE_POLL_MS, cellNumbers, continuedIn, needingYou, ope
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -194,9 +194,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   live.frame("l");
   live.frame("lo");
   expect(shown()).toEqual(["he"]);
-  await batched();
+  // The batch goes on its own timer, which a loaded machine (and Windows' coarse ticks) may run after a fixed wait.
+  await expect.poll(() => win.posts.filter((p) => p.type === "frame")).toHaveLength(2);
   const drawn = win.posts.filter((p) => p.type === "frame");
-  expect(drawn).toHaveLength(2);
   expect(drawn[1]).toMatchObject({ type: "frame", cell: "c1", seq: 1, width: 80, height: 24, full: true });
   expect(shown()).toEqual(["he", "llo"]);
   // Another size paints another screen: what waited goes first, under the paint it started with.
@@ -204,8 +204,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   live.frame("v", { full: false });
   live.frame("x", { width: 100, full: false });
   live.frame("y", { width: 100, full: false });
-  await batched();
-  expect(win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
+  await expect.poll(() => win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
     [80, true, "he"],
     [80, true, "llo"],
     [80, false, "w"],
@@ -864,7 +863,7 @@ it("shows a session code link asks for: the window opens or comes forward with i
   expect(opened[0]!.posts.at(-1)).toEqual({ type: "toast", text: "Shown in herdr" });
 });
 
-it("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
+it.skipIf(herdrUnsupported)("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const attached: string[] = [];
@@ -975,7 +974,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   next.spec.onClose();
 }, 30_000);
 
-it("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
+it.skipIf(herdrUnsupported)("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
 
@@ -1049,7 +1048,7 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
   fake.close();
 });
 
-it("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
+it.skipIf(herdrUnsupported)("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const sessions: Session[] = [];

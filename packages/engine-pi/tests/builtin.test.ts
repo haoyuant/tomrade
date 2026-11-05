@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomradex/testkit";
+import { fresh, settle, useHome } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
@@ -194,8 +194,7 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
     const person = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-person-"));
     fs.mkdirSync(path.join(person, ".agents", "skills", "personal-skill"), { recursive: true });
     fs.writeFileSync(path.join(person, ".agents", "skills", "personal-skill", "SKILL.md"), "---\nname: personal-skill\ndescription: Something only this person uses.\n---\nDo it.\n");
-    const realHome = process.env.HOME;
-    process.env.HOME = person;
+    const restoreHome = useHome(person);
     try {
       const { ctx, items, project, board, home, engine, useModel } = await boot(bundled);
       useModel({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "sk-secret", model: "fake-model" });
@@ -220,7 +219,7 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
       expect(fs.readFileSync(path.join(home, "pi", "models.json"), "utf8")).not.toContain("sk-secret");
       expect(seen[0].prompt).not.toContain("personal-skill");
     } finally {
-      process.env.HOME = realHome;
+      restoreHome();
       fs.rmSync(person, { recursive: true, force: true });
       server.close();
     }

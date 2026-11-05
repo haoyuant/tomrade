@@ -6,6 +6,7 @@ import { Context } from "cordis";
 import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, endEveryObserver, openTerminal, parseTerminalLine, strayStreams, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
+import { herdrUnsupported } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -90,7 +91,7 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(terminalCommand.release()).toEqual({ type: "terminal.release" });
   });
 
-  it("controls a pane: frames come in, commands go out on stdin, and closing releases it", async () => {
+  it.skipIf(herdrUnsupported)("controls a pane: frames come in, commands go out on stdin, and closing releases it", async () => {
     const cli = terminalCli();
     const stream = openTerminal({ bin: cli.bin, paneId: "w1:p1", mode: "control", cols: 100, rows: 30 });
     const frames: TerminalFrame[] = [];
@@ -116,7 +117,7 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(late).toEqual([null]);
   });
 
-  it("observes without taking input, and ends the watcher when closed", async () => {
+  it.skipIf(herdrUnsupported)("observes without taking input, and ends the watcher when closed", async () => {
     const cli = terminalCli();
     const stream = openTerminal({ bin: cli.bin, paneId: "w1:p1", mode: "observe", cols: 80, rows: 24 });
     const frames: TerminalFrame[] = [];
@@ -128,7 +129,7 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(cli.stdin()).toEqual([]);
   });
 
-  it("ends every observer's herdr as Tomrade exits, since an observer reads no stdin to hear it", async () => {
+  it.skipIf(herdrUnsupported)("ends every observer's herdr as Tomrade exits, since an observer reads no stdin to hear it", async () => {
     const cli = terminalCli();
     const stream = openTerminal({ bin: cli.bin, paneId: "w1:p1", mode: "observe", cols: 80, rows: 24 });
     let frames = 0;
@@ -154,7 +155,7 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(strayStreams(ps)).toEqual([2834, 2835]);
   });
 
-  it("says why when herdr will not attach, and when herdr itself ends the stream", async () => {
+  it.skipIf(herdrUnsupported)("says why when herdr will not attach, and when herdr itself ends the stream", async () => {
     const cli = terminalCli();
     const missing = openTerminal({ bin: cli.bin, paneId: "w9:p1", mode: "control", cols: 80, rows: 24 });
     const why = await new Promise<string | null>((resolve) => missing.onClose(resolve));
@@ -280,7 +281,7 @@ describe.skipIf(process.platform === "win32")("herdr service terminals", SPAWNS,
 });
 
 describe("herdr project workspaces", () => {
-  it("opens a project's sessions as tabs of one workspace named for the project, each tab named for its ticket", async () => {
+  it.skipIf(herdrUnsupported)("opens a project's sessions as tabs of one workspace named for the project, each tab named for its ticket", async () => {
     const fake = new FakeHerdr();
     try {
       const { herdr } = await herdrOn(fake);
@@ -303,7 +304,7 @@ describe("herdr project workspaces", () => {
     }
   });
 
-  it("makes the workspace again when herdr no longer has it, or has given its id to another", async () => {
+  it.skipIf(herdrUnsupported)("makes the workspace again when herdr no longer has it, or has given its id to another", async () => {
     const fake = new FakeHerdr();
     try {
       const statePath = path.join(fs.mkdtempSync(path.join(root, "state-")), "herdr.json");
@@ -325,7 +326,7 @@ describe("herdr project workspaces", () => {
     }
   });
 
-  it("makes one workspace for launches into a project at the same time", async () => {
+  it.skipIf(herdrUnsupported)("makes one workspace for launches into a project at the same time", async () => {
     const fake = new FakeHerdr();
     try {
       const { herdr } = await herdrOn(fake);

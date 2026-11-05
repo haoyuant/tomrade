@@ -21,7 +21,7 @@ import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { disposeFresh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { disposeFresh, FakeHerdr, fakeProgram, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 import { Herdr, herdrInstall } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
@@ -80,11 +80,12 @@ function localRepo(): string {
   return folder;
 }
 
+// The code under test may put `-c name=value` options before the git command (it does on Windows), so a fake reads its verb past them.
+const VERB = 'verb=; skip=; for a in "$@"; do if [ -n "$skip" ]; then skip=; elif [ "$a" = -c ]; then skip=1; else verb=$a; break; fi; done\n';
+
 function gitWithFailure(command: "ls-remote" | "push", stderr: string): string {
   const file = path.join(root, `git-${n++}`);
-  fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
-  fs.chmodSync(file, 0o755);
-  return file;
+  return fakeProgram(file, `#!/bin/sh\n${VERB}if [ "$verb" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
 }
 
 /** A code-capable engine that records what it was asked and makes one commit in the worktree. */
@@ -176,7 +177,7 @@ it("offers no terminal app of your own first in Settings — automatic — and k
   expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
 });
 
-it("continues a ticket a terminal agent claimed itself as a prompt in that agent's pane, and in a new pane once it closed", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("continues a ticket a terminal agent claimed itself as a prompt in that agent's pane, and in a new pane once it closed", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const { Mcp } = await import("@tomradex/mcp");
@@ -221,7 +222,7 @@ it("continues a ticket a terminal agent claimed itself as a prompt in that agent
   expect(fake.of("agent.prompt")).toHaveLength(2);
 });
 
-it("ends a session whose agent exited to its pane's shell as soon as herdr reads the pane again, and starts the ticket afresh", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("ends a session whose agent exited to its pane's shell as soon as herdr reads the pane again, and starts the ticket afresh", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const { Mcp } = await import("@tomradex/mcp");
@@ -251,7 +252,7 @@ it("ends a session whose agent exited to its pane's shell as soon as herdr reads
 });
 
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
-it("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
   const { codeLink, ctx, project, repo, checkout, ticket } = world;
   await ctx.repos.setCheckout(repo!.remote, checkout!);
@@ -421,7 +422,7 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   fake.close();
 });
 
-it("takes the id herdr's own integration reported on an agent's pane when the agent's hooks never reach Tomrade, and keeps one the hooks gave", { timeout: 60_000 }, async () => {
+it.skipIf(herdrUnsupported)("takes the id herdr's own integration reported on an agent's pane when the agent's hooks never reach Tomrade, and keeps one the hooks gave", { timeout: 60_000 }, async () => {
   const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
   await ctx.repos.setCheckout(repo!.remote, checkout!);
   const fake = new FakeHerdr();
@@ -469,7 +470,7 @@ it("takes the id herdr's own integration reported on an agent's pane when the ag
   fake.close();
 });
 
-it("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
+it.skipIf(herdrUnsupported)("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
   // No herdr on this machine: the terminal setting, left on automatic, is the system terminal.
   const { codeLink } = await machine(null);
   const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
@@ -503,8 +504,8 @@ it("offers the connected account for credential failures, reprobes after switchi
   const remote = "https://github.com/example/private-app";
   git(["remote", "set-url", "origin", remote], local.checkout);
   const binary = path.join(root, `git-credential-probe-${n++}`);
-  fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$1" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`, { mode: 0o755 });
-  const world = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$verb" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`);
+  const world = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const { ctx, codeLink, project, repo, hubDir } = world;
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
@@ -535,8 +536,8 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   git(["remote", "set-url", "origin", remote], local.checkout);
   // The scan's fetch and remote probe answer here, as for a private repository, rather than from github.com.
   const binary = path.join(root, `git-offline-${n++}`);
-  fs.writeFileSync(binary, `#!/bin/sh\ncase "$1" in fetch|ls-remote|pull|push) echo 'Repository not found' >&2; exit 128;; esac\nexec git "$@"\n`, { mode: 0o755 });
-  const world = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}case "$verb" in fetch|ls-remote|pull|push) echo 'Repository not found' >&2; exit 128;; esac\nexec git "$@"\n`);
+  const world = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const { ctx, codeLink, project, hubDir } = world;
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
@@ -548,8 +549,10 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   await ctx.repos.setCheckout(remote, local.checkout);
   await codeLink.scan(project.id);
   const config = fs.readFileSync(path.join(local.checkout, ".git/config"), "utf8");
-  expect(config).toContain(path.join(hubDir, "bin", "tomrade-credential"));
-  expect(config).not.toContain(legacy);
+  // git config writes a backslash in a value as two.
+  const inConfig = (file: string) => file.split("\\").join("\\\\");
+  expect(config).toContain(inConfig(path.join(hubDir, "bin", "tomrade-credential")));
+  expect(config).not.toContain(inConfig(legacy));
   expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account", tomrade: true });
   connection.mockRestore();
 });
@@ -559,8 +562,8 @@ it("keeps an unsuccessful credential reprobe unreachable and does not offer acco
   const remote = "https://github.com/example/still-private";
   git(["remote", "set-url", "origin", remote], local.checkout);
   const binary = path.join(root, `git-denied-${n++}`);
-  fs.writeFileSync(binary, '#!/bin/sh\nif [ "$1" = "fetch" ] || [ "$1" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n', { mode: 0o755 });
-  const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binary });
+  const binaryRun = fakeProgram(binary, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ] || [ "$verb" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n`);
+  const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binaryRun });
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-token" } });
   await ctx.repos.setCheckout(remote, local.checkout);
@@ -1213,8 +1216,8 @@ describe("starting a ticket", () => {
 
   it("scans a repository added while a slower scan is still fetching", async () => {
     const slowGit = path.join(root, `git-slow-${n++}`);
-    fs.writeFileSync(slowGit, `#!/bin/sh\nif [ "$1" = "fetch" ]; then sleep 1; fi\nexec git "$@"\n`, { mode: 0o755 });
-    const world = await machine(codeRepo(), { gitBinary: slowGit });
+    const slowGitRun = fakeProgram(slowGit, `#!/bin/sh\n${VERB}if [ "$verb" = "fetch" ]; then sleep 1; fi\nexec git "$@"\n`);
+    const world = await machine(codeRepo(), { gitBinary: slowGitRun });
     const { ctx, codeLink, project, repo, checkout } = world;
     await ctx.repos.setCheckout(repo!.remote, checkout!);
     const running = codeLink.scan(project.id);
@@ -1961,7 +1964,7 @@ describe("starting a ticket", () => {
 
     // The launch script leaves its pid; a pid that no longer answers ends the session at the next sweep, hook or no hook.
     const script = fs.readFileSync(path.join(codeLink.sessionDir(again.sessionId), "run.command"), "utf8");
-    expect(script).toContain("echo $$ >");
+    expect(script).toContain(process.platform === "win32" ? "/proc/$$/winpid" : "echo $$ >");
     fs.writeFileSync(path.join(codeLink.sessionDir(again.sessionId), "pid"), "99999\n");
     codeLink.sessions.sweep(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: again.sessionId, state: "ended" });
@@ -2707,7 +2710,7 @@ describe("starting tickets from a conversation", () => {
     expect(agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")?.data).toMatchObject({ results: [{ key: item.key, ok: false, gate: "checkout", remote: expect.any(String), repo: { id: expect.any(String) } }] });
   });
 
-  it("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
+  it.skipIf(herdrUnsupported)("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
     const { codeLink, ctx, project, repo, checkout, ticket, turns, agent } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);
     const { Mcp } = await import("@tomradex/mcp");

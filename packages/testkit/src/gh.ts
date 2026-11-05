@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fakeProgram } from "./fake-program.js";
 
 /** How the fake answers a command: what it prints, a failure of its own, or one of the ways the real gh fails. */
 export type FakeGhReply = { stdout: string } | { stderr: string; code?: number } | "signed-out" | "rate-limited" | "offline";
@@ -67,9 +68,7 @@ export class FakeGh {
       reply("signed-out"),
       ""
     ].join("\n");
-    // Renamed into place, so a gh starting meanwhile reads one script whole.
-    const next = path.join(this.dir, "gh.next");
-    fs.writeFileSync(next, script, { mode: 0o755 });
-    fs.renameSync(next, path.join(this.dir, "gh"));
+    // Written whole, so a gh starting meanwhile reads one script.
+    fakeProgram(path.join(this.dir, "gh"), script);
   }
 }

@@ -134,6 +134,8 @@ export const zhHant: PartialMessages = {
     colValue: "取值",
     automationNone: "不切換",
     automationSystem: "跟隨系統",
+    automationSystemPair: "系統為淺色時用{{light}}，深色時用{{dark}}。",
+    automationSystemUnpaired: "只有晨曦/破曉和紙白/墨黑可以跟隨系統，請先選其中一款。",
     automationSchedule: "按時間",
     automationShuffle: "隨機輪換",
     scheduleEyebrow: "按時間",

@@ -8,7 +8,7 @@ import type { CliLaunch } from "@tomradex/engine-kit";
 import engineCodex, { codexCanRun, createCodexEngine, readCodexAccount } from "@tomradex/engine-codex";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
-import { fresh, settle } from "@tomradex/testkit";
+import { fakeProgram, fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { lostSession } from "../src/account.js";
 
@@ -18,11 +18,10 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-account-"));
 /** A `codex` that answers --version and `login status` like the real one, and runs the fake app-server in `mode`. */
 function fakeCodex(mode: string): string {
   const bin = path.join(dir, `codex-${mode}`);
-  fs.writeFileSync(bin, `#!/bin/sh
+  return fakeProgram(bin, `#!/bin/sh
 case "$1" in --version) echo "codex-cli 9.9.9"; exit 0;; login) echo "Not logged in" >&2; exit 1;; esac
 FAKE_MODE=${mode} exec '${process.execPath}' '${FAKE}' "$@"
-`, { mode: 0o755 });
-  return bin;
+`);
 }
 
 const launchOf = (file: string): CliLaunch => ({ file, argv: (args) => ({ command: file, args }), env: (base = process.env) => base });

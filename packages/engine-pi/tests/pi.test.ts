@@ -1,4 +1,5 @@
 import { it, expect } from "vitest";
+import { fakeProgram } from "@tomradex/testkit";
 import { Context } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
@@ -65,9 +66,9 @@ it("declares a kit the conversation does not carry only once tool_search loads i
 it("keeps one process across turns, resumes its session id, and answers permission dialogs", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "pi");
+  const bin0 = path.join(dir, "pi");
   const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const bin = fakeProgram(bin0, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createPiEngine(ctx);
@@ -169,15 +170,15 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     expect(failed.details).not.toContain('"content"');
     input.input = { kind: "text", text: "after" };
     expect((await engine.turn(input, io)).metrics?.runtime).toBe("cold");
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); }
 });
 
 it("reports a session pi has no file for, and leads a new session's first prompt with the conversation so far", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-lost-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "pi");
+  const bin0 = path.join(dir, "pi");
   const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const bin = fakeProgram(bin0, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createPiEngine(ctx);
@@ -198,15 +199,15 @@ it("reports a session pi has no file for, and leads a new session's first prompt
     input.input = { kind: "text", text: "next" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(prompts().at(-1)).not.toContain("RECAP OF EARLIER");
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); }
 });
 
 it("starts a new session carried by the recap when the session holds another model's reasoning, and resumes it otherwise", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-model-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "pi");
+  const bin0 = path.join(dir, "pi");
   const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const bin = fakeProgram(bin0, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createPiEngine(ctx);
@@ -226,15 +227,15 @@ it("starts a new session carried by the recap when the session holds another mod
     expect(switched.recapped).toBe(true);
     expect(await turn("reasoned-fixed-model", "same")).toMatchObject({ result: { stop: "end", resume: "reasoned-fixed-model" }, recapped: false });
     expect(await turn("replied-other-model", "plain")).toMatchObject({ result: { stop: "end", resume: "replied-other-model" }, recapped: false });
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); }
 });
 
 it("hands a message sent mid-turn to pi's own queue, records it where pi reads it, and clears what is left before a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-steer-"));
   const log = path.join(dir, "requests.jsonl");
-  const bin = path.join(dir, "pi");
+  const bin0 = path.join(dir, "pi");
   const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
-  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const bin = fakeProgram(bin0, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`);
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createPiEngine(ctx);
@@ -271,6 +272,6 @@ it("hands a message sent mid-turn to pi's own queue, records it where pi reads i
     expect(order).not.toContain("steered:s2");
     const after = requests().filter((r) => r.type === "clear_queue" || r.type === "abort").map((r) => r.type);
     expect(after).toEqual(["clear_queue", "abort"]);
-  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); }
 }, 30_000);
 

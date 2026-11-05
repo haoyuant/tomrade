@@ -8,7 +8,7 @@ import { engineNamed, type TermAnswer } from "../src/cli.js";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr } from "@tomradex/herdr";
-import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { FakeHerdr, fresh, settle, herdrUnsupported } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-term-cli-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -25,7 +25,7 @@ it("knows a coding agent by its id or name, whole or by how it starts", () => {
   expect(engineNamed(engines, "")).toBeUndefined();
 });
 
-it("answers tomrade term over the MCP port: a pane in the folder, a ticket started with an agent, a pane handed to the person's terminal", async () => {
+it.skipIf(herdrUnsupported)("answers tomrade term over the MCP port: a pane in the folder, a ticket started with an agent, a pane handed to the person's terminal", async () => {
   const fake = new FakeHerdr();
   const repo = fs.mkdtempSync(path.join(dir, "repo-"));
   const elsewhere = fs.mkdtempSync(path.join(dir, "elsewhere-"));

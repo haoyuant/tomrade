@@ -41,10 +41,14 @@ Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Internal usage dashboard
 
-Apply analytics migrations `202610230001` through `202610230004` to each
+Apply the analytics migrations (`202610230001` onward, including
+`202611040003_site_daily` and `202611040004_accounts_platforms`) to each
 analytics database and schedule aggregation as described in
-[analytics operations](../../docs/analytics.md). Migration 004 grants only the
-report RPCs to `service_role`; public and signed-in clients cannot read them.
+[analytics operations](../../docs/analytics.md). The report RPCs are granted
+only to `service_role`; public and signed-in clients cannot read them. A
+deployment without the two newest migrations still loads: its site, accounts
+and platform sections are left empty. Site downloads and page views arrive once
+tomrade-site's daily Analytics workflow runs (its README, Analytics).
 
 ```sh
 # Supply these through your shell, a secret manager or the repository's

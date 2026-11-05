@@ -115,9 +115,18 @@ describe("selective Git projection", { timeout: spawnBudget(30_000) }, () => {
     run(seed, "config", "user.email", "test@example.com"); run(seed, "config", "user.name", "Test");
     fs.mkdirSync(path.join(seed, "code"));
     fs.writeFileSync(path.join(seed, "code", "run.sh"), "#!/bin/sh\necho unchanged\n", { mode: 0o755 });
-    fs.symlinkSync("code/run.sh", path.join(seed, "link"));
     fs.writeFileSync(path.join(seed, ".gitattributes"), "*.txt text eol=crlf\n");
-    run(seed, "add", "-A"); run(seed, "commit", "-qm", "code"); run(seed, "push", "-q", "origin", "main");
+    if (process.platform === "win32") {
+      // Windows makes no symlink or mode bit without rights: put the same two tree entries in the index directly.
+      run(seed, "add", "-A");
+      run(seed, "update-index", "--chmod=+x", "code/run.sh");
+      const target = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: seed, input: "code/run.sh", encoding: "utf8" }).trim();
+      run(seed, "update-index", "--add", "--cacheinfo", `120000,${target},link`);
+    } else {
+      fs.symlinkSync("code/run.sh", path.join(seed, "link"));
+      run(seed, "add", "-A");
+    }
+    run(seed, "commit", "-qm", "code"); run(seed, "push", "-q", "origin", "main");
     const before = run(remote, "ls-tree", "-r", "main");
     const a = await open(target(remote, "project-files"));
     expect(await a.tree()).toEqual([]);
@@ -223,8 +232,10 @@ describe("selective Git projection", { timeout: spawnBudget(30_000) }, () => {
     expect((await a.status()).elsewhere).toBeUndefined();
     const b = await open(project);
     await b.sync(); await a.sync();
-    expect((await a.status()).elsewhere).toEqual([b.dir]);
-    expect((await b.status()).elsewhere).toEqual([a.dir]);
+    // A folder is told with its home as ~ and "/" separators; a Windows temp folder sits under the home, a POSIX one does not.
+    const told = (dir: string) => (dir.startsWith(os.homedir() + path.sep) ? `~${dir.slice(os.homedir().length)}` : dir).split(path.sep).join("/");
+    expect((await a.status()).elsewhere).toEqual([told(b.dir)]);
+    expect((await b.status()).elsewhere).toEqual([told(a.dir)]);
     // Each store says where it is once; a sync with nothing new publishes nothing.
     const head = run(remote, "rev-parse", "main").trim();
     await a.sync(); await b.sync();

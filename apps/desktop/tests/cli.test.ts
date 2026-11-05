@@ -1,8 +1,12 @@
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseArgs, runCli, type CliDeps } from "../src/cli.js";
 
 const noDir = () => false;
+// Paths as this platform spells them.
+const work = path.resolve("/work/tomrade");
+const otherDir = path.resolve("/work/other");
 
 describe("tomrade term's arguments", () => {
   it("reads a folder, a ticket with or without an agent, and a pane to attach", () => {
@@ -41,7 +45,7 @@ function harness(answers: ((body: Record<string, unknown>) => Response | Error)[
   let at = 0;
   const deps: CliDeps = {
     config: () => ({ url: "http://127.0.0.1:19090", open: "/Applications/Tomrade.app", locale: "en" }),
-    cwd: "/work/tomrade",
+    cwd: work,
     platform: "darwin",
     env: { PATH: "/usr/bin" },
     fetch: (async (url: string, init: RequestInit) => {
@@ -60,7 +64,7 @@ function harness(answers: ((body: Record<string, unknown>) => Response | Error)[
     out: (t) => void out.push(t),
     err: (t) => void err.push(t),
     sleep: async () => {},
-    isDir: (dir) => dir === "/work/tomrade" || dir === "/work/other",
+    isDir: (dir) => dir === work || dir === otherDir,
     ...over
   };
   return { deps, sent, out, err, spawned };
@@ -73,7 +77,7 @@ describe("the tomrade command", () => {
   it("asks Tomrade over its port to open a pane in the folder, and prints the answer", async () => {
     const h = harness([() => json({ ok: true, text: "Opened pane 3 in the Terminal window · ~/work/other" })]);
     expect(await runCli(["term", "../other"], h.deps)).toBe(0);
-    expect(h.sent).toEqual([{ url: "http://127.0.0.1:19090/cli/term", body: { op: "open", cwd: "/work/other" }, headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" } }]);
+    expect(h.sent).toEqual([{ url: "http://127.0.0.1:19090/cli/term", body: { op: "open", cwd: otherDir }, headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" } }]);
     expect(h.out).toEqual(["Opened pane 3 in the Terminal window · ~/work/other"]);
     // A folder that is not there is said before anything is asked.
     const missing = harness([() => json({ ok: true, text: "" })]);
@@ -85,7 +89,7 @@ describe("the tomrade command", () => {
   it("starts a ticket with the agent named, and says so while Tomrade works on it", async () => {
     const h = harness([() => json({ ok: true, text: "Pane 4 · claimed TOM-638 · started Codex on tom-638/x" })]);
     expect(await runCli(["term", "--agent", "codex", "TOM-638"], h.deps)).toBe(0);
-    expect(h.sent[0]!.body).toEqual({ op: "start", cwd: "/work/tomrade", key: "TOM-638", agent: "codex" });
+    expect(h.sent[0]!.body).toEqual({ op: "start", cwd: work, key: "TOM-638", agent: "codex" });
     expect(h.err).toEqual(["Starting TOM-638…"]);
     const no = harness([() => json({ ok: false, text: "No ticket TOM-9 in your projects on this computer" })]);
     expect(await runCli(["term", "TOM-9"], no.deps)).toBe(1);
@@ -130,12 +134,12 @@ describe("the tomrade command", () => {
       () => json({ ok: true, text: "" })
     ]);
     expect(await runCli(["term", "--attach", "2"], h.deps)).toBe(0);
-    expect(h.sent.map((s) => s.body)).toEqual([{ op: "attach", cwd: "/work/tomrade", cell: 2 }, { op: "detached", projectId: "p1", cell: "c7" }]);
+    expect(h.sent.map((s) => s.body)).toEqual([{ op: "attach", cwd: work, cell: 2 }, { op: "detached", projectId: "p1", cell: "c7" }]);
     expect(h.spawned).toEqual([{ command: "/opt/homebrew/bin/herdr", args: ["terminal", "attach", "term_abc", "--takeover"], env: { PATH: "/usr/bin", HERDR_SOCKET_PATH: "/Users/me/.config/herdr/herdr.sock" }, stdio: "inherit" }]);
     // Without a number, the panes are listed.
     const list = harness([() => json({ ok: true, text: "The panes of Tomrade's Terminal window:", cells: ["1  empty", "2  TOM-634 · Claude Code · x"] })]);
     expect(await runCli(["term", "--attach"], list.deps)).toBe(0);
-    expect(list.sent[0]!.body).toEqual({ op: "attach", cwd: "/work/tomrade" });
+    expect(list.sent[0]!.body).toEqual({ op: "attach", cwd: work });
     expect(list.out).toEqual(["The panes of Tomrade's Terminal window:\n  1  empty\n  2  TOM-634 · Claude Code · x"]);
   });
 
