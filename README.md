@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Tomrade: the cat on a red rising sun. From idea to merged PR, with the agents you already use. A backlog that lasts; keep your tools; see it, undo it." width="820">
+  <img src="docs/images/banner.png" alt="Tomrade: the cat on a red rising sun. From idea to delivery, side by side. No babysitting; a backlog that lasts; see it, undo it; for everyday tasks too." width="820">
 </p>
 
 <p align="center">

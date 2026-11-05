@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner-zh.png" alt="Tomrade：红太阳前的猫。把想法交给 Agent，一路跟到合并。长期需求池；不用换工具；看得见、撤得回。" width="820">
+  <img src="docs/images/banner-zh.png" alt="Tomrade：红太阳前的猫。从想法到交付，并肩作战。不用盯着；长期需求池；看得见、撤得回；日常事务也能管。" width="820">
 </p>
 
 <p align="center">
