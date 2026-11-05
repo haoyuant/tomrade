@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon, IconSprite } from "~/components/icons";
 import { Motes, skyOf } from "~/components/Motes";
+import { SkyLight } from "~/components/SkyLights";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { useFrosted } from "~/lib/frost";
@@ -596,7 +597,7 @@ export function App() {
       <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
-        {sky ? <Motes sky={sky} /> : null}
+        {sky ? <><SkyLight sky={sky} part="sky" /><Motes sky={sky} /><SkyLight sky={sky} part="sun" /></> : null}
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
