@@ -228,7 +228,7 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 [data-unified-sky]:is(.sunrise, .daybreak) .tab[aria-selected="true"] { background: transparent; }
 [data-unified-sky].daybreak .ai::after { content: none; }
 
-/* Out of focus a while (SkyLights.tsx): every moving light holds where it stands, and focus resumes it from there. */
+/* Out of focus or untouched a while (SkyLights.tsx): every moving light holds where it stands, and focus or input resumes it from there. */
 [data-resting] :is(.sun-sky, .sun-sun, .sun-mote, .sun-halo, .sun-dust, .sun-drift),
 [data-resting]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-resting].daybreak .ai::after { animation-play-state: paused; }

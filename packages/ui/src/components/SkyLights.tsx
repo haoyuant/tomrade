@@ -133,38 +133,62 @@ export function SkyLight({ sky, part }: { sky: Sky; part: Exclude<Part, "stars">
     <>
       <Light part={part} />
       {sky === "daybreak" && part === "sky" ? <Light part="stars" /> : null}
-      {part === "sky" ? <RestAway /> : null}
+      {part === "sky" ? <Rest /> : null}
     </>
   );
 }
 
 /** How long a window stays out of focus before its lights hold still: a glance at another app does not count. */
 const REST_AFTER_MS = 30_000;
+/** How long a focused window goes untouched before they hold still too: someone reading agents' output. */
+const IDLE_AFTER_MS = 120_000;
+const INPUT = ["keydown", "pointerdown", "pointermove", "wheel"] as const;
 
 /**
  * The lights cost about 7% of a core per window while they move (TOM-1016), and over a long run the person is mostly in
- * other apps: a window out of focus a while holds them where they are (styles/sunrise.css), and focus resumes them.
+ * other apps or reading: a window out of focus a while, or focused but untouched a while, holds them where they are
+ * (styles/sunrise.css), and focus or input resumes them.
  */
-function RestAway() {
+function Rest() {
   useEffect(() => {
     const root = document.documentElement;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const away = () => {
+    let lastInput = performance.now();
+    const wait = (ms: number) => {
       clearTimeout(timer);
-      // Focus inside one of the page's own frames still counts as here.
-      timer = setTimeout(() => root.toggleAttribute("data-resting", !document.hasFocus()), REST_AFTER_MS);
+      timer = setTimeout(check, ms);
     };
-    const back = () => {
-      clearTimeout(timer);
+    const check = () => {
+      // Focus inside one of the page's own frames still counts as here, and as busy: its input never reaches this window.
+      const here = document.hasFocus();
+      if (here && document.activeElement instanceof HTMLIFrameElement) lastInput = performance.now();
+      const left = here ? IDLE_AFTER_MS - (performance.now() - lastInput) : 0;
+      if (left > 0) wait(left);
+      else root.setAttribute("data-resting", "");
+    };
+    // Runs on every pointer move, so it only notes the time unless the lights are resting.
+    const input = () => {
+      lastInput = performance.now();
+      if (!root.hasAttribute("data-resting")) return;
       root.removeAttribute("data-resting");
+      wait(document.hasFocus() ? IDLE_AFTER_MS : REST_AFTER_MS);
     };
-    if (!document.hasFocus()) away();
+    const away = () => wait(REST_AFTER_MS);
+    const back = () => {
+      lastInput = performance.now();
+      root.removeAttribute("data-resting");
+      wait(IDLE_AFTER_MS);
+    };
+    wait(document.hasFocus() ? IDLE_AFTER_MS : REST_AFTER_MS);
     window.addEventListener("blur", away);
     window.addEventListener("focus", back);
+    for (const type of INPUT) window.addEventListener(type, input, { capture: true, passive: true });
     return () => {
-      back();
+      clearTimeout(timer);
+      root.removeAttribute("data-resting");
       window.removeEventListener("blur", away);
       window.removeEventListener("focus", back);
+      for (const type of INPUT) window.removeEventListener(type, input, { capture: true });
     };
   }, []);
   return null;
