@@ -29,6 +29,17 @@ export const en = {
   siteMissing: "No site data: apply the site migration and run tomrade-site's Analytics workflow.", accountsMissing: "Accounts are not reported by this deployment.",
   downloadsByPlatform: "Downloads by platform", downloads: "Installer downloads (site)",
   platforms: "Usage by platform", platformsHint: "Active anonymous IDs and active time per operating system in the period.", ofIds: "Share of IDs", ofTime: "Share of time",
+  days180: "180 days", days365: "365 days", window: "Window", windowRange: "{{from}} — {{to}}",
+  insights: "AI analysis and suggestions",
+  insightsHint: "Claude reads this view's aggregates (no IDs) against the previous period of the same length. It runs only when you ask, through the local Claude Code CLI.",
+  generate: "Generate", regenerate: "Refresh analysis", generating: "Analysing… about a minute",
+  insightsNone: "No analysis yet. Generate one for this period and region.",
+  insightsFailed: "The last analysis failed at {{at}}. Check that Claude Code is signed in, then retry.",
+  insightsUnavailable: "The claude command was not found. Install Claude Code, or set TOMRADE_ANALYTICS_CLAUDE to its path.",
+  insightsOther: "Showing the analysis of another view: generate one for this period and region.",
+  insightsBasis: "{{from}} — {{to}} · {{region}} · generated {{at}}", insightsCost: "cost ${{cost}}",
+  summary: "Summary", highlights: "Key points", anomalies: "Anomalies", suggestions: "Suggestions", noAnomalies: "Nothing out of the ordinary.",
+  high: "High", medium: "Medium", low: "Low",
   macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS (Apple silicon)", "mac-x64": "macOS (Intel)", "windows-arm64": "Windows (Arm)", "linux-arm64": "Linux (Arm)"
 };
 export const zh: typeof en = {
@@ -62,6 +73,17 @@ export const zh: typeof en = {
   siteMissing: "暂无官网数据：请先应用官网数据迁移，并运行 tomrade-site 的 Analytics 工作流。", accountsMissing: "此部署不提供账户数据。",
   downloadsByPlatform: "各平台下载", downloads: "官网安装包下载",
   platforms: "各平台使用占比", platformsHint: "所选期间各操作系统的活跃匿名 ID 与有效使用时长。", ofIds: "ID 占比", ofTime: "时长占比",
+  days180: "180 天", days365: "365 天", window: "时间窗口", windowRange: "{{from}} — {{to}}",
+  insights: "AI 分析与建议",
+  insightsHint: "由 Claude 读取当前视图的聚合数字（不含任何 ID），并与上一个等长周期对比。只在你手动点击时运行，通过本机的 Claude Code CLI。",
+  generate: "生成分析", regenerate: "刷新分析", generating: "分析中…约需 1 分钟",
+  insightsNone: "还没有分析。为当前时间范围和地区生成一份。",
+  insightsFailed: "上次分析在 {{at}} 失败。请确认 Claude Code 已登录后重试。",
+  insightsUnavailable: "找不到 claude 命令。请安装 Claude Code，或用 TOMRADE_ANALYTICS_CLAUDE 指定它的路径。",
+  insightsOther: "当前显示的是其他视图的分析，可为当前时间范围和地区重新生成。",
+  insightsBasis: "{{from}} — {{to}} · {{region}} · 生成于 {{at}}", insightsCost: "花费 ${{cost}}",
+  summary: "概要", highlights: "要点", anomalies: "异常", suggestions: "建议", noAnomalies: "没有发现异常。",
+  high: "高", medium: "中", low: "低",
   macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS（Apple 芯片）", "mac-x64": "macOS（Intel）", "windows-arm64": "Windows（Arm）", "linux-arm64": "Linux（Arm）"
 };
 export type MessageKey = keyof typeof en;

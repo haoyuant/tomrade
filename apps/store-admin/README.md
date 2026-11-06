@@ -65,10 +65,29 @@ Keep this operator tool on a trusted machine; do not publish it or proxy it to
 a public address. For remote operation use an SSH local port forward with the
 same local and remote port. Stop it with Ctrl+C.
 
-The page defaults to 30 UTC days, with 7/30/90-day and region filters, English
-and Chinese labels, headline cards, a daily overview, usage/minutes ranking, a
-per-feature daily trend, D+1 retention and the full feature table; it follows
-the system's light or dark theme. Charts are drawn by ECharts, which the server
+The page defaults to 30 UTC days, with 7/30/90/180/365-day and region filters,
+English and Chinese labels, headline cards, a daily overview, usage/minutes
+ranking, a per-feature daily trend, D+1 retention and the full feature table; it
+follows the system's light or dark theme. It uses the whole width of the window:
+on wide screens cards sit two to a row.
+
+Each card except the headline has a window of its own: pick one in the card's
+header and only that card changes (the URL keeps it as `w_<card>=<days>`, so a
+view can be bookmarked). Picking the page's window again makes the card follow
+the page. Each window is queried once, for only the cards that use it.
+
+**AI analysis and suggestions** sends this view's aggregates (no IDs or raw
+events) and those of the previous period of equal length to the local Claude
+Code CLI (`claude -p`, with no tools, MCP servers or settings, and the
+`SUPABASE_*` variables removed from its environment) and shows key points,
+anomalies and suggestions. It runs only when you press Generate / Refresh
+analysis (about a minute; it uses your Claude Code sign-in and costs what the
+model charges, shown on the card). The result is kept per period and region in
+`~/.tomrade-store/analytics-insights.json` (`TOMRADE_ANALYTICS_STATE_DIR` moves
+it), so it is there after a restart; a view without one shows the newest
+analysis, labelled with its own period. `TOMRADE_ANALYTICS_CLAUDE` names the
+`claude` binary and `TOMRADE_ANALYTICS_MODEL` a model (for example `sonnet` for
+a cheaper run). Charts are drawn by ECharts, which the server
 hands out from this package under `/assets/` (the page loads nothing from the
 network); the tables carry the same numbers without scripts. Use **Refresh** to
 reload. Both regions
