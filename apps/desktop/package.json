@@ -54,6 +54,7 @@
     "test:local-cli": "electron scripts/local-cli-check.mjs",
     "test:perf": "electron scripts/perf-check.mjs && electron scripts/perf-sessions-check.mjs",
     "test:perf:sessions": "electron scripts/perf-sessions-check.mjs",
+    "test:perf:idle": "electron scripts/idle-frames-check.mjs",
     "test:storage-race": "electron scripts/storage-race-check.mjs",
     "test:attention": "electron scripts/attention-check.mjs",
     "test:repo-setup": "electron scripts/repo-setup-check.mjs",
