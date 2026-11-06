@@ -25,6 +25,10 @@ data/*.db-*
 
 # Historical design drafts are kept in the project Files library.
 docs/history/
+# Kept on the maintainer's machine only: the old OpenDesign prototype, and the
+# release, analytics and Supabase operations notes.
+design/
+docs/ops/
 
 # Test scratch directories a run failed to clean up
 packages/*/tests/.tmp-*/

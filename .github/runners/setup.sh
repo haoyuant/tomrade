@@ -1,6 +1,6 @@
 #!/bin/bash
 # Registers one of the Mac mini's self-hosted runners with a repository
-# (docs/releasing.md). haoyuant/tomrade itself runs only on GitHub's hosted
+# (docs/ops/releasing.md, local only). haoyuant/tomrade itself runs only on GitHub's hosted
 # runners; this is for haoyuant/tomrade-site's Deploy:
 #
 #   .github/runners/setup.sh arm64 haoyuant/tomrade-site    # ~/actions-runners/tomrade-site

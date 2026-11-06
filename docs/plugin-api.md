@@ -268,8 +268,8 @@ offered as an install button on the card that says web search is unavailable.
 A starter written `{ id, replaces: "<row id>" }` takes the place of a row the
 app used to ship. If the person had switched that row off, which their patch
 file still records, the plugin is installed switched off. The app carries every
-starter's package and the catalog it was built against (`officialBundle`;
-docs/releasing.md), so a machine that cannot reach GitHub still gets them.
+starter's package and the catalog it was built against (`officialBundle`),
+so a machine that cannot reach GitHub still gets them.
 
 An official plugin meets the standard `tomrade-plugin check --official` holds
 it to, written up in tomrade-plugins' `STANDARDS.md`: everything the store asks
@@ -2119,8 +2119,8 @@ Configured Supabase deployments install `ctx.cloudHub`. It supplies the Hub-only
 `ctx.storage.useHubBackend()` port and the user-only
 `ctx.settings.useUserStore()` port. Project storage providers, machine settings
 and local catalog paths keep their existing roles. The old Hub JSON files are
-retained as migration inputs. See [Supabase Hub migration](supabase-hub.md) for
-the cloud tables, outbox, account binding and deployment procedure.
+retained as migration inputs. The cloud tables are defined in
+`supabase/migrations/202609100001_hub.sql`.
 
 ```ts
 ctx.settings.register({

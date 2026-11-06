@@ -11,7 +11,7 @@ Packages are `@tomradex/*`; the app alone is `@tomrade/desktop`. That is deliber
 
 ## What npm gets
 
-Every package keeps `"private": true`, so `npm publish` from a source folder fails. `scripts/npm-release.mjs` publishes instead: it stages a separate manifest for each package under `build/npm/`, with `workspace:*` dependencies pinned, versions set and, for the CLI and its host, the code bundled. `docs/releasing.md` says when it runs.
+Every package keeps `"private": true`, so `npm publish` from a source folder fails. `scripts/npm-release.mjs` publishes instead: it stages a separate manifest for each package under `build/npm/`, with `workspace:*` dependencies pinned, versions set and, for the CLI and its host, the code bundled. `.github/workflows/release.yml` runs it on each `v*` tag and `.github/workflows/npm-packages.yml` daily on `main`.
 
 - **SDK line**: `domain`, `plugin-sdk`, `plugin-cli` and `plugin-host`, at the SDK's version. Each says so in its own `package.json` with `"tomrade": { "publish": "sdk" }`, and the release script reads that mark, stopping if it disagrees with what the script stages. What `domain` and `plugin-sdk` export is public API: plugins compile against it, and full-mode plugins run against the app's own copy, so a release that removes a name says so in its notes. Code only the app uses goes behind a subpath the published manifest leaves out, as `@tomradex/domain/model-errors` does.
 - **Declarations only**: every other `@tomradex` package with `exports`, which is all of the ones below except `ui`, at the app's version. Full-mode plugins compile against these types; the running Tomrade supplies the code.

@@ -4,7 +4,7 @@
 # Publishing has the site's mirror write the manifests that point at the new
 # version. macOS builds are signed with the Developer ID certificate and
 # notarized; the secrets live in the release environment and are listed in
-# docs/releasing.md.
+# docs/ops/releasing.md, local only.
 name: Release
 
 on:
@@ -46,7 +46,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: draft
     # Every build is on a hosted arm64 Mac: the Windows and Linux ones are
-    # cross-built there as they were on the self-hosted Mac (docs/releasing.md).
+    # cross-built there as they were on the self-hosted Mac (docs/ops/releasing.md, local only).
     runs-on: macos-15
     environment: release
     timeout-minutes: 60
@@ -306,7 +306,7 @@ jobs:
           if [ -n "$NODE_AUTH_TOKEN" ]; then
             # npm's write tokens live 90 days at most: one it refuses is said so here, not halfway through the packages.
             if npm whoami 2>&1 | grep -q E401; then
-              echo "::error::NPM_TOKEN no longer works; npm's write tokens expire after 90 days at most. Make a granular access token with Read and write on the @tomradex scope and Bypass 2FA, then: gh secret set NPM_TOKEN --env release -R haoyuant/tomrade (docs/releasing.md)"
+              echo "::error::NPM_TOKEN no longer works; npm's write tokens expire after 90 days at most. Make a granular access token with Read and write on the @tomradex scope and Bypass 2FA, then: gh secret set NPM_TOKEN --env release -R haoyuant/tomrade (docs/ops/releasing.md, local only)"
               exit 1
             fi
             node scripts/npm-release.mjs --verify --publish
