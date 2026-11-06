@@ -1,9 +1,10 @@
 # Every v<semver> tag builds the installers on all three systems, uploads them
-# to download.tomrade.com/<version>/ and attaches the update manifests to a
-# draft release, which is published by hand. Publishing has the site's mirror
-# write the manifests that point at the new version. macOS builds are signed
-# with the Developer ID certificate and notarized; the secrets live in the
-# release environment and are listed in docs/releasing.md.
+# to download.tomrade.com/<version>/ and attaches the update manifests, and a
+# copy of the installers, to a draft release, which is published by hand.
+# Publishing has the site's mirror write the manifests that point at the new
+# version. macOS builds are signed with the Developer ID certificate and
+# notarized; the secrets live in the release environment and are listed in
+# docs/releasing.md.
 name: Release
 
 on:
@@ -238,6 +239,20 @@ jobs:
           files=("$dir"/*.{dmg,zip,exe,AppImage,blockmap})
           if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers in the build's artifact"; exit 1; fi
           node apps/desktop/scripts/upload-r2.mjs "${GITHUB_REF_NAME#v}" "${files[@]}"
+
+      # A copy for those who download from the Release page. The site, the
+      # updater and the mirror read R2 only; a re-run replaces these too.
+      - name: Upload the installers to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/staged"
+          shopt -s nullglob
+          files=("$dir"/*.{dmg,zip,exe,AppImage})
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers in the build's artifact"; exit 1; fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
 
       # Only the update manifests go on the draft: the mirror reads them from
       # there. The Mac ones wait for the release job, which merges the two.
