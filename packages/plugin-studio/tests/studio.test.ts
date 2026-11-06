@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
@@ -125,7 +125,8 @@ describe("Plugin Studio", () => {
     expect(again.diff).toEqual({ added: 1, removed: 1 });
     const confirmed = await call<{ snapshot: string | null }>("studio.confirm", "notes", again.digest);
     expect(confirmed.snapshot).toMatch(/snapshots[\\/]\d+\.json$/);
-    expect(ctx.tools.has("notes_add")).toBe(true);
+    // A loaded hosted runner has read no tool the moment confirm returned (TOM-1010), so the reloaded build is waited for.
+    await vi.waitFor(() => expect(ctx.tools.has("notes_add")).toBe(true), { timeout: 5_000 });
 
     await tool("notes_add", { itemId: item.id, note: "second" });
     expect((await call<{ rows: number }>("studio.restore", "notes", confirmed.snapshot)).rows).toBe(1);
