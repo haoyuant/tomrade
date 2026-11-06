@@ -39,6 +39,7 @@ beforeAll(async () => {
   await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
   await db.exec(migration("202611040001_analytics_internal_functions.sql"));
   await db.exec(migration("202611040002_analytics_new_install_cap.sql"));
+  await db.exec(migration("202611060002_analytics_event_unused_indexes.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -192,6 +193,28 @@ describe("analytics ingest", () => {
       }
     }
     expect((await db.query("select to_regclass('public.tomrade_analytics_event_1999_01') is null as absent")).rows[0]).toEqual({ absent: true });
+  });
+
+  it("indexes every month, old or new, by its key and region alone", async () => {
+    await db.exec("reset role");
+    await db.query("select public.tomrade_analytics_ensure_month(now())");
+    await db.query("select public.tomrade_analytics_ensure_month('2031-03-15'::timestamptz)");
+    const indexes = await db.query<{ partition: string; columns: string }>(
+      `select c.relname as partition, string_agg(a.attname, ',' order by k.ord) as columns
+         from pg_inherits h
+         join pg_class c on c.oid = h.inhrelid
+         join pg_index i on i.indrelid = c.oid
+         cross join unnest(i.indkey) with ordinality as k(attnum, ord)
+         join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
+        where h.inhparent = 'public.tomrade_analytics_event'::regclass
+        group by c.relname, i.indexrelid`
+    );
+    const months = new Set(indexes.rows.map((r) => r.partition));
+    expect(months.size).toBeGreaterThanOrEqual(2);
+    for (const month of months) {
+      expect(indexes.rows.filter((r) => r.partition === month).map((r) => r.columns).sort(), month).toEqual(["event_id,ts", "region,ts"]);
+    }
+    await db.exec("drop table public.tomrade_analytics_event_2031_03");
   });
 
   it("keeps each deployment's detail on its side", async () => {
