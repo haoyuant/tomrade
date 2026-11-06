@@ -144,7 +144,10 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
   // Measured, not guessed; a bubble on a side seat grows away from its bot, so a long line never reaches the next one.
   const bubbleSvg = (b) => {
     const w = measure.measureText(b.line).width + 48;
-    return '<g transform="translate(' + (b.bx + b.side * Math.max(0, w / 2 - 56)) + ' ' + b.by + ') scale(' + b.q + ')"><rect x="' + -w / 2 + '" y="-28" width="' + w + '" height="56" rx="28" fill="#fff"/>'
+    // On the tall stage the art is moved and scaled (ART), and a side bubble could leave the frame: keep it 24 px inside.
+    const half = (w / 2) * b.q;
+    const cx = ${TALL} ? Math.min(Math.max(b.bx + b.side * Math.max(0, w / 2 - 56), (1026 + 24) / 1.08 + half), (1026 + 1080 - 24) / 1.08 - half) : b.bx + b.side * Math.max(0, w / 2 - 56);
+    return '<g transform="translate(' + cx + ' ' + b.by + ') scale(' + b.q + ')"><rect x="' + -w / 2 + '" y="-28" width="' + w + '" height="56" rx="28" fill="#fff"/>'
       + '<text text-anchor="middle" y="10" font-size="27" font-weight="600" letter-spacing="-.2" fill="' + INK + '" font-family=\\'${SANS.replace(/"/g, "")}\\'>' + esc(b.line) + '</text></g>';
   };
   const MONO = '"SF Mono",Menlo,monospace';
