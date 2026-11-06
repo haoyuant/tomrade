@@ -123,6 +123,10 @@ const run = async () => {
   check("the About pane says which version is out", ((await line()) ?? "").includes(`Tomrade ${newer} is available`), await line());
   check("and offers Download instead of another check", !!(await $(`!!(${button("Download")})`)) && !(await $(`!!(${button("Check for updates")})`)));
   check("and shows both settings as they are", (await switchOn()) === "true" && (await channelShown()) === "Stable", { on: await switchOn(), channel: await channelShown() });
+  const sourceRow = () => $(`(() => { const row = document.querySelector('.about-update-pref[data-pref="source"]'); return row && { pressed: row.querySelector('button[aria-pressed="true"]')?.textContent.trim(), locked: [...row.querySelectorAll('button')].every((b) => b.disabled), note: row.querySelector('.meta-txt')?.textContent }; })()`);
+  const source = await sourceRow();
+  check("the update source is Automatic by default, and TOMRADE_UPDATE_URL holds it", prefs()?.source === "auto" && source?.pressed === "Automatic" && source.locked && s.feed?.name === "custom", { prefs: prefs(), source, feed: s.feed });
+  check("and the source row names the feed in use", (source?.note ?? "").includes(new URL(process.env.TOMRADE_UPDATE_URL).host), source);
   await shot("updates-available");
 
   // ── automatic checks off ────────────────────────────────────────────

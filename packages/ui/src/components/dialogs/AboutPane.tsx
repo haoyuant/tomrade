@@ -6,7 +6,7 @@ import { isWindows } from "~/lib/keys";
 import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, revealLabel, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
-import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
+import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateSourceChoice, type UpdateStatus } from "~/lib/updates";
 import { RestartOnboardingDialog } from "~/components/projects/RestartOnboardingDialog";
 import { useAbout, useSettingsSections } from "~/lib/queries";
 import { MyReports } from "./MyReports";
@@ -162,6 +162,14 @@ export function AboutPane() {
   );
 }
 
+const host = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
 /** Where this build stands against the feed, what to do about it, and how it should ask. */
 function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
   const { t, locale } = useI18n();
@@ -260,6 +268,23 @@ function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
               <button type="button" aria-pressed={prefs.channel === "beta"} disabled={channelLocked} onClick={() => setPrefs({ channel: "beta" })}>
                 {t("about.beta")}
               </button>
+            </div>
+          </div>
+          <div className="about-update-pref" data-pref="source">
+            <div>
+              <div className="about-update-pref-name">{t("about.source")}</div>
+              <p className="meta-txt">
+                {status.feed?.name === "custom"
+                  ? t("about.sourceCustom", { host: host(status.feed.url) })
+                  : `${t("about.sourceNote")}${status.feed ? ` ${t("about.sourceNow", { host: host(status.feed.url) })}` : ""}`}
+              </p>
+            </div>
+            <div className="seg" role="group" aria-label={t("about.source")}>
+              {(["auto", "international", "china"] as UpdateSourceChoice[]).map((choice) => (
+                <button key={choice} type="button" data-source={choice} aria-pressed={(prefs.source ?? "auto") === choice} disabled={status.feed?.name === "custom"} onClick={() => setPrefs({ source: choice })}>
+                  {t(choice === "auto" ? "about.sourceAuto" : choice === "china" ? "about.sourceChina" : "about.sourceInternational")}
+                </button>
+              ))}
             </div>
           </div>
         </div>
