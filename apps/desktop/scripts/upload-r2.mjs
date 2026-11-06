@@ -15,7 +15,7 @@ const BUCKET = "tomrade-downloads";
 const WRANGLER = "wrangler@4.149.0";
 const CONCURRENCY = 3;
 const ATTEMPTS = 6;
-// The self-hosted Mac's line drops for a minute or two at a time: wait longer after each failure.
+// A dropped connection to R2 can last a minute or two: wait longer after each failure.
 const BACKOFF_MS = 20_000;
 const TIMEOUT_MS = 10 * 60_000;
 
