@@ -1,28 +1,15 @@
 /* Sunrise and Daybreak's lights: the sky and horizon behind the workspace, the
    sun's line under the bar, vermilion running into gold on what you press.
    The sky, the sun and a glint on the horizon move by opacity and transform
-   alone: each is painted once and the compositor runs the rest, with no
+   alone: each is drawn once and the compositor runs the rest, with no
    repaint, no filter and no backdrop-filter. A hidden window draws no frames. The
    motion stays still for reduced motion, performance mode, or when Chromium
    composites without the GPU, where every frame would cost the CPU.
    Colours come from the --sun-* tokens in app.css. */
 @layer components {
-/* Every light falls off along an eased curve rather than a straight line, so the wide glows stay smooth to their edge.
-   Positions are in each layer's own box, which reaches past the window. */
-:is(.sunrise, .daybreak) {
-  --sun-light-sky: radial-gradient(ellipse 72vw 56vh at 16vw 0, var(--sun-sky-haze),
-    color-mix(in srgb, var(--sun-sky-haze) 74%, transparent) 20%, color-mix(in srgb, var(--sun-sky-haze) 46%, transparent) 42%,
-    color-mix(in srgb, var(--sun-sky-haze) 22%, transparent) 64%, color-mix(in srgb, var(--sun-sky-haze) 7%, transparent) 84%, transparent);
-  --sun-light-haze: radial-gradient(ellipse 104vw 82vh at 104vw 128vh, var(--sun-haze),
-    color-mix(in srgb, var(--sun-haze) 74%, transparent) 20%, color-mix(in srgb, var(--sun-haze) 46%, transparent) 42%,
-    color-mix(in srgb, var(--sun-haze) 22%, transparent) 64%, color-mix(in srgb, var(--sun-haze) 7%, transparent) 84%, transparent);
-  --sun-light-glow: radial-gradient(ellipse 56vw 44vh at 98vw 120vh, var(--sun-glow),
-    color-mix(in srgb, var(--sun-glow) 74%, transparent) 20%, color-mix(in srgb, var(--sun-glow) 46%, transparent) 42%,
-    color-mix(in srgb, var(--sun-glow) 22%, transparent) 64%, color-mix(in srgb, var(--sun-glow) 7%, transparent) 84%, transparent);
-  --sun-pane: var(--surface);
-}
-/* Daybreak's last stars, from under the title bar down past the board's middle. Three tile widths keep them from lining
-   up in a grid. */
+:is(.sunrise, .daybreak) { --sun-pane: var(--surface); }
+/* Daybreak's last stars, from under the title bar down past the board's middle, over the assistant's floor. Three tile
+   widths keep them from lining up in a grid; the sky's own are drawn the same way (SkyLights.tsx). */
 .daybreak {
   --sun-stars-top: calc(8vh + var(--titlebar-h));
   --sun-stars:
@@ -40,22 +27,18 @@
     radial-gradient(circle at 370px 590px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x,
     radial-gradient(circle at 120px 730px, var(--sun-star) 0.4px, transparent 1.5px) 0 var(--sun-stars-top) / 419px 760px repeat-x;
 }
-:is(.sunrise, .daybreak) body::before,
-:is(.sunrise, .daybreak) body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
+/* The sky and the sun are canvases (SkyLights.tsx): as painted layers they were rastered whole at the screen's
+   resolution, about 220 MB of GPU memory on a large window, where a canvas keeps its own low resolution. */
+.sun-sky, .sun-sun { position: fixed; z-index: -1; pointer-events: none; }
 /* The sky, reaching past the top and left edges so its drift never shows one. */
-:is(.sunrise, .daybreak) body::before {
-  inset: -8vh 0 0 -8vw;
+.sun-sky {
+  left: -8vw; top: -8vh; width: 108vw; height: 108vh;
   animation: sun-sky-drift 23s ease-in-out infinite alternate;
-  background: var(--sun-light-sky);
 }
-.daybreak body::before { background: var(--sun-stars), var(--sun-light-sky); }
 /* The sun below the bottom right corner. It starts risen, so a theme shows its light the moment it is picked,
    then sets and rises again. Its layer reaches well past every edge, so no edge shows as it moves. */
-:is(.sunrise, .daybreak) body::after {
-  inset: -16vh -16vw;
-  background:
-    var(--sun-light-haze),
-    var(--sun-light-glow);
+.sun-sun {
+  left: -16vw; top: -16vh; width: 132vw; height: 132vh;
   transform-origin: 76% 93%;
   animation: sun-arc 19s ease-in-out infinite alternate;
 }
@@ -245,17 +228,22 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 [data-unified-sky]:is(.sunrise, .daybreak) .tab[aria-selected="true"] { background: transparent; }
 [data-unified-sky].daybreak .ai::after { content: none; }
 
+/* Out of focus a while (SkyLights.tsx): every moving light holds where it stands, and focus resumes it from there. */
+[data-resting] :is(.sun-sky, .sun-sun, .sun-mote, .sun-halo, .sun-dust, .sun-drift),
+[data-resting]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
+[data-resting].daybreak .ai::after { animation-play-state: paused; }
+
 /* Every moving light stays still together; last, so these win. */
-[data-software-compositing]:is(.sunrise, .daybreak) body::before,
-[data-software-compositing]:is(.sunrise, .daybreak) body::after,
+[data-software-compositing] .sun-sky,
+[data-software-compositing] .sun-sun,
 [data-software-compositing]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-software-compositing]:is(.sunrise, .daybreak) .ai::after,
 [data-software-compositing] .sun-mote,
 [data-software-compositing] .sun-halo,
 [data-software-compositing] .sun-dust,
 [data-software-compositing] .sun-drift,
-[data-performance]:is(.sunrise, .daybreak) body::before,
-[data-performance]:is(.sunrise, .daybreak) body::after,
+[data-performance] .sun-sky,
+[data-performance] .sun-sun,
 [data-performance]:is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
 [data-performance]:is(.sunrise, .daybreak) .ai::after,
 [data-performance] .sun-mote,
@@ -263,8 +251,8 @@ html.overlay-open:is(.sunrise, .daybreak) .titlebar .btn-primary { background: v
 [data-performance] .sun-dust,
 [data-performance] .sun-drift { animation: none; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.sunrise, .daybreak) body::before,
-  :is(.sunrise, .daybreak) body::after,
+  .sun-sky,
+  .sun-sun,
   :is(.sunrise, .daybreak) :is(.titlebar, .cs-topbar)::after,
   :is(.sunrise, .daybreak) .ai::after,
   .sun-mote,

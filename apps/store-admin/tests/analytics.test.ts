@@ -17,7 +17,15 @@ const sample = (uses = 3): DashboardData => ({
     first_start: { median_ms: 2 * 3600000, n: 4 },
     merged_7d: { cohort: 5, merged: 1 },
     week_return: { cohort: 4, returned: 2 }
-  }
+  },
+  site: {
+    totals: { installs: 40, updates: 6, pageviews: 900, visits: 300 },
+    daily: [{ day: "2026-10-22", installs: 40, updates: 6, pageviews: 900, visits: 300 }],
+    platforms: [{ platform: "mac-arm64", installs: 30, updates: 6 }, { platform: "windows", installs: 10, updates: 0 }],
+    synced_at: "2026-10-23T02:00:00Z"
+  },
+  accounts: { total: 120, confirmed: 100, new: 7, daily: [{ day: "2026-10-22", new: 7 }] },
+  platforms: [{ platform: "macos", aai: 3, duration_ms: 90000 }, { platform: "linux", aai: 1, duration_ms: 30000 }]
 });
 const f = filters(new URLSearchParams("lang=en"), new Date("2026-10-23T10:00:00Z"));
 const servers: Server[] = [];
@@ -43,6 +51,16 @@ describe("internal analytics dashboard", () => {
     expect(result.activation.funnel).toEqual({ installs: 20, setup_done: 16, start: 8, open_pr: 4, merge: 2 });
     expect(result.activation.merged_7d).toEqual({ cohort: 10, merged: 2 });
     expect(result.activation.week_return).toEqual({ cohort: 8, returned: 4 });
+    expect(result.site?.totals).toEqual({ installs: 80, updates: 12, pageviews: 1800, visits: 600 });
+    expect(result.site?.platforms[0]).toEqual({ platform: "mac-arm64", installs: 60, updates: 12 });
+    expect(result.accounts).toMatchObject({ total: 240, confirmed: 200, new: 14, daily: [{ day: "2026-10-22", new: 14 }] });
+    expect(result.platforms).toEqual([{ platform: "macos", aai: 6, duration_ms: 180000 }, { platform: "linux", aai: 2, duration_ms: 60000 }]);
+  });
+  it("leaves the site and accounts empty where no deployment has them, and keeps the newest copy time", () => {
+    const old = { ...sample(), site: null, accounts: null, platforms: [] };
+    expect(mergeReports([old])).toMatchObject({ site: null, accounts: null, platforms: [] });
+    const later = sample(); later.site!.synced_at = "2026-10-23T05:00:00Z";
+    expect(mergeReports([old, sample(), later]).site?.synced_at).toBe("2026-10-23T05:00:00Z");
   });
   it("weighs each deployment's median by how many it covers, and leaves none when no one started", () => {
     const cn = sample(); cn.activation.first_start = { median_ms: 6 * 3600000, n: 12 };
@@ -56,13 +74,23 @@ describe("internal analytics dashboard", () => {
     const request: typeof fetch = async (input, init) => {
       calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
       const url = String(input);
-      return Response.json(url.endsWith("feature_days") ? { days: sample().days } : url.endsWith("activation") ? sample().activation : sample().report);
+      // The mainland deployment has not applied the site and accounts migrations.
+      if (url.startsWith("https://cn.example") && /tomrade_(site|accounts)_/.test(url)) return new Response("", { status: 404 });
+      const body = url.endsWith("feature_days") ? { days: sample().days } : url.endsWith("activation") ? sample().activation
+        : url.endsWith("site_report") ? sample().site : url.endsWith("accounts_report") ? sample().accounts
+        : url.endsWith("platforms") ? { platforms: sample().platforms } : sample().report;
+      return Response.json(body);
     };
     const loaded = await loadDashboard([{ url: "https://global.example", key: "secret" }, { url: "https://cn.example", key: "secret-cn" }], { ...f, region: "cn" }, request);
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(12);
     expect(calls.filter((c) => c.url.endsWith("/rpc/tomrade_analytics_activation"))).toHaveLength(2);
     expect(loaded.activation.funnel.installs).toBe(20);
-    expect(calls.every((c) => c.url.includes("/rest/v1/rpc/tomrade_analytics_") && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
+    expect(loaded.site?.totals.installs).toBe(40);
+    expect(loaded.accounts?.total).toBe(120);
+    expect(loaded.platforms[0]).toEqual({ platform: "macos", aai: 6, duration_ms: 180000 });
+    const accounts = calls.filter((c) => c.url.endsWith("/rpc/tomrade_accounts_report"));
+    expect(accounts.every((c) => !("p_region" in (c.body as object)))).toBe(true);
+    expect(calls.filter((c) => !accounts.includes(c)).every((c) => /\/rest\/v1\/rpc\/tomrade_(analytics|site)_/.test(c.url) && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
     await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow("analytics query failed");
     expect(() => endpoints({ SUPABASE_URL: "https://example.org" })).toThrow();
     expect(() => endpoints({ SUPABASE_URL: "https://example.org", SUPABASE_SERVICE_ROLE_KEY: "s", SUPABASE_URL_CN: "https://example.org/", SUPABASE_SERVICE_ROLE_KEY_CN: "s" })).toThrow();
@@ -86,6 +114,17 @@ describe("internal analytics dashboard", () => {
     expect(renderDashboard(f, quiet)).toContain("Median, 0 IDs");
     const pending = sample(); pending.report.retention[0]!.day = "2026-10-22";
     expect(renderDashboard(f, pending)).toContain("Pending");
+    for (const text of ["Accounts and site", "Registered accounts", "100 confirmed", "Installer downloads", "6 more fetched", "900", "300 visits", "macOS (Apple silicon)", "Usage by platform", "75%", 'id="chart-growth"', "2026-10-23 02:00"]) expect(html).toContain(text);
+    // The funnel starts at the site's downloads: 10 installs of 40 downloads.
+    expect(html).toContain("Installer downloads (site)");
+    expect(html).toContain("25%");
+    expect(payload.growth).toEqual([{ day: "2026-10-22", accounts: 7, installs: 40, updates: 6, pageviews: 900 }]);
+    for (const text of ["账户与官网", "注册用户", "各平台使用占比", "官网安装包下载"]) expect(zh).toContain(text);
+    const bare = renderDashboard(f, { ...sample(), site: null, accounts: null, platforms: [] });
+    expect(bare).toContain("No site data");
+    expect(bare).not.toContain('id="chart-growth"');
+    expect(bare).not.toContain("Usage by platform");
+    expect(bare).not.toContain("Installer downloads (site)");
   });
   it("serves locally, rejects foreign origins, and never leaks upstream error details", async () => {
     let calls = 0;

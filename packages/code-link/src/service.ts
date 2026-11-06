@@ -2100,6 +2100,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", sessionId);
   }
 
+  /** Whether this machine's Tomrade launched the session: its launch script is in the session's folder here. */
+  launchedHere(sessionId: string): boolean {
+    return fs.existsSync(path.join(this.sessionDir(sessionId), "run.command"));
+  }
+
   private syncScope(projectId: string | undefined): SyncScope | null {
     if (!projectId || !this.ctx.db.has(projectId)) return null;
     const row = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;

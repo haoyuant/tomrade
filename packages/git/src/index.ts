@@ -251,10 +251,11 @@ export class GitFolder {
     return true;
   }
 
+  /** Every sync calls this: a remote already at `url` is left alone rather than written to the config again. */
   async setRemote(url: string, name = "origin"): Promise<void> {
     const existing = await this.git(["remote", "get-url", name], { cwd: this.dir, ok: true });
-    if (existing.code === 0) await this.git(["remote", "set-url", name, url], { cwd: this.dir });
-    else await this.git(["remote", "add", name, url], { cwd: this.dir });
+    if (existing.code !== 0) await this.git(["remote", "add", name, url], { cwd: this.dir });
+    else if (existing.stdout.trim() !== url) await this.git(["remote", "set-url", name, url], { cwd: this.dir });
   }
 
   async removeRemote(name = "origin"): Promise<void> {

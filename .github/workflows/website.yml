@@ -17,7 +17,8 @@ jobs:
     # A release published from a draft fires both; `released` alone is a
     # pre-release promoted later, and `published` alone a pre-release.
     if: github.event.action == 'released' || github.event.release.prerelease
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 5
     steps:
       - name: Start the site's Deploy workflow
@@ -26,5 +27,6 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::Secret SITE_DISPATCH_TOKEN is not set"; exit 1; fi
-          gh workflow run deploy.yml -R haoyuant/tomrade-site -f tag="$TAG"
+          # --ref spares gh its default-branch lookup, which an Actions-only token is refused.
+          gh workflow run deploy.yml -R haoyuant/tomrade-site --ref main -f tag="$TAG"
           echo "Mirroring $TAG: https://github.com/haoyuant/tomrade-site/actions/workflows/deploy.yml" >> "$GITHUB_STEP_SUMMARY"
