@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { endpoints, filters, loadDashboard, type DashboardData, type Filters } from "./analytics-data.js";
+import { endpoints, filters, loadDashboard, loadView, type Filters, type View } from "./analytics-data.js";
+import { claudeAnalyst, insightsService, type InsightsService } from "./analytics-insights.js";
 import { renderDashboard } from "./analytics-page.js";
 
 /** The page's only scripts, served from this package so the page needs no network beyond loopback. */
@@ -11,7 +12,7 @@ const assets: Record<string, () => string> = {
   "/assets/dashboard.js": () => fileURLToPath(new URL("./analytics-client.js", import.meta.url))
 };
 
-export function dashboardServer(load: (f: Filters) => Promise<DashboardData>): Server {
+export function dashboardServer(load: (f: Filters) => Promise<View>, insights?: InsightsService): Server {
   return createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -32,18 +33,31 @@ export function dashboardServer(load: (f: Filters) => Promise<DashboardData>): S
       } catch { res.writeHead(404); res.end(); }
       return;
     }
+    // Generating an analysis spends money: only a form posted from this page starts one.
+    if (req.method === "POST" && url.pathname === "/insights" && insights) {
+      if (req.headers.origin !== `http://${host}`) { res.writeHead(403); res.end(); return; }
+      req.resume();
+      let f: Filters;
+      try { f = filters(url.searchParams); } catch { res.writeHead(400); res.end(); return; }
+      await insights.generate(f);
+      res.writeHead(303, { Location: `/${url.search}#card-insights` }); res.end();
+      return;
+    }
     if (req.method !== "GET" || url.pathname !== "/") { res.writeHead(404); res.end(); return; }
     let f: Filters;
     try { f = filters(url.searchParams); }
     catch { res.writeHead(400); res.end(renderDashboard(filters(new URLSearchParams()), undefined, "invalid")); return; }
-    try { res.end(renderDashboard(f, await load(f))); }
-    catch { res.writeHead(502); res.end(renderDashboard(f, undefined, "failed")); }
+    let view: View;
+    try { view = await load(f); }
+    catch { res.writeHead(502); res.end(renderDashboard(f, undefined, "failed")); return; }
+    res.end(renderDashboard(f, view, undefined, await insights?.read(f)));
   });
 }
 export async function serveAnalytics(port = 19100): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid analytics port");
   const sources = endpoints(process.env);
-  const server = dashboardServer((f) => loadDashboard(sources, f));
+  const analysis = insightsService({ load: (f, parts) => loadDashboard(sources, f, fetch, parts), analyst: claudeAnalyst() });
+  const server = dashboardServer((f) => loadView(sources, f), analysis);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);

@@ -1,22 +1,58 @@
 export const regions = ["all", "cn", "apac", "eu", "na", "other"] as const;
+/** The windows a view or one of its cards can cover, in UTC days ending today. */
+export const WINDOWS = [7, 30, 90, 180, 365] as const;
+export type WindowDays = typeof WINDOWS[number];
+/** The cards that take a window of their own (URL `w_<card>`); the rest follow the page's. */
+export const CARDS = ["overview", "ranking", "detail", "retention", "growth", "activation", "features", "platforms"] as const;
+export type Card = typeof CARDS[number];
+/** One aggregate query each; a window loads only the parts its cards draw. */
+export const PARTS = ["report", "days", "activation", "site", "accounts", "platforms"] as const;
+export type Part = typeof PARTS[number];
+export const CARD_PARTS: Record<Card, Part[]> = {
+  overview: ["report"], ranking: ["report"], detail: ["report", "days"], retention: ["report"],
+  growth: ["site", "accounts"], activation: ["activation", "site"], features: ["report"], platforms: ["platforms"]
+};
 export interface Filters {
-  days: 7 | 30 | 90;
+  days: WindowDays;
   region: typeof regions[number];
   metric: "duration_ms" | "uses";
   feature: string;
   lang: "en" | "zh";
   from: string;
   to: string;
+  /** Cards whose window differs from `days`. */
+  windows: Partial<Record<Card, WindowDays>>;
 }
+const isWindow = (n: number): n is WindowDays => WINDOWS.some((w) => w === n);
+/** The first day of a window of `days` UTC days that ends on `to`. */
+export const windowStart = (to: string, days: number) => new Date(Date.parse(to) - (days - 1) * 86400000).toISOString().slice(0, 10);
 export function filters(params: URLSearchParams, now = new Date()): Filters {
   const days = Number(params.get("days") ?? 30);
   const region = params.get("region") ?? "all";
   const metric = params.get("metric") ?? "duration_ms";
   const lang = params.get("lang") ?? "zh";
-  if (![7, 30, 90].includes(days) || !regions.some((r) => r === region) || !["duration_ms", "uses"].includes(metric) || !["en", "zh"].includes(lang)) throw new Error("filters");
+  if (!isWindow(days) || !regions.some((r) => r === region) || !["duration_ms", "uses"].includes(metric) || !["en", "zh"].includes(lang)) throw new Error("filters");
+  const windows: Filters["windows"] = {};
+  for (const card of CARDS) {
+    const raw = params.get(`w_${card}`);
+    if (raw === null) continue;
+    const w = Number(raw);
+    if (!isWindow(w)) throw new Error("filters");
+    if (w !== days) windows[card] = w;
+  }
   const to = now.toISOString().slice(0, 10);
-  const from = new Date(Date.parse(to) - (days - 1) * 86400000).toISOString().slice(0, 10);
-  return { days, region, metric, lang, feature: params.get("feature") ?? "", from, to } as Filters;
+  return { days, region, metric, lang, feature: params.get("feature") ?? "", from: windowStart(to, days), to, windows } as Filters;
+}
+export const windowOf = (f: Filters, card: Card): WindowDays => f.windows[card] ?? f.days;
+/** The windows a view needs and the parts each one loads: the page's own always has the report (headline and daily tables). */
+export function plan(f: Filters): Map<WindowDays, Set<Part>> {
+  const result = new Map<WindowDays, Set<Part>>([[f.days, new Set<Part>(["report"])]]);
+  for (const card of CARDS) {
+    const w = windowOf(f, card);
+    const parts = result.get(w) ?? result.set(w, new Set()).get(w)!;
+    for (const part of CARD_PARTS[card]) parts.add(part);
+  }
+  return result;
 }
 export interface Metrics { duration_ms: number; uses: number; aai: number }
 export interface Report {
@@ -68,7 +104,14 @@ export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
   if (!result.length) throw new Error("Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
   return result;
 }
-export async function loadDashboard(sources: Endpoint[], f: Filters, request: typeof fetch = fetch): Promise<DashboardData> {
+/** Every window a view's cards use, each loaded with only the parts its cards draw. */
+export type View = Map<WindowDays, DashboardData>;
+export async function loadView(sources: Endpoint[], f: Filters, request: typeof fetch = fetch): Promise<View> {
+  const windows = [...plan(f)];
+  const loaded = await Promise.all(windows.map(([days, parts]) => loadDashboard(sources, { region: f.region, from: windowStart(f.to, days), to: f.to }, request, parts)));
+  return new Map(windows.map(([days], i) => [days, loaded[i]!]));
+}
+export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from" | "to" | "region">, request: typeof fetch = fetch, parts: ReadonlySet<Part> = new Set(PARTS)): Promise<DashboardData> {
   const range = { p_from: f.from, p_to: f.to };
   const regional = { ...range, p_region: f.region === "all" ? null : f.region };
   const call = (source: Endpoint, name: string, body: object) => request(`${source.url}/rest/v1/rpc/${name}`, {
@@ -88,30 +131,34 @@ export async function loadDashboard(sources: Endpoint[], f: Filters, request: ty
     return response.json() as Promise<T>;
   };
   const rows = await Promise.all(sources.map(async (source) => {
+    // A part this window does not draw is left at its empty value, without a query.
+    const when = <T>(part: Part, query: () => Promise<T>, empty: T) => (parts.has(part) ? query() : Promise.resolve(empty));
     const [report, series, activation, site, accounts, platforms] = await Promise.all([
-      rpc<Report>(source, "tomrade_analytics_report"),
-      rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"),
-      rpc<Activation>(source, "tomrade_analytics_activation"),
-      optional<SiteReport>(source, "tomrade_site_report"),
-      optional<Accounts>(source, "tomrade_accounts_report", range),
-      optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms")
+      when("report", () => rpc<Report>(source, "tomrade_analytics_report"), emptyReport()),
+      when("days", () => rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"), { days: [] }),
+      when("activation", () => rpc<Activation>(source, "tomrade_analytics_activation"), emptyActivation()),
+      when("site", () => optional<SiteReport>(source, "tomrade_site_report"), null),
+      when("accounts", () => optional<Accounts>(source, "tomrade_accounts_report", range), null),
+      when("platforms", () => optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms"), null)
     ]);
     return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [] };
   }));
   return mergeReports(rows);
 }
+const emptyReport = (): Report => ({ totals: { duration_ms: 0, uses: 0, aai: 0 }, daily: [], features: [], retention: [], latest: null });
+const emptyActivation = (): Activation => ({
+  funnel: { installs: 0, setup_done: 0, start: 0, open_pr: 0, merge: 0 },
+  first_start: { median_ms: null, n: 0 },
+  merged_7d: { cohort: 0, merged: 0 },
+  week_return: { cohort: 0, returned: 0 }
+});
 export function mergeReports(rows: DashboardData[]): DashboardData {
-  const report: Report = { totals: { duration_ms: 0, uses: 0, aai: 0 }, daily: [], features: [], retention: [], latest: null };
+  const report = emptyReport();
   const daily = new Map<string, Report["daily"][number]>();
   const features = new Map<string, Report["features"][number]>();
   const retention = new Map<string, Report["retention"][number]>();
   const days = new Map<string, FeatureDay>();
-  const activation: Activation = {
-    funnel: { installs: 0, setup_done: 0, start: 0, open_pr: 0, merge: 0 },
-    first_start: { median_ms: null, n: 0 },
-    merged_7d: { cohort: 0, merged: 0 },
-    week_return: { cohort: 0, returned: 0 }
-  };
+  const activation = emptyActivation();
   let site: SiteReport | null = null;
   let accounts: Accounts | null = null;
   const siteDays = new Map<string, SiteReport["daily"][number]>();
