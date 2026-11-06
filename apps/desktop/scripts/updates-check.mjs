@@ -4,7 +4,7 @@
  * again, Download opens Settings on About where the progress is, the two
  * settings change what is asked and when, and no channel ever offers an older
  * build. A checkout cannot install, so the restart itself is left to a real
- * release (docs/releasing.md).
+ * release (docs/ops/releasing.md, local only).
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:updates

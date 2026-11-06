@@ -1,12 +1,9 @@
 # Design system — "The Ledger"
 
-Derived from the OpenDesign prototype in `design/`. That folder is the visual
-authority; this file says where each part of it now lives in code, and which
-rules nothing in the compiler will stop you breaking.
-
-Where `design/DESIGN.md` and the prototype HTML disagree, the HTML wins. Where
-two prototype files disagree, `design/workspace-board.html` wins — see
-[Divergences](#divergences).
+Derived from an OpenDesign prototype that is no longer in the repository. This
+file says where each part of it now lives in code, and which rules nothing in
+the compiler will stop you breaking. Where the prototype and the build differ,
+[Divergences](#divergences) says why.
 
 ## Where it lives
 
@@ -219,8 +216,8 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 
 | Prototype | Here | Why |
 |---|---|---|
-| `design/board-settings.html` says "a board is a saved view … the same issue can appear on any number of boards" | A workstream is a field value; a view is a saved query | The prototype's board was the container; since Sep 2026 the container is the project and "board" names a layout, the way GitHub Projects uses the word. |
-| `DESIGN.md` §3 says views are tabs over the board | Views are the sidebar's rows | One list, any layout; the tab strip the prototype never built is not needed once the sidebar stopped holding containers. |
+| The prototype's board settings say "a board is a saved view … the same issue can appear on any number of boards" | A workstream is a field value; a view is a saved query | The prototype's board was the container; since Sep 2026 the container is the project and "board" names a layout, the way GitHub Projects uses the word. |
+| The prototype's notes say views are tabs over the board | Views are the sidebar's rows | One list, any layout; the tab strip the prototype never built is not needed once the sidebar stopped holding containers. |
 | Settings says "one project is one SQLite file" | One file holds every project | Storage layout was out of scope for a UI rebuild; the copy was changed to match reality. |
 | `--space-10` / `--space-12` declared only in `workspace-board.html` | Declared once, for all screens | The other five prototype files silently lost `.wrap` padding. |
 | Prototype toasts print `now ago` | `now` stays bare | `agoLabel()` in `domain.ts`. |
@@ -303,7 +300,7 @@ both settings, turning automatic checks off stops the asking, Beta asks its own
 feed and forgets Stable's answer, a missing feed is reported with its reason, an
 older build on the feed is never offered, turning checks back on asks at once,
 and no notice is stacked over the open About pane — 25 checks. The restart
-itself only runs in an installed build (docs/releasing.md).
+itself only runs in an installed build.
 `test:local-cli` (`scripts/local-cli-check.mjs`) covers the local agents:
 each engine reports how its CLI was looked for and, when found, its path and
 version; a missing path is refused with its reason; with both agents signed

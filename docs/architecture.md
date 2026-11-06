@@ -4,7 +4,7 @@ How Tomrade is put together, and the decisions it is held to. The [README](../RE
 
 ## Product decisions (direction of record)
 
-1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. The desktop build uses Supabase for an optional account that syncs portable Hub metadata, with an offline outbox; without an account that metadata stays on this machine. Project storage remains local-first either way. See [`supabase-hub.md`](supabase-hub.md).
+1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. The desktop build uses Supabase for an optional account that syncs portable Hub metadata, with an offline outbox; without an account that metadata stays on this machine. Project storage remains local-first either way. The cloud tables are in `supabase/migrations/202609100001_hub.sql`.
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
 4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A plugin from outside the app — Community, a file, a folder, or one an agent wrote in Plugin Studio — is written against `@tomradex/plugin-sdk` and loaded behind an async, attributed, namespaced facade — see [`plugin-api.md`](plugin-api.md).
@@ -95,8 +95,7 @@ packages/community    ctx.community    the store: browse, read before installing
 packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
 apps/store-admin      the store's admin tool: reports, revocations, official signatures
-design/               OpenDesign prototype — the visual authority for the UI
-docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing), testing.md (failure kinds, when to merge with failures)
+docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), testing.md (failure kinds, when to merge with failures)
 ```
 
 ### Data model
@@ -125,7 +124,7 @@ Every mutation of an item, board or view goes through `write()` in `@tomradex/wr
 
 The user-facing policy is [Data use and privacy](data-privacy.md)
 ([简体中文](data-privacy.zh-CN.md)); README and Settings link to these same
-language variants. Operational details live in [analytics.md](analytics.md).
+language variants.
 
 `packages/analytics` owns the feature registry, strict event schemas, timer,
 local queue and uploader. The renderer sends predefined feature IDs/actions;

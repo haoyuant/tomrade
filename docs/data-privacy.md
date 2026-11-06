@@ -65,8 +65,7 @@ and are not sold to third parties.
 These cloud limits require the scheduled cleanup job to run. Deployment policy
 also calls for backups to expire within 35 days and address-free edge status
 counts within 30 days; those limits must be configured in the hosting services.
-The [operations guide](analytics.md) describes the database jobs and regional
-configuration. A source checkout does not establish that a live service has
+The database jobs are defined in `supabase/migrations`. A source checkout does not establish that a live service has
 been deployed or that its hosting settings have been verified.
 
 ## Turn statistics off
@@ -104,5 +103,5 @@ them. Counts across deployments are added without matching identifiers.
 
 Regional routing, the database scope guard, cleanup schedules and provider-log
 settings must be in place before this separation can be claimed for a release.
-If you deploy Tomrade yourself, follow the [operations guide](analytics.md) and
-check your endpoints; selecting “auto” alone does not create regional hosting.
+If you deploy Tomrade yourself, apply `supabase/migrations`, schedule their
+cleanup and aggregation jobs, and check your endpoints; selecting “auto” alone does not create regional hosting.
