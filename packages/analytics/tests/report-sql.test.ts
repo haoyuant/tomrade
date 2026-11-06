@@ -46,7 +46,7 @@ async function ingest(events: unknown[], region: string) {
 
 beforeAll(async () => {
   await db.exec("create role anon; create role authenticated; create role service_role;");
-  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202610230003_analytics_aggregate.sql", "202610230004_analytics_feature_days.sql"]) {
+  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202610230003_analytics_aggregate.sql", "202610230004_analytics_feature_days.sql", "202611060002_analytics_event_unused_indexes.sql"]) {
     await db.exec(migration(name));
   }
 }, 60_000);
