@@ -29,8 +29,26 @@ const sample = (uses = 3): DashboardData => ({
     synced_at: "2026-10-23T02:00:00Z"
   },
   accounts: { total: 120, confirmed: 100, new: 7, daily: [{ day: "2026-10-22", new: 7 }] },
-  platforms: [{ platform: "macos", aai: 3, duration_ms: 90000 }, { platform: "linux", aai: 1, duration_ms: 30000 }]
+  platforms: [{ platform: "macos", aai: 3, duration_ms: 90000 }, { platform: "linux", aai: 1, duration_ms: 30000 }],
+  search: {
+    totals: { clicks: 12, impressions: 400, position_sum: 3200 },
+    daily: [{ day: "2026-10-22", clicks: 12, impressions: 400, position_sum: 3200 }],
+    queries: [{ key: "tomrade", clicks: 9, impressions: 30, position_sum: 36 }, { key: "ai backlog", clicks: 1, impressions: 90, position_sum: 1260 }],
+    pages: [{ key: "https://tomrade.com/zh/", clicks: 7, impressions: 200, position_sum: 1000 }],
+    synced_at: "2026-10-23T03:00:00Z"
+  },
+  github: {
+    totals: { views: 52, clones: 30 },
+    daily: [{ day: "2026-10-22", views: 52, view_uniques: 11, clones: 30, clone_uniques: 2 }],
+    first: { ...snapshotOf("2026-09-30", 10), referrers: [] },
+    last: snapshotOf("2026-10-23", 25),
+    synced_at: "2026-10-23T03:05:00Z"
+  }
 });
+function snapshotOf(day: string, stars: number) {
+  return { day, repo: "haoyuant/tomrade", stars, forks: 2, watchers: 3, views_14d: 52, view_uniques_14d: 11, clones_14d: 30, clone_uniques_14d: 2,
+    referrers: [{ referrer: "news.ycombinator.com", count: 30, uniques: 8 }], paths: [{ path: "/haoyuant/tomrade", title: "<Tomrade>", count: 40, uniques: 9 }] };
+}
 const f = filters(new URLSearchParams("lang=en"), new Date("2026-10-23T10:00:00Z"));
 const one = (data: DashboardData, days = 30): View => new Map([[days as 30, data]]);
 const servers: Server[] = [];
@@ -64,8 +82,8 @@ describe("internal analytics dashboard", () => {
     expect(result.platforms).toEqual([{ platform: "macos", aai: 6, duration_ms: 180000 }, { platform: "linux", aai: 2, duration_ms: 60000 }]);
   });
   it("leaves the site and accounts empty where no deployment has them, and keeps the newest copy time", () => {
-    const old = { ...sample(), site: null, accounts: null, platforms: [] };
-    expect(mergeReports([old])).toMatchObject({ site: null, accounts: null, platforms: [] });
+    const old = { ...sample(), site: null, accounts: null, platforms: [], search: null, github: null };
+    expect(mergeReports([old])).toMatchObject({ site: null, accounts: null, platforms: [], search: null, github: null });
     const later = sample(); later.site!.synced_at = "2026-10-23T05:00:00Z";
     expect(mergeReports([old, sample(), later]).site?.synced_at).toBe("2026-10-23T05:00:00Z");
   });
@@ -82,20 +100,24 @@ describe("internal analytics dashboard", () => {
       calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
       const url = String(input);
       // The mainland deployment has not applied the site and accounts migrations.
-      if (url.startsWith("https://cn.example") && /tomrade_(site|accounts)_/.test(url)) return new Response("", { status: 404 });
+      if (url.startsWith("https://cn.example") && /tomrade_(site|accounts|search|github)_/.test(url)) return new Response("", { status: 404 });
       const body = url.endsWith("feature_days") ? { days: sample().days } : url.endsWith("activation") ? sample().activation
         : url.endsWith("site_report") ? sample().site : url.endsWith("accounts_report") ? sample().accounts
+        : url.endsWith("search_report") ? sample().search : url.endsWith("github_report") ? sample().github
         : url.endsWith("platforms") ? { platforms: sample().platforms } : sample().report;
       return Response.json(body);
     };
     const loaded = await loadDashboard([{ url: "https://global.example", key: "secret" }, { url: "https://cn.example", key: "secret-cn" }], { ...f, region: "cn" }, request);
-    expect(calls).toHaveLength(12);
+    expect(calls).toHaveLength(16);
+    expect(loaded.search?.totals.clicks).toBe(12);
+    expect(loaded.github?.last?.stars).toBe(25);
     expect(calls.filter((c) => c.url.endsWith("/rpc/tomrade_analytics_activation"))).toHaveLength(2);
     expect(loaded.activation.funnel.installs).toBe(20);
     expect(loaded.site?.totals.installs).toBe(40);
     expect(loaded.accounts?.total).toBe(120);
     expect(loaded.platforms[0]).toEqual({ platform: "macos", aai: 6, duration_ms: 180000 });
-    const accounts = calls.filter((c) => c.url.endsWith("/rpc/tomrade_accounts_report"));
+    // Accounts, search and GitHub have no region: they get the range alone.
+    const accounts = calls.filter((c) => /\/rpc\/tomrade_(accounts|search|github)_report$/.test(c.url));
     expect(accounts.every((c) => !("p_region" in (c.body as object)))).toBe(true);
     expect(calls.filter((c) => !accounts.includes(c)).every((c) => /\/rest\/v1\/rpc\/tomrade_(analytics|site)_/.test(c.url) && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
     await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow("analytics query failed");
@@ -127,7 +149,10 @@ describe("internal analytics dashboard", () => {
     expect(html).toContain("25%");
     expect(payload.growth).toEqual([{ day: "2026-10-22", accounts: 7, installs: 40, updates: 6, pageviews: 900 }]);
     for (const text of ["账户与官网", "注册用户", "各平台使用占比", "官网安装包下载"]) expect(zh).toContain(text);
-    const bare = renderDashboard(f, one({ ...sample(), site: null, accounts: null, platforms: [] }));
+    const bare = renderDashboard(f, one({ ...sample(), site: null, accounts: null, platforms: [], search: null, github: null }));
+    expect(bare).toContain("No Search Console data");
+    expect(bare).toContain("No GitHub data");
+    expect(bare).not.toContain('id="chart-seo"');
     expect(bare).toContain("No site data");
     expect(bare).not.toContain('id="chart-growth"');
     expect(bare).not.toContain("Usage by platform");
@@ -166,18 +191,19 @@ describe("internal analytics dashboard", () => {
     expect([...windows.keys()].sort((a, b) => a - b)).toEqual([7, 30, 365]);
     expect([...windows.get(365)!].sort()).toEqual(["accounts", "platforms", "site"]);
     expect([...windows.get(7)!]).toEqual(["report"]);
-    expect([...windows.get(30)!].sort()).toEqual(["activation", "days", "report", "site"]);
+    expect([...windows.get(30)!].sort()).toEqual(["activation", "days", "github", "report", "search", "site"]);
     const calls: { name: string; from: string }[] = [];
     const request: typeof fetch = async (input, init) => {
       const name = String(input).split("/rpc/")[1]!;
       calls.push({ name, from: (JSON.parse(String(init?.body)) as { p_from: string }).p_from });
       const body = name.endsWith("feature_days") ? { days: [] } : name.endsWith("activation") ? sample().activation
         : name.endsWith("site_report") ? sample().site : name.endsWith("accounts_report") ? sample().accounts
-        : name.endsWith("platforms") ? { platforms: sample().platforms } : sample().report;
+        : name.endsWith("platforms") ? { platforms: sample().platforms } : name.endsWith("search_report") ? sample().search
+        : name.endsWith("github_report") ? sample().github : sample().report;
       return Response.json(body);
     };
     const view = await loadView([{ url: "https://global.example", key: "secret" }], custom, request);
-    expect(calls).toHaveLength(1 + 4 + 3);
+    expect(calls).toHaveLength(1 + 6 + 3);
     expect(calls.filter((c) => c.from === "2025-10-24").map((c) => c.name).sort()).toEqual(["tomrade_accounts_report", "tomrade_analytics_platforms", "tomrade_site_report"]);
     expect(calls.filter((c) => c.from === "2026-10-17").map((c) => c.name)).toEqual(["tomrade_analytics_report"]);
     // A part a window does not load is empty, not missing.
@@ -277,5 +303,27 @@ process.stdin.on("data", (c) => { input += c; }).on("end", () => {
     expect(posted.headers.get("location")).toBe("/?days=7&region=eu&lang=en#card-insights");
     expect(generated).toEqual(["eu/7"]);
     expect((await fetch(`${url}/insights?days=7`)).status).toBe(404);
+  });
+
+  it("merges search and GitHub across deployments and shows them in their own cards", () => {
+    const merged = mergeReports([sample(), { ...sample(), search: null, github: null }, sample()]);
+    expect(merged.search?.totals).toEqual({ clicks: 24, impressions: 800, position_sum: 6400 });
+    expect(merged.search?.queries[0]).toEqual({ key: "tomrade", clicks: 18, impressions: 60, position_sum: 72 });
+    expect(merged.github?.totals).toEqual({ views: 104, clones: 60 });
+    expect(merged.github?.daily[0]).toMatchObject({ views: 104, view_uniques: 22 });
+    expect(merged.github?.first?.day).toBe("2026-09-30");
+    expect(merged.github?.last?.stars).toBe(25);
+    const html = renderDashboard({ ...f, windows: { github: 90 } }, new Map([[30, sample()], [90, sample()]]));
+    for (const text of ["Search (SEO)", "3%", "Average position", "8", "Top queries", "tomrade", "1.2", "14", "/zh/", 'id="chart-seo"',
+      "GitHub", "+15 in this window", "11 unique visitors", "news.ycombinator.com", "&lt;Tomrade&gt;", "last 14 days, as of 2026-10-23", 'id="chart-github"',
+      "w_github=7#card-github", "2026-07-26 — 2026-10-23"]) expect(html).toContain(text);
+    const payload = JSON.parse(/<script type="application\/json" id="dashboard-data">(.*?)<\/script>/s.exec(html)![1]!);
+    expect(payload.search).toEqual([{ day: "2026-10-22", clicks: 12, impressions: 400 }]);
+    expect(payload.github).toEqual([{ day: "2026-10-22", views: 52, view_uniques: 11, clones: 30 }]);
+    expect(payload.from).toMatchObject({ seo: "2026-09-24", github: "2026-07-26" });
+    const input = insightsInput(f, sample(), { ...sample(), search: null, github: null });
+    expect(input.current.search).toMatchObject({ totals: { clicks: 12, impressions: 400, average_position: 8 }, top_queries: [{ query: "tomrade", clicks: 9, impressions: 30, average_position: 1.2 }, { query: "ai backlog" }] });
+    expect(input.current.github).toMatchObject({ views: 52, stars_at_start: 10, stars_at_end: 25, last_14_days: { as_of: "2026-10-23" } });
+    expect(input.previous.search).toBeNull();
   });
 });

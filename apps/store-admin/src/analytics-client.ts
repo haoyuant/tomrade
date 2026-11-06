@@ -27,7 +27,7 @@ function start(data: ChartPayload): void {
   };
   // The category is the full day, marked when it is still being counted; the axis shows MM-DD.
   const label = (day: string) => (day === data.to ? `${day} · ${t("today")}` : day);
-  const spans = { spark: span(data.from.spark), overview: span(data.from.overview), detail: span(data.from.detail), retention: span(data.from.retention), growth: span(data.from.growth) };
+  const spans = { spark: span(data.from.spark), overview: span(data.from.overview), detail: span(data.from.detail), retention: span(data.from.retention), growth: span(data.from.growth), seo: span(data.from.seo), github: span(data.from.github) };
   const daily = (rows: ChartPayload["daily"], s: ReturnType<typeof span>) => ({
     aai: s.align(rows, (d) => d.aai),
     duration: s.align(rows, (d) => d.duration_ms / 60000),
@@ -128,6 +128,31 @@ function start(data: ChartPayload): void {
         bar(t("siteInstalls"), spans.growth.align(growth, (d) => d.installs)),
         bar(t("updates"), spans.growth.align(growth, (d) => d.updates)),
         { name: t("pageviews"), type: "line", yAxisIndex: 1, data: spans.growth.align(growth, (d) => d.pageviews), smooth: true, showSymbol: spans.growth.days.length <= 31, lineStyle: { width: 2.5 } }
+      ]
+    });
+
+    make("chart-seo", {
+      color: [c.series[0], c.series[2]], legend,
+      grid: { left: 8, right: 8, top: 40, bottom: 8, containLabel: true },
+      tooltip: { ...tooltip, trigger: "axis", valueFormatter: value },
+      xAxis: axis.category(spans.seo),
+      yAxis: [axis.value, { ...axis.value, splitLine: { show: false } }],
+      series: [
+        bar(t("clicks"), spans.seo.align(data.search, (d) => d.clicks)),
+        { name: t("impressions"), type: "line", yAxisIndex: 1, data: spans.seo.align(data.search, (d) => d.impressions), smooth: true, showSymbol: spans.seo.days.length <= 31, lineStyle: { width: 2.5 } }
+      ]
+    });
+
+    make("chart-github", {
+      color: [c.series[0], c.series[1], c.series[2]], legend,
+      grid: { left: 8, right: 8, top: 40, bottom: 8, containLabel: true },
+      tooltip: { ...tooltip, trigger: "axis", valueFormatter: value },
+      xAxis: axis.category(spans.github),
+      yAxis: axis.value,
+      series: [
+        bar(t("views"), spans.github.align(data.github, (d) => d.views)),
+        { name: t("viewUniques"), type: "line", data: spans.github.align(data.github, (d) => d.view_uniques), smooth: true, showSymbol: spans.github.days.length <= 31, lineStyle: { width: 2.5 } },
+        bar(t("clones"), spans.github.align(data.github, (d) => d.clones))
       ]
     });
 

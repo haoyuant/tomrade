@@ -3,14 +3,14 @@ export const regions = ["all", "cn", "apac", "eu", "na", "other"] as const;
 export const WINDOWS = [7, 30, 90, 180, 365] as const;
 export type WindowDays = typeof WINDOWS[number];
 /** The cards that take a window of their own (URL `w_<card>`); the rest follow the page's. */
-export const CARDS = ["overview", "ranking", "detail", "retention", "growth", "activation", "features", "platforms"] as const;
+export const CARDS = ["overview", "ranking", "detail", "retention", "growth", "activation", "seo", "github", "features", "platforms"] as const;
 export type Card = typeof CARDS[number];
 /** One aggregate query each; a window loads only the parts its cards draw. */
-export const PARTS = ["report", "days", "activation", "site", "accounts", "platforms"] as const;
+export const PARTS = ["report", "days", "activation", "site", "accounts", "platforms", "search", "github"] as const;
 export type Part = typeof PARTS[number];
 export const CARD_PARTS: Record<Card, Part[]> = {
   overview: ["report"], ranking: ["report"], detail: ["report", "days"], retention: ["report"],
-  growth: ["site", "accounts"], activation: ["activation", "site"], features: ["report"], platforms: ["platforms"]
+  growth: ["site", "accounts"], activation: ["activation", "site"], seo: ["search"], github: ["github"], features: ["report"], platforms: ["platforms"]
 };
 export interface Filters {
   days: WindowDays;
@@ -83,10 +83,35 @@ export interface SiteReport {
 export interface Accounts { total: number; confirmed: number; new: number; daily: { day: string; new: number }[] }
 /** tomrade_analytics_platforms: active IDs and active time per operating system. */
 export interface PlatformUse { platform: string; aai: number; duration_ms: number }
+/** tomrade_search_report: Search Console for tomrade.com (no region). position_sum is position × impressions. */
+export interface SearchCounts { clicks: number; impressions: number; position_sum: number }
+export interface SearchReport {
+  totals: SearchCounts;
+  daily: (SearchCounts & { day: string })[];
+  queries: (SearchCounts & { key: string })[];
+  pages: (SearchCounts & { key: string })[];
+  synced_at: string | null;
+}
+/** tomrade_github_report: the app repository's traffic per day, and its snapshots (no region). */
+export interface GithubDay { day: string; views: number; view_uniques: number; clones: number; clone_uniques: number }
+export interface GithubSnapshot {
+  day: string; repo: string; stars: number; forks: number; watchers: number;
+  views_14d: number; view_uniques_14d: number; clones_14d: number; clone_uniques_14d: number;
+  referrers: { referrer: string; count: number; uniques: number }[];
+  paths: { path: string; title: string; count: number; uniques: number }[];
+}
+export interface GithubReport {
+  totals: { views: number; clones: number };
+  daily: GithubDay[];
+  /** The snapshot the range starts from (the last before it, else its first) and the latest one by its end. */
+  first: GithubSnapshot | null; last: GithubSnapshot | null;
+  synced_at: string | null;
+}
 export interface DashboardData {
   report: Report; days: FeatureDay[]; activation: Activation;
   /** Null where a deployment has not applied the migration (or the sync never ran there). */
   site: SiteReport | null; accounts: Accounts | null; platforms: PlatformUse[];
+  search: SearchReport | null; github: GithubReport | null;
 }
 export interface Endpoint { url: string; key: string }
 export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
@@ -133,15 +158,17 @@ export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from"
   const rows = await Promise.all(sources.map(async (source) => {
     // A part this window does not draw is left at its empty value, without a query.
     const when = <T>(part: Part, query: () => Promise<T>, empty: T) => (parts.has(part) ? query() : Promise.resolve(empty));
-    const [report, series, activation, site, accounts, platforms] = await Promise.all([
+    const [report, series, activation, site, accounts, platforms, search, github] = await Promise.all([
       when("report", () => rpc<Report>(source, "tomrade_analytics_report"), emptyReport()),
       when("days", () => rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"), { days: [] }),
       when("activation", () => rpc<Activation>(source, "tomrade_analytics_activation"), emptyActivation()),
       when("site", () => optional<SiteReport>(source, "tomrade_site_report"), null),
       when("accounts", () => optional<Accounts>(source, "tomrade_accounts_report", range), null),
-      when("platforms", () => optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms"), null)
+      when("platforms", () => optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms"), null),
+      when("search", () => optional<SearchReport>(source, "tomrade_search_report", range), null),
+      when("github", () => optional<GithubReport>(source, "tomrade_github_report", range), null)
     ]);
-    return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [] };
+    return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [], search, github };
   }));
   return mergeReports(rows);
 }
@@ -230,6 +257,45 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
   if (accounts) accounts.daily = [...accountDays].map(([day, n]) => ({ day, new: n })).sort((a, b) => a.day.localeCompare(b.day));
   return {
     report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)), activation, site, accounts,
-    platforms: [...platforms.values()].sort((a, b) => b.aai - a.aai || a.platform.localeCompare(b.platform))
+    platforms: [...platforms.values()].sort((a, b) => b.aai - a.aai || a.platform.localeCompare(b.platform)),
+    search: mergeSearch(rows.map((r) => r.search)), github: mergeGithub(rows.map((r) => r.github))
+  };
+}
+const byDay = (a: { day: string }, b: { day: string }) => a.day.localeCompare(b.day);
+const newest = (times: (string | null)[]) => times.reduce<string | null>((max, t) => (t && (!max || t > max) ? t : max), null);
+/** Sums counts by key; positions stay weighted by impressions, so they add too. */
+function mergeSearch(reports: (SearchReport | null)[]): SearchReport | null {
+  const present = reports.filter((r): r is SearchReport => r !== null);
+  if (!present.length) return null;
+  const add = (a: SearchCounts, b: SearchCounts) => { a.clicks += b.clicks; a.impressions += b.impressions; a.position_sum += b.position_sum; };
+  const sum = <K extends string>(rows: (SearchCounts & Record<K, string>)[], key: K) => {
+    const map = new Map<string, SearchCounts & Record<K, string>>();
+    for (const r of rows) { const t = map.get(r[key]) ?? map.set(r[key], { [key]: r[key], clicks: 0, impressions: 0, position_sum: 0 } as SearchCounts & Record<K, string>).get(r[key])!; add(t, r); }
+    return [...map.values()];
+  };
+  const top = (rows: (SearchCounts & { key: string })[]) => rows.sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions || a.key.localeCompare(b.key)).slice(0, 25);
+  const totals = { clicks: 0, impressions: 0, position_sum: 0 };
+  for (const r of present) add(totals, r.totals);
+  return {
+    totals, daily: sum(present.flatMap((r) => r.daily), "day").sort(byDay),
+    queries: top(sum(present.flatMap((r) => r.queries), "key")), pages: top(sum(present.flatMap((r) => r.pages), "key")),
+    synced_at: newest(present.map((r) => r.synced_at))
+  };
+}
+/** One repository: daily counts add, and the snapshots are the earliest start and the latest end any deployment has. */
+function mergeGithub(reports: (GithubReport | null)[]): GithubReport | null {
+  const present = reports.filter((r): r is GithubReport => r !== null);
+  if (!present.length) return null;
+  const days = new Map<string, GithubDay>();
+  for (const d of present.flatMap((r) => r.daily)) {
+    const t = days.get(d.day) ?? days.set(d.day, { day: d.day, views: 0, view_uniques: 0, clones: 0, clone_uniques: 0 }).get(d.day)!;
+    t.views += d.views; t.view_uniques += d.view_uniques; t.clones += d.clones; t.clone_uniques += d.clone_uniques;
+  }
+  const snapshots = (pick: "first" | "last") => present.map((r) => r[pick]).filter((s): s is GithubSnapshot => s !== null).sort(byDay);
+  return {
+    totals: { views: present.reduce((n, r) => n + r.totals.views, 0), clones: present.reduce((n, r) => n + r.totals.clones, 0) },
+    daily: [...days.values()].sort(byDay),
+    first: snapshots("first")[0] ?? null, last: snapshots("last").at(-1) ?? null,
+    synced_at: newest(present.map((r) => r.synced_at))
   };
 }

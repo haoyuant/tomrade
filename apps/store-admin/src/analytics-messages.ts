@@ -40,6 +40,16 @@ export const en = {
   insightsBasis: "{{from}} — {{to}} · {{region}} · generated {{at}}", insightsCost: "cost ${{cost}}",
   summary: "Summary", highlights: "Key points", anomalies: "Anomalies", suggestions: "Suggestions", noAnomalies: "Nothing out of the ordinary.",
   high: "High", medium: "Medium", low: "Low",
+  copied: "Data copied", seo: "Search (SEO)", seoHint: "Google Search Console for tomrade.com, copied daily. No regions; the last few days are still revised.",
+  clicks: "Clicks", impressions: "Impressions", ctr: "CTR", position: "Average position", positionSub: "Lower is better",
+  ctrSub: "Clicks over impressions", topQueries: "Top queries", topPages: "Top landing pages", query: "Query", page: "Page",
+  seoMissing: "No Search Console data: apply the search and GitHub migration and set GOOGLE_SERVICE_ACCOUNT_JSON in tomrade-site (its README, Analytics).",
+  github: "GitHub", githubHint: "The app repository's traffic, copied daily: GitHub keeps only 14 days. No regions.",
+  stars: "Stars", starsSub: "{{delta}} in this window", views: "Repository views", viewsSub: "{{uniques}} unique visitors in GitHub's last 14 days",
+  clones: "Clones", clonesSub: "{{uniques}} unique cloners in GitHub's last 14 days", forks: "Forks", forksSub: "{{watchers}} watching",
+  viewUniques: "Unique visitors", referrers: "Referring sites", paths: "Popular pages", lastFourteen: "GitHub's last 14 days, as of {{day}}",
+  referrer: "Site", count: "Views", uniques: "Unique",
+  githubMissing: "No GitHub data: apply the search and GitHub migration and set GITHUB_TRAFFIC_TOKEN in tomrade-site (its README, Analytics).",
   macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS (Apple silicon)", "mac-x64": "macOS (Intel)", "windows-arm64": "Windows (Arm)", "linux-arm64": "Linux (Arm)"
 };
 export const zh: typeof en = {
@@ -84,6 +94,16 @@ export const zh: typeof en = {
   insightsBasis: "{{from}} — {{to}} · {{region}} · 生成于 {{at}}", insightsCost: "花费 ${{cost}}",
   summary: "概要", highlights: "要点", anomalies: "异常", suggestions: "建议", noAnomalies: "没有发现异常。",
   high: "高", medium: "中", low: "低",
+  copied: "数据复制于", seo: "搜索（SEO）", seoHint: "来自 Google Search Console（tomrade.com），每天复制一次。不分地区；最近几天的数据仍会被修订。",
+  clicks: "点击", impressions: "展示", ctr: "点击率", position: "平均排名", positionSub: "越小越好",
+  ctrSub: "点击 ÷ 展示", topQueries: "热门搜索词", topPages: "热门落地页", query: "搜索词", page: "页面",
+  seoMissing: "暂无 Search Console 数据：请应用搜索与 GitHub 的数据迁移，并在 tomrade-site 配置 GOOGLE_SERVICE_ACCOUNT_JSON（见其 README 的 Analytics 一节）。",
+  github: "GitHub", githubHint: "应用仓库的流量，每天复制一次：GitHub 只保留 14 天。不分地区。",
+  stars: "Stars", starsSub: "本窗口内 {{delta}}", views: "仓库浏览", viewsSub: "GitHub 近 14 天有 {{uniques}} 位独立访客",
+  clones: "克隆", clonesSub: "GitHub 近 14 天有 {{uniques}} 个独立克隆者", forks: "Forks", forksSub: "{{watchers}} 人关注",
+  viewUniques: "独立访客", referrers: "来源网站", paths: "热门页面", lastFourteen: "GitHub 近 14 天，截至 {{day}}",
+  referrer: "网站", count: "浏览", uniques: "独立",
+  githubMissing: "暂无 GitHub 数据：请应用搜索与 GitHub 的数据迁移，并在 tomrade-site 配置 GITHUB_TRAFFIC_TOKEN（见其 README 的 Analytics 一节）。",
   macos: "macOS", windows: "Windows", linux: "Linux", "mac-arm64": "macOS（Apple 芯片）", "mac-x64": "macOS（Intel）", "windows-arm64": "Windows（Arm）", "linux-arm64": "Linux（Arm）"
 };
 export type MessageKey = keyof typeof en;

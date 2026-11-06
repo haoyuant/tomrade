@@ -10,7 +10,7 @@ const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c").
 export interface ChartPayload {
   lang: "en" | "zh"; to: string; metric: Filters["metric"]; feature: string;
   /** Each chart's first day: every window ends on `to`. */
-  from: Record<"spark" | "overview" | "detail" | "retention" | "growth", string>;
+  from: Record<"spark" | "overview" | "detail" | "retention" | "growth" | "seo" | "github", string>;
   t: Partial<Record<MessageKey, string>>;
   /** The headline sparklines, over the page's window. */
   spark: DashboardData["report"]["daily"];
@@ -23,8 +23,10 @@ export interface ChartPayload {
   retention: { day: string; cohort: number; d1: number; mature: boolean }[];
   /** Days with site or account rows; the chart is left out when there are none. */
   growth: { day: string; accounts: number | null; installs: number | null; updates: number | null; pageviews: number | null }[];
+  search: { day: string; clicks: number; impressions: number }[];
+  github: { day: string; views: number; view_uniques: number; clones: number }[];
 }
-const CHART_WORDS: MessageKey[] = ["duration", "uses", "activeIds", "rate", "cohort", "returned", "pending", "today", "newAccounts", "siteInstalls", "updates", "pageviews", "generating"];
+const CHART_WORDS: MessageKey[] = ["duration", "uses", "activeIds", "rate", "cohort", "returned", "pending", "today", "newAccounts", "siteInstalls", "updates", "pageviews", "generating", "clicks", "impressions", "views", "viewUniques", "clones"];
 const WINDOW_WORDS: Record<WindowDays, MessageKey> = { 7: "days7", 30: "days30", 90: "days90", 180: "days180", 365: "days365" };
 
 export function renderDashboard(f: Filters, view?: View, error?: "failed" | "invalid", insights?: InsightsState): string {
@@ -73,12 +75,15 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
     const retentionRows = at("retention").report.retention.map((d) => ({ ...d, mature: mature(d) }));
     const payload: ChartPayload = {
       lang: f.lang, to: f.to, metric: f.metric, feature: selected,
-      from: { spark: f.from, overview: windowStart(f.to, windowOf(f, "overview")), detail: windowStart(f.to, windowOf(f, "detail")), retention: windowStart(f.to, windowOf(f, "retention")), growth: windowStart(f.to, windowOf(f, "growth")) },
+      from: { spark: f.from, overview: windowStart(f.to, windowOf(f, "overview")), detail: windowStart(f.to, windowOf(f, "detail")), retention: windowStart(f.to, windowOf(f, "retention")), growth: windowStart(f.to, windowOf(f, "growth")),
+        seo: windowStart(f.to, windowOf(f, "seo")), github: windowStart(f.to, windowOf(f, "github")) },
       t: Object.fromEntries(CHART_WORDS.map((k) => [k, t(k)])),
       spark: report.daily, daily: at("overview").report.daily, features,
       detailFeatures: detailFeatures.map((d) => d.feature_id),
       days: at("detail").days.map(({ day, feature_id, duration_ms, uses }) => ({ day, feature_id, duration_ms, uses })),
-      retention: retentionRows, growth: growthDays(at("growth"))
+      retention: retentionRows, growth: growthDays(at("growth")),
+      search: (at("seo").search?.daily ?? []).map(({ day, clicks, impressions }) => ({ day, clicks, impressions })),
+      github: (at("github").github?.daily ?? []).map(({ day, views, view_uniques, clones }) => ({ day, views, view_uniques, clones }))
     };
     const percent = (part: number, whole: number) => (whole ? `${n(part / whole * 100)}%` : "—");
     const span = (ms: number) => ms < 3600000 ? fill(t("minutesShort"), { n: n(ms / 60000) }) : ms < 86400000 ? fill(t("hoursShort"), { n: n(ms / 3600000) }) : fill(t("daysShort"), { n: n(ms / 86400000) });
@@ -116,6 +121,39 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
         ${stat(t("merged7d"), percent(activation.merged_7d.merged, activation.merged_7d.cohort), fill(t("merged7dSub"), { merged: n(activation.merged_7d.merged), cohort: n(activation.merged_7d.cohort) }))}
         ${stat(t("weekReturn"), percent(activation.week_return.returned, activation.week_return.cohort), fill(t("weekReturnSub"), { returned: n(activation.week_return.returned), cohort: n(activation.week_return.cohort) }))}
       </div>${table([t("step"), t("reached"), t("ofInstalls"), t("ofPrevious")], funnel)}` });
+
+    // Search Console and GitHub have no region: the cards say so, and show the same numbers in every region.
+    const synced = (at: string | null) => `<span class="pill">${escape(t("copied"))} · ${escape(at ? at.replace("T", " ").slice(0, 16) : t("notSynced"))}</span>`;
+    const search = at("seo").search;
+    const position = (r: { impressions: number; position_sum: number }) => (r.impressions ? n(r.position_sum / r.impressions) : "—");
+    const path = (url: string) => { try { const u = new URL(url); return u.pathname + u.search; } catch { return url; } };
+    const seoCard = card({ id: "seo", title: t("seo"), hint: t("seoHint"), span: "s12 w6", windowed: "seo", extra: search ? synced(search.synced_at) : "",
+      body: search ? `<div class="stats four">
+          ${stat(t("clicks"), n(search.totals.clicks), "")}
+          ${stat(t("impressions"), n(search.totals.impressions), "")}
+          ${stat(t("ctr"), percent(search.totals.clicks, search.totals.impressions), t("ctrSub"))}
+          ${stat(t("position"), position(search.totals), t("positionSub"))}
+        </div><div class="chart" id="chart-seo" role="img" aria-label="${escape(t("seo"))}"></div>
+        <div class="pair">
+          <div><h3>${escape(t("topQueries"))}</h3>${table([t("query"), t("clicks"), t("impressions"), t("ctr"), t("position")], search.queries.slice(0, 10).map((q) => [escape(q.key), n(q.clicks), n(q.impressions), percent(q.clicks, q.impressions), position(q)]))}</div>
+          <div><h3>${escape(t("topPages"))}</h3>${table([t("page"), t("clicks"), t("impressions"), t("position")], search.pages.slice(0, 10).map((q) => [`<span title="${escape(q.key)}">${escape(path(q.key))}</span>`, n(q.clicks), n(q.impressions), position(q)]))}</div>
+        </div>` : `<p class="muted">${escape(t("seoMissing"))}</p>` });
+
+    const github = at("github").github;
+    const last = github?.last ?? null;
+    const delta = last && github?.first ? last.stars - github.first.stars : 0;
+    const githubCard = card({ id: "github", title: t("github"), hint: t("githubHint"), span: "s12 w6", windowed: "github", extra: github ? synced(github.synced_at) : "",
+      body: github ? `<div class="stats four">
+          ${stat(t("stars"), last ? n(last.stars) : "—", fill(t("starsSub"), { delta: `${delta >= 0 ? "+" : ""}${n(delta)}` }))}
+          ${stat(t("views"), n(github.totals.views), last ? fill(t("viewsSub"), { uniques: n(last.view_uniques_14d) }) : "")}
+          ${stat(t("clones"), n(github.totals.clones), last ? fill(t("clonesSub"), { uniques: n(last.clone_uniques_14d) }) : "")}
+          ${stat(t("forks"), last ? n(last.forks) : "—", last ? fill(t("forksSub"), { watchers: n(last.watchers) }) : "")}
+        </div><div class="chart" id="chart-github" role="img" aria-label="${escape(t("github"))}"></div>
+        ${last ? `<p class="muted small">${escape(fill(t("lastFourteen"), { day: last.day }))}</p>
+        <div class="pair">
+          <div><h3>${escape(t("referrers"))}</h3>${table([t("referrer"), t("count"), t("uniques")], last.referrers.map((r) => [escape(r.referrer), n(r.count), n(r.uniques)]))}</div>
+          <div><h3>${escape(t("paths"))}</h3>${table([t("page"), t("count"), t("uniques")], last.paths.map((p) => [`<span title="${escape(p.title)}">${escape(p.path)}</span>`, n(p.count), n(p.uniques)]))}</div>
+        </div>` : ""}` : `<p class="muted">${escape(t("githubMissing"))}</p>` });
 
     // The platform card is left out where no deployment reports platforms, unless its window was chosen apart.
     const platforms = at("platforms").platforms;
@@ -155,6 +193,8 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
       ${card({ id: "retention", title: t("retention"), hint: t("retentionHint"), span: "s4", windowed: "retention", body: `<div class="chart" id="chart-retention" role="img" aria-label="${escape(t("retention"))}"></div>` })}
       ${growthCard}
       ${activationCard}
+      ${seoCard}
+      ${githubCard}
       ${featureCard}
       ${platformCard}
       <details class="card s12"><summary>${escape(t("dailyData"))}</summary>
@@ -245,7 +285,8 @@ h3{margin:16px 0 4px;font-size:13px;font-weight:600;color:var(--muted)}
 .kpi .sub{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.spark{height:46px;margin:6px -18px 0}
 .board{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .board>.s12{grid-column:span 12}.board>.s8{grid-column:span 8}.board>.s4{grid-column:span 4}
-@media (min-width:1500px){.board>.w8{grid-column:span 8}.board>.w4{grid-column:span 4}}
+@media (min-width:1500px){.board>.w8{grid-column:span 8}.board>.w6{grid-column:span 6}.board>.w4{grid-column:span 4}}
+.muted.small{margin:8px 0 0;font-size:12px}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px;min-width:0;scroll-margin-top:84px}
 .card>header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 .tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.card .range{margin:0}
@@ -276,6 +317,6 @@ details>summary{cursor:pointer;font-weight:620;font-size:15px}details[open]>summ
 .notice{padding:48px 24px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:14px}
 .notice.error{color:var(--danger);background:var(--danger-soft);border:1px solid var(--danger)}
 .note{color:var(--muted);font-size:12px;max-width:760px}
-@media (max-width:1000px){.kpis,.stats.four{grid-template-columns:repeat(2,minmax(0,1fr))}.split,.insights{grid-template-columns:minmax(0,1fr)}.board>.card{grid-column:span 12}}
+@media (max-width:1000px){.kpis,.stats.four{grid-template-columns:repeat(2,minmax(0,1fr))}.split,.insights,.pair{grid-template-columns:minmax(0,1fr)}.board>.card{grid-column:span 12}}
 @media (max-width:560px){.kpis,.stats,.stats.four{grid-template-columns:minmax(0,1fr)}.range{margin-left:0}.top{position:static}}
 `;
