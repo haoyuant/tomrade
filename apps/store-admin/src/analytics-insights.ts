@@ -45,6 +45,8 @@ export const INSIGHTS_SCHEMA = {
 };
 
 const minutes = (ms: number) => Math.round(ms / 6000) / 10;
+const searchCounts = (r: { clicks: number; impressions: number; position_sum: number }) =>
+  ({ clicks: r.clicks, impressions: r.impressions, average_position: r.impressions ? Math.round(r.position_sum / r.impressions * 10) / 10 : null });
 /** The numbers the analyst reads: aggregates only, never an ID (the RPCs return none). */
 export function insightsInput(f: Filters, current: DashboardData, previous: DashboardData) {
   const summary = (d: DashboardData, detailed: boolean) => ({
@@ -56,7 +58,21 @@ export function insightsInput(f: Filters, current: DashboardData, previous: Dash
     activation: d.activation,
     site: d.site ? { totals: d.site.totals, platforms: d.site.platforms, ...(detailed ? { daily: d.site.daily } : {}) } : null,
     accounts: d.accounts ? { total_at_end: d.accounts.total, confirmed_at_end: d.accounts.confirmed, new_in_period: d.accounts.new } : null,
-    usage_by_platform: d.platforms.map((p) => ({ platform: p.platform, active_ids: p.aai, active_minutes: minutes(p.duration_ms) }))
+    usage_by_platform: d.platforms.map((p) => ({ platform: p.platform, active_ids: p.aai, active_minutes: minutes(p.duration_ms) })),
+    search: d.search ? {
+      totals: searchCounts(d.search.totals),
+      ...(detailed ? { daily: d.search.daily.map((r) => ({ day: r.day, ...searchCounts(r) })) } : {}),
+      top_queries: d.search.queries.slice(0, detailed ? 15 : 5).map((r) => ({ query: r.key, ...searchCounts(r) })),
+      top_pages: d.search.pages.slice(0, detailed ? 10 : 5).map((r) => ({ page: r.key, ...searchCounts(r) }))
+    } : null,
+    github: d.github ? {
+      views: d.github.totals.views, clones: d.github.totals.clones,
+      stars_at_start: d.github.first?.stars ?? null, stars_at_end: d.github.last?.stars ?? null, forks: d.github.last?.forks ?? null,
+      ...(detailed ? {
+        daily: d.github.daily.map(({ day, views, view_uniques, clones }) => ({ day, views, unique_visitors: view_uniques, clones })),
+        last_14_days: d.github.last ? { as_of: d.github.last.day, referrers: d.github.last.referrers, popular_paths: d.github.last.paths.map(({ path, count, uniques }) => ({ path, count, uniques })) } : null
+      } : {})
+    } : null
   });
   const prevTo = new Date(Date.parse(f.from) - 86400000).toISOString().slice(0, 10);
   return {
@@ -76,6 +92,7 @@ export function insightsSystem(lang: Filters["lang"]): string {
     "- activation: installations first seen in the period, followed to now; each funnel step counts those that also reached every step before it (installs → setup_done → start = first ticket started → open_pr → merge). first_start is the median time to the first ticket start; merged_7d and week_return only count installations old enough.",
     "- next_day_retention: of IDs first seen on a day, how many came back the next day; the last day or two are not yet observable.",
     "- site: tomrade.com installer downloads (installs), updater downloads (updates), page views and visits, copied daily from Cloudflare up to yesterday. accounts: registered accounts (no region).",
+    "- search: Google Search Console for tomrade.com (clicks, impressions, average position, lower is better; top queries and landing pages); the last few days are still revised. github: the app repository's views, clones and stars; GitHub keeps traffic for 14 days, so earlier days may be missing. Neither has a region, and either may be null when not set up.",
     "- The period's last day is still in progress. A day missing from a series is a gap, not a zero. Small numbers are noisy: say so instead of over-reading them.",
     "Write for the founder, who runs the product alone. Be concrete: cite the numbers and the change against the previous period. highlights: 3 to 6 key observations. anomalies: only real outliers, drops or data problems (empty when there are none). suggestions: 3 to 6 actions worth doing next, each tied to the numbers, most valuable first.",
     "Keep summary to two or three sentences. Do not invent data that is not in the input.",

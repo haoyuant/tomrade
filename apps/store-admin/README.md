@@ -42,13 +42,15 @@ Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 ## Internal usage dashboard
 
 Apply the analytics migrations (`202610230001` onward, including
-`202611040003_site_daily` and `202611040004_accounts_platforms`) to each
-analytics database and schedule `tomrade_analytics_aggregate` from the
+`202611040003_site_daily`, `202611040004_accounts_platforms` and
+`202611060003_search_github_daily`) to each analytics database and schedule `tomrade_analytics_aggregate` from the
 deployment's scheduler. The report RPCs are granted
 only to `service_role`; public and signed-in clients cannot read them. A
-deployment without the two newest migrations still loads: its site, accounts
-and platform sections are left empty. Site downloads and page views arrive once
-tomrade-site's daily Analytics workflow runs (its README, Analytics).
+deployment without the newest migrations still loads: its site, accounts,
+platform, SEO and GitHub sections are left empty. Site downloads and page views,
+Search Console's numbers and the repository's GitHub traffic arrive once
+tomrade-site's daily Analytics workflow runs with their secrets (its README,
+Analytics); SEO and GitHub have no region and show the same in every region.
 
 ```sh
 # Supply these through your shell, a secret manager or the repository's
