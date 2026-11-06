@@ -68,9 +68,10 @@ const probe = (file) => JSON.parse(spawnSync("ffprobe", ["-v", "error", "-select
 
 const INK = "#1d1d1f";
 const SANS = `-apple-system,"SF Pro Display","PingFang SC",sans-serif`;
+// The paper stage is a pale Sunrise morning: the app's lilac ground with a faint glow of the sun below.
 const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
-  html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:#f6efe3;font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased}
-  .bg{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 118%,#f7cfa8 0%,#f6e3cd 38%,#f6efe3 70%)}
+  html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:#f6f3f8;font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased}
+  .bg{position:absolute;inset:0;background:radial-gradient(70% 60% at 8% 0%,rgba(185,168,236,.12),transparent 70%),radial-gradient(120% 90% at 50% 118%,#f8dcc9 0%,#f4e7e9 38%,#f6f3f8 70%)}
   canvas{position:absolute;left:0;top:0}
   video{position:absolute;left:-99999px;width:10px}
   .t{position:absolute;box-sizing:border-box}
@@ -93,7 +94,7 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
   #title:not(.dusk) .t .zh{color:#6e6e73}
   #fast{position:absolute;right:48px;top:34px;font:600 24px "SF Mono",Menlo,monospace;color:#6e6e73;transform-origin:right center}
   .full{position:absolute;inset:0;opacity:0}
-  .full .bgf{position:absolute;inset:0;background:radial-gradient(90% 70% at 50% 112%,#f4a66f 0%,#f7cfa8 34%,#f6e3cd 62%,#f6efe3 88%)}
+  .full .bgf{position:absolute;inset:0;background:radial-gradient(90% 70% at 50% 112%,#f6c3a2 0%,#f8dcc9 34%,#f4e7e9 62%,#f6f3f8 88%)}
   #title svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 10px 18px rgba(70,40,20,.14))}
   #term{position:absolute;left:1010px;top:330px;width:800px;box-sizing:border-box;border-radius:22px;background:#1c1b2b;box-shadow:0 30px 70px rgba(70,40,20,.32);overflow:hidden;transform-origin:50% 60%}
   #term .bar{height:44px;display:flex;align-items:center;gap:10px;padding:0 20px;background:#2a2939}
@@ -273,7 +274,7 @@ const PAGE = (video, icon) => `<!doctype html><meta charset="utf-8"><style>
     ctx.drawImage(video, s.src.x + sx, s.src.y + sy, sw, sh, Math.max(0, d.x), Math.max(0, d.y), sw * k, sh * k);
     // A grid of cards: the stage between them, rounded corners, and each card's name on its white bar.
     if (s.cards) {
-      const paper = s.stage === 'night' ? '#15142a' : '#f6efe3';
+      const paper = s.stage === 'night' ? '#15142a' : '#f6f3f8';
       ctx.beginPath();
       ctx.rect(d.x, d.y, d.w, d.h);
       for (const c of s.cards) ctx.roundRect(c.x, c.y, c.w, c.h, c.bar * 0.32);
