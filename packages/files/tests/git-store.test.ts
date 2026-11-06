@@ -94,6 +94,24 @@ describe("a local store", () => {
     expect(changes).toBeGreaterThan(0);
   });
 
+  it("asks git only for its status when a save finds nothing to save, and stages nothing", async () => {
+    const asked: string[] = [];
+    const counted: Git = (args, opts) => {
+      asked.push(verb(args) ?? "");
+      return git(args, opts);
+    };
+    const s = await store(null, noop, undefined, counted);
+    await s.write("docs/a.md", text("a\n"));
+    asked.length = 0;
+    await s.sync();
+    expect(new Set(asked.filter((v) => v !== "rev-parse"))).toEqual(new Set(["status"]));
+    fs.writeFileSync(path.join(s.dir, "docs", "b.md"), "edited outside\n");
+    asked.length = 0;
+    await s.sync();
+    expect(asked).toContain("add");
+    expect(asked).toContain("commit");
+  });
+
   it("saves every write as a version with a stable id, and reads old versions back unchanged", async () => {
     const s = await store();
     const first = await s.write("docs/brief.md", text("# Brief\n"));

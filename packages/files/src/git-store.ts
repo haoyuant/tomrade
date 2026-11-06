@@ -613,6 +613,8 @@ export class GitFileStore implements FileStore {
       for (let i = 0; i < others.length; i += 200) await this.git(["add", "-A", "--", ...others.slice(i, i + 200)]);
       return false;
     }
+    // Every sweep saves two or three times: with nothing pending, staging would only rewrite the index.
+    if (!pending.size && !carry?.size && !this.merging()) return false;
     await this.git(["add", "-A"]);
     const changes = await this.stagedChanges();
     const identityChanges: StagedChange[] = [...(carry ?? [])].filter(([p, id]) => this.readLedger().byPath.get(p) !== id && !changes.some((c) => c.path === p)).map(([p]) => ({ status: "M", path: p }));
