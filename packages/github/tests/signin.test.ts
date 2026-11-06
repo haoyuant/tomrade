@@ -92,6 +92,15 @@ const until = async (check: () => Promise<boolean>) => {
   throw new Error("timed out");
 };
 
+/**
+ * Until the sign-in under way has landed: its session saved, and the attempt let go. GitHub handing out the token is
+ * not enough: the account then asks who it belongs to, which is another round trip a loaded machine can be slow on.
+ */
+const signedIn = async (userData: string) => {
+  await until(async () => fs.existsSync(path.join(userData, "github-session.enc")));
+  await settle();
+};
+
 /** The password git gets for github.com from Tomrade's helper. */
 function gitPassword(args: string[]): string {
   const out = execFileSync("git", [...args, "credential", "fill"], {
@@ -135,10 +144,9 @@ it("signs in with a device code, asks for repository access, and hands the sessi
 
 it("renews a token about to run out once, however many ask, and turns the renewal token over", async () => {
   const gh = await fakeGitHub({ accessSeconds: 60 });
-  const { github } = await machine(gh);
+  const { github, userData } = await machine(gh);
   await github.connection.signIn!();
-  await until(async () => gh.state.n === 1);
-  await settle();
+  await signedIn(userData);
   const tokens = await Promise.all([github.token(), github.token(), github.token()]);
   expect(new Set(tokens).size).toBe(1);
   expect(tokens[0]).not.toBe("ghu_1");
@@ -151,8 +159,7 @@ it("falls back to the personal access token when the sign-in can no longer be re
   const { github, ctx, userData } = await machine(gh);
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "ghp_pat" } });
   await github.connection.signIn!();
-  await until(async () => gh.state.n === 1);
-  await settle();
+  await signedIn(userData);
   gh.state.refresh = "revoked elsewhere";
 
   expect(await github.token()).toBe("ghp_pat");
@@ -200,8 +207,7 @@ it("a renewal under way when the person signs out does not bring the session bac
   const gh = await fakeGitHub({ accessSeconds: 60 });
   const { github, userData } = await machine(gh);
   await github.connection.signIn!();
-  await until(async () => gh.state.n === 1);
-  await settle();
+  await signedIn(userData);
   const renewing = github.token();
   await github.connection.disconnect();
   expect(await renewing).toBe("");
