@@ -2,9 +2,9 @@
 # to download.tomrade.com/<version>/ and attaches the update manifests, and a
 # copy of the installers, to a draft release, which is published by hand.
 # Publishing has the site's mirror write the manifests that point at the new
-# version. macOS builds are signed
-# with the Developer ID certificate and notarized; the secrets live in the
-# release environment and are listed in docs/releasing.md.
+# version. macOS builds are signed with the Developer ID certificate and
+# notarized; the secrets live in the release environment and are listed in
+# docs/releasing.md.
 name: Release
 
 on:
