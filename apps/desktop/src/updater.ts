@@ -11,10 +11,44 @@ import { errorMessage } from "@tomradex/contracts";
 
 export type UpdateChannel = "stable" | "beta";
 
+/** Where checks and downloads go: picked by where the copy seems to be, or one the person names. */
+export type UpdateSourceChoice = "auto" | "international" | "china";
+
+/** A feed the updater can ask; custom is TOMRADE_UPDATE_URL, which overrides the rest. */
+export type UpdateFeedName = "international" | "china" | "custom";
+
 export interface UpdatePrefs {
   /** Off: the app never asks the feed on its own. Check now still does. */
   autoCheck: boolean;
   channel: UpdateChannel;
+  source?: UpdateSourceChoice;
+}
+
+/**
+ * The same releases in the same layout (manifests at the root, `<version>/` files and blockmaps):
+ * download.tomrade.com on Cloudflare R2, and its mainland China mirror on Aliyun OSS, which the
+ * site's Deploy workflow refreshes (tomrade-site scripts/mirror-china.mjs).
+ */
+export const UPDATE_FEEDS = { international: "https://download.tomrade.com", china: "https://dl.tomrade.cn" } as const;
+
+// The mainland's time zones, the old names included; Hong Kong, Macau and Taipei keep the international feed.
+const MAINLAND_ZONES = new Set(["Asia/Shanghai", "Asia/Urumqi", "Asia/Chongqing", "Asia/Chungking", "Asia/Harbin", "Asia/Kashgar", "PRC"]);
+
+/** Whether this computer's clock is set to a mainland China time zone. */
+export function inMainlandChina(timeZone: string | undefined = Intl.DateTimeFormat().resolvedOptions().timeZone): boolean {
+  return !!timeZone && MAINLAND_ZONES.has(timeZone);
+}
+
+/**
+ * The feeds a check tries, in order: the chosen one, then the other before giving up. Automatic starts
+ * with the mirror in mainland China and the international feed elsewhere, but once one has answered it
+ * goes first, so a feed that is down or blocked from here is not waited on every hour.
+ */
+export function feedOrder(choice: UpdateSourceChoice, opts: { custom?: boolean; china: boolean; answered?: UpdateFeedName | null }): UpdateFeedName[] {
+  if (opts.custom) return ["custom"];
+  const first: UpdateFeedName =
+    choice === "auto" ? (opts.answered && opts.answered !== "custom" ? opts.answered : opts.china ? "china" : "international") : choice;
+  return [first, first === "china" ? "international" : "china"];
 }
 
 export type UpdatePhase =
@@ -38,6 +72,8 @@ export interface UpdateStatus {
   phase: UpdatePhase;
   /** When the feed last answered. */
   checkedAt: number | null;
+  /** The feed in use: the one that last answered, or else the one the next check asks first. */
+  feed: { name: UpdateFeedName; url: string } | null;
 }
 
 declare module "@tomradex/ipc" {
@@ -65,9 +101,9 @@ export function updatesSection(version: string) {
   return {
     id: "updates",
     title: "Updates",
-    schema: z.object({ autoCheck: z.boolean(), channel: z.enum(["stable", "beta"]) }),
+    schema: z.object({ autoCheck: z.boolean(), channel: z.enum(["stable", "beta"]), source: z.enum(["auto", "international", "china"]) }),
     // A beta build stays on the channel it came from until the person says otherwise.
-    defaults: { autoCheck: true, channel: isPrerelease(version) ? "beta" : "stable" } as UpdatePrefs,
+    defaults: { autoCheck: true, channel: isPrerelease(version) ? "beta" : "stable", source: "auto" } as UpdatePrefs,
     order: 90
   };
 }
@@ -79,9 +115,20 @@ export type UpdateSource = Pick<AppUpdater, "on" | "off" | "checkForUpdates" | "
 
 type Emitter = { on(event: string, listener: (...args: never[]) => void): unknown; off(event: string, listener: (...args: never[]) => void): unknown };
 
+/** Points the updater at one feed; the next check, and the download it announces, go there. */
+export interface UpdateFeeds {
+  /** TOMRADE_UPDATE_URL, which is then the only feed. */
+  custom?: string;
+  /** Whether automatic picks the China mirror first. */
+  china: boolean;
+  use(url: string): void;
+}
+
 export interface UpdatesOptions {
   version: string;
   blocked: UpdateBlock | null;
+  /** Without it the source asks the feed it was built with, and status names none. */
+  feeds?: UpdateFeeds;
   /** macOS: Squirrel, whose own update-downloaded is when a restart can install. Elsewhere the download is the staging. */
   staging?: Emitter;
   emit(status: UpdateStatus): void;
@@ -107,6 +154,8 @@ export class Updates {
   /** Bumped by a channel switch, so an answer from the old channel is dropped. */
   private generation = 0;
   private inflight: Promise<unknown> | null = null;
+  /** The feed that last answered a check, whose announced update a download fetches. */
+  private answered: UpdateFeedName | null = null;
   private readonly listeners: [Emitter, string, (...args: never[]) => void][];
 
   constructor(
@@ -126,13 +175,46 @@ export class Updates {
   }
 
   status(): UpdateStatus {
-    return { version: this.opts.version, blocked: this.opts.blocked, phase: this.phase, checkedAt: this.checkedAt };
+    const name = this.opts.feeds ? (this.answered ?? this.order()[0]) : null;
+    return { version: this.opts.version, blocked: this.opts.blocked, phase: this.phase, checkedAt: this.checkedAt, feed: name ? { name, url: this.url(name) } : null };
+  }
+
+  private order(): UpdateFeedName[] {
+    const feeds = this.opts.feeds;
+    return feedOrder(this.prefs?.source ?? "auto", { custom: !!feeds?.custom, china: !!feeds?.china, answered: this.answered });
+  }
+
+  private url(name: UpdateFeedName): string {
+    return name === "custom" ? (this.opts.feeds?.custom ?? "") : UPDATE_FEEDS[name];
+  }
+
+  /** Asks each feed in turn until one answers; when none does, the first one's error is the one reported. */
+  private async ask(): Promise<Awaited<ReturnType<UpdateSource["checkForUpdates"]>>> {
+    const source = this.source!;
+    const feeds = this.opts.feeds;
+    if (!feeds) return source.checkForUpdates();
+    let first: unknown;
+    for (const name of this.order()) {
+      feeds.use(this.url(name));
+      try {
+        const result = await source.checkForUpdates();
+        this.answered = name;
+        return result;
+      } catch (error) {
+        first ??= error;
+      }
+    }
+    throw first;
   }
 
   /** The person's settings, at start and whenever they change. A new channel forgets what the old one said. */
   configure(prefs: UpdatePrefs): void {
     const switched = !!this.prefs && this.prefs.channel !== prefs.channel;
+    // Another source starts from its own first feed, and the feed shown changes with it.
+    const resourced = !!this.prefs && (this.prefs.source ?? "auto") !== (prefs.source ?? "auto");
+    if (resourced && !this.fetching()) this.answered = null;
     this.prefs = prefs;
+    if (resourced) this.opts.emit(this.status());
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.source) return;
@@ -159,7 +241,7 @@ export class Updates {
     // electron-updater hands a second caller the first one's request, which may have been for the other channel.
     await this.inflight?.catch(() => undefined);
     const generation = this.generation;
-    const request = this.source.checkForUpdates();
+    const request = this.ask();
     this.inflight = request;
     try {
       const result = await request;
@@ -281,7 +363,7 @@ export function withInstallerWindow(updater: Pick<BaseUpdater, "install">): void
   updater.install = (_silent, runAfter) => install(false, runAfter);
 }
 
-/** The feed is the one electron-builder wrote into the app; TOMRADE_UPDATE_URL points a check at another, a checkout included. */
+/** The updater, set up the way Tomrade uses it; which feed it asks is set before each check (UpdateFeeds). */
 function feed(ctx: Context): AppUpdater {
   const { autoUpdater } = electronUpdater;
   autoUpdater.logger = {
@@ -295,12 +377,18 @@ function feed(ctx: Context): AppUpdater {
   // "Later" on a downloaded update means the next ordinary quit installs it.
   autoUpdater.autoInstallOnAppQuit = true;
   if (process.platform === "win32") withInstallerWindow(autoUpdater as BaseUpdater);
-  const url = process.env.TOMRADE_UPDATE_URL;
-  if (url) {
-    autoUpdater.forceDevUpdateConfig = !app.isPackaged;
-    autoUpdater.setFeedURL({ provider: "generic", url });
-  }
+  // A checkout has no app-update.yml; pointed at a feed by TOMRADE_UPDATE_URL it uses the dev config instead.
+  if (process.env.TOMRADE_UPDATE_URL) autoUpdater.forceDevUpdateConfig = !app.isPackaged;
   return autoUpdater;
+}
+
+/** International and the China mirror, or only TOMRADE_UPDATE_URL when it is set, a checkout included. */
+function feeds(updater: AppUpdater): UpdateFeeds {
+  return {
+    custom: process.env.TOMRADE_UPDATE_URL || undefined,
+    china: inMainlandChina(),
+    use: (url) => updater.setFeedURL({ provider: "generic", url })
+  };
 }
 
 export const updater = {
@@ -310,9 +398,11 @@ export const updater = {
     const version = app.getVersion();
     ctx.settings.register(updatesSection(version));
     const blocked = blockedHere();
-    const updates = new Updates(blocked ? null : feed(ctx), {
+    const source = blocked ? null : feed(ctx);
+    const updates = new Updates(source, {
       version,
       blocked,
+      feeds: source ? feeds(source) : undefined,
       staging: process.platform === "darwin" ? squirrel : undefined,
       emit: (status) => ctx.ipc.send("updates.changed", status),
       prepareToQuit: () => prepareToQuit(ctx),

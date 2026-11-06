@@ -6,9 +6,13 @@ import { keys, useSaveSettings, useSettings } from "./queries";
 
 type UpdateChannel = "stable" | "beta";
 
+/** auto: the China mirror in mainland China, the international feed elsewhere. */
+export type UpdateSourceChoice = "auto" | "international" | "china";
+
 export interface UpdatePrefs {
   autoCheck: boolean;
   channel: UpdateChannel;
+  source: UpdateSourceChoice;
 }
 
 type UpdatePhase =
@@ -26,6 +30,8 @@ export interface UpdateStatus {
   blocked: "checkout" | "local-build" | "location" | "unsupported" | null;
   phase: UpdatePhase;
   checkedAt: number | null;
+  /** The feed in use; custom is TOMRADE_UPDATE_URL. */
+  feed: { name: "international" | "china" | "custom"; url: string } | null;
 }
 
 /** Implemented by `apps/desktop/src/updater.ts`; declared here for the same reason as the shell's channels. */
