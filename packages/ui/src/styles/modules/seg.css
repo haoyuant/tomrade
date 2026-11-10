@@ -1,0 +1,29 @@
+@layer components {
+/* ─── the view controls · one cluster, at the end of the query bar ──────
+ * There is no view picker in the chrome. Grouping, saving a new view and
+ * the column settings sit in one adjacent group, so nothing in the bar
+ * duplicates what the board itself already states. */
+
+/* the quiet segmented control — grouping is a switch, not a call to action */
+.seg.quiet { background: transparent; box-shadow: var(--elev-ring); padding: 1px; }
+.seg.quiet button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px; border-radius: 3px; font-size: var(--text-sm);
+}
+.seg.quiet button .ico { color: var(--meta); flex-shrink: 0; }
+.seg.quiet button:hover { background: var(--surface-warm); color: var(--fg); }
+.seg.quiet button:hover .ico { color: var(--fg-2); }
+.seg.quiet button[aria-pressed="true"] { background: var(--tag-bg-base); color: var(--tag-fg); }
+.seg.quiet button[aria-pressed="true"] .ico { color: var(--tag-fg); }
+.seg.quiet button[aria-pressed="true"]:hover { background: var(--tag-bg-strong); color: var(--tag-fg); }
+
+.seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-warm);
+  border-radius: var(--radius-md); box-shadow: var(--elev-ring); }
+.seg button { padding: 6px 12px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--muted); font-family: var(--font-display); font-size: 14px; font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-label);
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.seg button:hover { background: var(--surface); color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-on); }
+.seg button[aria-pressed="true"]:hover { background: var(--accent-active); color: var(--accent-on); }
+}

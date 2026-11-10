@@ -1,0 +1,22 @@
+@layer components {
+.automation-detail { min-width: 0; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.schedule-config { display: grid; gap: var(--space-2); }
+.automation-detail-head { display: flex; justify-content: space-between; align-items: end; gap: var(--space-5); padding-bottom: var(--space-3); margin-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }
+.automation-detail-head p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-xs); }
+.automation-detail-head > label { display: grid; grid-template-columns: auto 160px; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+.schedule-columns, .schedule-row { display: grid; grid-template-columns: 112px 112px minmax(180px, 1fr) 28px; gap: var(--space-2); align-items: center; }
+.schedule-columns { padding: 0 var(--space-2); color: var(--meta); font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.schedule-row { padding: var(--space-2); border-radius: var(--radius-sm); }
+.schedule-row:hover { background: var(--surface-warm); }
+.shuffle-config { display: grid; justify-items: start; gap: var(--space-2); }
+.automation-field-label { color: var(--muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+.shuffle-frequency { display: flex; align-items: center; gap: var(--space-3); color: var(--muted); font-size: var(--text-sm); }
+.shuffle-frequency .field-input { width: 96px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.shuffle-frequency .field-input[aria-invalid="true"] { border-color: var(--danger); }
+.frequency-error, .field-error { color: var(--danger); font-size: var(--text-xs); }
+.automation-detail .field-input, .automation-detail select { min-width: 0; min-height: 34px; padding: 6px var(--space-2); color: var(--fg); font-size: var(--text-sm); line-height: var(--leading-tight); border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg); box-shadow: inset 0 0 0 1px transparent; }
+.automation-detail .field-input:focus, .automation-detail select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+.schedule-time { font-family: var(--font-mono); font-size: var(--text-sm); }
+.schedule-time[aria-invalid="true"] { border-color: var(--danger); color: var(--danger); }
+.schedule-add { justify-self: start; margin-top: var(--space-2); }
+}

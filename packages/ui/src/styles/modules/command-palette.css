@@ -43,4 +43,10 @@
 .palette-start-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: var(--text-sm); }
 .palette-start-chip { margin-left: 6px; }
 .palette-start-foot { margin: var(--space-1) var(--space-3) 0; font-size: var(--text-xs); }
+
+.palette-row:hover .card-id,
+.palette-row[data-selected="true"] .card-id { color: var(--muted); }
+
+.palette-row[data-selected="true"] { background: var(--surface-warm); color: var(--fg); }
+.palette-list [cmdk-group-heading] { padding: var(--space-3) var(--space-3) var(--space-1); }
 }

@@ -1,4 +1,6 @@
 @layer components {
+.theme-switch { flex-wrap: wrap; }
+
 /* ─── theme switcher ─────────────────────────────────────────────────── */
 .theme-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-warm); border-radius: var(--radius-md); box-shadow: var(--elev-ring); }
 .theme-seg {

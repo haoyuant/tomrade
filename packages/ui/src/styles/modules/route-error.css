@@ -1,0 +1,6 @@
+@layer components {
+.items-error { margin: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); color: var(--fg-2); }
+.items-error p { margin: 0; }
+.route-error { max-width: 640px; margin: var(--space-12) auto; padding: 0 var(--space-6); display: flex; flex-direction: column; gap: var(--space-3); }
+.route-error-detail { display: block; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+}

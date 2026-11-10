@@ -25,4 +25,9 @@ ul.dash-list { list-style: none; padding: 0; margin: 0; }
 ul.dash-list li { position: relative; padding-left: 15px; font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); }
 ul.dash-list li + li { margin-top: 5px; }
 ul.dash-list li::before { content: "\2013"; position: absolute; left: 0; color: var(--accent); }
+
+/* inside the modal the dialog header carries the title, so the section
+   heads step down one level rather than out-shouting it */
+#settingsSheet .sec-title { font-size: var(--text-lg); }
+#settingsSheet .sec-head { margin-bottom: var(--space-3); }
 }

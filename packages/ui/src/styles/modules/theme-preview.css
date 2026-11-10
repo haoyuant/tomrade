@@ -113,4 +113,6 @@ button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .appearance-group-title { margin: 0; color: var(--fg); font-family: var(--font-display); font-size: var(--text-md); line-height: var(--leading-tight); font-weight: var(--font-weight-medium); }
 .appearance-group-lede { margin-top: var(--space-1); font-size: var(--text-sm); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
 .appearance-theme-heading .theme-switch, .theme-automation-row .theme-switch { max-width: 100%; width: fit-content; }
+
+.theme-option { display: inline-flex; align-items: center; gap: 1px; }
 }

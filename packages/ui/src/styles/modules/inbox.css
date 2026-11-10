@@ -1,0 +1,44 @@
+@layer components {
+/* Code inbox: one row per thing git says that the backlog has not confirmed. */
+.inbox-list { display: flex; flex-direction: column; }
+.inbox-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.inbox-row:last-child { border-bottom: 0; }
+.inbox-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inbox-title { font-size: var(--text-sm); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+
+/* The feedback inbox: entries on the left, the open one and its triage on the right. */
+.palette.modal.sheet-inbox {
+  width: min(1040px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 720px);
+  min-width: min(640px, calc(100vw - 64px)); max-width: min(1280px, calc(100vw - 64px));
+  min-height: min(420px, var(--overlay-max-h)); max-height: min(var(--overlay-max-h), 920px);
+}
+.inbox-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.inbox-tabs { align-self: flex-start; }
+.inbox-tabs .side-count, .side-module-head .side-count { margin-left: 6px; font-size: var(--text-xs); color: var(--meta); }
+.inbox-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5) 0; }
+.inbox-split { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: var(--space-5); flex: 1; min-height: 0; }
+.inbox-entries { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-right: 1px solid var(--border-soft); padding-right: var(--space-3); }
+.inbox-entry { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; text-align: left; color: var(--fg); cursor: pointer; }
+.inbox-entry:hover { background: var(--surface-warm); }
+.inbox-entry[aria-current="true"] { background: var(--tag-bg-base); }
+.inbox-entry:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inbox-entry-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.inbox-entry-meta { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--meta); }
+.inbox-detail { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; overflow-y: auto; }
+.inbox-detail-title { margin: 0; font-size: var(--text-lg); font-weight: 500; color: var(--fg); }
+.inbox-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; }
+.inbox-detail-body { margin: 0; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); font-family: inherit; font-size: 14px; line-height: var(--leading-dense); white-space: pre-wrap; word-break: break-word; color: var(--fg-2); }
+.inbox-status { gap: 6px; font-size: var(--text-sm); color: var(--fg-2); }
+.inbox-reply { margin: 0; }
+.inbox-suggestion { gap: 6px; font-size: var(--text-sm); }
+.inbox-suggestion-head { font-weight: 500; color: var(--fg); }
+.inbox-suggestion-send { gap: 6px; }
+.inbox-detail-actions { flex-wrap: wrap; gap: var(--space-2); }
+.inbox-match { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; text-align: left; color: var(--fg); cursor: pointer; min-width: 0; }
+.inbox-match:hover { background: var(--surface-warm); }
+.inbox-pick { align-self: center; justify-self: center; }
+.inbox-source + .inbox-source { border-top: 1px solid var(--border-soft); padding-top: var(--space-3); }
+.inbox-source-option { margin-top: var(--space-2); padding-left: var(--space-3); font-size: var(--text-sm); color: var(--fg-2); }
+.inbox-activity { gap: 6px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); font-size: var(--text-sm); color: var(--fg-2); }
+}
