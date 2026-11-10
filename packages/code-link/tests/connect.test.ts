@@ -178,11 +178,14 @@ describe("connecting a repository", () => {
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session");
     expect(claude).not.toContain("get_project_rules");
     // The file is committed while Tomrade is one developer's: a clone without it is told to carry on as usual.
-    expect(claude).toContain("This section applies only when the `tomrade` MCP server is available in your session.");
+    expect(claude).toContain("everything below is void: work as usual");
+    // With the server missing, the command is the one other way in.
+    expect(claude).toContain("through the `tomrade` command in a shell, which calls the same tools (`tomrade claim APP-42`");
     expect(claude).toContain("and the `tomrade` server is available");
     const skill = fs.readFileSync(path.join(dir, ".agents", "skills", "tomrade-sync", "SKILL.md"), "utf8");
     expect(skill).toMatch(/^---\nname: tomrade-sync\ndescription: "Bring .*\(project \\"App\\"\).*"\n---\n/);
     expect(skill).toContain("ticket keys look like APP-42");
+    expect(skill).toContain("the `tomrade` command makes the same calls in a shell");
     const settings = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")) as { permissions: unknown; hooks: Record<string, unknown[]> };
     expect(settings.permissions).toEqual({ allow: ["Bash(pnpm test)"] });
     expect(settings.hooks.Stop).toHaveLength(2);
