@@ -44,7 +44,7 @@ function decorateText(doc: Document, text: string, byKey: Map<string, Item>, inC
       changed = true;
       const item = byKey.get(piece);
       const el = doc.createElement(item ? "button" : "span");
-      el.className = item ? "kref num" : "kref dead num";
+      el.className = item ? "key-ref num" : "key-ref key-ref--dead num";
       el.textContent = piece;
       if (item) {
         el.setAttribute("type", "button");
