@@ -1,7 +1,7 @@
 /* Sakura: blush paper, plum ink, petals on the air. The petals and the branch are
    one fixed, static layer behind a page that never scrolls, behind panes of
    thin paper, so they are drawn once and never move. Colours and the petal
-   drawings come from --sakura-* in app.css. */
+   drawings come from --sakura-* in theme/sakura.css. */
 @layer components {
 .sakura body { background: var(--sakura-glow), var(--sakura-air); }
 .sakura body::before {

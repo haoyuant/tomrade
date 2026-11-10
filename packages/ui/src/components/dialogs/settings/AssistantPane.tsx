@@ -23,6 +23,7 @@ import { McpLinkSection } from "../McpLinkSection";
 import { ProfileForm, SearchRouteLine, providerOf } from "./ModelProfiles";
 import { PickSelect } from "~/components/ui/pick-select";
 import { ScopeTag } from "./ScopeTag";
+import { PlaybookImport } from "./PlaybookImport";
 
 // The app's own presets keep their translated names; a provider's other presets show the title it gives.
 const PRESET_TITLES: Record<string, MessageKey> = {
@@ -260,6 +261,8 @@ export function AssistantPane({
         <SectionHead title={t("playbooks.settingsTitle")}>{t("playbooks.settingsLede")}</SectionHead>
         <div className="panel stack-3">
           <PlaybooksBlock agent={agent} onSave={saveAgent} />
+          <hr className="rule" />
+          <PlaybookImport />
         </div>
       </Fold>
     </>
@@ -328,6 +331,11 @@ function PlaybooksBlock({ agent, onSave }: { agent: AgentSettings; onSave: (next
         <div className="profile-row" key={entry.id}>
           <span className="p-title">{entry.title}</span>
           <span className="p-model num">{entry.id}</span>
+          {entry.origin && (
+            <span className="meta-txt num" title={entry.origin.source ? t("playbooks.importedFrom", { source: entry.origin.source }) : undefined}>
+              {t("playbooks.versionTag", { n: entry.origin.version })}
+            </span>
+          )}
           {entry.shadows.length ? (
             <select
               className="input"

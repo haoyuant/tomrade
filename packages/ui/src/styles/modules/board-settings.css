@@ -1,0 +1,96 @@
+@layer components {
+/* ─── board settings · a surface on the board, not a second page ───────
+ * A file-to-file jump cannot follow inside a preview frame, so the board
+ * opens its settings in place. board-settings.html keeps the same screen
+ * standalone for a browser or an export. The distribution bar is one hue
+ * stepped light-to-dark — a board has one accent, not six. */
+.bs-bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden;
+  background: var(--surface-warm); box-shadow: var(--elev-ring); }
+.bs-bar span { display: block; min-width: 3px; }
+.bs-legend { display: flex; flex-wrap: wrap; gap: 6px var(--space-4); margin-top: var(--space-3); }
+.bs-dl { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--muted); }
+.bs-dl i { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; box-shadow: var(--elev-ring); }
+.bs-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bs-stack .cfg-name { flex: none; }
+.bs-sub { font-size: var(--text-sm); color: var(--muted); line-height: var(--leading-dense); }
+.bs-radio { width: 15px; height: 15px; flex-shrink: 0; accent-color: var(--accent); }
+.bs-radio:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 50%; }
+.dlg-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.dlg-body { overflow-y: auto; padding: var(--space-5); flex: 1; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.dlg-foot { display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* A real modal is centred on the workspace row and scrolls its own body. The
+ * command palette stays top-anchored — it is typed at, not read.
+ * `<Dialog>` stamps `.modal` on every sheet it renders, so height and axis are
+ * settled here once; a per-dialog class only ever picks a width. */
+.palette.modal {
+  top: var(--overlay-mid); transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 64px));
+  max-height: min(var(--overlay-max-h), 760px);
+}
+.palette.modal.wide { width: min(760px, calc(100vw - 64px)); }
+
+/* an image looked at from a ticket: the sheet takes the window, the image fits inside it */
+.image-preview-host { display: contents; }
+.palette.modal.sheet-image { width: calc(100vw - 64px); height: var(--overlay-max-h); max-height: var(--overlay-max-h); }
+.sheet-image .dlg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-image .dlg-head .num { flex-shrink: 0; }
+.image-preview-stage {
+  position: relative; flex: 1; min-height: 0; padding: var(--space-5);
+  display: flex; align-items: center; justify-content: center; background: var(--surface-warm);
+}
+.image-preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--radius-sm); }
+/* a picture or document in the assistant's conversation: a thumbnail in the line, the original a click away */
+.media-thumb { display: block; width: fit-content; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-warm); cursor: zoom-in; overflow: hidden; max-width: 100%; }
+.media-thumb:hover { border-color: var(--accent); }
+.media-thumb img { display: block; max-width: 320px; max-height: 240px; object-fit: contain; }
+.media-thumb.is-doc { width: min(100%, 220px); height: 280px; position: relative; }
+.media-thumb.is-doc iframe { width: 100%; height: 100%; border: 0; pointer-events: none; background: #fff; }
+.media-stage { flex: 1; min-height: 0; overflow: auto; display: flex; padding: var(--space-5); background: var(--surface-warm); }
+.media-stage img { margin: auto; flex-shrink: 0; max-width: none; max-height: none; cursor: zoom-out; }
+.media-stage img.is-fit { max-width: 100%; max-height: 100%; object-fit: contain; flex-shrink: 1; min-width: 0; min-height: 0; cursor: zoom-in; }
+.media-doc-full { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+.image-preview-step {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--elev-raised);
+}
+.image-preview-step:hover { background: var(--surface); }
+.image-preview-step.is-prev { left: var(--space-3); }
+.image-preview-step.is-next { right: var(--space-3); }
+
+/* Settings outgrew one scroll, so its body is a menu beside a pane rather than
+ * one column. The rail borrows the sidebar's rows at a narrower width: one row
+ * per pane, the current one marked exactly the way a current board is.
+ * It is also the one sheet you move around inside, so it pins its height as
+ * well as its width: the pane scrolls, and the box never resizes under the menu
+ * row you are clicking — only from its corner grip, within these limits. Its
+ * header drags it aside, like a window's. */
+.palette.modal.sheet-settings {
+  width: min(964px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(640px, calc(100vw - 64px)); max-width: calc(100vw - 64px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
+}
+.palette.sheet-project-settings {
+  width: min(900px, calc(100vw - 64px));
+  height: min(var(--overlay-max-h), 700px);
+}
+/* `translate` adds to the centring `transform`; dialog.tsx sets the offsets */
+.palette.modal.is-movable { translate: var(--dlg-x, 0px) var(--dlg-y, 0px); }
+.palette.modal.is-movable .dlg-head { cursor: move; user-select: none; }
+.dlg-split { display: flex; flex: 1; min-height: 0; }
+.dlg-grip {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; z-index: 3;
+  cursor: nwse-resize; touch-action: none; opacity: 0.55;
+  background: linear-gradient(135deg, transparent 0 55%, var(--meta) 55% 61%, transparent 61% 72%, var(--meta) 72% 78%, transparent 78%);
+}
+.dlg-grip:hover { opacity: 1; }
+.dlg-nav {
+  width: 204px; flex-shrink: 0; overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  background: var(--bg); border-right: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+}

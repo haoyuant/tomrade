@@ -1,0 +1,160 @@
+@layer components {
+/* A terminal session in the panel: the session's head, a strip of its pane's last lines over the conversation, the drawer and the input below. */
+.ai-session { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.ai-session-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; min-height: 28px; }
+.ai-session-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--fg); }
+.ai-session-show { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; font-size: var(--text-xs); white-space: nowrap; }
+.ai-session-meta { margin: 2px var(--space-4) var(--space-2); }
+.ai-session-wait { color: var(--warn); }
+.ai-session-usage { margin: calc(2px - var(--space-2)) var(--space-4) var(--space-2); }
+.ai-strip { display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-4); padding: 6px 10px; border: 0; border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; text-align: left; cursor: pointer; flex-shrink: 0; }
+.ai-strip:hover { background: color-mix(in oklab, var(--term-bg) 88%, var(--term-fg)); }
+.ai-strip-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ai-strip-line { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.ai-strip-line.is-quiet { color: var(--term-dim); }
+.ai-strip-chev { flex-shrink: 0; color: var(--term-dim); }
+.ai-session-convo { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.5; user-select: text; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.ai-session-empty { margin: var(--space-4) 0; text-align: center; }
+.ai-session-foot { gap: var(--space-2); }
+.ai-drawer { margin: 0; max-height: 40vh; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; white-space: pre; user-select: text; scrollbar-width: thin; }
+.ai-approve { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--warn); border-radius: var(--radius-md); background: color-mix(in oklab, var(--warn) 10%, transparent); font-size: var(--text-sm); }
+.ai-approve-text { flex: 1; min-width: 0; color: var(--warn); }
+.ai-approve-note { order: -1; flex-basis: 100%; font-size: var(--text-xs); color: var(--warn); }
+/* the session bar takes the panel's right edge, beside the head, the conversation and the composer */
+/* rows by name of what fills them: the queue line's row is empty (zero high) while nothing else waits */
+.ai:has(> .sbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.ai > .ai-head, .ai > .ai-scroll, .ai > .ai-foot { grid-column: 1; }
+.ai > .ai-head { grid-row: 1; }
+.ai > .ai-scroll { grid-row: 3; }
+.ai > .ai-foot { grid-row: 4; }
+.ai > .sbar { grid-column: 2; grid-row: 1 / -1; }
+/* what else waits on the person: a line under the head, the next one a click (or ⌥↓) away */
+.ai > .ai-queue { grid-column: 1; grid-row: 2; }
+.ai-queue { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-4); border-bottom: 1px solid var(--warn); background: var(--surface-warm); font-size: var(--text-sm); }
+.ai-queue svg path { fill: var(--warn); }
+.ai-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The session bar on the panel's right edge: dots to switch by, or cards that say what each is doing.
+ * Shapes carry the state, colour only repeats it: ring runs, diamond waits, tick ended. */
+.sbar { flex-shrink: 0; position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-left: 1px solid var(--border); }
+.sbar-mark { flex-shrink: 0; }
+.sbar-mark.is-run circle { fill: none; stroke: var(--accent-light); stroke-width: 2; }
+.sbar-mark.is-wait path { fill: var(--warn); }
+.sbar-mark.is-done path { fill: none; stroke: var(--meta); stroke-width: 1.8; }
+.sbar.is-rail { width: 60px; align-items: center; }
+.sbar.is-rail .sbar-head { width: 100%; justify-content: center; padding: 0; }
+.sbar-waiting { margin: var(--space-2) 3px var(--space-1); padding: 2px 4px; border: 1px solid var(--warn); border-radius: 8px; color: var(--warn); display: flex; flex-direction: column; align-items: center; text-align: center; width: 52px; box-sizing: border-box; flex-shrink: 0; }
+.sbar-waiting-n { font-size: 13px; line-height: 15px; font-weight: 600; }
+.sbar-waiting-word { font-size: 10px; line-height: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sbar-dots { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--space-1) 0 var(--space-2); }
+.sbar-rail-foot { width: 100%; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--space-1) 0 var(--space-2); border-top: 1px solid var(--border); }
+.sbar-dot { width: 52px; padding: 5px 0 3px; border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex-shrink: 0; }
+.sbar-dot:hover { background: var(--surface-warm); }
+.sbar-dot[aria-current="true"] { background: var(--surface); box-shadow: var(--elev-ring); }
+.sbar-dot-face { position: relative; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; background: var(--surface); border: 1px dashed var(--border-input); overflow: visible; }
+.sbar-dot[data-status="run"] .sbar-dot-face { border: 2px solid var(--accent-light); }
+.sbar-dot[data-status="wait"] .sbar-dot-face { border: 2px solid var(--warn); }
+.sbar-dot[data-status="idle"] .sbar-dot-face { border: 1px solid var(--border-input); }
+.sbar-dot-face .sbar-mark { position: absolute; top: -3px; left: -3px; }
+.sbar-dot[data-status="run"] .sbar-dot-face .sbar-mark, .sbar-dot[data-status="done"] .sbar-dot-face .sbar-mark { display: none; }
+.sbar-dot-where { font-size: 10px; color: var(--meta); max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
+.sbar-new-badge { font-size: 9px; line-height: 14px; padding: 0 5px; border-radius: 999px; background: var(--accent-light); color: var(--accent-on); flex-shrink: 0; }
+.sbar-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
+/* a start under way, before its session is up: a dashed ring */
+.sbar-dot[data-status="start"] { cursor: default; }
+.sbar-dot[data-status="start"] .sbar-dot-face { border: 2px dashed var(--accent-light); }
+.sbar-card[data-status="start"] { cursor: default; border-style: dashed; border-color: var(--accent-light); }
+.start-starting { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: var(--accent-light); font-size: var(--text-sm); }
+.start-starting-mark { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px dashed var(--accent-light); }
+.card-starting { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--accent-light); }
+/* the session at work on the ticket: who, where, for how long */
+.card-session { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: var(--text-xs); color: var(--accent-light); white-space: nowrap; }
+.card-session-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.card-session-mark { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent-light); }
+/* a ticket's sessions by when each began: what came of each first, where it went unfolded */
+.ticket-sessions { display: flex; flex-direction: column; gap: var(--space-2); }
+.ticket-clash { display: flex; flex-direction: column; gap: var(--space-1); }
+.ticket-delivered { margin: 0; }
+.ticket-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ticket-timeline-row { display: flex; align-items: flex-start; gap: 4px; }
+.ticket-timeline-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+.ticket-timeline-body .card-session-mark { display: inline-block; vertical-align: middle; }
+.ticket-timeline-outcome { color: var(--fg); }
+.ticket-timeline-stops { margin-top: var(--space-1); padding-left: var(--space-2); border-left: 2px solid var(--border-input); }
+.ticket-timeline-stops ol { margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+/* a conversation opened under another, to write its code in the background: set in under its parent */
+.sbar-dot[data-depth="1"] { margin-left: 10px; }
+.sbar-dot[data-depth="1"] .sbar-dot-face { width: 28px; height: 28px; font-size: 10px; }
+.sbar-card[data-depth="1"] { margin-left: 12px; width: calc(100% - 12px); }
+/* where a conversation turns to writing code */
+.work-rule { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; color: var(--accent); font-size: var(--text-xs); }
+.work-rule::before, .work-rule::after { content: ""; flex: 1; border-top: 1px solid var(--border-input); }
+/* the offer to move that coding out, while the run is at it: on the rule, or at the live end when the rule is older */
+.work-offer { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--muted); }
+.claim-card { margin: var(--space-3) 0 var(--space-2); padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-md); background: var(--surface); }
+.claim-card-top { display: flex; align-items: flex-start; gap: var(--space-2); }
+.claim-card-head { flex: 1; margin: 0; font-size: var(--text-sm); color: var(--fg); }
+.claim-card-what { margin: 4px 0 0; }
+.claim-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-2); }
+.agent-note .note-thread { color: var(--muted); }
+.sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
+/* The last few to end, below a rule so they never read as still going. */
+.sbar-ended { display: flex; flex-direction: column; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+/* its own margin, not the parent's gap, so the list folds without leaving a gap behind */
+.sbar-ended-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); font-size: var(--text-sm); }
+.sbar-peek[data-status="wait"] { border-color: var(--warn); }
+.sbar-peek-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--fg); }
+.sbar-peek-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 20px; }
+.sbar-actions { display: inline-flex; gap: 2px; flex-shrink: 0; }
+.sbar-chip { font-size: 10px; line-height: 16px; padding: 0 6px; flex-shrink: 0; }
+.sbar-peek-wait, .sbar-card-wait { color: var(--warn); }
+.sbar-peek-said, .sbar-card-said { color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sbar.is-cards { width: 280px; }
+.sbar-head { display: flex; align-items: center; gap: var(--space-1); height: var(--titlebar-h); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sbar-head-title { flex: 1; font-size: var(--text-sm); }
+.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2) var(--space-2) 6px; flex-shrink: 0; }
+.sbar-filter { border: 1px solid var(--border-input); border-radius: 999px; background: transparent; color: var(--muted); font-size: 11px; line-height: 20px; padding: 0 8px; cursor: pointer; }
+.sbar-filter[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
+/* 2px on top, taken from the filters' padding: the scroll box clips at its edge, and the open card's ring is drawn outside its border */
+.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 2px var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
+.sbar-card { text-align: left; width: 100%; min-width: 0; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); color: var(--fg); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font-size: var(--text-sm); }
+.sbar-card:hover { border-color: var(--border-input); }
+.sbar-card[data-status="wait"] { border-color: var(--warn); }
+.sbar-card[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
+.sbar-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sbar-card-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbar-card-title > .sbar-actions { margin-left: auto; visibility: hidden; }
+.sbar-card:hover .sbar-actions, .sbar-card:focus-within .sbar-actions { visibility: visible; }
+.sbar-card-outcome { border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); }
+/* what a waiting card asks, answered in place */
+.sbar-ask { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; padding-top: 6px; border-top: 1px dashed var(--border); cursor: default; }
+.sbar-ask-text { color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.sbar-ask-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A question's choice is read whole before it is picked: it wraps inside its card, never past it. */
+.btn.ask-choice { white-space: normal; text-align: start; justify-content: flex-start; max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+/* a live terminal session's last lines, as its pane shows them */
+.sbar-tail { display: flex; flex-direction: column; margin-top: 2px; padding: 4px 7px; border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; min-width: 0; }
+.sbar-tail-line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* the session seen from the panel and, in its cell, from the Terminal window */
+.ai-session-views { flex-shrink: 0; }
+.ai-session-views button { display: inline-flex; align-items: center; gap: 4px; }
+.ai-strip-title { display: block; opacity: 0.7; font-family: var(--font-sans, inherit); }
+.ai-drawer-box { display: flex; flex-direction: column; border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); overflow: hidden; }
+.ai-drawer-head { display: flex; align-items: center; gap: var(--space-2); padding: 4px 6px 4px 10px; font-size: var(--text-xs); border-bottom: 1px solid color-mix(in oklab, var(--term-fg) 18%, transparent); }
+.ai-drawer-head .ai-drawer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-drawer-head .btn { color: inherit; }
+.ai-drawer-box .ai-drawer { margin: 0; border-radius: 0; }
+.ai-drawer-input { display: flex; align-items: center; gap: 6px; padding: 4px 10px 6px; font-family: var(--font-mono); font-size: var(--text-xs); border-top: 1px solid color-mix(in oklab, var(--term-fg) 18%, transparent); }
+.ai-drawer-input input { flex: 1; min-width: 0; background: transparent; border: 0; color: inherit; font: inherit; outline: none; }
+.ai-answered-there { margin: 0 var(--space-4); color: var(--fg-2); }
+.ai-session-turn { margin: 0 var(--space-4); color: var(--fg-2); }
+.cs-convo-note { margin: 0; font-size: var(--text-xs); color: var(--meta, var(--muted)); font-style: italic; }
+.sbar-empty { padding: var(--space-2); }
+.pet-stage {
+  height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
+  display: flex; align-items: flex-end; justify-content: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pet-canvas { display: block; flex: 0 0 auto; }
+}

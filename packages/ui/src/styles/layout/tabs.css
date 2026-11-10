@@ -1,0 +1,54 @@
+@layer components {
+/* ─── tabs ───────────────────────────────────────────────────────────── */
+/* The column beside the sidebar: the tab strip over whatever the open tab shows.
+ * It carries the board's old sizing, so the detail pane still squeezes it the same way. */
+.main-col { display: flex; flex-direction: column; min-height: 0; flex: 1 1 362px; min-width: 362px; }
+/* between the three-pane floor and what three panes really take, the board gives way: the detail must not run under the assistant */
+.workspace:has(.detail) .main-col { min-width: 0; flex-shrink: 3; }
+/* clipped so the board does not show through the pane, except while one of its own menus is open */
+.workspace:has(.detail) .main-col:not(:has(.menu)) { overflow: hidden; }
+.main-col > .board-region { flex: 1 1 0; min-width: 0; }
+.tab-strip {
+  display: flex; align-items: stretch; gap: 2px;
+  height: 36px; flex-shrink: 0; padding: 4px var(--space-2) 0 0;
+  border-bottom: 1px solid var(--border);
+  /* a step darker than the page, so the open tab — in the page's own colour — reads as joined to it */
+  background: color-mix(in srgb, var(--surface-warm) 70%, var(--bg));
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.tab-strip::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-width: 0; max-width: 220px; padding: 0 4px 0 10px;
+  border: 1px solid transparent; border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-display); font-size: 13px; line-height: 1;
+  white-space: nowrap; cursor: pointer; user-select: none;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.tab.is-backlog { padding-right: 12px; }
+/* the strip starts flush at the sidebar's edge; that border already draws the first tab's left side */
+.tab:first-child { border-left: 0; border-top-left-radius: 0; }
+.tab:first-child[aria-selected="true"]::before { left: 0; border-top-left-radius: 0; }
+.tab:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--fg); }
+/* the open tab sits on the line below it, joined to what it shows */
+.tab[aria-selected="true"] { background: var(--bg); color: var(--fg); border-color: var(--border); margin-bottom: -1px; cursor: default; }
+.tab[aria-selected="true"]::before { content: ""; position: absolute; left: -1px; right: -1px; top: -1px; height: 2px; background: var(--accent); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.tab-ico { color: var(--meta); flex-shrink: 0; }
+.tab[aria-selected="true"] .tab-ico { color: var(--accent); }
+.tab-name { overflow: hidden; text-overflow: ellipsis; }
+.tab-pin { color: var(--meta); flex-shrink: 0; }
+.tab-close {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--meta); opacity: 0;
+}
+.tab:hover .tab-close, .tab[aria-selected="true"] .tab-close, .tab:focus-visible .tab-close { opacity: 1; }
+.tab-close:hover { background: var(--border-soft); color: var(--fg); }
+/* dragged, and faded once out of the window: let go there and it opens in one of its own */
+.tab[data-drag] { cursor: grabbing; }
+.tab[data-drag="out"] { opacity: 0.45; }
+}

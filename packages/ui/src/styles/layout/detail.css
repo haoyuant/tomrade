@@ -1,0 +1,109 @@
+@layer components {
+/* ─── detail pane ────────────────────────────────────────────────────── */
+.detail {
+  /* the pane yields width to the board before the board starts clipping, never so far that its head clips */
+  width: var(--detail-w); flex-shrink: 1; min-width: min-content;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg); border-left: 1px solid var(--border);
+}
+.detail-head { display: flex; align-items: center; gap: var(--space-2); min-width: 316px; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+/* a long workstream name gives way before the pane widens for it */
+.detail-head > .tag { min-width: 0; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The body wraps to whatever width the head sets: it never widens the pane itself. */
+.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; contain: inline-size; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.detail-title { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
+.field-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.field-row dt { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); padding-top: 2px; }
+.field-row dd { margin: 0; min-width: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* activity ledger — provenance vocabulary carried into the detail pane */
+.ledger { display: flex; flex-direction: column; }
+.ledger-row { display: grid; grid-template-columns: 14px 1fr; gap: var(--space-2); padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.ledger-mark { display: flex; justify-content: center; padding-top: 4px; }
+.ledger-txt { font-size: var(--text-sm); color: var(--muted); line-height: var(--leading-dense); }
+.ledger-txt b { font-weight: var(--font-weight-medium); color: var(--fg-2); }
+
+/* Docked, the detail is one narrow column: body, then blocks, then the
+ * oplog, each separated by a rule. */
+.fieldstrip { margin-top: var(--space-5); }
+.detail-cols { display: flex; flex-direction: column; }
+.detail-sect { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.detail-sect > .eyebrow { display: block; margin-bottom: var(--space-3); }
+.detail-note { margin-top: var(--space-4); line-height: var(--leading-dense); }
+
+/* The detail surface has two sizes: a pane beside the board for scanning,
+ * and an expanded overlay for reading. Same content, same element.
+ *
+ * The overlay is centred inside the workspace row rather than the window,
+ * so the 42px titlebar and 29px status bar leave equal optical margins,
+ * and it hugs its content — a four-line issue must not stretch into a
+ * full-height sheet with a void under the last row. */
+.detail.expanded {
+  position: fixed; z-index: 62;
+  left: 50%;
+  top: var(--overlay-mid);
+  transform: translate(-50%, -50%);
+  width: min(880px, calc(100vw - 2 * var(--space-12)));
+  min-width: 0;
+  height: auto;
+  max-height: var(--overlay-max-h);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--elev-raised); background: var(--bg);
+  overflow: hidden;   /* clips the head rule and the scroll edge to the radius */
+}
+/* head and body share one left edge — the id chip sits over the title */
+.detail.expanded .detail-head { padding: var(--space-3) var(--space-5) var(--space-3) var(--space-10); }
+.detail.expanded .detail-body { padding: var(--space-7) var(--space-10) var(--space-12); }
+.detail.expanded .detail-title { font-size: var(--text-2xl); max-width: 30ch; }
+.detail.expanded .fieldstrip { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-7);
+  margin-top: var(--space-6); }
+.detail.expanded .fieldstrip .field-row { display: flex; flex-direction: column; gap: 3px;
+  grid-template-columns: none; border: 0; padding: 0; }
+
+/* Expanded, the extra width buys a second column instead of a longer
+ * line: the issue reads at ~66 characters on the left, the append-only
+ * oplog moves to a rail on the right. */
+.detail.expanded .detail-cols {
+  display: grid; grid-template-columns: minmax(0, 1fr) 284px;
+  gap: 0 var(--space-8);   /* stretch, so the rail rule runs the full column */
+  margin-top: var(--space-6); padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+.detail.expanded .detail-side { border-left: 1px solid var(--border); padding-left: var(--space-8); }
+.detail.expanded .detail-main > *:first-child,
+.detail.expanded .detail-side > .detail-sect {
+  margin-top: 0; padding-top: 0; border-top: 0;
+}
+/* Below the two columns' combined minimum the rail would crush the ledger,
+ * so it drops back under the body. */
+@media (max-width: 860px) {
+  .detail.expanded .detail-cols { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .detail.expanded .detail-side { border-left: 0; padding-left: 0; }
+  .detail.expanded .detail-side > .detail-sect {
+    margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border);
+  }
+}
+.lockbar { display: flex; align-items: flex-start; gap: var(--space-3); padding: 10px var(--space-3);
+  margin-top: var(--space-4); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); }
+/* The lockbar's shape in the destructive register: a confirm sheet states what
+ * is about to be lost before it offers the button that loses it. */
+.dangerbar { display: flex; align-items: flex-start; gap: var(--space-3); padding: 10px var(--space-3);
+  background: var(--surface); border: 1px solid var(--danger); border-radius: var(--radius-md); }
+.dangerbar .b-mark { color: var(--danger); flex-shrink: 0; margin-top: 2px; }
+.del-list { margin: 6px 0 0; padding-left: var(--space-4); list-style: disc;
+  font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
+.del-list li + li { margin-top: 3px; }
+.issue-body { margin-top: var(--space-5); font-size: var(--text-base);
+  line-height: var(--leading-body); color: var(--fg-2); max-width: 66ch; }
+.rel-row {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  padding: 8px 2px; text-align: left;
+  border: 0; border-top: 1px solid var(--border-soft); border-radius: 0;
+  background: transparent; font-family: var(--font-display); font-size: 14px; color: var(--fg-2);
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.rel-row .r-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-row:hover { color: var(--fg); }
+.rel-row:focus-visible { box-shadow: var(--focus-ring); }
+}
