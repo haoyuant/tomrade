@@ -15,7 +15,7 @@ import type { LlmService } from "@tomradex/llm";
 import type {} from "@tomradex/settings";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
-import { Judgement, judgeSystem, judgeUser, renderBrief, type Delivery } from "./brief.js";
+import { Judgement, judgeSystem, judgeUser, renderBrief, type BriefSpend, type Delivery, type SpendLine } from "./brief.js";
 import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
 import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
 import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
@@ -845,6 +845,16 @@ export class NightShifts extends Service {
     return new Map(judged);
   }
 
+  /** What the shift's runs cost by ticket and by agent; the report leaves the section out when nothing ran in the app. */
+  private spend(shift: NightShift): BriefSpend {
+    const { tickets, engines } = this.home.agent.spendByTicket(shift.projectId, shift.tickets.map((t) => t.itemId), shift.startedAt);
+    const line = (t: { costUsd: number | null; runs: number; costUnknownRuns: number }): SpendLine => ({ usd: t.costUsd, runs: t.runs, unpriced: t.costUnknownRuns });
+    return {
+      tickets: new Map([...tickets].map(([itemId, s]) => [itemId, line(s.totals)])),
+      agents: engines.map((e) => ({ title: e.title, ...line(e) }))
+    };
+  }
+
   /** Writes the morning report into the project's Files and tells the person; returns where it went. */
   async brief(shift: NightShift): Promise<string | null> {
     const view = this.view(shift);
@@ -853,7 +863,7 @@ export class NightShifts extends Service {
     const pad = (n: number) => String(n).padStart(2, "0");
     const day = `${ended.getFullYear()}-${pad(ended.getMonth() + 1)}-${pad(ended.getDate())}`;
     const stamp = `${day} ${pad(ended.getHours())}-${pad(ended.getMinutes())}`;
-    const body = renderBrief(view, await this.deliveries(view), w, day);
+    const body = renderBrief(view, await this.deliveries(view), w, day, this.spend(shift));
     const files = this.home.get("files");
     let briefPath: string | null = null;
     if (files) {

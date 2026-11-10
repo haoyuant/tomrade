@@ -96,8 +96,27 @@ function detail(ticket: NightShiftTicketView, delivery: Delivery | undefined, w:
   return out;
 }
 
+/** One line of the report's spend: what the runs of a ticket or an agent cost, and how many said nothing. */
+export interface SpendLine {
+  /** Null when no run reported a cost — never a made-up zero. */
+  usd: number | null;
+  runs: number;
+  unpriced: number;
+}
+
+/** What the shift's runs cost, by ticket (item id) and by agent title. */
+export interface BriefSpend {
+  tickets: Map<string, SpendLine>;
+  agents: (SpendLine & { title: string })[];
+}
+
+const spendText = (line: SpendLine, w: BriefWords): string => {
+  const amount = line.usd === null ? w("spendUnknown") : `$${line.usd.toFixed(2)}`;
+  return line.unpriced && line.usd !== null ? w("spendPartly", { amount, runs: line.runs, unpriced: line.unpriced }) : w("spendRuns", { amount, runs: line.runs });
+};
+
 /** The report itself: plain Markdown, and every section is left out when it has nothing to say. */
-export function renderBrief(shift: NightShiftView, deliveries: Map<string, Delivery>, w: BriefWords, dateLabel: string): string {
+export function renderBrief(shift: NightShiftView, deliveries: Map<string, Delivery>, w: BriefWords, dateLabel: string, spend?: BriefSpend): string {
   const of = (...states: NightShiftTicketView["state"][]) => shift.tickets.filter((t) => states.includes(t.state));
   const minutes = Math.max(1, Math.round(((shift.endedAt ?? shift.startedAt) - shift.startedAt) / 60_000));
   const facts = [
@@ -136,6 +155,18 @@ export function renderBrief(shift: NightShiftView, deliveries: Map<string, Deliv
   if (shift.found.length) {
     lines.push(`## ${w("foundSection")}`, "");
     for (const f of shift.found) lines.push(`- ${f.key} ${f.title}: ${w("foundFrom", { key: f.fromKey, text: f.why })}`);
+    lines.push("");
+  }
+  if (spend && spend.agents.length) {
+    lines.push(`## ${w("spendSection")}`, "");
+    if (!shift.costKnown) lines.push(w("spendCoverage"), "");
+    lines.push(`**${w("spendByAgent")}**`, "");
+    for (const a of spend.agents) lines.push(`- ${a.title}: ${spendText(a, w)}`);
+    lines.push("", `**${w("spendByTicket")}**`, "");
+    const ran = shift.tickets.filter((t) => spend.tickets.has(t.itemId)).sort((a, b) => (spend.tickets.get(b.itemId)!.usd ?? 0) - (spend.tickets.get(a.itemId)!.usd ?? 0));
+    for (const t of ran) lines.push(`- ${t.key} ${t.title}: ${spendText(spend.tickets.get(t.itemId)!, w)}`);
+    const none = shift.tickets.filter((t) => !spend.tickets.has(t.itemId) && t.state !== "skipped");
+    if (none.length) lines.push(`- ${w("spendNoRuns", { keys: none.map((t) => t.key).join(", ") })}`);
     lines.push("");
   }
   const worked = [...toReview, ...reviewOrder(of("done"), deliveries)];

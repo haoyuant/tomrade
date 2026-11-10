@@ -81,6 +81,16 @@ it("adds up runs per engine for today and the week, and a ticket's spend as its 
     expect(report.days.reduce((sum, d) => sum + (d.costUsd ?? 0), 0)).toBe(0.75);
     expect(report.totals).toMatchObject({ runs: 7, failedRuns: 0, costKnownRuns: 4, costUnknownRuns: 3 });
     expect(report.totals.duration?.samples).toBe(7);
+    // the ticket's runs are the ones its Cost field sums, named for the pane; the rest stay counted as no ticket
+    expect(report.tickets).toMatchObject([{ itemId: ticket.id, key: ticket.key, title: "Export", runs: 2, costUsd: 0.25 }]);
+    expect(report.noTicket.runs).toBe(5);
+    const spend = ctx.agent.ticketUsage(project.id, ticket.id);
+    expect(spend.totals).toMatchObject({ runs: 2, costUsd: 0.25, costUnknownRuns: 0 });
+    expect(spend.engines).toMatchObject([{ engine: "spend", title: "Spender", runs: 2 }]);
+    expect(spend.deliveries).toMatchObject([{ sequence: null, runs: 2 }]);
+    const shift = ctx.agent.spendByTicket(project.id, [ticket.id], 0);
+    expect(shift.tickets.get(ticket.id)?.totals.costUsd).toBe(0.25);
+    expect(shift.engines).toMatchObject([{ title: "Spender", runs: 2, costUsd: 0.25 }]);
     expect(report.engines.find((e) => e.engine === "spend")).toMatchObject({ runs: 4, costUsd: 0.75, costKnownRuns: 4, costUnknownRuns: 0 });
     // Money adds in micro-dollars: 0.2 + 0.05 + 0.1 + 0.4 is exactly 0.75, not 0.7500000000000001.
     expect(report.engines.find((e) => e.engine === "spend")!.costUsd).toBe(0.75);
@@ -96,4 +106,28 @@ it("adds up runs per engine for today and the week, and a ticket's spend as its 
   } finally {
     await ctx.fiber.dispose();
   }
+});
+
+it("splits a ticket's runs by agent and by delivery, and the pane's window by ticket", async () => {
+  const { ticketSpend, aggregateUsage } = await import("@tomradex/agent");
+  const run = (engine: string, startedAt: number, costUsd: number | null, extra: { itemId?: string | null; deliveryId?: string | null } = {}) =>
+    ({ engine, status: "done" as const, startedAt, endedAt: startedAt + 10, usage: { inputTokens: 100, outputTokens: 10 }, metrics: null, costUsd, projectId: "p", ...extra });
+  const deliveries = [
+    { id: "d1", sequence: 1, state: "completed", startedAt: 100, completedAt: 200 },
+    { id: "d2", sequence: 2, state: "active", startedAt: 300, completedAt: null }
+  ];
+  const spend = ticketSpend(
+    [run("claude", 50, 0.1), run("claude", 150, 0.2), run("codex", 250, null), run("codex", 350, 0.3), run("claude", 120, 0.05, { deliveryId: "d2" })],
+    deliveries,
+    new Map([["claude", "Claude Code"]])
+  );
+  expect(spend.totals).toMatchObject({ runs: 5, costUsd: 0.65, costKnownRuns: 4, costUnknownRuns: 1 });
+  expect(spend.engines.map((e) => [e.title, e.runs, e.costUsd])).toEqual([["Claude Code", 3, 0.35], ["codex", 2, 0.3]]);
+  // before any delivery; the first; a run between deliveries stays with the one it followed; a General run's pin wins over time
+  expect(spend.deliveries.map((d) => [d.sequence, d.state, d.runs, d.costUsd])).toEqual([[null, null, 1, 0.1], [1, "completed", 2, 0.2], [2, "active", 2, 0.35]]);
+
+  const report = aggregateUsage([run("claude", 1000, 0.5, { itemId: "a" }), run("claude", 1001, 0.1, { itemId: "a" }), run("codex", 1002, 0.9, { itemId: "b" }), run("codex", 1003, null), run("claude", 1004, null, { itemId: "c" })], { from: 0, to: 2000, dayCount: 1 });
+  expect(report.tickets.map((t) => [t.itemId, t.runs, t.costUsd])).toEqual([["b", 1, 0.9], ["a", 2, 0.6], ["c", 1, null]]);
+  expect(report.noTicket).toMatchObject({ runs: 1, costUsd: null });
+  expect(report.totals.runs).toBe(5);
 });

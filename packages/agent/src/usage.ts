@@ -10,6 +10,11 @@ export interface UsageRun {
   usage: { inputTokens?: number; outputTokens?: number } | null;
   metrics: Pick<TurnMetrics, "cacheReadTokens" | "cacheWriteTokens" | "providerModel"> | null;
   costUsd: number | null;
+  /** The ticket the run's conversation stands for; absent or null for a run on no ticket. */
+  projectId?: string;
+  itemId?: string | null;
+  /** The delivery a General run was pinned to, when it said. */
+  deliveryId?: string | null;
 }
 
 /** Median and nearest-rank p95 over the runs that reported both ends. */
@@ -56,12 +61,46 @@ export interface UsageDay extends UsageTotals {
   date: string;
 }
 
+/** One ticket's runs in a window. `key` and `title` are filled in by whoever can read tickets. */
+export interface TicketUsage extends UsageTotals {
+  projectId: string;
+  itemId: string;
+  key: string | null;
+  title: string;
+}
+
 export interface UsageReport {
   from: number;
   to: number;
   days: UsageDay[];
   engines: EngineUsage[];
+  /** Tickets with runs in the window, costliest first. */
+  tickets: TicketUsage[];
+  /** Runs on no ticket: the assistant's own conversations, routines, chat. Still counted in `totals`. */
+  noTicket: UsageTotals;
   totals: UsageTotals;
+}
+
+/** One delivery of a ticket and its runs; `sequence` null holds runs from before the first delivery began. */
+export interface DeliveryUsage extends UsageTotals {
+  sequence: number | null;
+  state: string | null;
+}
+
+/** Everything one ticket's runs added up to, by agent and by delivery. */
+export interface TicketSpend {
+  totals: UsageTotals;
+  engines: EngineUsage[];
+  deliveries: DeliveryUsage[];
+}
+
+/** What a ticket's spend needs of its deliveries. */
+export interface DeliverySpan {
+  id: string;
+  sequence: number;
+  state: string;
+  startedAt: number;
+  completedAt: number | null;
 }
 
 export interface UsageSummary {
@@ -184,24 +223,18 @@ export function aggregateUsage(runs: UsageRun[], opts: { from: number; to: numbe
   const byDay = new Map<string, Bucket>(days.map((at) => [dayKeyOf(at), bucket()]));
   const byEngine = new Map<string, Bucket>();
   const totals = bucket();
+  const byTicket = new Map<string, { projectId: string; itemId: string; b: Bucket }>();
+  const noTicket = bucket();
   for (const run of runs) {
     if (run.startedAt < opts.from || run.startedAt > opts.to) continue;
     addRun(totals, run);
-    let engine = byEngine.get(run.engine);
-    if (!engine) {
-      engine = bucket();
-      byEngine.set(run.engine, engine);
-    }
-    addRun(engine, run);
-    const model = run.metrics?.providerModel;
-    if (model) {
-      let m = engine.models.get(model);
-      if (!m) {
-        m = bucket();
-        engine.models.set(model, m);
-      }
-      addRun(m, run);
-    }
+    if (run.itemId && run.projectId) {
+      const at = `${run.projectId} ${run.itemId}`;
+      let ticket = byTicket.get(at);
+      if (!ticket) byTicket.set(at, (ticket = { projectId: run.projectId, itemId: run.itemId, b: bucket() }));
+      addRun(ticket.b, run);
+    } else addRun(noTicket, run);
+    addByEngine(byEngine, run);
     const day = byDay.get(dayKeyOf(run.startedAt));
     if (day) addRun(day, run);
   }
@@ -209,10 +242,63 @@ export function aggregateUsage(runs: UsageRun[], opts: { from: number; to: numbe
     from: opts.from,
     to: opts.to,
     days: days.map((at) => ({ at, date: dayKeyOf(at), ...totalsOf(byDay.get(dayKeyOf(at))!) })),
-    engines: [...byEngine.entries()]
-      .map(([engine, b]) => ({ engine, title: engine, ...totalsOf(b), models: modelsOf(b) }))
-      .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs || a.title.localeCompare(b.title)),
+    engines: enginesOf(byEngine),
+    tickets: [...byTicket.values()]
+      .map(({ projectId, itemId, b }) => ({ projectId, itemId, key: null, title: "", ...totalsOf(b) }))
+      .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs || a.itemId.localeCompare(b.itemId)),
+    noTicket: totalsOf(noTicket),
     totals: totalsOf(totals)
+  };
+}
+
+const enginesOf = (byEngine: Map<string, Bucket>): EngineUsage[] =>
+  [...byEngine.entries()]
+    .map(([engine, b]) => ({ engine, title: engine, ...totalsOf(b), models: modelsOf(b) }))
+    .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs || a.title.localeCompare(b.title));
+
+const addByEngine = (byEngine: Map<string, Bucket>, run: UsageRun): void => {
+  let engine = byEngine.get(run.engine);
+  if (!engine) byEngine.set(run.engine, (engine = bucket()));
+  addRun(engine, run);
+  const model = run.metrics?.providerModel;
+  if (model) {
+    let m = engine.models.get(model);
+    if (!m) engine.models.set(model, (m = bucket()));
+    addRun(m, run);
+  }
+};
+
+/**
+ * One ticket's runs, all time: by agent, and by the delivery each fell in — the one a General run was pinned to,
+ * else the delivery under way when it started. Runs from before any delivery keep a row of their own.
+ */
+export function ticketSpend(runs: UsageRun[], deliveries: DeliverySpan[], titles: Map<string, string> = new Map()): TicketSpend {
+  const totals = bucket();
+  const byEngine = new Map<string, Bucket>();
+  const byDelivery = new Map<number | null, Bucket>();
+  const sorted = [...deliveries].sort((a, b) => a.sequence - b.sequence);
+  const newestFirst = [...sorted].reverse();
+  const deliveryOf = (run: UsageRun): DeliverySpan | null =>
+    (run.deliveryId ? sorted.find((d) => d.id === run.deliveryId) : undefined) ??
+    newestFirst.find((d) => d.startedAt <= run.startedAt && (d.completedAt === null || run.startedAt <= d.completedAt)) ??
+    // a run between deliveries (after one closed, before the next opened) belongs to the one it followed
+    newestFirst.find((d) => d.startedAt <= run.startedAt) ??
+    null;
+  for (const run of runs) {
+    addRun(totals, run);
+    addByEngine(byEngine, run);
+    const sequence = deliveryOf(run)?.sequence ?? null;
+    let b = byDelivery.get(sequence);
+    if (!b) byDelivery.set(sequence, (b = bucket()));
+    addRun(b, run);
+  }
+  const states = new Map(sorted.map((d) => [d.sequence, d.state]));
+  return {
+    totals: totalsOf(totals),
+    engines: enginesOf(byEngine).map((e) => ({ ...e, title: titles.get(e.engine) ?? e.title })),
+    deliveries: [...byDelivery.entries()]
+      .map(([sequence, b]) => ({ sequence, state: sequence === null ? null : (states.get(sequence) ?? null), ...totalsOf(b) }))
+      .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
   };
 }
 
