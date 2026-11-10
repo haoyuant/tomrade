@@ -28,6 +28,16 @@ export interface GeneralExecution {
   playbook: { id: string; source: PlaybookSource; digest: string; body: string; requires: string[] };
 }
 
+/** Where a SKILL.md folder came from and which version it is — absent for one nobody imported or saved here. */
+export interface PlaybookOrigin {
+  /** The URL or folder it was imported from. */
+  source?: string;
+  /** The ticket and run a saved playbook was distilled from. */
+  from?: { ticket?: string; runId?: string };
+  importedAt: number;
+  version: number;
+}
+
 /** A methodology document: the `when` line lives in every prompt, the body loads on demand. */
 export interface Playbook extends PlaybookRequirements {
   id: string;
@@ -35,6 +45,7 @@ export interface Playbook extends PlaybookRequirements {
   when: string;
   tools: string[];
   body: string;
+  origin?: PlaybookOrigin;
 }
 
 export interface PlaybookIndexEntry extends PlaybookRequirements {
@@ -42,6 +53,7 @@ export interface PlaybookIndexEntry extends PlaybookRequirements {
   title: string;
   when: string;
   tools: string[];
+  origin?: PlaybookOrigin;
   /** The source that won for this id. */
   source: PlaybookSource;
   /** Sources that also carry this id and lost — non-empty means a conflict. */
