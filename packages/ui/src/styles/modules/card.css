@@ -1,0 +1,130 @@
+@layer components {
+/* ─── card ───────────────────────────────────────────────────────────── */
+.card {
+  display: grid; grid-template-columns: 14px 1fr;
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 11px 8px 4px;
+  cursor: grab; text-align: left; width: 100%;
+  transition: box-shadow var(--motion-base) var(--ease-standard),
+              border-color var(--motion-base) var(--ease-standard);
+  /* A long column lays out and paints only the cards near the view; one scrolled past keeps its size. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 62px;
+}
+.card:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
+.card:focus-visible { box-shadow: var(--focus-ring); }
+.card[data-selected="true"] { border-color: var(--accent); box-shadow: var(--elev-ring-accent); }
+.card.dragging { opacity: 0.55; box-shadow: var(--elev-ring-accent); cursor: grabbing; }
+
+
+/* provenance marginalia — a short tick in a dedicated gutter, NOT a
+   left-bar callout: it is title-height and sits outside the text column */
+.card-gutter { display: flex; justify-content: center; padding-top: 3px; }
+.prov-tick { width: 2px; height: 17px; background: var(--accent); border-radius: 1px; }
+/* A write git made (a merge moved the ticket) is neither a person's nor a model's: a muted tick. */
+.prov-tick.is-sync { background: var(--meta); }
+.prov-lock { color: var(--meta); margin-top: 1px; }
+
+/* Plugin section rows: an icon may lead the label; a state mark may lead the
+   value — shape first (hollow = over), colour to confirm; a live row runs a
+   hairline under its value. */
+.sect-dt { display: inline-flex; align-items: center; gap: 5px; }
+.sect-dt svg { color: var(--meta); flex-shrink: 0; }
+.sect-value { min-width: 0; overflow-wrap: anywhere; }
+.sect-row dd { position: relative; }
+.state-mark { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; border: 1.5px solid var(--meta); background: var(--meta); }
+.state-mark.is-live { border-color: var(--accent); background: var(--accent); animation: state-breathe 1.6s ease-in-out infinite; }
+.state-mark.is-waiting { border-color: var(--warn); background: var(--warn); animation: state-blink 1.4s ease-in-out infinite; }
+.state-mark.is-idle { border-color: var(--meta); background: var(--meta); }
+.state-mark.is-ended { background: transparent; border-color: var(--meta); }
+.state-mark.is-lost { background: transparent; border-color: var(--danger); }
+.state-mark.is-ok { border-color: var(--success); background: var(--success); }
+.state-mark.is-warn { border-color: var(--warn); background: var(--warn); }
+.sect-runner { position: absolute; left: 0; right: 0; bottom: -7px; height: 2px; overflow: hidden; border-radius: 1px; background: var(--border-soft); }
+.sect-runner::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+@keyframes state-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@keyframes state-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes sect-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+  .state-mark.is-live, .state-mark.is-waiting { animation: none; }
+  .sect-runner::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
+}
+
+/* Code inbox: one row per thing git says that the backlog has not confirmed. */
+.inbox-list { display: flex; flex-direction: column; }
+.inbox-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.inbox-row:last-child { border-bottom: 0; }
+.inbox-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inbox-title { font-size: var(--text-sm); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+
+/* The feedback inbox: entries on the left, the open one and its triage on the right. */
+.palette.modal.sheet-inbox {
+  width: min(1040px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 720px);
+  min-width: min(640px, calc(100vw - 64px)); max-width: min(1280px, calc(100vw - 64px));
+  min-height: min(420px, var(--overlay-max-h)); max-height: min(var(--overlay-max-h), 920px);
+}
+.inbox-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.inbox-tabs { align-self: flex-start; }
+.inbox-tabs .side-count, .side-module-head .side-count { margin-left: 6px; font-size: var(--text-xs); color: var(--meta); }
+.inbox-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5) 0; }
+.inbox-split { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: var(--space-5); flex: 1; min-height: 0; }
+.inbox-entries { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-right: 1px solid var(--border-soft); padding-right: var(--space-3); }
+.inbox-entry { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; text-align: left; color: var(--fg); cursor: pointer; }
+.inbox-entry:hover { background: var(--surface-warm); }
+.inbox-entry[aria-current="true"] { background: var(--tag-bg-base); }
+.inbox-entry:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inbox-entry-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.inbox-entry-meta { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--meta); }
+.inbox-detail { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; overflow-y: auto; }
+.inbox-detail-title { margin: 0; font-size: var(--text-lg); font-weight: 500; color: var(--fg); }
+.inbox-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; }
+.inbox-detail-body { margin: 0; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); font-family: inherit; font-size: 14px; line-height: var(--leading-dense); white-space: pre-wrap; word-break: break-word; color: var(--fg-2); }
+.inbox-status { gap: 6px; font-size: var(--text-sm); color: var(--fg-2); }
+.inbox-reply { margin: 0; }
+.inbox-suggestion { gap: 6px; font-size: var(--text-sm); }
+.inbox-suggestion-head { font-weight: 500; color: var(--fg); }
+.inbox-suggestion-send { gap: 6px; }
+.inbox-detail-actions { flex-wrap: wrap; gap: var(--space-2); }
+.inbox-match { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; text-align: left; color: var(--fg); cursor: pointer; min-width: 0; }
+.inbox-match:hover { background: var(--surface-warm); }
+.inbox-pick { align-self: center; justify-self: center; }
+.inbox-source + .inbox-source { border-top: 1px solid var(--border-soft); padding-top: var(--space-3); }
+.inbox-source-option { margin-top: var(--space-2); padding-left: var(--space-3); font-size: var(--text-sm); color: var(--fg-2); }
+.inbox-activity { gap: 6px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); font-size: var(--text-sm); color: var(--fg-2); }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.is-danger { color: var(--danger); }
+.card-body { min-width: 0; }
+.card-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.card-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.card-title {
+  font-family: var(--font-display); font-weight: var(--font-weight-medium);
+  font-size: 14px; line-height: var(--leading-card); color: var(--fg);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: break-word;
+}
+.card-foot { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.card-date { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--meta); }
+/* The workstream is quiet text: it rarely tells cards in one view apart. */
+.card-board {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
+  color: var(--meta); max-width: 96px; overflow: hidden; white-space: nowrap;
+}
+.card-board svg { color: var(--meta); flex-shrink: 0; }
+/* An epic's tag wears the epic's own hue, so a glance groups its cards (in the graph
+ * above all). Soft tints, mixed into the theme's own text and surface: legible in
+ * every theme, and quieter than the accent the provenance tick and the focus use. */
+.tag.card-epic {
+  --epic: oklch(0.62 0.13 var(--epic-hue, 250));
+  gap: 3px; min-width: 0; max-width: 100%;
+  color: color-mix(in oklch, var(--epic) 50%, var(--fg));
+  background: color-mix(in oklch, var(--epic) 14%, var(--surface));
+}
+.tag.card-epic > svg { flex: none; }
+.card-epic-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}

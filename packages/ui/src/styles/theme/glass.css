@@ -1,0 +1,80 @@
+/* Glass — smoked glass over a room seen out of focus. The tokens stay opaque
+   (what the glass looks like on average), so the terminal, plugin windows and
+   a custom theme made from it read solid colours; the translucent panes, the
+   room behind them and the blur on what floats live in styles/glass.css. */
+.glass {
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --bg: #2b2826;
+  --surface: #36322f;
+  --surface-warm: #433f3b;
+  --fg: #f6f3ef;
+  --fg-2: #dfd9d3;
+  --muted: #c3bbb3;
+  --meta: #aaa198;
+  --border: #4b4642;
+  --border-soft: #403c38;
+  --border-input: #807770;
+  --accent: #ff8656;
+  --accent-on: #1e130d;
+  --accent-light: #ffa57f;
+  --accent-hover: var(--accent);
+  --accent-active: #ffa070;        /* hover LIGHTENS on dark: contrast must rise */
+  --success: #62d273;
+  --warn: #f6b74a;
+  --danger: #ff6467;
+
+  --chart-1: #ff8656;
+  --chart-2: #62d273;
+  --chart-3: #f6b74a;
+  --chart-4: #a99cff;
+  --chart-5: #5cc8d8;
+  --chart-6: #ff6467;
+  --chart-7: #7aa8ff;
+  --chart-8: #d8a57a;
+  --chart-9: #9c958f;
+  --chart-10: #e88ac0;
+  --tag-bg-faint: #34302d;
+  --tag-bg-soft: #3b3632;
+  --tag-bg-base: #4b423b;
+  --tag-bg-strong: #554940;
+  --tag-fg: #ffb898;
+  --elev-raised: 0 14px 36px -12px rgba(0, 0, 0, 0.6);
+  --focus-ring: 0 0 0 2px var(--accent), 0 0 0 5px rgba(255, 134, 86, 0.2);
+
+  /* the room: window light from the top left, a blue chair, a lamp low on the right, mullions out of focus */
+  --glass-room:
+    radial-gradient(ellipse 50% 46% at 14% 4%, rgba(255, 238, 216, 0.42), transparent 70%),
+    radial-gradient(ellipse 38% 34% at 86% 0%, rgba(206, 220, 242, 0.22), transparent 70%),
+    radial-gradient(ellipse 44% 40% at 96% 98%, rgba(255, 132, 72, 0.40), transparent 70%),
+    radial-gradient(ellipse 30% 44% at 0% 76%, rgba(80, 116, 184, 0.50), transparent 72%),
+    radial-gradient(ellipse 26% 22% at 34% 104%, rgba(222, 180, 90, 0.26), transparent 70%),
+    radial-gradient(ellipse 22% 30% at 60% 40%, rgba(255, 246, 232, 0.08), transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0, rgba(0, 0, 0, 0.30) 52px, transparent 104px, transparent 248px),
+    linear-gradient(180deg, #4a4541 0%, #24211f 50%, #36312d 100%);
+  --glass-shell: rgba(40, 37, 35, 0.48);
+  --glass-pane: rgba(52, 48, 45, 0.34);
+  --glass-tile: rgba(255, 255, 255, 0.065);
+  --glass-tile-hover: rgba(255, 255, 255, 0.095);
+  --glass-tile-on: rgba(255, 255, 255, 0.12);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-edge-strong: rgba(255, 255, 255, 0.16);
+  --glass-sheen: rgba(255, 255, 255, 0.08);
+  --glass-float: rgba(50, 46, 43, 0.74);
+  --glass-scrim: rgba(14, 12, 11, 0.5);
+  --glass-btn-from: #c9441e;
+  --glass-btn-to: #e25e2b;
+  --glass-btn-on: #ffffff;
+  --glass-glow: rgba(226, 94, 43, 0.45);
+}
+/* Frosted by the system (Glass on macOS and Windows 11): the window's material is the room, so the panes only tint it,
+   dark enough to read on a light desktop too; what sits over scrolling content keeps a near-solid fill. */
+.glass[data-frosted] {
+  --glass-shell: rgba(28, 26, 24, 0.40);
+  --glass-pane: rgba(36, 33, 31, 0.18);
+  --glass-sticky: rgba(34, 31, 29, 0.9);
+  --glass-float: rgba(44, 40, 37, 0.62);
+}

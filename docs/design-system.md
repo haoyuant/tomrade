@@ -9,8 +9,8 @@ the compiler will stop you breaking. Where the prototype and the build differ,
 
 | Layer | File |
 |---|---|
-| Tokens, base, every component class | `packages/ui/src/styles/app.css` |
-| Tailwind + shadcn token aliases | same file, the two `@theme` blocks |
+| Tokens, base, every component class | `packages/ui/src/styles/app.css` imports them, in cascade order, from `theme/`, `base/`, `layout/`, `modules/` and `state/` beside it; see [Stylesheets](#stylesheets) |
+| Tailwind + shadcn token aliases | `styles/theme/scales.css` and `styles/theme/tailwind-bridge.css`, the two `@theme` blocks |
 | Icon sprite (64 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
 | Domain vocabulary: statuses, priorities, grouping, the live query | `packages/ui/src/lib/domain.ts` |
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
@@ -18,6 +18,32 @@ the compiler will stop you breaking. Where the prototype and the build differ,
 | Toasts, including the hold-on-hover countdown | `packages/ui/src/lib/toast.tsx` |
 | Every call into the main process | `packages/ui/src/lib/api.ts` + `queries.ts`, typed by the channels plugins contribute (`@tomradex/ipc`) |
 | Plugin contributions: palette commands, card badges, status items, detail sections, settings cards, assistant accessories | rendered where each lives — `CommandPalette.tsx`, `Card.tsx`, `StatusBar.tsx`, `DetailPane.tsx`, `SettingsDialog.tsx`, `PetStage.tsx` — from data, never from plugin React code |
+
+## Stylesheets
+
+`app.css` holds no rules of its own: it imports the parts, and the import
+order is the cascade order the single file had. Each part sits in the SMACSS
+folder its rules belong to:
+
+- `theme/` — the tokens: the shared scales, one file per theme, the Tailwind bridge.
+- `base/` — element defaults (`@layer base`) and the typography helpers.
+- `layout/` — the panes and screens: shell, sidebar, tabs, board, detail, assistant panel, status bar, graph, files.
+- `modules/` — pieces used in more than one place, or self-contained surfaces: card, button, input, menus, toast, palette, settings panes.
+- `state/` — overrides driven by the window rather than a class: `responsive.css`, `reduced-motion.css`.
+
+Because order decides ties, the folders interleave in the import list; a new
+file goes where its rules must win, never alphabetically. Files inside
+`@layer components` wrap their rules in it themselves; `modules/agent-blocks.css`
+and every file after it are unlayered, so they outrank the components layer.
+
+Class names written from now on, and existing ones when a module is renamed,
+follow BEM: a block names the module (`card`), an element hangs off it with
+two underscores (`card__title`), a variant with two dashes (`card--epic`).
+States a script toggles stay as `is-*` classes or `data-*` attributes, the
+SMACSS way, rather than modifiers. A module's block is the file's name, and
+its rules stay in that file. Renaming an existing class also means its
+`className` uses in `packages/ui` and its selectors in
+`apps/desktop/scripts/*-check.mjs`, so it goes one module per ticket.
 
 ## Tokens
 

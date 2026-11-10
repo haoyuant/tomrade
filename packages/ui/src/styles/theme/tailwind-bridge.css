@@ -1,0 +1,44 @@
+/* Tailwind utilities resolve straight to the tokens above, so a theme class
+   on <html> reaches bg-surface / text-meta / border-border with no rebuild.
+   shadcn's names are aliased on the same line they are needed:
+   --accent there means a neutral hover fill, so it maps to surface-warm,
+   and kami's accent reaches it through --primary. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-warm: var(--surface-warm);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted-fg: var(--muted);
+  --color-meta: var(--meta);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-accent-fg: var(--accent);
+  --color-accent-on: var(--accent-on);
+  --color-accent-light: var(--accent-light);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-tag-bg: var(--tag-bg-base);
+  --color-tag-fg: var(--tag-fg);
+
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-on);
+  --color-secondary: var(--surface-warm);
+  --color-secondary-foreground: var(--fg);
+  --color-accent: var(--surface-warm);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--danger);
+  --color-ring: var(--accent-active);
+  --color-input: var(--border);
+
+  --shadow-ring: var(--elev-ring);
+  --shadow-ring-accent: var(--elev-ring-accent);
+  --shadow-raised: var(--elev-raised);
+}

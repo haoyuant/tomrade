@@ -1,0 +1,46 @@
+@layer components {
+/* ─── command palette ────────────────────────────────────────────────── */
+.scrim { position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 42%, transparent); z-index: 60; }
+.palette {
+  position: fixed; top: 96px; left: 50%; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 64px)); z-index: 61;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--elev-raised);
+  overflow: hidden; display: flex; flex-direction: column; max-height: 60vh;
+}
+.palette-input {
+  width: 100%; flex-shrink: 0; padding: var(--space-4); border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--fg);
+  font-family: var(--font-display); font-size: var(--text-md);
+}
+.palette-input:focus { outline: none; }
+/* cmdk's root sits between the box and the list: without these the list is never bounded, and is cut off unscrolled */
+.palette > [cmdk-root] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.palette-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-2); scrollbar-width: thin; }
+.palette-group { padding: var(--space-3) var(--space-3) var(--space-1); }
+.palette-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; text-align: left; padding: 8px var(--space-3);
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--fg-2); font-family: var(--font-display); font-size: 14px;
+  /* the group carries .eyebrow for its heading; its rows are titles, not labels */
+  text-transform: none; letter-spacing: normal; line-height: 1.35;
+}
+.palette-row:hover, .palette-row.active { background: var(--surface-warm); color: var(--fg); }
+.palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-row[data-depth="1"] { margin-left: 14px; }
+.palette-empty { padding: var(--space-6) var(--space-4); text-align: center; font-size: 14px; color: var(--meta); }
+.palette-mark { width: 14px; display: inline-flex; justify-content: center; flex-shrink: 0; }
+.palette-said { overflow: hidden; text-overflow: ellipsis; }
+.palette-foot { padding: 6px var(--space-4); border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--meta); }
+.palette-search-notes { display: flex; align-items: center; gap: 6px; margin: calc(-1 * var(--space-3)) auto var(--space-4); }
+/* the ways to start a session on the words typed: ↵ here, ⌥↵ a background pane, ⇧↵ a Terminal window cell */
+.palette-start { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--space-1) var(--space-2); text-align: left; }
+.palette-start-head { padding: var(--space-2) var(--space-3) var(--space-1); }
+.palette-start-row { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 40px; padding: 6px var(--space-3); border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg-2); font: inherit; text-align: left; cursor: pointer; }
+.palette-start-row:hover:not(:disabled) { background: var(--surface-warm); color: var(--fg); }
+.palette-start-row:disabled { cursor: default; opacity: 0.7; }
+.palette-start-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: var(--text-sm); }
+.palette-start-chip { margin-left: 6px; }
+.palette-start-foot { margin: var(--space-1) var(--space-3) 0; font-size: var(--text-xs); }
+}

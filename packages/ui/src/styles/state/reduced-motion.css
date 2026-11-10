@@ -1,0 +1,18 @@
+@layer components {
+/* ─── reduced motion ──────────────────────────────────────────────────
+ * Every transition here is confirmation of a state change that has already
+ * happened, so removing them costs nothing. The theme crossfade declares
+ * !important on a class selector, so it needs its own override to unwind. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .theme-transition, .theme-transition *,
+  .theme-transition *::before, .theme-transition *::after {
+    transition: none !important;
+  }
+}
+}

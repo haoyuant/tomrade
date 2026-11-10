@@ -1,0 +1,36 @@
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant matcha (&:where(.matcha, .matcha *));
+
+/* Theme-invariant scales. Declared inside @theme so one declaration serves
+   both the component CSS (var(--text-sm)) and the utilities (text-sm). */
+@theme {
+  --font-display: Charter, Georgia, Palatino, "Times New Roman", serif;
+  --font-body: Charter, Georgia, Palatino, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Consolas, Monaco, monospace;
+
+  /* kami's print scale × ~1.09 — rebound for UI density. Do not restore kami's values. */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 19px;
+  --text-xl: 24px;
+  --text-2xl: 35px;
+
+  --leading-display: 1.1;
+  --leading-tight: 1.25;
+  --leading-body: 1.55;
+  --leading-dense: 1.4;
+  --leading-card: 1.32;          /* documented exception below kami's 1.40 floor */
+
+  --tracking-eyebrow: 1.2px;
+  --tracking-label: 0.4px;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}

@@ -1,0 +1,54 @@
+@layer components {
+/* the composer is the input: the send/stop control lives inside its border */
+.ai-composer {
+  display: flex; align-items: flex-end; gap: 4px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 2px 4px 2px 10px;
+}
+/* one focus ring, on the container — a hairline, not the 2px app ring */
+.ai-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ai-input {
+  flex: 1; min-width: 0; padding: 7px 0; margin: 0; align-self: center;
+  background: transparent; border: 0; outline: none; resize: none; overflow-y: auto;
+  color: var(--fg); font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.ai-input:focus-visible { box-shadow: none; }
+.ai-input::placeholder { color: var(--meta); }
+.ai-send:disabled { opacity: 0.45; cursor: default; }
+/* messages waiting for the running turn, stacked above the composer */
+.ai-queued {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 4px 4px 4px 10px; border: 1px dashed var(--border); border-radius: var(--radius-md);
+  font-size: var(--text-sm); color: var(--fg);
+}
+.ai-queued .q-state { flex-shrink: 0; font-size: 11px; color: var(--accent); }
+.ai-queued[data-held] .q-state { color: var(--meta); }
+.ai-queued .q-text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-queued .q-files { flex-shrink: 0; font-size: 11px; color: var(--meta); }
+.ai-queued .q-edit { flex: 1; min-width: 0; resize: none; font-size: var(--text-sm); }
+/* the slash menu sits just above the composer */
+.slash-menu { display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-raised); }
+.slash-row { display: flex; align-items: baseline; gap: var(--space-2); padding: 5px 8px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--fg); text-align: left; cursor: pointer; }
+.slash-row.is-on { background: var(--surface-warm); }
+.slash-name { font-size: var(--text-sm); }
+.slash-hint { font-size: var(--text-sm); color: var(--meta); }
+/* the composer guide: the head button's menu and /help */
+.agent-guide { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px 8px; max-width: 380px; }
+.guide-row { display: grid; grid-template-columns: 104px 1fr; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.4; }
+.guide-row kbd { font-size: 12px; color: var(--fg); white-space: nowrap; }
+.guide-row span { color: var(--meta); }
+.guide-head { display: flex; align-items: center; justify-content: space-between; }
+.guide-text { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; line-height: 1.5; color: var(--fg); }
+.ai-queued.is-steering { border-style: solid; border-color: var(--accent); }
+.turn-steer { display: block; font-size: 11px; color: var(--accent); margin-bottom: 2px; }
+.ai-queued .q-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+/* the knobs under the composer sit right; the context chip owns the left */
+.ai-knobs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
+.chip-btn.is-quiet { color: var(--meta); }
+.ctx-chip { margin-right: auto; min-width: 0; }
+.ctx-chip-label { max-width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* what was on screen when a message went out — small, under the text */
+.turn-ctx { font-size: var(--text-xs); color: var(--meta); }
+}

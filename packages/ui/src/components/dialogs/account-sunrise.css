@@ -1,6 +1,6 @@
 /* The entrance is the Sunrise (晨曦) theme's dawn, whatever theme the workspace uses:
    a lilac sky over an apricot horizon, a gold sun, vermilion running into gold on what you press.
-   Its tokens are Sunrise's (app.css), scoped here so the form reads the same under every theme. */
+   Its tokens are Sunrise's (styles/theme/sunrise-daybreak.css), scoped here so the form reads the same under every theme. */
 .account-gate {
   --dawn-bg: #f6f3f8;
   --dawn-ink: #241b3a;

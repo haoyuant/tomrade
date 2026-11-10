@@ -1,0 +1,48 @@
+/* ─── matcha — parchment structure, accent swapped (not added) ───────── */
+.matcha {
+  /* A deep steeped-tea ground with a bright matcha-powder accent. Same
+     single-accent rule as the other two — the accent is replaced, never
+     added to. */
+  --bg: oklch(0.275 0.022 142);
+  --surface: oklch(0.335 0.024 142);
+  --surface-warm: oklch(0.395 0.026 142);
+
+  --fg: oklch(0.95 0.014 142);
+  --fg-2: oklch(0.875 0.014 142);
+  --muted: oklch(0.80 0.013 142);
+  --meta: oklch(0.735 0.012 142);
+
+  --border: oklch(0.425 0.024 142);
+  --border-soft: oklch(0.385 0.022 142);
+  --border-input: oklch(0.64 0.03 142);
+
+  --accent: oklch(0.84 0.14 133);        /* matcha powder — the light primary */
+  --accent-on: oklch(0.275 0.022 142);   /* dark label sits on the bright accent */
+  --accent-light: oklch(0.90 0.11 133);
+  --accent-hover: var(--accent);
+  --accent-active: oklch(0.91 0.12 133); /* hover LIGHTENS: contrast must rise */
+
+  --success: oklch(0.80 0.14 148);
+  --warn: oklch(0.82 0.12 88);
+  --danger: oklch(0.72 0.15 30);
+
+  --chart-1: oklch(0.84 0.14 133);
+  --chart-2: oklch(0.80 0.10 220);
+  --chart-3: oklch(0.82 0.12 88);
+  --chart-4: oklch(0.78 0.13 320);
+  --chart-5: oklch(0.80 0.11 30);
+  --chart-6: oklch(0.75 0.02 142);
+  --chart-7: oklch(0.76 0.10 250);
+  --chart-8: oklch(0.78 0.09 60);
+  --chart-9: oklch(0.74 0.10 310);
+  --chart-10: oklch(0.78 0.08 190);
+
+  --tag-bg-faint: oklch(0.345 0.035 138);
+  --tag-bg-soft: oklch(0.375 0.05 138);
+  --tag-bg-base: oklch(0.435 0.06 138);
+  --tag-bg-strong: oklch(0.405 0.055 138);
+  --tag-fg: oklch(0.87 0.11 133);
+
+  --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.30);
+  --focus-ring: 0 0 0 2px var(--accent-active);
+}
