@@ -17,6 +17,7 @@ import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
+import { installPlaybook, PlaybookImportError, readSkills, uninstallLatest, validateSkill, type SkillPreview } from "./playbook-import.js";
 import { AgentStore, MIGRATIONS, TABLES, TAKEN_OVER, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import { RULES_MAX_CHARS, afterInterruption, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
@@ -216,6 +217,9 @@ declare module "@tomradex/ipc" {
     /** Engine option overrides for one thread; null clears them so the engine's settings apply again. */
     "agent.setOptions": (projectId: string, threadId: string, options: Record<string, unknown> | null) => ThreadSummary;
     "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
+    /** What a source holds, before anything is written; a skill that cannot be a playbook says why. */
+    "agent.previewPlaybookImport": (source: string) => (SkillPreview & { problem?: string })[];
+    "agent.importPlaybooks": (input: PlaybookImportInput) => PlaybookImportResult;
   }
   interface Broadcasts {
     "agent.event": (threadId: string, event: AgentEvent) => void;
@@ -238,6 +242,20 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 const RUN_MINUTES = 15;
 /** How often a streamed reply refreshes its run's progress (the token estimate); tools, retries and usage reports send theirs at once. */
 const STREAM_PROGRESS_MS = 250;
+
+export interface PlaybookImportInput {
+  /** A GitHub repository or folder URL, a skills.sh page, a URL of one SKILL.md, or a folder on this machine. */
+  source: string;
+  scope: "user" | "project";
+  projectId?: string;
+  /** The skills to take when the source holds several, by id or folder name; all of them when absent. */
+  pick?: string[];
+}
+
+export interface PlaybookImportResult {
+  scope: "user" | "project";
+  imported: { id: string; title: string; version: number; replaced: boolean }[];
+}
 
 export interface AgentSettings {
   defaultEngine: string;
@@ -556,6 +574,8 @@ export class Agent extends Service implements AgentReader {
         if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
         return ctx.agent.playbookIndex(projectId);
       });
+      ctx.ipc.handle("agent.previewPlaybookImport", (source) => this.localized(() => this.previewPlaybookImport(source)));
+      ctx.ipc.handle("agent.importPlaybooks", (input) => this.localized(() => this.importPlaybooks(input)));
       ctx.ipc.handle("agent.recommendPlaybook", (projectId, input) => ctx.agent.recommendPlaybook(projectId, input));
     });
     // Torn down (a restart, a reload) mid-run: each run stops and is settled here, never left going behind the next instance.
@@ -846,6 +866,77 @@ export class Agent extends Service implements AgentReader {
     const project = projectId ? this.projectPlaybooks.get(projectId)?.get(id) : undefined;
     const resolved = resolvePlaybook({ ...this.playbooks.get(id), project }, (this.settingsOf().playbookChoices ?? {})[id]);
     return resolved?.winner.body ?? null;
+  }
+
+  /** Where playbooks of a scope live: the Hub's folder for this person, `.tomrade/playbooks` for a project. */
+  playbookRoot(scope: "user" | "project", projectId?: string): string {
+    if (scope === "user") {
+      const dir = this.userPlaybooksDir();
+      if (!dir) throw new Error("No folder for your playbooks on this machine");
+      return dir;
+    }
+    const dir = projectId ? contract(this.ctx, "storage")?.artifactDirFor(projectId) : null;
+    if (typeof dir !== "string") throw new Error(this.words()("importNoProject"));
+    return path.join(dir, "playbooks");
+  }
+
+  async previewPlaybookImport(source: string, fetchImpl?: Parameters<typeof readSkills>[1]): Promise<(SkillPreview & { problem?: string })[]> {
+    const skills = await readSkills(source, fetchImpl);
+    return skills.map((skill) => {
+      try {
+        return validateSkill(skill);
+      } catch (err) {
+        return { id: skill.name, title: skill.name, when: "", files: [...skill.files.keys()].sort(), problem: errorMessage(err) };
+      }
+    });
+  }
+
+  /**
+   * Every chosen skill is read and checked before the first one is written, so
+   * a bad one refuses the whole import. Re-importing an id keeps the version it
+   * replaces; a run already started keeps the body it pinned.
+   */
+  async importPlaybooks(input: PlaybookImportInput, fetchImpl?: Parameters<typeof readSkills>[1]): Promise<PlaybookImportResult> {
+    const root = this.playbookRoot(input.scope, input.projectId);
+    const found = await readSkills(input.source, fetchImpl);
+    // A skill left out by `pick` may be broken; only the chosen ones must be sound.
+    const idOf = (files: (typeof found)[number]) => {
+      try {
+        return validateSkill(files).id;
+      } catch {
+        return files.name;
+      }
+    };
+    const picked = input.pick?.length ? found.filter((f) => input.pick!.includes(f.name) || input.pick!.includes(idOf(f))) : found;
+    if (!picked.length) throw new PlaybookImportError("noSkill", `none of ${input.pick!.join(", ")} in ${input.source} — it holds ${found.map(idOf).join(", ")}`);
+    const chosen = picked.map((files) => ({ files, preview: validateSkill(files) }));
+    const ids = chosen.map((s) => s.preview.id);
+    const twice = ids.find((id, i) => ids.indexOf(id) !== i);
+    if (twice) throw new PlaybookImportError("invalid", `two skills in ${input.source} are both named "${twice}"`);
+    const importedAt = Date.now();
+    const imported = chosen.map(({ files, preview }) => ({ ...installPlaybook(root, preview.id, files.files, { source: input.source.trim(), importedAt }), title: preview.title }));
+    if (input.scope === "user") this.loadUserPlaybooks();
+    else await this.refreshProjectPlaybooks(input.projectId!);
+    return { scope: input.scope, imported };
+  }
+
+  /** Puts back what an import replaced, newest first — the import tool's undo. */
+  async revertPlaybookImport(input: Pick<PlaybookImportInput, "scope" | "projectId">, result: PlaybookImportResult): Promise<void> {
+    const root = this.playbookRoot(input.scope, input.projectId);
+    for (const entry of [...result.imported].reverse()) uninstallLatest(root, entry.id);
+    if (input.scope === "user") this.loadUserPlaybooks();
+    else await this.refreshProjectPlaybooks(input.projectId!);
+  }
+
+  /** A playbook import's refusal in the person's language, for the panel. */
+  private async localized<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (err) {
+      if (!(err instanceof PlaybookImportError)) throw err;
+      const key = ({ notFound: "importNotFound", noSkill: "importNoSkill", invalid: "importInvalid", tooLarge: "importTooLarge", unreachable: "importUnreachable", pick: "importPick" } as const)[err.code];
+      throw new Error(this.words()(key, { detail: err.message }));
+    }
   }
 
   /**
@@ -2459,6 +2550,20 @@ export class Agent extends Service implements AgentReader {
           if (inv.projectId && inv.run) this.store.recordPlaybook(inv.projectId, inv.run.id, snapshot);
           return snapshot;
         }
+      })
+    );
+
+    this.ctx.tools.kit("playbooks", "bringing skills in as playbooks");
+    this.ctx.tools.register(
+      defineTool({
+        name: "import_playbook",
+        title: "Import a playbook",
+        description:
+          "Bring an existing skill (a SKILL.md folder) into Tomrade as a playbook. source: a GitHub repository or folder URL (github.com/owner/repo, …/tree/<ref>/<path>), a skills.sh page, a URL of one SKILL.md, or a folder on this machine such as a repository's .claude/skills/<name>. scope: \"user\" (this person's, every project) or \"project\" (travels with the project folder). When the source holds several skills, pass pick with the ones to take. Importing an id that exists keeps the old one as an earlier version. Undo restores it.",
+        input: z.object({ source: z.string().min(1), scope: z.enum(["user", "project"]), pick: z.array(z.string().min(1)).optional() }),
+        kit: "playbooks",
+        execute: ({ source, scope, pick }, inv) => this.importPlaybooks({ source, scope, pick, projectId: scope === "project" ? requireProjectId("import_playbook", undefined, inv) : inv.projectId }),
+        revert: (args, result, inv) => this.revertPlaybookImport({ scope: args.scope, projectId: inv.projectId }, result as PlaybookImportResult)
       })
     );
 
