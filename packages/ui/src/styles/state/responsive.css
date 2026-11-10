@@ -1,0 +1,19 @@
+@layer components {
+/* ─── responsive ──────────────────────────────────────────────────────
+ * 1360px is the side-by-side floor for sidebar + board + detail + AI
+ * (240 + 320 min + 400 + 380 = 1340). Below it the AI panel collapses to
+ * its 44px rail when the detail pane opens — handled in script, so every
+ * pane stays in normal flow and nothing ever overlaps.
+ * Floor with detail open and AI railed: 240 + 320 + 400 + 44 = 1004px.
+ * Above it, an open detail pane caps the AI panel at what is left after the
+ * board's floor (362px) and the detail's 400px, whatever width it was given. */
+.shell:has(aside.detail:not(.expanded)) > .ai { max-width: max(352px, calc(100vw - var(--sidebar-w) - 762px)); }
+@media (max-width: 1230px) {
+  :root { --sidebar-w: 200px; }
+  .ai { width: 352px !important; }
+}
+@media (max-width: 990px) {
+  .sidebar, .side-rail { display: none; }
+  .board-nav { display: flex; }
+}
+}

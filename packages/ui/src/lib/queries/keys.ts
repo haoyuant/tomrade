@@ -94,6 +94,7 @@ export const keys = {
     brief: (projectId: string) => ["agent", "brief", projectId] as const,
     mcpLink: (engineId: string) => ["agent", "mcpLink", engineId] as const,
     usage: (days: number) => ["agent", "usage", days] as const,
+    ticketUsage: (projectId: string, itemId: string) => ["agent", "ticketUsage", projectId, itemId] as const,
     media: (projectId: string, threadId: string, mediaId: string) => ["agent-media", projectId, threadId, mediaId] as const,
     /** The engine's options and the model settings decide what it reads, so both are part of the key. */
     mediaCapabilities: (engineId: string, options: unknown, models: unknown) => ["agent-media-capabilities", engineId, options, models] as const

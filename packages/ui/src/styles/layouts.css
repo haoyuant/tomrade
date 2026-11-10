@@ -1,6 +1,6 @@
 /* ─── layouts: board swimlanes, table, graph ───────────────────────────
- * Owned by the layouts pass; app.css holds the tokens and the shell. Every
- * colour here is a token from app.css — a layout adds structure, not hue. */
+ * Owned by the layouts pass; theme/ holds the tokens and layout/ the shell. Every
+ * colour here is a token from theme/ — a layout adds structure, not hue. */
 
 /* board · swimlanes ─────────────────────────────────────────────────────
  * One shared header row, then a stack of lanes whose column rows line up
@@ -93,9 +93,9 @@
 .tbl-title-text { min-width: 0; overflow-wrap: anywhere; }
 .tbl-dim { color: var(--meta); font-size: var(--text-sm); }
 .tbl-prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); }
-.tbl-cell .fset { --fsel-shift: 0px; }
-.tbl-cell .fval { margin-inline-start: 0; }
-.tbl-cell .labset { flex-wrap: nowrap; }
+.tbl-cell .field-select { --field-select-shift: 0px; }
+.tbl-cell .field-value { margin-inline-start: 0; }
+.tbl-cell .label-set { flex-wrap: nowrap; }
 /* a group heading spans every column and reads like a lane head */
 .tbl-group .tbl-cell {
   padding-top: var(--space-4); padding-bottom: var(--space-2);

@@ -17,6 +17,8 @@ import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
+import { installPlaybook, PlaybookImportError, readSkills, uninstallLatest, validateSkill, type SkillPreview } from "./playbook-import.js";
+import { composeSkill, DRAFT_SYSTEM, draftPrompt, draftSchema, renameSkill } from "./playbook-draft.js";
 import { AgentStore, MIGRATIONS, TABLES, TAKEN_OVER, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import { RULES_MAX_CHARS, afterInterruption, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
@@ -31,7 +33,7 @@ import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { limitCause, untilLabel, type LimitCause } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
-import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
+import { ticketSpend, usageSummary, windowStart, type EngineUsage, type TicketSpend, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
@@ -165,6 +167,8 @@ declare module "@tomradex/ipc" {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string, afterSeq?: number) => ThreadDetail;
     "agent.usage": (days?: number) => UsageSummary;
+    /** One ticket's runs, all time, by agent and delivery. */
+    "agent.ticketUsage": (projectId: string, itemId: string) => TicketSpend;
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
     "agent.setRules": (projectId: string, body: string) => { body: string; file: string | null };
@@ -216,6 +220,12 @@ declare module "@tomradex/ipc" {
     /** Engine option overrides for one thread; null clears them so the engine's settings apply again. */
     "agent.setOptions": (projectId: string, threadId: string, options: Record<string, unknown> | null) => ThreadSummary;
     "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
+    /** What a source holds, before anything is written; a skill that cannot be a playbook says why. */
+    "agent.previewPlaybookImport": (source: string) => (SkillPreview & { problem?: string })[];
+    "agent.importPlaybooks": (input: PlaybookImportInput) => PlaybookImportResult;
+    /** The worker model's SKILL.md for how an accepted ticket was done; nothing is written. */
+    "agent.draftPlaybook": (projectId: string, itemId: string) => PlaybookDraft;
+    "agent.savePlaybookDraft": (input: PlaybookDraftSave) => { id: string; version: number; replaced: boolean };
   }
   interface Broadcasts {
     "agent.event": (threadId: string, event: AgentEvent) => void;
@@ -238,6 +248,41 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 const RUN_MINUTES = 15;
 /** How often a streamed reply refreshes its run's progress (the token estimate); tools, retries and usage reports send theirs at once. */
 const STREAM_PROGRESS_MS = 250;
+
+export interface PlaybookImportInput {
+  /** A GitHub repository or folder URL, a skills.sh page, a URL of one SKILL.md, or a folder on this machine. */
+  source: string;
+  scope: "user" | "project";
+  projectId?: string;
+  /** The skills to take when the source holds several, by id or folder name; all of them when absent. */
+  pick?: string[];
+}
+
+export interface PlaybookImportResult {
+  scope: "user" | "project";
+  imported: { id: string; title: string; version: number; replaced: boolean }[];
+}
+
+export interface PlaybookDraft {
+  itemId: string;
+  key: string;
+  /** The id the draft names; saving may put it under another one, as a new version of that. */
+  id: string;
+  title: string;
+  /** The run the method came from, the latest one on the ticket. */
+  runId: string | null;
+  text: string;
+}
+
+export interface PlaybookDraftSave {
+  projectId: string;
+  itemId: string;
+  text: string;
+  scope: "user" | "project";
+  /** Save under this id; one that exists gets a new version. Absent, the draft's own name. */
+  id?: string;
+  runId?: string | null;
+}
 
 export interface AgentSettings {
   defaultEngine: string;
@@ -498,6 +543,7 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId, afterSeq) => ctx.agent.thread(projectId, threadId, afterSeq));
       ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
+      ctx.ipc.handle("agent.ticketUsage", (projectId: string, itemId: string) => ctx.agent.ticketUsage(projectId, itemId));
       ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
       ctx.ipc.handle("agent.setRules", (projectId, body) => {
         ctx.agent.setRules(projectId, body);
@@ -556,6 +602,10 @@ export class Agent extends Service implements AgentReader {
         if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
         return ctx.agent.playbookIndex(projectId);
       });
+      ctx.ipc.handle("agent.previewPlaybookImport", (source) => this.localized(() => this.previewPlaybookImport(source)));
+      ctx.ipc.handle("agent.importPlaybooks", (input) => this.localized(() => this.importPlaybooks(input)));
+      ctx.ipc.handle("agent.draftPlaybook", (projectId, itemId) => this.localized(() => this.draftPlaybook(projectId, itemId)));
+      ctx.ipc.handle("agent.savePlaybookDraft", (input) => this.localized(async () => this.savePlaybookDraft(input)));
       ctx.ipc.handle("agent.recommendPlaybook", (projectId, input) => ctx.agent.recommendPlaybook(projectId, input));
     });
     // Torn down (a restart, a reload) mid-run: each run stops and is settled here, never left going behind the next instance.
@@ -848,6 +898,129 @@ export class Agent extends Service implements AgentReader {
     return resolved?.winner.body ?? null;
   }
 
+  /** Where playbooks of a scope live: the Hub's folder for this person, `.tomrade/playbooks` for a project. */
+  playbookRoot(scope: "user" | "project", projectId?: string): string {
+    if (scope === "user") {
+      const dir = this.userPlaybooksDir();
+      if (!dir) throw new Error("No folder for your playbooks on this machine");
+      return dir;
+    }
+    const dir = projectId ? contract(this.ctx, "storage")?.artifactDirFor(projectId) : null;
+    if (typeof dir !== "string") throw new Error(this.words()("importNoProject"));
+    return path.join(dir, "playbooks");
+  }
+
+  async previewPlaybookImport(source: string, fetchImpl?: Parameters<typeof readSkills>[1]): Promise<(SkillPreview & { problem?: string })[]> {
+    const skills = await readSkills(source, fetchImpl);
+    return skills.map((skill) => {
+      try {
+        return validateSkill(skill);
+      } catch (err) {
+        return { id: skill.name, title: skill.name, when: "", files: [...skill.files.keys()].sort(), problem: errorMessage(err) };
+      }
+    });
+  }
+
+  /**
+   * Every chosen skill is read and checked before the first one is written, so
+   * a bad one refuses the whole import. Re-importing an id keeps the version it
+   * replaces; a run already started keeps the body it pinned.
+   */
+  async importPlaybooks(input: PlaybookImportInput, fetchImpl?: Parameters<typeof readSkills>[1]): Promise<PlaybookImportResult> {
+    const root = this.playbookRoot(input.scope, input.projectId);
+    const found = await readSkills(input.source, fetchImpl);
+    // A skill left out by `pick` may be broken; only the chosen ones must be sound.
+    const idOf = (files: (typeof found)[number]) => {
+      try {
+        return validateSkill(files).id;
+      } catch {
+        return files.name;
+      }
+    };
+    const picked = input.pick?.length ? found.filter((f) => input.pick!.includes(f.name) || input.pick!.includes(idOf(f))) : found;
+    if (!picked.length) throw new PlaybookImportError("noSkill", `none of ${input.pick!.join(", ")} in ${input.source} — it holds ${found.map(idOf).join(", ")}`);
+    const chosen = picked.map((files) => ({ files, preview: validateSkill(files) }));
+    const ids = chosen.map((s) => s.preview.id);
+    const twice = ids.find((id, i) => ids.indexOf(id) !== i);
+    if (twice) throw new PlaybookImportError("invalid", `two skills in ${input.source} are both named "${twice}"`);
+    const importedAt = Date.now();
+    const imported = chosen.map(({ files, preview }) => ({ ...installPlaybook(root, preview.id, files.files, { source: input.source.trim(), importedAt }), title: preview.title }));
+    if (input.scope === "user") this.loadUserPlaybooks();
+    else await this.refreshProjectPlaybooks(input.projectId!);
+    return { scope: input.scope, imported };
+  }
+
+  /**
+   * A playbook drafted from how an accepted ticket was done: the ticket, its
+   * delivery report and its latest agent conversation. Only a finished ticket
+   * an agent worked or someone submitted qualifies.
+   */
+  async draftPlaybook(projectId: string, ref: string): Promise<PlaybookDraft> {
+    const items = contract(this.ctx, "items");
+    const item = items?.get(projectId, ref) ?? items?.getByKey(projectId, ref) ?? null;
+    if (!item || item.kind !== "ticket") throw new Error(`No ticket ${ref}`);
+    if (item.status !== "done") throw new Error(this.words()("draftNotDone", { key: item.key }));
+    const thread = this.store.threadsForItem(projectId, item.id).find((t) => t.surface !== "doctor");
+    // A ticket created or closed as done by a person carries a submission of theirs: that is no method to learn from.
+    const report = item.evidence.submissions.filter((sub) => sub.submittedBy !== "human").at(-1)?.report ?? null;
+    if (!thread && !report) throw new Error(this.words()("draftNothing", { key: item.key }));
+    const llm = (this.ctx.get("llm") as LlmService | undefined) ?? null;
+    if (!llm) throw new Error(this.words()("draftNoWorker"));
+    const recap = thread ? handoffRecap(this.store.messages(projectId, thread.id)) : "";
+    const runId = thread ? (this.store.runs(projectId, thread.id).at(-1)?.id ?? null) : null;
+    const draft = await llm.completeJson(draftSchema, {
+      system: DRAFT_SYSTEM,
+      user: draftPrompt({ key: item.key, title: item.title, body: item.body, workType: item.workType, report, recap }),
+      purpose: "playbook"
+    });
+    const skill = composeSkill(draft, item.workType);
+    return { itemId: item.id, key: item.key, id: skill.id, title: draft.title.trim(), runId, text: skill.text };
+  }
+
+  /** Writes a draft the person confirmed, with the ticket and run it came from; an id that exists keeps its earlier version. */
+  savePlaybookDraft(input: PlaybookDraftSave): { id: string; version: number; replaced: boolean } {
+    const item = contract(this.ctx, "items")?.get(input.projectId, input.itemId);
+    if (!item) throw new Error(`No ticket ${input.itemId}`);
+    const root = this.playbookRoot(input.scope, input.projectId);
+    const first = validateSkill({ name: input.id ?? "playbook", files: new Map([["SKILL.md", Buffer.from(input.text)]]) });
+    const id = input.id?.trim() || first.id;
+    const text = id === first.id ? input.text : renameSkill(input.text, id);
+    validateSkill({ name: id, files: new Map([["SKILL.md", Buffer.from(text)]]) });
+    const saved = installPlaybook(root, id, new Map([["SKILL.md", Buffer.from(text)]]), { from: { ticket: item.key, ...(input.runId ? { runId: input.runId } : {}) }, importedAt: Date.now() });
+    if (input.scope === "user") this.loadUserPlaybooks();
+    else void this.refreshProjectPlaybooks(input.projectId);
+    return saved;
+  }
+
+  private async draftOrGiven(projectId: string, ticket: string, text?: string): Promise<PlaybookDraft> {
+    if (!text) return this.draftPlaybook(projectId, ticket);
+    const items = contract(this.ctx, "items");
+    const item = items?.get(projectId, ticket) ?? items?.getByKey(projectId, ticket) ?? null;
+    if (!item) throw new Error(`No ticket ${ticket}`);
+    const thread = this.store.threadsForItem(projectId, item.id)[0];
+    const preview = validateSkill({ name: "playbook", files: new Map([["SKILL.md", Buffer.from(text)]]) });
+    return { itemId: item.id, key: item.key, id: preview.id, title: preview.title, runId: thread ? (this.store.runs(projectId, thread.id).at(-1)?.id ?? null) : null, text };
+  }
+
+  /** Puts back what an import replaced, newest first — the import tool's undo. */
+  async revertPlaybookImport(input: Pick<PlaybookImportInput, "scope" | "projectId">, result: PlaybookImportResult): Promise<void> {
+    const root = this.playbookRoot(input.scope, input.projectId);
+    for (const entry of [...result.imported].reverse()) uninstallLatest(root, entry.id);
+    if (input.scope === "user") this.loadUserPlaybooks();
+    else await this.refreshProjectPlaybooks(input.projectId!);
+  }
+
+  /** A playbook import's refusal in the person's language, for the panel. */
+  private async localized<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (err) {
+      if (!(err instanceof PlaybookImportError)) throw err;
+      const key = ({ notFound: "importNotFound", noSkill: "importNoSkill", invalid: "importInvalid", tooLarge: "importTooLarge", unreachable: "importUnreachable", pick: "importPick" } as const)[err.code];
+      throw new Error(this.words()(key, { detail: err.message }));
+    }
+  }
+
   /**
    * Re-read `.tomrade/playbooks/` from the project's shared copy, when the
    * project has one. Called when a run starts and when the panel asks for the
@@ -874,24 +1047,53 @@ export class Agent extends Service implements AgentReader {
     const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
     const since = Math.min(windowStart(now, 7), windowStart(now, days));
     const runs: UsageRun[] = [];
-    for (const projectId of this.ctx.db.openIds()) {
-      const rows = this.ctx.db
-        .for(projectId)
-        .prepare("SELECT engine, status, started_at, ended_at, usage_json, metrics_json, cost_usd FROM plugin_agent_runs WHERE started_at >= ? AND status <> 'running' ORDER BY started_at")
-        .all(since) as { engine: string; status: UsageRun["status"]; started_at: number; ended_at: number | null; usage_json: string | null; metrics_json: string | null; cost_usd: number | null }[];
-      for (const r of rows) {
-        runs.push({
-          engine: r.engine,
-          status: r.status,
-          startedAt: r.started_at,
-          endedAt: r.ended_at,
-          usage: r.usage_json ? JSON.parse(r.usage_json) : null,
-          metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
-          costUsd: r.cost_usd
-        });
-      }
+    for (const projectId of this.ctx.db.openIds()) runs.push(...this.usageRuns(projectId, "r.started_at >= ?", [since]));
+    const summary = usageSummary(runs, { days, now, titles });
+    const items = contract(this.ctx, "items");
+    for (const ticket of summary.range.tickets) {
+      const item = items?.get(ticket.projectId, ticket.itemId);
+      ticket.key = item?.key ?? null;
+      ticket.title = item?.title ?? "";
     }
-    return usageSummary(runs, { days, now, titles });
+    return summary;
+  }
+
+  /** Finished runs of one project matching `where` (over runs `r` and their threads `t`), as the usage sums read them. */
+  private usageRuns(projectId: string, where: string, args: unknown[]): UsageRun[] {
+    if (!this.ctx.db.has(projectId)) return [];
+    const rows = this.ctx.db
+      .for(projectId)
+      .prepare(`SELECT r.engine, r.status, r.started_at, r.ended_at, r.usage_json, r.metrics_json, r.cost_usd, r.execution_json, t.item_id FROM plugin_agent_runs r LEFT JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE ${where} AND r.status <> 'running' ORDER BY r.started_at`)
+      .all(...args) as { engine: string; status: UsageRun["status"]; started_at: number; ended_at: number | null; usage_json: string | null; metrics_json: string | null; cost_usd: number | null; execution_json: string | null; item_id: string | null }[];
+    return rows.map((r) => ({
+      engine: r.engine,
+      status: r.status,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      usage: r.usage_json ? JSON.parse(r.usage_json) : null,
+      metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
+      costUsd: r.cost_usd,
+      projectId,
+      itemId: r.item_id,
+      deliveryId: r.execution_json ? ((JSON.parse(r.execution_json) as { deliveryId?: string }).deliveryId ?? null) : null
+    }));
+  }
+
+  /** One ticket's runs, all time — the same runs its Cost field sums — split by agent and by delivery. */
+  ticketUsage(projectId: string, itemId: string): TicketSpend {
+    const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
+    const runs = this.usageRuns(projectId, "t.item_id = ?", [itemId]);
+    const deliveries = this.ctx.db.has(projectId) ? new DeliveryStore(this.ctx.db).list(projectId, itemId) : [];
+    return ticketSpend(runs, deliveries, titles);
+  }
+
+  /** What each of these tickets, and each agent across them, spent since `since`: an auto run's report reads it. */
+  spendByTicket(projectId: string, itemIds: string[], since: number): { tickets: Map<string, TicketSpend>; engines: EngineUsage[] } {
+    const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
+    const runs = itemIds.length ? this.usageRuns(projectId, `r.started_at >= ? AND t.item_id IN (${itemIds.map(() => "?").join(", ")})`, [since, ...itemIds]) : [];
+    const tickets = new Map<string, TicketSpend>();
+    for (const itemId of new Set(runs.map((r) => r.itemId!))) tickets.set(itemId, ticketSpend(runs.filter((r) => r.itemId === itemId), [], titles));
+    return { tickets, engines: ticketSpend(runs, [], titles).engines };
   }
 
   /** What finished runs on these tickets cost since `since`: the sum engines reported, and how many runs reported nothing. */
@@ -2458,6 +2660,51 @@ export class Agent extends Service implements AgentReader {
           if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
           if (inv.projectId && inv.run) this.store.recordPlaybook(inv.projectId, inv.run.id, snapshot);
           return snapshot;
+        }
+      })
+    );
+
+    this.ctx.tools.kit("playbooks", "bringing skills in as playbooks");
+    this.ctx.tools.register(
+      defineTool({
+        name: "import_playbook",
+        title: "Import a playbook",
+        description:
+          "Bring an existing skill (a SKILL.md folder) into Tomrade as a playbook. source: a GitHub repository or folder URL (github.com/owner/repo, …/tree/<ref>/<path>), a skills.sh page, a URL of one SKILL.md, or a folder on this machine such as a repository's .claude/skills/<name>. scope: \"user\" (this person's, every project) or \"project\" (travels with the project folder). When the source holds several skills, pass pick with the ones to take. Importing an id that exists keeps the old one as an earlier version. Undo restores it.",
+        input: z.object({ source: z.string().min(1), scope: z.enum(["user", "project"]), pick: z.array(z.string().min(1)).optional() }),
+        kit: "playbooks",
+        execute: ({ source, scope, pick }, inv) => this.importPlaybooks({ source, scope, pick, projectId: scope === "project" ? requireProjectId("import_playbook", undefined, inv) : inv.projectId }),
+        revert: (args, result, inv) => this.revertPlaybookImport({ scope: args.scope, projectId: inv.projectId }, result as PlaybookImportResult)
+      })
+    );
+
+    this.ctx.tools.register(
+      defineTool({
+        name: "save_playbook_from_ticket",
+        title: "Save how a ticket was done as a playbook",
+        description:
+          "Distil how an accepted (done) ticket was carried out into a reusable playbook. Without text it drafts the SKILL.md from the ticket, its delivery report and its agent conversation. The person confirms before anything is written: when they can be asked here, they are; otherwise nothing is written and the draft comes back — show it to them, and call again with the text they approved. scope: \"user\" or \"project\"; id saves under that id, as a new version when it exists.",
+        input: z.object({ ticket: z.string().min(1), scope: z.enum(["user", "project"]), id: z.string().min(1).optional(), text: z.string().min(1).optional() }),
+        kit: "playbooks",
+        execute: async ({ ticket, scope, id, text }, inv) => {
+          const projectId = requireProjectId("save_playbook_from_ticket", undefined, inv);
+          const draft = await this.draftOrGiven(projectId, ticket, text);
+          if (!inv.ask) {
+            if (!text) return { saved: false, draft: draft.text, note: "Nothing written. Show the person this draft; call again with text once they approve it." };
+          } else {
+            const yes = this.words()("draftSave");
+            const answer = await inv.ask(this.words()("draftAsk", { id: id ?? draft.id, key: draft.key, text: draft.text }), [yes, this.words()("draftCancel")]);
+            if (answer !== yes) return { saved: false, note: "The person did not save it." };
+          }
+          const saved = this.savePlaybookDraft({ projectId, itemId: draft.itemId, text: draft.text, scope, id, runId: draft.runId });
+          return { saved: true, scope, ...saved };
+        },
+        revert: (args, result, inv) => {
+          const r = result as { saved?: boolean; id?: string };
+          if (!r.saved || !r.id) return;
+          uninstallLatest(this.playbookRoot(args.scope, inv.projectId), r.id);
+          if (args.scope === "user") this.loadUserPlaybooks();
+          else if (inv.projectId) void this.refreshProjectPlaybooks(inv.projectId);
         }
       })
     );

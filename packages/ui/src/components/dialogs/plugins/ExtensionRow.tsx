@@ -217,7 +217,7 @@ function FullMode({ full, refused }: { full: FullModeInfo; refused?: string[] })
     <div className="plug-ext-reach meta-txt dense" data-testid="full-mode">
       <p style={{ margin: 0 }}>{t("plugins.fullMode", { range: full.tomrade })}</p>
       {!!full.rows.length && (
-        <ul className="dash">
+        <ul className="dash-list">
           {full.rows.map((row) => (
             <li key={row.id}>
               {t(ROW_KEY[row.change], { id: row.id })}
@@ -249,7 +249,7 @@ function AgentHooks({ events }: { events: string[] }) {
   return (
     <div className="plug-ext-reach meta-txt dense" data-testid="agent-hooks">
       <p style={{ margin: 0 }}>{t("plugins.agentHooks")}</p>
-      <ul className="dash">
+      <ul className="dash-list">
         {[...new Set(events)].flatMap((event) => {
           const reach = CLI_HOOK_COVERAGE[event as CliHookEvent];
           if (!reach) return [];

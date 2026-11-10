@@ -51,7 +51,7 @@ export const MenuFoot = ({ children }: { children: ReactNode }) => <div classNam
 export const MenuEmpty = ({ children }: { children: ReactNode }) => <p className="menu-empty">{children}</p>;
 
 const Check = () => (
-  <span className="chk">
+  <span className="menu-row__check">
     <Icon name="i-check" size={10} />
   </span>
 );

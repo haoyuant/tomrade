@@ -515,16 +515,16 @@ const run = async () => {
   const depSel = depOpen();
   const depTarget = graphOwned.find((c) => c.id !== depSel.id && !depSel.blocks.includes(c.id) && !reaches(c.id, depSel.id));
   const depEdgesBefore = await $(`document.querySelectorAll('.react-flow__edge').length`);
-  await press(`document.querySelectorAll('.detail .field-row')[5].querySelector('.lab-add')`);
+  await press(`document.querySelectorAll('.detail .field-row')[5].querySelector('.label-set__add')`);
   await sleep(300);
-  await typeInto(".detail .dep-in", `${depTarget.key} ${depTarget.title}`);
-  await $(`(() => { const i = document.querySelector('.detail .dep-in'); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
+  await typeInto(".detail .label-set__input--dep", `${depTarget.key} ${depTarget.title}`);
+  await $(`(() => { const i = document.querySelector('.detail .label-set__input--dep'); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
   await sleep(1100);
   check("the Blocks field writes the dependency", depOpen().blocks.includes(depTarget.id));
   check("the canvas picks the new arrow up", (await $(`document.querySelectorAll('.react-flow__edge').length`)) === depEdgesBefore + 1);
   await shot("08b-graph-dependencies");
 
-  await press(`[...document.querySelectorAll('.detail .field-row')[5].querySelectorAll('.lab.dep')].find(c => c.textContent.includes('${depTarget.key}'))?.querySelector('.lab-x')`);
+  await press(`[...document.querySelectorAll('.detail .field-row')[5].querySelectorAll('.label-set__chip.label-set__chip--dep')].find(c => c.textContent.includes('${depTarget.key}'))?.querySelector('.label-set__remove')`);
   await sleep(1100);
   check("the chip's × cuts the link again", !depOpen().blocks.includes(depTarget.id));
 
@@ -584,7 +584,7 @@ const run = async () => {
   check("the activity ledger reads the oplog", (await $(`document.querySelectorAll('.detail .ledger-row').length`)) > 0);
   check("the detail says History, not oplog, and keeps the version number out of the fields", (await $(`(() => { const d = document.querySelector('.detail'); return !/oplog/i.test(d.innerText) && ![...d.querySelectorAll('.field-row dt')].some(n => n.textContent === 'Version'); })()`)) === true);
   check("writers are named in words, not author ids", (await $(`!/\\b(human|ai:[a-z-]+)\\b/.test(document.querySelector('.detail .ledger').innerText + ' ' + document.querySelector('.statusbar').innerText)`)) === true);
-  check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 5);
+  check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .field-select__control').length`)) === 5);
   await shot("09-detail-docked");
 
   // ── editing an issue in place ────────────────────────────────────────
@@ -595,26 +595,26 @@ const run = async () => {
   const opened = open();
 
   const wantStatus = opened.status === "verifying" ? "doing" : "verifying";
-  await pick(`document.querySelectorAll('.detail .fsel')[0]`, wantStatus);
+  await pick(`document.querySelectorAll('.detail .field-select__control')[0]`, wantStatus);
   await sleep(900);
   check("the status field writes to the issue", open().status === wantStatus);
   check("the edit bumped the version", open().version === opened.version + 1);
   check("the edit is one reversible oplog row", ctx.oplog.historyFor(project.id, "item", opened.id, 1)[0]?.op === "update");
 
   const wantPriority = opened.priority === 4 ? "1" : "4";
-  await pick(`document.querySelectorAll('.detail .fsel')[1]`, wantPriority);
+  await pick(`document.querySelectorAll('.detail .field-select__control')[1]`, wantPriority);
   await sleep(900);
   check("the priority field writes to the issue", String(open().priority) === wantPriority);
 
-  await press(`document.querySelector('.detail .lab-add')`);
+  await press(`document.querySelector('.detail .label-set__add')`);
   await sleep(400);
-  check("the label field offers an input", (await $(`!!document.querySelector('.detail .lab-in')`)) === true);
-  await typeInto(".detail .lab-in", "regression");
-  await $(`document.querySelector('.detail .lab-in').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  check("the label field offers an input", (await $(`!!document.querySelector('.detail .label-set__input')`)) === true);
+  await typeInto(".detail .label-set__input", "regression");
+  await $(`document.querySelector('.detail .label-set__input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
   await sleep(900);
   check("a label typed into the field lands on the issue", open().labels.includes("regression"));
 
-  await press(`document.querySelector('.detail .lab .lab-x')`);
+  await press(`document.querySelector('.detail .label-set__chip .label-set__remove')`);
   await sleep(900);
   check("a label chip can be taken back off", open().labels.length === opened.labels.length);
 
@@ -1358,10 +1358,10 @@ const run = async () => {
   await sleep(1600);
   check("the issue route renders the standalone sheet", (await $(`!!document.querySelector('.issue-wrap')`)) === true);
   check("the ledger names the write, not just 'updated'", (await $(`[...document.querySelectorAll('.ledger-txt')].some(n => /locked title and body|set status to/.test(n.textContent))`)) === true);
-  check("the field strip lays out horizontally, custom fields included", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10 + repos.fields.custom(project.id).length);
-  check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .fsel').length`)) === 5);
+  check("the field strip lays out horizontally, custom fields included", (await $(`document.querySelectorAll('.issue-wrap .issue-sheet__fact').length`)) === 10 + repos.fields.custom(project.id).length);
+  check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .field-select__control').length`)) === 5);
   check("a locked issue explains the lock", (await $(`!!document.querySelector('.lockbar')`)) === true);
-  check("dependencies render as chips that open the issue", (await $(`document.querySelectorAll('.issue-wrap .lab.dep').length`)) >= 3);
+  check("dependencies render as chips that open the issue", (await $(`document.querySelectorAll('.issue-wrap .label-set__chip.label-set__chip--dep').length`)) >= 3);
   await shot("20-issue-detail");
 
   // ── permanent delete ────────────────────────────────────────────────
@@ -1383,7 +1383,7 @@ const run = async () => {
   await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
   await sleep(2600);
   check("the issue sheet offers a permanent delete", (await $(`!!document.querySelector('.titlebar .purge-btn')`)) === true);
-  check("the delete control is not one more field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10 + repos.fields.custom(project.id).length);
+  check("the delete control is not one more field", (await $(`document.querySelectorAll('.issue-wrap .issue-sheet__fact').length`)) === 10 + repos.fields.custom(project.id).length);
 
   await $(`document.querySelector('.titlebar .purge-btn').focus();true`);
   await press(`document.querySelector('.titlebar .purge-btn')`);

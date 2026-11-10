@@ -9,6 +9,7 @@ import { useAttachFiles, useImportForTicket, useTicketFolder } from "~/lib/files
 import { invalidateWorkspace, keys } from "~/lib/queries";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
+import { SavePlaybook } from "./SavePlaybook";
 
 /** A resource opens the version it pinned, never the file's current head. */
 function ResourceLink({ item, resource }: { item: Item; resource: DeliveryResource }) {
@@ -97,6 +98,7 @@ export function DeliveryPanel({ item }: { item: Item }) {
         {review.decision !== "changes-requested" && <button className="btn btn-secondary" data-testid="delivery-rechanges" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate("changes-requested")}>{t("fields.requestChangesInstead")}</button>}
       </div>
     </div>}
+    <SavePlaybook item={item} />
     {mutate.isError && <div className="stack-2" role="alert" data-testid="delivery-error">
       <p className="meta-txt">{t(String(mutate.error).includes("version conflict") ? "fields.reviewStale" : "fields.reviewFailed", { reason: readableError(mutate.error) })}</p>
       <button className="btn btn-ghost" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate(mutate.variables!)}>{t("fields.retry")}</button>

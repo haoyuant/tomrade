@@ -248,7 +248,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
         <div className="stack-3" data-testid="publish-dialog">
           <p>{t("plugins.publishLede")}</p>
           {account.error && <p style={{ color: "var(--danger)" }}>{readableError(account.error)}</p>}
-          <ul className="dash stack-2">
+          <ul className="dash-list stack-2">
             {step(!!a?.signedIn, t("plugins.stepAccount"), t("plugins.stepAccountHint"))}
             {step(
               !!a?.github,
@@ -350,7 +350,7 @@ function RestoreDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
         <div className="stack-3">
           <p>{t("plugins.restoreLede")}</p>
           {snapshots.data && !snapshots.data.length && <p className="meta-txt">{t("plugins.noSnapshots")}</p>}
-          <ul className="dash stack-2">
+          <ul className="dash-list stack-2">
             {snapshots.data?.map((s) => (
               <li key={s.file} className="row" style={{ gap: 8 }}>
                 <span style={{ flex: 1 }}>{t("plugins.restoreFrom", { when: new Date(s.at).toLocaleString(locale), rows: s.rows })}</span>

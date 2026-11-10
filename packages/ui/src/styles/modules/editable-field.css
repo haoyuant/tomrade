@@ -1,0 +1,162 @@
+@layer components {
+/* ─── editable fields ─────────────────────────────────────────────────
+ * Every field on an issue is writable, but the detail is read far more
+ * often than it is edited — so a field renders as its own value and only
+ * becomes a control under the cursor. Nothing shifts when it does: the
+ * hover state is a background and a border, never a size.
+ *
+ * The enum pickers are native `<select>`s on purpose. The field strip
+ * renders inside a Radix dialog when the pane is expanded, and an OS menu
+ * neither fights that focus trap nor gets clipped by the overlay, which
+ * establishes a containing block with its own `overflow: hidden`. */
+/* --field-select-shift pulls the select's hover box out past the text column so its
+   text lines up with the plain values above it. It is a relative offset, not
+   a negative margin: Chromium takes a flex item's negative margin out of the
+   select's own width, which clipped a two-character name to one and an
+   ellipsis (TOM-836). */
+.field-select { --field-select-shift: 5px; position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+.field-select__control {
+  appearance: none; -webkit-appearance: none;
+  max-width: 100%; min-width: 0;
+  position: relative; inset-inline-start: calc(-1 * var(--field-select-shift)); padding: 2px 19px 2px 5px;
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  color: inherit; background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  text-overflow: ellipsis; cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+.field-select__control:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.field-select__control:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+/* the chevron is the affordance, so it appears with the hover state and
+   never occupies width the resting field has to reserve */
+.field-select__chevron {
+  position: absolute; right: calc(4px + var(--field-select-shift)); color: var(--meta); pointer-events: none;
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.field-select:hover .field-select__chevron, .field-select__control:focus-visible ~ .field-select__chevron { opacity: 1; }
+/* a custom text/number/date value reads as text and becomes a field on hover,
+   the same contract as the enum pickers beside it */
+.field-value {
+  min-width: 6ch; max-width: 100%; margin-inline-start: -5px; padding: 2px 5px;
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  color: inherit; background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.field-value.num { font-size: 13px; }
+.field-value::placeholder { color: var(--meta); }
+.field-value:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.field-value:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+.field-value::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+
+/* labels — chips that can be taken off, and one input that puts them on */
+.label-set { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.label-set__chip { gap: 3px; padding-right: 3px; }
+.label-set__remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; padding: 0;
+  border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: currentColor; opacity: 0.55; cursor: pointer;
+  transition: opacity var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+/* a wash of the chip's own text colour, so the hover reads on every theme's
+   tag background rather than only on the light one */
+.label-set__remove:hover { opacity: 1; background: color-mix(in oklch, currentColor 20%, transparent); }
+.label-set__remove:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.label-set__add {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border: 1px dashed var(--border); border-radius: var(--radius-xs);
+  background: transparent; color: var(--meta);
+  font-family: var(--font-display); font-weight: var(--font-weight-medium); font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label); line-height: 1.5; cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.label-set__add:hover { color: var(--fg); border-color: var(--meta); }
+.label-set__add:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.label-set__input {
+  width: 9ch; padding: 1px 6px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: var(--radius-xs);
+  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
+}
+.label-set__input:focus { outline: none; box-shadow: var(--focus-ring); }
+
+/* click-to-edit text — the read view is a button, so the whole line is one
+   hit target and one tab stop, and the write view is a textarea that grows.
+ *
+ * Both views carry the class of the text they stand in for (`.detail-title`,
+ * `.issue-body`, …), which is what keeps the type from reflowing when the
+ * field becomes editable. The font reset that a button and a textarea need
+ * against the UA default is therefore declared at zero specificity — `:where`
+ * — so that co-class still wins and a title does not edit at body size. */
+:where(.inline-edit, .inline-ta) { font: inherit; letter-spacing: inherit; }
+.inline-edit, .inline-ta {
+  display: block;
+  /* the 12px the negative margin reclaims, so the hit area can be padded
+     without the text starting 6px in from everything above it */
+  width: calc(100% + 12px);
+  margin: -3px -6px; padding: 3px 6px;
+  text-align: left; border-radius: var(--radius-sm);
+}
+.inline-edit {
+  color: inherit; background: transparent; border: 1px solid transparent;
+  cursor: text; white-space: pre-wrap;
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.inline-edit:hover { background: var(--surface-warm); border-color: var(--border); }
+.inline-edit:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.inline-hint { color: var(--meta); font-style: italic; }
+.inline-ta {
+  color: var(--fg); background: var(--surface);
+  border: 1px solid var(--accent);
+  overflow: hidden; resize: none;
+}
+.inline-ta:focus { outline: none; box-shadow: var(--focus-ring); }
+
+/* ticket description — rendered Markdown that reads as text and opens its
+   editor on a click, and the editor itself: source, preview, attachments */
+.body-read {
+  margin-inline: -6px; padding: 3px 6px; width: calc(100% + 12px);
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: text;
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.body-read:hover { background: var(--surface-warm); border-color: var(--border); }
+.body-read:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.md-body h1 { font-size: var(--text-xl); }
+.md-body h2 { font-size: var(--text-lg); }
+.md-body h3, .md-body h4 { font-size: var(--text-base); }
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+.md-body img.md-file { cursor: pointer; }
+.md-body img.md-file:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.md-file:not([src]) { display: inline-block; width: 12em; height: 6em; vertical-align: top; background: var(--surface-warm); border-radius: var(--radius-sm); }
+.md-file-missing {
+  display: inline-block; padding: 2px 8px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  color: var(--meta); font-size: var(--text-sm);
+}
+.md-view a.md-attachment {
+  text-decoration: none; padding: 0 6px; border: 1px solid var(--border-soft); border-radius: 4px;
+  background: var(--surface-warm); font-size: 0.92em;
+}
+.body-editor {
+  --cm-min-height: 8em;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  margin-inline: -6px; padding: 6px; width: calc(100% + 12px);
+  background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); box-shadow: var(--focus-ring);
+}
+.body-editor:focus { outline: none; }
+.body-editor-bar .btn { padding: 3px 8px; font-size: var(--text-sm); }
+.body-editor-text, .body-editor-preview { padding: 0 2px; }
+.body-editor-text[hidden] { display: none; }
+.body-editor-preview { min-height: 8em; }
+.body-editor-changed {
+  display: flex; align-items: center; gap: var(--space-2); padding: 4px 4px 4px 8px;
+  border: 1px solid var(--warn); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--fg-2);
+}
+.body-editor-changed > .ico { color: var(--warn); flex-shrink: 0; }
+.body-editor-changed.is-restored { border-color: var(--border); }
+.body-editor-changed.is-restored > .ico { color: var(--meta); }
+.body-editor-foot { color: var(--meta); }
+}

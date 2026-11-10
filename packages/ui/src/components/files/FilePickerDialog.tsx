@@ -53,7 +53,7 @@ export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, o
         <div className="stack-1 file-picker-list" style={{ maxHeight: 320, overflowY: "auto" }}>
           {files.map((entry) => (
             <button key={entry.path} type="button" className="menu-row" data-file={entry.path} role="checkbox" aria-checked={selected.has(entry.path)} disabled={busy} onClick={() => toggle(entry)}>
-              <span className="chk">
+              <span className="menu-row__check">
                 <Icon name="i-check" size={10} />
               </span>
               <span className="m-stack">

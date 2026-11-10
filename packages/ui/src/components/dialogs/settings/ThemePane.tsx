@@ -72,7 +72,7 @@ function ThemePreview({ customThemes, preference, onPick, onCreate, onPicture, p
           </div>
           <div className="swatches">
             {["--surface", "--surface-warm", "--muted", "--accent"].map((tok) => (
-              <span key={tok} className="sw" style={{ background: `var(${tok})` }} />
+              <span key={tok} className="swatches__item" style={{ background: `var(${tok})` }} />
             ))}
           </div>
         </ModeCard>

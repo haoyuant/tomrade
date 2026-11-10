@@ -32,7 +32,7 @@ export function AgentAccessSection() {
             <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
             <Eyebrow>{t("settingsDialog.humanProtected")}</Eyebrow>
           </div>
-          <ul className="dash">
+          <ul className="dash-list">
             <li>{t("settingsDialog.lockedFieldsBullet")}</li>
             <li>{t("settingsDialog.oplogBullet")}</li>
             <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{keyLabel("undo")}</Num> })}</li>

@@ -1,0 +1,42 @@
+/* Settings → Keyboard shortcuts: a row per command, its key caps click to re-record */
+.keys-pane { display: grid; gap: var(--space-4); }
+.keys-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.keys-toolbar .keys-search { flex: 1 1 200px; min-width: 0; }
+.keys-confirm { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.keys-group { display: grid; gap: var(--space-2); }
+.keys-list { padding: 0; }
+.keys-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  padding: 8px var(--space-4); min-height: 44px;
+}
+.keys-row + .keys-row { border-top: 1px solid var(--border-soft); }
+.keys-label { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--fg); font-size: var(--text-sm); }
+.keys-row.is-fixed .keys-label { color: var(--muted); }
+.keys-chords { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.keys-chord { position: relative; display: inline-flex; }
+.keys-chord-btn { border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: var(--radius-xs); }
+.keys-chord-btn .kbd { display: inline-block; padding: 4px 7px; font-size: 12px; border: 1px solid var(--border); background: var(--surface-warm); color: var(--fg-2); }
+.keys-chord-btn:hover .kbd { border-color: var(--meta); color: var(--fg); }
+.keys-chord-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.keys-chord-x {
+  position: absolute; top: -6px; right: -6px; width: 15px; height: 15px; padding: 0;
+  display: none; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer;
+}
+.keys-chord:hover .keys-chord-x, .keys-chord:focus-within .keys-chord-x { display: inline-flex; }
+.keys-chord-x:hover { color: var(--danger); border-color: var(--danger); }
+.keys-recording {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px;
+  border: 1px dashed var(--accent); border-radius: var(--radius-xs);
+  font-size: var(--text-xs); color: var(--accent);
+}
+.keys-add { padding: 3px 7px; font-size: var(--text-xs); }
+.keys-actions { display: flex; justify-content: flex-end; min-width: 4.5rem; }
+.keys-actions .btn { padding: 3px 8px; font-size: var(--text-xs); }
+.keys-note {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  padding: 8px 10px; border-radius: var(--radius-sm); background: var(--tag-bg-faint);
+  font-size: var(--text-sm); color: var(--fg-2);
+}
+.keys-note .ico, .keys-note svg { color: var(--warn); flex-shrink: 0; }
+.keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }

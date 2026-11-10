@@ -1,0 +1,15 @@
+@layer components {
+/* ─── banner (version conflict) — readable in all three themes ───────── */
+.banner {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: var(--space-3) var(--space-4) 0;
+  padding: 9px var(--space-3);
+  background: var(--surface); color: var(--fg-2);
+  border: 1px solid var(--warn); border-radius: var(--radius-md);
+  font-size: var(--text-sm); line-height: var(--leading-dense);
+}
+.banner .b-mark { color: var(--warn); flex-shrink: 0; }
+/* The message takes the width; short of room, the actions wrap below it rather than squeezing it to a word a line. */
+.banner { flex-wrap: wrap; }
+.banner > span { flex: 1 1 22ch; min-width: 0; }
+}

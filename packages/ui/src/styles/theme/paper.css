@@ -1,0 +1,88 @@
+/* ─── kami tokens · light "paper" (declared values, verbatim) ────────── */
+:root {
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #504e49;
+  --meta: #6b6a64;
+
+  --border: #e8e6dc;
+  --border-soft: #e5e3d8;
+  /* a field's edge must read against the page: 3:1 (WCAG 1.4.11) */
+  --border-input: #8e8a7f;
+
+  --accent: #1b365d;
+  --accent-on: #faf9f5;
+  --accent-light: #2d5a8a;
+  /* a pane's screen quoted in the app: a terminal's own dark, under every theme */
+  --term-bg: #1c1c1a;
+  --term-fg: #e6e4dc;
+  --term-dim: #8f8d85;
+  --accent-hover: var(--accent);
+  --accent-active: #142a48;
+
+  --success: #4a6b3a;
+  --warn: #8a6b1f;
+  --danger: #8a3a30;
+
+  /* Data-viz categorical palette: separate hues, never the accent alone. */
+  --chart-1: #1b365d;
+  --chart-2: #4a6b3a;
+  --chart-3: #8a6b1f;
+  --chart-4: #6a4a86;
+  --chart-5: #2f6b6b;
+  --chart-6: #8a3a30;
+  --chart-7: #2f6b8a;
+  --chart-8: #7a5b3a;
+  --chart-9: #5b6b8a;
+  --chart-10: #8a5b7a;
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px;
+  --space-10: 40px; --space-12: 48px;
+
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-ring-accent: 0 0 0 1px var(--accent);
+  --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.05);
+
+  --focus-ring: 0 0 0 2px var(--accent-active);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+
+  /* tag fills — solid, pre-blended over parchment (kami: never rgba) */
+  --tag-bg-faint: #eef2f7;
+  --tag-bg-soft: #e4ecf5;
+  --tag-bg-base: #d6e1ee;
+  --tag-bg-strong: #d0dce9;
+  --tag-fg: var(--accent);
+
+  /* app chrome geometry */
+  --titlebar-h: 42px;
+  --statusbar-h: 29px;
+  --sidebar-w: 264px;
+  --detail-w: 440px;
+  /* Every overlay centres on the workspace row, not the window: the titlebar
+     and the status bar are chrome, so splitting the difference between them
+     is what reads as "centred". One pair of tokens keeps the modals and the
+     expanded issue sheet on the same axis. */
+  --overlay-mid: calc(var(--titlebar-h) + (100vh - var(--titlebar-h) - var(--statusbar-h)) / 2);
+  --overlay-max-h: calc(100vh - var(--titlebar-h) - var(--statusbar-h) - 2 * var(--space-8));
+  /* the window controls are overlaid by the shell, so the bar owns its own
+     gutter — the same 12px the sidebar and the right edge use */
+  --traffic-inset: var(--space-3);
+}
+
+/* Windowed on macOS the traffic lights are drawn *inside* our header, so the
+   bar owes them room; in full screen they retreat into the auto-hiding menu
+   bar and a reserved gutter would read as a dent. The shell flips the
+   attribute (lib/window-chrome.ts) and every `.titlebar` follows. */
+html[data-traffic-lights="on"] {
+  /* the 14px trafficLightPosition offset (see main.ts) + the ~60px the three
+     buttons span + the same 12px gutter the rest of the bar uses */
+  --traffic-inset: 86px;
+}

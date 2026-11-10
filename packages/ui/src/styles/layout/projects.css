@@ -1,0 +1,61 @@
+@layer components {
+/* ─── the projects screen · a route inside the file, not a dialog ───────
+ * OD renders every screen in a srcdoc frame, where a relative href has no
+ * base URL to resolve against — so a file-to-file jump silently dies. Home
+ * and "All projects" therefore mount the real projects screen over the
+ * workspace: same chrome, same cards as projects-home.html, which stays
+ * reachable as a standalone file from inside it. */
+.proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: var(--space-4); }
+.proj {
+  display: flex; flex-direction: column; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  min-height: 229px; width: 100%;
+  transition: box-shadow var(--motion-base) var(--ease-standard), border-color var(--motion-base) var(--ease-standard);
+}
+.proj:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
+.proj:focus-visible { box-shadow: var(--focus-ring); }
+.proj[aria-current="true"] { border-color: var(--accent); }
+/* The gear sits over the card, not inside it: a button inside a button is
+   invalid, and the card itself is the button that opens the project. */
+.proj-cell { position: relative; display: flex; }
+.proj-gear { position: absolute; top: var(--space-3); right: var(--space-3); color: var(--meta); }
+.proj-cell:hover .proj-gear { color: var(--fg-2); }
+.proj-name { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
+.proj-desc { font-size: 14px; line-height: var(--leading-dense); color: var(--muted); margin-top: 6px; }
+.proj-boards { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-4); margin-bottom: var(--space-3); }
+.proj-foot { display: flex; align-items: baseline; gap: var(--space-4); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--border-soft); }
+.stat-pair { display: flex; flex-direction: column; gap: 1px; }
+.stat-v { font-family: var(--font-display); font-size: var(--text-lg); color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat-v.plain { color: var(--fg-2); }
+.stat-k { font-size: var(--text-xs); color: var(--meta); }
+.proj-new {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: var(--space-2); min-height: 229px; width: 100%; text-align: left;
+  background: transparent; border: 1px dashed var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-5); color: var(--muted);
+  transition: border-color var(--motion-base) var(--ease-standard), background-color var(--motion-base) var(--ease-standard);
+}
+.proj-new:hover { background: var(--surface-warm); border-color: var(--meta); color: var(--fg); }
+/* A project in the account that is not on this computer yet: the card's
+   shape, drawn as a placeholder, with the step under way as a running rule.
+   A fainter surface, not none: over a picture or a tinted page its text must still read. */
+.proj-restore { background: color-mix(in srgb, var(--surface) 55%, transparent); border-style: dashed; }
+.proj-restore:hover { box-shadow: none; border-color: var(--border); }
+.proj-restore[data-restore="restoring"], .proj-restore[data-restore="queued"] { background: var(--surface); }
+.restore-body { overflow-wrap: anywhere; }
+.restore-hint { margin-top: var(--space-2); overflow-wrap: anywhere; }
+.restore-progress { position: relative; height: 2px; margin-top: var(--space-4); overflow: hidden; border-radius: 1px; background: var(--border-soft); }
+.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.restore-foot { align-items: center; }
+.restore-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.restore-actions { flex: none; }
+.restore-banner { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-4); }
+.restore-banner[data-mode="attention"] { border-color: var(--danger); }
+.restore-banner-title { font-family: var(--font-display); font-weight: 500; color: var(--fg); }
+.restore-row .cfg-name { display: flex; flex-direction: column; gap: 2px; }
+.restore-row-state { flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  .restore-progress::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
+}
+}

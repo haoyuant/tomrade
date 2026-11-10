@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { EngineUsage, UsageDay, UsageTotals } from "@tomradex/agent";
+import { useNavigate } from "@tanstack/react-router";
+import type { EngineUsage, TicketUsage, UsageDay, UsageTotals } from "@tomradex/agent";
 import type { WorkerPurposeUsage, WorkerUsage, WorkerUsageDay, WorkerUsageTotals } from "@tomradex/llm";
 import { Eyebrow, SectionHead } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
@@ -246,6 +247,66 @@ function UsageTable({ rows, totals }: { rows: EngineUsage[]; totals: UsageTotals
   );
 }
 
+const TICKET_ROWS = 10;
+
+/** The window's costliest tickets, then what ran on none; a ticket's key opens it. */
+function TicketTable({ rows, noTicket, onLeave }: { rows: TicketUsage[]; noTicket: UsageTotals; onLeave?: () => void }) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  if (!rows.length) return <p className="meta-txt">{t("usage.ticketsNone")}</p>;
+  const shown = rows.slice(0, TICKET_ROWS);
+  const open = (r: TicketUsage) => {
+    onLeave?.();
+    void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId: r.projectId, itemId: r.itemId } });
+  };
+  const spend = (r: UsageTotals) => (
+    <>
+      {r.costUsd === null ? <span className="meta-txt">{t("usage.unknown")}</span> : usd(r.costUsd)}
+      <span className="usage-cell-sub">{t("usage.coverage", { known: r.costKnownRuns, runs: r.runs })}</span>
+    </>
+  );
+  return (
+    <div className="usage-table-wrap">
+      <table className="usage-table" data-testid="usage-tickets">
+        <thead>
+          <tr>
+            <th>{t("usage.colTicket")}</th>
+            <th className="num">{t("usage.colRuns")}</th>
+            <th className="num">{t("usage.kpiTokens")}</th>
+            <th className="num">{t("usage.colSpend")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((r) => (
+            <tr key={`${r.projectId} ${r.itemId}`} data-item={r.itemId}>
+              <td>
+                <button type="button" className="link-btn" title={t("usage.openTicket", { key: r.key ?? "" })} onClick={() => open(r)}>
+                  {r.key ?? "—"}
+                </button>
+                {r.title && <span className="usage-cell-sub">{r.title}</span>}
+              </td>
+              <td className="num">{number(r.runs)}</td>
+              <td className="num">{compact(r.inputTokens + r.outputTokens)}</td>
+              <td className="num">{spend(r)}</td>
+            </tr>
+          ))}
+        </tbody>
+        {noTicket.runs > 0 && (
+          <tfoot>
+            <tr>
+              <td>{t("usage.noTicketRow")}<span className="usage-cell-sub">{t("usage.noTicketSub")}</span></td>
+              <td className="num">{number(noTicket.runs)}</td>
+              <td className="num">{compact(noTicket.inputTokens + noTicket.outputTokens)}</td>
+              <td className="num">{spend(noTicket)}</td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+      {rows.length > shown.length && <p className="meta-txt">{t("usage.ticketsMore", { n: rows.length - shown.length })}</p>}
+    </div>
+  );
+}
+
 const PURPOSES: Record<string, MessageKey> = {
   plan: "usage.purposePlan",
   gaps: "usage.purposeGaps",
@@ -403,7 +464,7 @@ function WorkerSection({ days }: { days: number }) {
 }
 
 /** Runs, tokens and spend over a chosen range — Tomrade's own record, read fresh each time the pane opens. */
-export function UsagePane() {
+export function UsagePane({ onLeave }: { onLeave?: () => void } = {}) {
   const { t, locale } = useI18n();
   const [days, setDays] = useState(7);
   const usage = useQuery({ queryKey: keys.agent.usage(days), queryFn: () => invoke("agent.usage", days), staleTime: 0 });
@@ -464,6 +525,10 @@ export function UsagePane() {
               <summary>{t("usage.allNumbers")}</summary>
               <UsageTable rows={range.engines} totals={totals} />
             </details>
+            <section className="usage-section">
+              <div className="usage-section-head"><span className="usage-section-title">{t("usage.ticketTable")}</span></div>
+              <TicketTable rows={range.tickets} noTicket={range.noTicket} onLeave={onLeave} />
+            </section>
             <div className="usage-notes">
               <p className="meta-txt">{t("usage.notCounted")}</p>
               <p className="meta-txt">{t("usage.ticketNote")}</p>

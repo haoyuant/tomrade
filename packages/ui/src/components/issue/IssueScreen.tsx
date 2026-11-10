@@ -13,6 +13,7 @@ import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import { TicketSessions } from "./TicketSessions";
+import { TicketSpend } from "./TicketSpend";
 import {
   BoardField,
   CustomField,
@@ -179,58 +180,58 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             <IssueTitle item={item} write={write} heading="h1" />
 
             <div className="fieldstrip">
-              <span className="fs-item">
-                <span className="fs-k">{t("fields.workType")}</span>
-                <span className="fs-v"><WorkTypeField item={item} write={write} /></span>
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("fields.workType")}</span>
+                <span className="issue-sheet__fact-value"><WorkTypeField item={item} write={write} /></span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldStatus")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldStatus")}</span>
+                <span className="issue-sheet__fact-value">
                   <StatusField item={item} write={write} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldPriority")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldPriority")}</span>
+                <span className="issue-sheet__fact-value">
                   <PriorityField item={item} write={write} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldEpic")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldEpic")}</span>
+                <span className="issue-sheet__fact-value">
                   <EpicField item={item} write={write} epics={epics} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldLabelsCol")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldLabelsCol")}</span>
+                <span className="issue-sheet__fact-value">
                   <LabelsField item={item} write={write} vocabulary={labels.data ?? []} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldBlockedBy")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldBlockedBy")}</span>
+                <span className="issue-sheet__fact-value">
                   <DepsField item={item} write={write} items={items.data ?? []} mode="blockedBy" onOpen={openIssue} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldBlocks")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldBlocks")}</span>
+                <span className="issue-sheet__fact-value">
                   <DepsField item={item} write={write} items={items.data ?? []} mode="blocks" onOpen={openIssue} />
                 </span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldBoard")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldBoard")}</span>
+                <span className="issue-sheet__fact-value">
                   <BoardField item={item} write={write} boards={boards.data ?? []} />
                 </span>
               </span>
               {(fields.data ?? [])
                 .filter((f) => !f.builtin)
                 .map((def) => (
-                  <span className="fs-item" key={def.id} data-field={def.id}>
-                    <span className="fs-k">{fieldLabel(def)}</span>
-                    <span className="fs-v">
+                  <span className="issue-sheet__fact" key={def.id} data-field={def.id}>
+                    <span className="issue-sheet__fact-key">{fieldLabel(def)}</span>
+                    <span className="issue-sheet__fact-value">
                       <CustomField item={item} write={write} def={def} />
                     </span>
                   </span>
@@ -238,22 +239,22 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               {(fields.data ?? [])
                 .filter((f) => f.derived && typeof item.fields[f.id] === "number")
                 .map((def) => (
-                  <span className="fs-item" key={def.id} data-field={def.id}>
-                    <span className="fs-k">{fieldLabel(def)}</span>
-                    <span className="fs-v">
+                  <span className="issue-sheet__fact" key={def.id} data-field={def.id}>
+                    <span className="issue-sheet__fact-key">{fieldLabel(def)}</span>
+                    <span className="issue-sheet__fact-value">
                       <DerivedField item={item} def={def} />
                     </span>
                   </span>
                 ))}
               {/* Kind is structure: an epic names a column, so it is not a field
                   you flip in passing. */}
-              <span className="fs-item">
-                <span className="fs-k">{t("issueScreen.fieldKind")}</span>
-                <span className="fs-v">{item.kind === "epic" ? t("detailPane.fieldEpic") : t("issueScreen.kindTicket")}</span>
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("issueScreen.fieldKind")}</span>
+                <span className="issue-sheet__fact-value">{item.kind === "epic" ? t("detailPane.fieldEpic") : t("issueScreen.kindTicket")}</span>
               </span>
-              <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldLastWrite")}</span>
-                <span className="fs-v">
+              <span className="issue-sheet__fact">
+                <span className="issue-sheet__fact-key">{t("detailPane.fieldLastWrite")}</span>
+                <span className="issue-sheet__fact-value">
                   {(prov === "ai" || prov === "sync") && <span className={prov === "sync" ? "prov-tick is-sync" : "prov-tick"} style={{ height: 12 }} />}
                   {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
                   {PROVENANCE[prov]} · {agoLabel(item.updatedAt)}
@@ -277,6 +278,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <PluginSections projectId={projectId} itemId={item.id} variant="sheet" />
             {item.kind === "ticket" && <TicketSessions projectId={projectId} itemId={item.id} variant="sheet" />}
+            {item.kind === "ticket" && <TicketSpend projectId={projectId} itemId={item.id} variant="sheet" />}
 
             <hr className="rule" />
             <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("detailPane.activityHeading")}</Eyebrow>

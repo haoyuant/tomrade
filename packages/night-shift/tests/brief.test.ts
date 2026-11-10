@@ -82,3 +82,20 @@ it("still refuses an answer that is no judgement at all", () => {
   expect(Judgement.safeParse({ verdict: "fine" }).success).toBe(false);
   expect(Judgement.safeParse("looks good").success).toBe(false);
 });
+
+it("lists what the shift cost by agent and by ticket, and says when terminal runs were not counted", () => {
+  const spend = {
+    tickets: new Map([["A", { usd: 0.4, runs: 2, unpriced: 0 }], ["B", { usd: 1.25, runs: 3, unpriced: 1 }]]),
+    agents: [{ title: "Claude Code", usd: 1.65, runs: 5, unpriced: 1 }]
+  };
+  const body = renderBrief(shift([ticket("A", "delivered"), ticket("B", "done"), ticket("C", "failed"), ticket("D", "skipped")], { costKnown: false }), new Map(), w, "2026-11-02", spend);
+  expect(body).toContain("## What it cost");
+  expect(body).toContain("Agents in terminal panes, and some engines, report no cost");
+  expect(body).toContain("- Claude Code: $1.65 over 5 runs (1 reported no cost)");
+  // costliest ticket first
+  expect(body.indexOf("- B Do B: $1.25 over 3 runs (1 reported no cost)")).toBeLessThan(body.indexOf("- A Do A: $0.40 over 2 runs"));
+  expect(body).toContain("No in-app runs recorded for C");
+  expect(body).not.toContain("recorded for C, D");
+  // nothing ran in the app: no section at all
+  expect(renderBrief(shift([ticket("A", "delivered")]), new Map(), w, "2026-11-02", { tickets: new Map(), agents: [] })).not.toContain("What it cost");
+});

@@ -1,0 +1,11 @@
+@layer components {
+/* Settings › Pet: the profiles on this machine and the one being edited. */
+.pet-profile.is-selected { border-color: var(--accent); }
+.pet-profile-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+.pet-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-3); }
+.pet-slot { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-2); border: 1px solid var(--border-soft); border-radius: var(--radius-md); }
+.pet-slot.is-custom { border-color: var(--border); background: var(--surface); }
+.pet-slot-preview { flex: 0 0 auto; border-radius: var(--radius-sm); background: var(--surface-warm); }
+.pet-slot-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pet-slot-name { font-family: var(--font-display); font-size: 14px; color: var(--fg); }
+}

@@ -27,6 +27,7 @@ import { requestStart } from "~/lib/codeLink";
 import { askPanel } from "~/lib/panelRequests";
 import { openExternal } from "~/lib/shell";
 import { TicketSessions } from "~/components/issue/TicketSessions";
+import { TicketSpend } from "~/components/issue/TicketSpend";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
@@ -370,6 +371,7 @@ function DetailBody({
             <DeliveryPanel key={item.id} item={item} />
             <PluginSections projectId={item.projectId} itemId={item.id} />
             {item.kind === "ticket" && <TicketSessions projectId={item.projectId} itemId={item.id} />}
+            {item.kind === "ticket" && <TicketSpend projectId={item.projectId} itemId={item.id} />}
           </div>
           <aside className="detail-side">
             <Ledger projectId={item.projectId} itemId={item.id} />

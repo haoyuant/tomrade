@@ -1,0 +1,28 @@
+@layer components {
+/* ─── generic surfaces used by the secondary screens ─────────────────── */
+.sheet { overflow-y: auto; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.wrap { max-width: 880px; margin-inline: auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.wrap-wide { max-width: 1120px; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-5); }
+.panel + .panel { margin-top: var(--space-3); }
+/* ...but not when they are grid siblings — the margin would offset the
+ * second card and defeat grid stretch, leaving mismatched heights. */
+.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel, .template-gallery > .panel + .panel, .routine-grid > .panel + .panel { margin-top: 0; }
+.sec-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
+.sec-title { font-size: var(--text-xl); line-height: var(--leading-tight); }
+.sec-lede { font-size: var(--text-base); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
+.rule { border: 0; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.row { display: flex; align-items: center; gap: var(--space-2); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.spacer { margin-left: auto; }
+.stack-2 > * + * { margin-top: var(--space-2); }
+.stack-3 > * + * { margin-top: var(--space-3); }
+.stack-4 > * + * { margin-top: var(--space-4); }
+.stack-6 > * + * { margin-top: var(--space-6); }
+ul.dash-list { list-style: none; padding: 0; margin: 0; }
+ul.dash-list li { position: relative; padding-left: 15px; font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); }
+ul.dash-list li + li { margin-top: 5px; }
+ul.dash-list li::before { content: "\2013"; position: absolute; left: 0; color: var(--accent); }
+}

@@ -1,0 +1,124 @@
+@layer components {
+/* ─── filter menu ────────────────────────────────────────────────────── */
+.menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 45;
+  min-width: 236px; max-height: 324px; overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.menu-head { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-2) 7px; }
+.menu-row {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  padding: 6px var(--space-2); border: 0; border-radius: var(--radius-sm);
+  background: transparent; text-align: left;
+  font-family: var(--font-display); font-size: 14px; color: var(--fg-2);
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.menu-row:hover { background: var(--surface-warm); color: var(--fg); }
+.menu-row[aria-checked="true"] { color: var(--fg); }
+.menu-row .m-mark { width: 13px; flex-shrink: 0; display: flex; justify-content: center; color: var(--meta); }
+.menu-row .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-row .m-count {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label);
+}
+.menu-row__check {
+  width: 14px; height: 14px; flex-shrink: 0; border-radius: 3px;
+  background: var(--bg); box-shadow: 0 0 0 1px var(--border);
+  display: grid; place-items: center; color: transparent;
+}
+.menu-row[aria-checked="true"] .menu-row__check {
+  background: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--accent-on);
+}
+.menu-foot {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border-soft);
+}
+.menu-empty { padding: var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
+.menu.right { left: auto; right: 0; }
+.menu.wide { min-width: 300px; }
+/* a view row carries its own definition under its name — the menu says what
+   each slice resolves to, so picking one is never a guess */
+.menu-row .m-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.menu-row .m-stack .m-name { flex: none; }
+.menu-row .m-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.menu-row .m-stack .m-line { flex: none; }
+.menu-row .m-line .m-name { flex: 0 1 auto; }
+.menu-row .m-chip { flex-shrink: 0; padding: 0 6px; border-radius: var(--radius-sm); }
+.menu-row .m-sub {
+  font-size: var(--text-xs); color: var(--meta); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.menu-row:hover .m-sub { color: var(--fg-2); }
+.menu-row.is-radio .menu-row__check { border-radius: 50%; }
+/* a row that leaves this screen rather than changing it — the arrow says so */
+.menu-row.m-link { color: var(--muted); font-size: var(--text-sm); }
+.menu-row.m-link:hover { color: var(--fg); }
+.menu-row .m-go { color: var(--meta); font-size: var(--text-xs); flex-shrink: 0; }
+.menu-row.m-link:hover .m-go { color: var(--fg-2); }
+/* greyed like a disabled row, but focusable: picking it goes to where it gets fixed */
+.menu-row.is-unready .menu-row__check,
+.menu-row.is-unready .m-name { opacity: 0.45; }
+.menu-row.is-unready:hover .m-go,
+.menu-row.is-unready[data-highlighted] .m-go { color: var(--fg-2); }
+.menu-foot .menu-row { margin: 0; }
+
+.board-scroll-area {
+  position: relative; display: flex; flex-direction: column;
+  flex: 1; min-width: 0; min-height: 0;
+}
+.board-scroll-area[data-has-more="true"] { padding-bottom: 48px; }
+.board-scroll-fade {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 32px;
+  background: linear-gradient(to right, transparent, var(--bg));
+  /* feathered at both ends, so it leaves no edge against the bars above and below */
+  --feather: min(96px, 30%);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--feather), #000 calc(100% - var(--feather)), transparent);
+  pointer-events: none;
+}
+.board-scroll-hint {
+  position: absolute; right: var(--space-4); bottom: 8px;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  max-width: calc(100% - 32px); padding: 5px 10px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--fg-2);
+  font: inherit; font-size: var(--text-sm); cursor: pointer;
+  box-shadow: var(--elev-raised);
+}
+.board-scroll-hint:hover { color: var(--fg); border-color: var(--accent); }
+.board-scroll-hint:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.col-track {
+  display: flex; gap: var(--space-4);
+  padding: var(--space-4);
+  overflow-x: auto; overflow-y: hidden;
+  flex: 1; min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.col { width: 330px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+.col-head {
+  display: flex; align-items: baseline; gap: var(--space-2);
+  padding-bottom: var(--space-2); margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.col-num { font-family: var(--font-display); font-size: var(--text-base); color: var(--accent); font-variant-numeric: tabular-nums; }
+.col-name { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); line-height: 1.2; }
+.col-count { margin-left: auto; font-size: var(--text-xs); color: var(--meta); }
+.col-count.over { color: var(--warn); }
+.col-body {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  overflow-y: auto; flex: 1; min-height: 0;
+  padding: 2px; margin: -2px;                /* room for the focus ring */
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.col.drop-target .col-body {
+  background: var(--surface-warm);
+  border-radius: var(--radius-md);
+  outline: 1px dashed var(--border);
+}
+.col-empty { padding: var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
+}

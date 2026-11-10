@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import type { Playbook, PlaybookIndexEntry, PlaybookSource } from "./workflow.js";
+import type { Playbook, PlaybookIndexEntry, PlaybookOrigin, PlaybookSource } from "./workflow.js";
+
+export type { PlaybookOrigin };
+/** Beside a playbook's SKILL.md: where it came from, and which version this is. */
+export const ORIGIN_FILE = ".tomrade-source.json";
+/** Earlier versions of a playbook, one folder per version number, inside the playbook's own folder. */
+export const VERSIONS_DIR = ".versions";
 
 const requirementsSchema = z.object({
   workTypes: z.array(z.enum(["coding", "general"])).optional(),
@@ -10,6 +16,18 @@ const requirementsSchema = z.object({
   optionalCapabilities: z.array(z.string().min(1)).optional(),
   outputs: z.array(z.string().min(1)).optional()
 });
+
+/** Throws when the frontmatter's work types or capabilities are malformed. */
+export const playbookRequirements = (meta: Record<string, unknown>) => requirementsSchema.parse(meta);
+
+export function readOrigin(dir: string): PlaybookOrigin | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, ORIGIN_FILE), "utf8")) as PlaybookOrigin;
+    return typeof parsed.version === "number" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Missing capabilities are visible to the caller; recommendations never hide a method. */
 export function missingPlaybookCapabilities(playbook: Pick<Playbook, "requires">, available: readonly string[]): string[] {
@@ -35,18 +53,21 @@ export function loadPlaybookDir(dir: string, onError?: (file: string, err: unkno
   if (!fs.existsSync(dir)) return [];
   const out: Playbook[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    // Dot folders are an import or undo under way, never a playbook.
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const file = path.join(dir, entry.name, "SKILL.md");
     if (!fs.existsSync(file)) continue;
     try {
       const { meta, body } = frontmatter(fs.readFileSync(file, "utf8"));
+      const origin = readOrigin(path.join(dir, entry.name));
       out.push({
         ...requirementsSchema.parse(meta),
         id: typeof meta.name === "string" ? meta.name : entry.name,
         title: typeof meta.title === "string" ? meta.title : entry.name,
         when: typeof meta.description === "string" ? meta.description : "",
         tools: Array.isArray(meta.tools) ? meta.tools.filter((t): t is string => typeof t === "string") : [],
-        body
+        body,
+        ...(origin ? { origin } : {})
       });
     } catch (err) {
       onError?.(file, err);
