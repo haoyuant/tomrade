@@ -56,10 +56,10 @@
 .graph-actions .btn { padding: 4px 8px; white-space: nowrap; background: var(--surface); }
 
 /* dependency chips in the field strips: a label chip that opens an issue */
-.lab.dep { padding-left: 5px; }
-.dep-open {
+.label-set__chip.label-set__chip--dep { padding-left: 5px; }
+.label-set__open {
   display: inline-flex; align-items: center; gap: 3px;
   background: transparent; border: 0; padding: 0;
   font: inherit; color: inherit; cursor: pointer;
 }
-.dep-open:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-xs); }
+.label-set__open:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-xs); }

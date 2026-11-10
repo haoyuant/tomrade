@@ -40,7 +40,7 @@ button.mode:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .mini-t { font-family: var(--font-display); font-size: 12px; line-height: 1.32; color: var(--fg); }
 .mini-m { font-family: var(--font-mono); font-size: 10px; color: var(--meta); }
 .swatches { display: flex; gap: 4px; margin-top: var(--space-3); }
-.sw { height: 22px; flex: 1; border-radius: var(--radius-xs); border: 1px solid var(--border); }
+.swatches__item { height: 22px; flex: 1; border-radius: var(--radius-xs); border: 1px solid var(--border); }
 .tok-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .tok-table th { text-align: left; padding: 8px 10px; color: var(--meta); font-weight: var(--font-weight-medium);
   font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow);

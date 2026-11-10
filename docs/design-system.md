@@ -41,7 +41,11 @@ follow BEM: a block names the module (`card`), an element hangs off it with
 two underscores (`card__title`), a variant with two dashes (`card--epic`).
 States a script toggles stay as `is-*` classes or `data-*` attributes, the
 SMACSS way, rather than modifiers. A module's block is the file's name, and
-its rules stay in that file. Renaming an existing class also means its
+its rules stay in that file. When a rename turns a compound selector into a
+modifier (`.lab.dep` became `.label-set__chip.label-set__chip--dep`), keep the
+block class beside it so specificity, and with it the cascade, stays the same.
+Layout utilities (`.row`, `.row-between`, `.wrap`, `.rule`, `.grid-2`,
+`.stack-*`, `.num`) are not blocks and keep their short names. Renaming an existing class also means its
 `className` uses in `packages/ui` and its selectors in
 `apps/desktop/scripts/*-check.mjs`, so it goes one module per ticket.
 

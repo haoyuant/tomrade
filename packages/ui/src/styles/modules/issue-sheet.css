@@ -13,15 +13,7 @@
 .bp-body { max-width: 66ch; }
 .body-prose h3 { font-size: var(--text-lg); color: var(--fg); margin: var(--space-6) 0 var(--space-2); }
 .body-prose p + p { margin-top: var(--space-3); }
-.code {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-    padding: 10px 12px; margin-top: var(--space-3);
-    font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-body);
-    color: var(--fg); white-space: pre; overflow-x: auto;
-  }
-.code .c { color: var(--meta); }
-.code .k { color: var(--accent); }
-.fs-item { display: flex; flex-direction: column; gap: 3px; }
-.fs-k { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
-.fs-v { display: flex; align-items: center; gap: 5px; font-size: 14px; color: var(--fg-2); }
+.issue-sheet__fact { display: flex; flex-direction: column; gap: 3px; }
+.issue-sheet__fact-key { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
+.issue-sheet__fact-value { display: flex; align-items: center; gap: 5px; font-size: 14px; color: var(--fg-2); }
 }

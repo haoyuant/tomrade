@@ -9,16 +9,16 @@
  * renders inside a Radix dialog when the pane is expanded, and an OS menu
  * neither fights that focus trap nor gets clipped by the overlay, which
  * establishes a containing block with its own `overflow: hidden`. */
-/* --fsel-shift pulls the select's hover box out past the text column so its
+/* --field-select-shift pulls the select's hover box out past the text column so its
    text lines up with the plain values above it. It is a relative offset, not
    a negative margin: Chromium takes a flex item's negative margin out of the
    select's own width, which clipped a two-character name to one and an
    ellipsis (TOM-836). */
-.fset { --fsel-shift: 5px; position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
-.fsel {
+.field-select { --field-select-shift: 5px; position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+.field-select__control {
   appearance: none; -webkit-appearance: none;
   max-width: 100%; min-width: 0;
-  position: relative; inset-inline-start: calc(-1 * var(--fsel-shift)); padding: 2px 19px 2px 5px;
+  position: relative; inset-inline-start: calc(-1 * var(--field-select-shift)); padding: 2px 19px 2px 5px;
   font-family: var(--font-display); font-size: 14px; line-height: 1.4;
   color: inherit; background: transparent;
   border: 1px solid transparent; border-radius: var(--radius-sm);
@@ -27,34 +27,34 @@
               border-color var(--motion-fast) var(--ease-standard),
               color var(--motion-fast) var(--ease-standard);
 }
-.fsel:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
-.fsel:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+.field-select__control:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.field-select__control:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
 /* the chevron is the affordance, so it appears with the hover state and
    never occupies width the resting field has to reserve */
-.fchev {
-  position: absolute; right: calc(4px + var(--fsel-shift)); color: var(--meta); pointer-events: none;
+.field-select__chevron {
+  position: absolute; right: calc(4px + var(--field-select-shift)); color: var(--meta); pointer-events: none;
   opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
 }
-.fset:hover .fchev, .fsel:focus-visible ~ .fchev { opacity: 1; }
+.field-select:hover .field-select__chevron, .field-select__control:focus-visible ~ .field-select__chevron { opacity: 1; }
 /* a custom text/number/date value reads as text and becomes a field on hover,
    the same contract as the enum pickers beside it */
-.fval {
+.field-value {
   min-width: 6ch; max-width: 100%; margin-inline-start: -5px; padding: 2px 5px;
   font-family: var(--font-display); font-size: 14px; line-height: 1.4;
   color: inherit; background: transparent;
   border: 1px solid transparent; border-radius: var(--radius-sm);
   transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
-.fval.num { font-size: 13px; }
-.fval::placeholder { color: var(--meta); }
-.fval:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
-.fval:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
-.fval::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+.field-value.num { font-size: 13px; }
+.field-value::placeholder { color: var(--meta); }
+.field-value:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.field-value:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+.field-value::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
 
 /* labels — chips that can be taken off, and one input that puts them on */
-.labset { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
-.lab { gap: 3px; padding-right: 3px; }
-.lab-x {
+.label-set { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.label-set__chip { gap: 3px; padding-right: 3px; }
+.label-set__remove {
   display: inline-flex; align-items: center; justify-content: center;
   width: 13px; height: 13px; padding: 0;
   border: 0; border-radius: var(--radius-xs);
@@ -63,9 +63,9 @@
 }
 /* a wash of the chip's own text colour, so the hover reads on every theme's
    tag background rather than only on the light one */
-.lab-x:hover { opacity: 1; background: color-mix(in oklch, currentColor 20%, transparent); }
-.lab-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
-.lab-add {
+.label-set__remove:hover { opacity: 1; background: color-mix(in oklch, currentColor 20%, transparent); }
+.label-set__remove:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.label-set__add {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 1px 6px; border: 1px dashed var(--border); border-radius: var(--radius-xs);
   background: transparent; color: var(--meta);
@@ -73,15 +73,15 @@
   letter-spacing: var(--tracking-label); line-height: 1.5; cursor: pointer;
   transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
-.lab-add:hover { color: var(--fg); border-color: var(--meta); }
-.lab-add:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.lab-in {
+.label-set__add:hover { color: var(--fg); border-color: var(--meta); }
+.label-set__add:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.label-set__input {
   width: 9ch; padding: 1px 6px;
   background: var(--surface); color: var(--fg);
   border: 1px solid var(--accent); border-radius: var(--radius-xs);
   font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
 }
-.lab-in:focus { outline: none; box-shadow: var(--focus-ring); }
+.label-set__input:focus { outline: none; box-shadow: var(--focus-ring); }
 
 /* click-to-edit text — the read view is a button, so the whole line is one
    hit target and one tab stop, and the write view is a textarea that grows.

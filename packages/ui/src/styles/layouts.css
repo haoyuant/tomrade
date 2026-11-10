@@ -93,9 +93,9 @@
 .tbl-title-text { min-width: 0; overflow-wrap: anywhere; }
 .tbl-dim { color: var(--meta); font-size: var(--text-sm); }
 .tbl-prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); }
-.tbl-cell .fset { --fsel-shift: 0px; }
-.tbl-cell .fval { margin-inline-start: 0; }
-.tbl-cell .labset { flex-wrap: nowrap; }
+.tbl-cell .field-select { --field-select-shift: 0px; }
+.tbl-cell .field-value { margin-inline-start: 0; }
+.tbl-cell .label-set { flex-wrap: nowrap; }
 /* a group heading spans every column and reads like a lane head */
 .tbl-group .tbl-cell {
   padding-top: var(--space-4); padding-bottom: var(--space-2);

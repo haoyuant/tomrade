@@ -154,7 +154,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
         </div>
         <div>
           <Eyebrow>{t("newProjectDialog.createdWithProject")}</Eyebrow>
-          <ul className="dash" style={{ marginTop: "var(--space-2)" }}>
+          <ul className="dash-list" style={{ marginTop: "var(--space-2)" }}>
             <li>{tx("newProjectDialog.mainBoardBullet", { main: <span className="num">{t("newProjectDialog.mainName")}</span> })}</li>
             <li>
               {tx("newProjectDialog.defaultViewsBullet", {

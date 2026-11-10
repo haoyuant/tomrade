@@ -64,7 +64,7 @@ export function Reach({ reasons, inject, hosts }: { reasons: string[]; inject: s
     return key && !(r === "network" && hosts?.length) ? [t(key)] : [];
   });
   return (
-    <ul className="dash plug-reach">
+    <ul className="dash-list plug-reach">
       {words.map((w) => (
         <li key={w}>{w}</li>
       ))}
@@ -79,7 +79,7 @@ export function Findings({ findings }: { findings: Finding[] }) {
   const { t } = useI18n();
   if (!findings.length) return <p className="meta-txt">{t("plugins.noFindings")}</p>;
   return (
-    <ul className="dash plug-findings">
+    <ul className="dash-list plug-findings">
       {findings.map((f, i) => (
         <li key={`${f.rule}-${i}`} data-severity={f.severity}>
           <span className="mono">{f.severity}</span> {f.message} <span className="meta-txt mono">{f.file}:{f.line}</span>
