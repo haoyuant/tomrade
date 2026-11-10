@@ -1,0 +1,27 @@
+@layer components {
+/* ─── toast ──────────────────────────────────────────────────────────── */
+/* Bottom-left: the right edge belongs to the assistant panel's composer. */
+.toast-stack { position: fixed; left: var(--space-4); bottom: calc(var(--statusbar-h) + var(--space-4)); z-index: 70; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 10px var(--space-3) 10px var(--space-2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+  font-size: 14px; color: var(--fg-2); max-width: 380px;
+}
+.start-asked { padding: var(--space-2) var(--space-3); border: 1px solid var(--accent); border-radius: var(--radius-sm); }
+.start-asked p { margin: 0 0 4px; }
+.start-asked blockquote { margin: 0; color: var(--fg); }
+.start-warning { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius-sm); color: var(--fg); font-size: var(--text-xs); }
+.start-warning svg { flex: none; margin-top: 2px; color: var(--warn); }
+.menu-search { padding: 4px var(--space-2) 6px; }
+.menu-search .input { width: 100%; }
+.menu-note { padding: 4px var(--space-3); margin: 0; }
+.items-error { margin: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); color: var(--fg-2); }
+.items-error p { margin: 0; }
+.route-error { max-width: 640px; margin: var(--space-12) auto; padding: 0 var(--space-6); display: flex; flex-direction: column; gap: var(--space-3); }
+.route-error-detail { display: block; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+.toast.is-error { border-color: var(--danger); max-width: 460px; }
+.toast.is-error .ribbon-tick { background: var(--danger); }
+.toast.is-error .toast-body { color: var(--fg); overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }
+}

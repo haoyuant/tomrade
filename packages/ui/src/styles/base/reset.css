@@ -1,0 +1,44 @@
+@layer base {
+/* ─── reset & base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+/* Component rules below set display:flex, which outranks the UA's
+ * [hidden]{display:none}. This keeps the attribute authoritative. */
+[hidden] { display: none !important; }
+html, body, #root { height: 100%; }
+/* Frosted on Windows 10 the window has no frame: its caption buttons sit over this strip, which moves the window as
+   the title bar did. No height elsewhere. */
+.caption-strip { height: env(titlebar-area-height, 0px); -webkit-app-region: drag; }
+#root { height: calc(100% - env(titlebar-area-height, 0px)); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;                       /* app chrome never scrolls */
+}
+svg { display: block; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; cursor: pointer; color: inherit; }
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: var(--font-weight-medium); margin: 0; text-wrap: balance; }
+p { margin: 0; text-wrap: pretty; }
+strong { font-weight: var(--font-weight-medium); }
+:focus-visible {
+  /* the transparent outline is what forced-colors mode repaints — a
+     box-shadow-only ring leaves keyboard users with nothing there */
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* theme crossfade — added only for the duration of a switch */
+.theme-transition, .theme-transition *, .theme-transition *::before, .theme-transition *::after {
+  transition: background-color 600ms ease, border-color 600ms ease,
+              color 600ms ease, fill 600ms ease, box-shadow 600ms ease !important;
+}
+}

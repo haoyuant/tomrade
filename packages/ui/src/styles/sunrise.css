@@ -5,7 +5,7 @@
    repaint, no filter and no backdrop-filter. A hidden window draws no frames. The
    motion stays still for reduced motion, performance mode, or when Chromium
    composites without the GPU, where every frame would cost the CPU.
-   Colours come from the --sun-* tokens in app.css. */
+   Colours come from the --sun-* tokens in theme/sunrise-daybreak.css. */
 @layer components {
 :is(.sunrise, .daybreak) { --sun-pane: var(--surface); }
 /* Daybreak's last stars, from under the title bar down past the board's middle, over the assistant's floor. Three tile

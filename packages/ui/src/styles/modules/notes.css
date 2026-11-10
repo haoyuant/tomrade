@@ -1,0 +1,58 @@
+/* Notes: writing in place, links between files, the search pane */
+.files-mode-bar { margin-bottom: var(--space-1); }
+.files-mode button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; }
+.files-save-state { font-size: var(--text-xs); }
+.files-save-state[data-state="dirty"] { color: var(--fg-2); }
+.note-pane-edit { display: flex; flex-direction: column; gap: var(--space-3); }
+.note-editor-host { cursor: text; }
+/* Split: the text and what it renders, halves of the width, each scrolling on its own. */
+.files-main.is-split { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.files-main.is-split .note-editor { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.note-editor[data-split] .note-pane { min-width: 0; min-height: 0; overflow: auto; padding-bottom: var(--space-12); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.note-editor[data-split] .note-pane-edit { padding-right: var(--space-5); }
+.note-pane-preview { padding-left: var(--space-5); border-left: 1px solid var(--border); }
+.note-pane-preview .html-view { min-height: 100%; }
+/* A note's links sit right under its text, not a screen further down. */
+.files-main:has(.note-backlinks) .file-view { min-height: 0; }
+.dangerbar.files-edit-conflict { align-items: center; }
+.cm-wikilink { color: var(--accent); }
+.cm-wikilink.is-unresolved { color: var(--muted); text-decoration: underline dotted; text-underline-offset: 3px; }
+.cm-hashtag { color: var(--tag-fg); background: var(--tag-bg-faint); border-radius: 4px; padding: 0 2px; }
+.md-view a.wikilink { text-decoration: none; border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, transparent); }
+.md-view a.wikilink:hover { border-bottom-color: var(--accent); }
+.md-view a.wikilink.is-embed::before { content: "↳ "; color: var(--meta); }
+.md-view a.is-unresolved { color: var(--muted); border-bottom: 1px dotted var(--meta); text-decoration: none; }
+.md-view a.hashtag { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--tag-bg-faint); color: var(--tag-fg); text-decoration: none; font-size: 0.9em; line-height: 1.5; }
+.md-view a.hashtag:hover { background: var(--tag-bg-strong); }
+.note-backlinks { margin-top: var(--space-10); padding-top: var(--space-4); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); }
+.note-backlinks-head { display: flex; align-items: center; gap: var(--space-2); color: var(--meta); }
+.note-backlinks-head.is-toggle { border: 0; background: transparent; padding: 0; margin-top: var(--space-3); cursor: pointer; font: inherit; }
+.note-backlinks-head.is-toggle:hover { color: var(--fg-2); }
+.mention-list { display: flex; flex-direction: column; gap: 2px; }
+.mention-row { display: flex; align-items: flex-start; gap: var(--space-2); }
+.mention-open { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-3); row-gap: 2px; text-align: left; padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-2); cursor: pointer; font: inherit; }
+.mention-open:hover { background: var(--surface-warm); color: var(--fg); }
+.mention-name { font-family: var(--font-display); font-size: 14px; color: var(--fg); }
+.mention-path { justify-self: end; font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-text { grid-column: 1 / -1; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-link { flex-shrink: 0; margin-top: 4px; padding: 3px 8px; }
+.notes-search { display: flex; flex-direction: column; gap: var(--space-2); }
+.notes-search-field { display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-1); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.notes-search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.notes-search-field .ico { color: var(--meta); flex-shrink: 0; }
+.notes-search-input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 15px; outline: none; }
+.notes-search-input:focus-visible { box-shadow: none; }
+.notes-search-input::placeholder { color: var(--meta); }
+.notes-search-input::-webkit-search-cancel-button { display: none; }
+.notes-search-close { width: 22px; height: 22px; color: var(--meta); }
+.notes-search-idle, .notes-search-note { padding: 0 var(--space-2); }
+.notes-tag-cloud { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-2); }
+.tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 0; border-radius: 999px; background: var(--tag-bg-faint); color: var(--tag-fg); font-size: var(--text-xs); line-height: 1.6; cursor: pointer; }
+.tag-chip:hover { background: var(--tag-bg-strong); }
+.tag-chip .num { color: var(--meta); }
+.notes-search-hits { display: flex; flex-direction: column; gap: 1px; }
+.side-row.search-hit { flex-direction: column; align-items: stretch; gap: 2px; }
+.search-hit-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.search-hit-path { font-family: var(--font-body); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-hit-snippet { font-family: var(--font-body); font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.search-hit-snippet mark { background: var(--tag-bg-strong); color: var(--fg); border-radius: 2px; padding: 0 1px; }

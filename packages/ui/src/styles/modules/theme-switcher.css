@@ -1,0 +1,16 @@
+@layer components {
+/* ─── theme switcher ─────────────────────────────────────────────────── */
+.theme-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-warm); border-radius: var(--radius-md); box-shadow: var(--elev-ring); }
+.theme-seg {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-display); font-size: var(--text-xs); font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-label);
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.theme-seg:hover { background: var(--surface); color: var(--fg); }
+.theme-seg[aria-pressed="true"] { background: var(--accent); color: var(--accent-on); }
+.theme-seg[aria-pressed="true"]:hover { background: var(--accent-active); color: var(--accent-on); }
+.theme-seg:disabled, .theme-seg:disabled:hover { background: transparent; color: var(--muted); opacity: .5; cursor: default; }
+}

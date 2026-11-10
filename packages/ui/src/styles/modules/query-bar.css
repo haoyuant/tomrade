@@ -1,0 +1,127 @@
+@layer components {
+/* ─── query bar · the live query sitting on top of the saved view ───────
+ * Filters and grouping are properties of the query, not of the sidebar.
+ * An armed control reads as a tag, never as a second primary button. */
+.query-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex-shrink: 0;
+  min-height: 46px; padding: 7px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg); position: relative; z-index: 20;
+}
+.qb-right { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.qb-sep { width: 1px; height: 17px; background: var(--border); flex-shrink: 0; margin: 0 3px; }
+.menu-wrap { position: relative; flex-shrink: 0; }
+.qb-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 8px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; box-shadow: var(--elev-ring);
+  font-family: var(--font-display); font-size: var(--text-sm); color: var(--muted);
+  letter-spacing: var(--tracking-label); white-space: nowrap;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+}
+.qb-btn .ico { color: var(--meta); flex-shrink: 0; }
+.qb-btn .chev { color: var(--meta); opacity: 0.72; flex-shrink: 0; }
+.qb-btn:hover { background: var(--surface-warm); color: var(--fg); }
+.qb-btn:hover .ico, .qb-btn:hover .chev { color: var(--fg-2); opacity: 1; }
+.qb-btn[aria-expanded="true"] { background: var(--surface-warm); color: var(--fg); }
+.qb-btn[data-on="true"] {
+  background: var(--tag-bg-soft); color: var(--tag-fg); box-shadow: var(--elev-ring-accent);
+}
+.qb-btn[data-on="true"] .ico, .qb-btn[data-on="true"] .chev { color: var(--tag-fg); opacity: 1; }
+.qb-btn[data-on="true"]:hover,
+.qb-btn[data-on="true"][aria-expanded="true"] { background: var(--tag-bg-base); color: var(--tag-fg); }
+.qb-val { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--tracking-label); }
+
+/* ─── ticket search · first in the bar ─────────────────────────────────
+ * It narrows every layout and is never saved with the view, so it reads
+ * as a field, and as armed only while it holds words. The basis is what
+ * wrapping measures; the field only grows into room the line has spare. */
+.qb-search {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: 1 1 170px; min-width: 150px; max-width: 280px; padding: 0 5px 0 8px;
+  border-radius: var(--radius-sm); background: transparent; box-shadow: var(--elev-ring);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+}
+.qb-search .ico { color: var(--meta); flex-shrink: 0; }
+.qb-search[data-on="true"] { background: var(--tag-bg-soft); box-shadow: var(--elev-ring-accent); }
+.qb-search[data-on="true"] .ico { color: var(--tag-fg); }
+.qb-search:focus-within { background: var(--surface); box-shadow: var(--focus-ring); }
+.qb-search .kbd { padding: 2px 5px; flex-shrink: 0; }
+.qb-search:focus-within .kbd { display: none; }
+.qb-search-input {
+  flex: 1; min-width: 0; border: 0; background: transparent; padding: 5px 0;
+  color: var(--fg); font-family: var(--font-display); font-size: var(--text-sm);
+  letter-spacing: var(--tracking-label); outline: none;
+}
+/* the field draws the ring; the global :focus-visible would add a second */
+.qb-search-input:focus-visible { box-shadow: none; }
+.qb-search-input::placeholder { color: var(--meta); }
+.qb-search-input::-webkit-search-cancel-button { display: none; }
+.qb-search-x {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: var(--tag-fg); opacity: 0.6; cursor: pointer;
+}
+.qb-search-x:hover { opacity: 1; background: var(--tag-bg-base); }
+.qb-search-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.qb-search-note { white-space: nowrap; cursor: default; }
+
+/* ─── filter chips · one per clause, armed by construction ─────────────
+ * A chip is the clause in words. Its body opens the same editor that made it;
+ * the × takes it off. The add control is the only unarmed filter button. */
+.qb-chip {
+  display: inline-flex; align-items: stretch; max-width: 100%;
+  border-radius: var(--radius-sm); background: var(--tag-bg-soft); color: var(--tag-fg);
+  box-shadow: var(--elev-ring-accent);
+}
+.qb-chip-edit {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  padding: 5px 4px 5px 8px; border: 0; background: transparent; color: inherit;
+  font-family: var(--font-display); font-size: var(--text-sm); letter-spacing: var(--tracking-label);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.qb-chip-edit .ico { color: inherit; flex-shrink: 0; opacity: 0.8; }
+.qb-chip-edit > span { overflow: hidden; text-overflow: ellipsis; }
+.qb-chip-edit:hover, .qb-chip-edit[aria-expanded="true"] { background: var(--tag-bg-base); }
+.qb-chip-edit:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.qb-chip-x {
+  display: inline-flex; align-items: center; padding: 0 7px 0 5px; border: 0;
+  background: transparent; color: inherit; opacity: 0.6; cursor: pointer;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.qb-chip-x:hover { opacity: 1; background: var(--tag-bg-base); }
+.qb-chip-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.qb-add[data-on="true"] { background: transparent; color: var(--muted); box-shadow: var(--elev-ring); }
+.qb-add[data-on="true"] .ico, .qb-add[data-on="true"] .chev { color: var(--meta); }
+/* the unsaved cluster: the draft differs from the view, and both ways out sit together */
+.qb-dirty { display: flex; align-items: center; gap: 6px; }
+/* a popover that holds inputs; the design's menu box, sized for a form */
+.menu.pop { min-width: 260px; max-height: none; overflow: visible; }
+/* a menu opened from inside a sheet must float above the sheet (61) and its scrim (60), under the toasts (70) */
+.menu.is-floating { z-index: 65; }
+.pop-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.pop-field { display: flex; flex-direction: column; gap: 4px; padding: 0 var(--space-2); }
+.pop-field .input { font-size: var(--text-sm); padding: 5px 8px; }
+
+/* ─── the view controls · one cluster, at the end of the query bar ──────
+ * There is no view picker in the chrome. Grouping, saving a new view and
+ * the column settings sit in one adjacent group, so nothing in the bar
+ * duplicates what the board itself already states. */
+
+/* the quiet segmented control — grouping is a switch, not a call to action */
+.seg.quiet { background: transparent; box-shadow: var(--elev-ring); padding: 1px; }
+.seg.quiet button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px; border-radius: 3px; font-size: var(--text-sm);
+}
+.seg.quiet button .ico { color: var(--meta); flex-shrink: 0; }
+.seg.quiet button:hover { background: var(--surface-warm); color: var(--fg); }
+.seg.quiet button:hover .ico { color: var(--fg-2); }
+.seg.quiet button[aria-pressed="true"] { background: var(--tag-bg-base); color: var(--tag-fg); }
+.seg.quiet button[aria-pressed="true"] .ico { color: var(--tag-fg); }
+.seg.quiet button[aria-pressed="true"]:hover { background: var(--tag-bg-strong); color: var(--tag-fg); }
+}

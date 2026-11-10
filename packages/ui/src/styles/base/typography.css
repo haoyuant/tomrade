@@ -1,0 +1,13 @@
+@layer components {
+/* ─── typography utilities ───────────────────────────────────────────── */
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-label); }
+.eyebrow {
+  font-size: var(--text-xs); text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow); color: var(--meta);
+  line-height: 1; margin: 0;
+}
+.meta-txt { font-size: var(--text-sm); color: var(--meta); }
+.muted-txt { color: var(--muted); }
+.prose { font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); }
+.prose p + p { margin-top: var(--space-3); }
+}

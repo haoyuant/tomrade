@@ -1,0 +1,42 @@
+@layer components {
+/* ─── board region ───────────────────────────────────────────────────── */
+.board-region { display: flex; flex-direction: column; min-height: 0;
+  /* Basis and floor are both one full 330px column plus the track padding.
+   * A real basis (not 0) puts the row in flex's shrink phase when the pane
+   * opens, so the pane gives width back instead of slicing a card. */
+  flex: 1 1 362px; min-width: 362px;
+  container-type: inline-size; container-name: board; }
+/* When the detail pane squeezes the board, the chrome sheds its eyebrows,
+ * then its segment labels, then its button labels and facts — in that order.
+ * The query bar wraps to a second line before anything is clipped. */
+@container board (max-width: 700px) { .seg-lbl { display: none; } }
+@container board (max-width: 660px) { .board-region .lbl { display: none; } }
+@container board (max-width: 560px) { .board-region .board-facts { display: none; } }
+/* Railed, or gone below 990px, the sidebar takes the only way to change
+ * board with it — so the board head grows its own switcher exactly then. */
+.board-nav { display: none; }
+.side-railed .board-nav { display: flex; }
+/* the full board list fits without a scrollbar — this menu is the only
+   navigation at this width, so it should not hide a row behind an edge */
+.board-nav .menu { min-width: 264px; max-height: min(440px, 62vh); }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 0 var(--space-4); height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.board-title { font-size: var(--text-lg); line-height: var(--leading-tight); white-space: nowrap; }
+/* the view's name renames in place: the read view is the heading itself, the write view an input the same size */
+.view-head .view-ico { color: var(--meta); flex-shrink: 0; }
+.view-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-name { font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: var(--radius-sm); cursor: text; }
+.view-name:hover { background: var(--surface-warm); }
+/* A view's name in the header stays on its line: short of room it ends in an ellipsis, not a cut second line. */
+.view-title > .inline-edit.view-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view-name:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.view-name-input { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 1px 5px; margin: 0 -6px; min-width: 12ch; }
+.view-name-input:focus { outline: none; box-shadow: var(--focus-ring); }
+.view-dirty { text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.layout-seg { flex-shrink: 0; }
+.board-facts { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.board-facts > * { white-space: nowrap; flex-shrink: 0; }
+}

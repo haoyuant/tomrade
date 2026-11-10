@@ -1,0 +1,158 @@
+@layer components {
+/* ─── inputs ─────────────────────────────────────────────────────────── */
+.input, .textarea, .select {
+  width: 100%; padding: 7px 10px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border-input); border-radius: var(--radius-md);
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+}
+.input::placeholder, .textarea::placeholder { color: var(--meta); }
+/* Chromium's own stepper stays a white box under a dark theme. It keeps its halves for clicks; only the drawing is ours. */
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; margin-left: var(--space-1); cursor: pointer;
+  background: var(--meta);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath d='M3 8l3-3 3 3M3 12l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 20px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath d='M3 8l3-3 3 3M3 12l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 20px no-repeat;
+}
+input[type="number"]::-webkit-inner-spin-button:hover { background: var(--fg); }
+.start-problem { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
+.start-problem-lead { margin: 0; color: var(--fg); font-size: var(--text-sm); }
+.start-problem-detail { margin: 0; overflow-wrap: anywhere; }
+/* A pending Start: spinner, the step it is on, and an indeterminate bar — the backend sends no percentage. */
+.start-progress { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.start-progress p { margin: 0; }
+.start-progress-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--accent); }
+.start-progress-step { flex: 1 1 12em; min-width: 0; color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
+.start-progress-head > .num { flex: none; white-space: nowrap; }
+.start-progress-bar { position: relative; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
+.start-progress-bar > span { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
+.start-progress-steps { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--meta); }
+.start-progress-steps li[data-state="done"] { color: var(--fg); }
+.start-progress-steps li[data-state="done"]::before { content: "\2713  "; }
+.start-progress-steps li[data-state="current"] { color: var(--accent); font-weight: 600; }
+.gate-fix { display: grid; gap: var(--space-2); }
+.repo-workstreams { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--space-1); }
+.rules-input { width: 100%; min-height: 180px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.55; }
+/* Resizable from its corner grip; these are its limits — the widest any Tomrade
+ * sheet goes, and never past the workspace row. */
+.palette.modal.sheet-templates {
+  width: min(1040px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(720px, calc(100vw - 64px)); max-width: min(1280px, calc(100vw - 64px));
+  min-height: min(480px, var(--overlay-max-h)); max-height: min(var(--overlay-max-h), 920px);
+}
+.template-body { container-type: inline-size; }
+.template-editor { display: grid; gap: var(--space-5); align-items: start; }
+.template-main, .template-side { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+/* Two columns once there is room: what it does on the left, when it runs and how it went on the right. */
+@container (min-width: 640px) {
+  .template-editor:not(.solo) { grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); }
+}
+.template-tickets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--space-3); align-items: start; }
+.template-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
+.template-card { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Routines screen: the person's routines as cards, suggestions below */
+.routines-head .view-ico { color: var(--meta); }
+.routines-main { flex: 1; min-height: 0; overflow: auto; padding: var(--space-6) var(--space-6) var(--space-12); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.routine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-8); }
+.routines-none { margin-bottom: var(--space-8); }
+.routine-card { position: relative; display: flex; flex-direction: column; gap: var(--space-2); cursor: pointer; transition: border-color .12s; }
+.routine-card:hover { border-color: var(--meta); }
+.routine-card-top { gap: var(--space-2); align-items: center; min-width: 0; }
+/* the name is the card's one button; it stretches over the whole card, and the switch sits above it */
+.routine-card-open { border: 0; padding: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routine-card-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.routine-card-open:focus-visible { outline: none; }
+.routine-card:has(.routine-card-open:focus-visible) { box-shadow: var(--focus-ring); }
+.routine-card .switch, .routine-card-del, .routine-card-confirm { position: relative; z-index: 1; }
+.routine-card-del { margin-right: -6px; }
+.routine-card-del[aria-pressed="true"] { color: var(--danger); background: var(--surface-warm); }
+.routine-card-confirm { gap: var(--space-2); align-items: center; cursor: default; }
+.routine-card-confirm .btn { padding: 3px 10px; }
+.routine-card-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.routine-card-when { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); flex-wrap: wrap; }
+.routine-card-when svg { color: var(--meta); flex-shrink: 0; }
+.routine-card.is-on .routine-card-when svg { color: var(--accent); }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.template-days button { min-width: 44px; }
+.template-failed { color: var(--danger); }
+.input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+/* A select's list is the design's own menu, not the OS's: the same box on every
+ * platform, opened below the field unless it would not fit, scrolling once it
+ * is taller than a menu. Chromium 135+ (Electron 36+) lets a select opt in;
+ * anywhere older keeps the OS list. */
+@supports (appearance: base-select) {
+  .select, select.input {
+    appearance: base-select;
+    display: flex; align-items: center; gap: var(--space-2);
+    cursor: default;
+  }
+  .select:open, select.input:open { border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .select::picker-icon, select.input::picker-icon {
+    content: ""; width: 12px; height: 12px; margin-left: auto; flex-shrink: 0;
+    background: currentColor; color: var(--meta);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .select:open::picker-icon, select.input:open::picker-icon { transform: rotate(180deg); }
+  .select::picker(select), select.input::picker(select) {
+    appearance: base-select;
+    box-sizing: border-box; min-width: anchor-size(width); max-height: 324px; overflow-y: auto;
+    margin: 6px 0; padding: var(--space-2);
+    background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    position-try-order: normal;
+  }
+  .select option, select.input option {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 6px var(--space-2); border-radius: var(--radius-sm);
+    font-family: var(--font-display); font-size: 14px; line-height: 1.4; color: var(--fg-2);
+    transition: background-color var(--motion-fast) var(--ease-standard);
+  }
+  .select option:hover, select.input option:hover,
+  .select option:focus-visible, select.input option:focus-visible { background: var(--surface-warm); color: var(--fg); outline: none; }
+  .select option:checked, select.input option:checked { color: var(--fg); }
+  .select option:disabled, select.input option:disabled { opacity: 0.45; }
+  .select option::checkmark, select.input option::checkmark { order: -1; width: 13px; flex-shrink: 0; text-align: center; color: var(--accent); }
+  .select option:not(:checked)::checkmark, select.input option:not(:checked)::checkmark { color: transparent; }
+}
+.textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
+.field-group { display: flex; flex-direction: column; gap: 6px; }
+.field-note { font-size: var(--text-xs); line-height: 1.5; color: var(--meta); }
+.field-note.is-error { color: var(--danger); }
+/* Account panel: the password hint shares its line with "Forgot password?". */
+.account-password-foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
+.account-password-foot .link-btn { font-size: var(--text-xs); white-space: nowrap; margin-left: auto; }
+.account-step__title { font-size: var(--text-md); font-weight: 600; }
+.account-step__title:focus { outline: none; }
+.account-step__actions { flex-wrap: wrap; }
+.account-step strong { overflow-wrap: anywhere; }
+/* The terms checkbox: its sentence wraps beside the box, the two document names are links. */
+.account-agree { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.5; color: var(--fg-2); cursor: pointer; }
+.account-agree input { margin-top: 3px; }
+.account-agree .link-btn { display: inline; text-align: inherit; }
+.terms-prompt-links { gap: var(--space-4); flex-wrap: wrap; }
+.account-delete { align-self: flex-start; font-size: var(--text-sm); }
+
+/* Checkboxes follow the switch, not the OS: the surface inside its ring when
+   off, the accent with the mark cut in `--accent-on` when on. */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  position: relative; width: 15px; height: 15px; margin: 0; flex-shrink: 0; vertical-align: -2px;
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--surface); box-shadow: var(--elev-ring);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+input[type="checkbox"]:hover { background: var(--surface-warm); }
+input[type="checkbox"]:checked { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 5px; top: 2px; width: 3px; height: 7px;
+  border: solid var(--accent-on); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+input[type="checkbox"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
+}
