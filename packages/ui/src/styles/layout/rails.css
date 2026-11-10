@@ -14,11 +14,4 @@
   border-radius: 8px; background: var(--accent); color: var(--accent-on);
   font-size: 10px; line-height: 16px; text-align: center; pointer-events: none;
 }
-.status-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
-.status-link:hover { color: var(--fg); }
-.status-label { font-variant-numeric: tabular-nums; }
-.usage-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-.usage-table th { text-align: left; font-weight: var(--font-weight-medium); color: var(--meta); font-size: var(--text-xs); padding: 0 var(--space-2) var(--space-1); border-bottom: 1px solid var(--border); }
-.usage-table td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-soft); }
-.usage-table .num { text-align: right; }
 }

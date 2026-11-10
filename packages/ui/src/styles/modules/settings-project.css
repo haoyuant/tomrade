@@ -1,0 +1,67 @@
+@layer components {
+.cfg-row { display: flex; align-items: center; gap: var(--space-3); padding: 9px var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.cfg-row.off { background: transparent; border-style: dashed; }
+.cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
+.cfg-row.off .cfg-name { color: var(--meta); }
+.cfg-row .repo-merge-policy { flex: 0 1 auto; width: auto; max-width: 18rem; }
+/* A row that folds, as everywhere in Tomrade: the chevron sits left of it, outside its card, and what unfolds lines up with the card. */
+.fold-row { display: flex; align-items: center; gap: var(--space-2); }
+.fold-row > .cfg-row { flex: 1; min-width: 0; }
+.fold-chev, .fold-chev-space { flex-shrink: 0; width: 22px; height: 22px; }
+.fold-chev { color: var(--fg-2); }
+.fold-chev:hover:not(:disabled) { color: var(--accent); }
+.fold-chev svg { transition: transform var(--motion-fast) var(--ease-standard); }
+.fold-row-body { padding-left: calc(22px + var(--space-2)); }
+.mcp-oneline { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mcp-detail { margin-top: var(--space-2); }
+.mcp-detail tr.off td { color: var(--meta); }
+.mcp-error { margin: 0; padding: 8px 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--danger); background: var(--surface-warm); border-radius: 6px; }
+.repo-remote-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.repo-remote-copy .cfg-name { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-remote-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-settings-body { display: flex; flex-direction: column; gap: var(--space-5); }
+.project-settings-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.project-settings-section { min-width: 0; }
+.project-settings-copy { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-settings-facts { display: flex; flex-direction: column; gap: var(--space-2); }
+.repo-row .repo-branch { width: 120px; flex: 0 1 120px; min-width: 60px; }
+.repo-row .repo-name { min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-row .repo-use-credential { align-self: flex-start; white-space: normal; text-align: left; height: auto; }
+.repo-remove-confirm { flex-wrap: wrap; margin-top: var(--space-2); }
+.repo-remove-confirm .repo-remove-why { flex: 1 1 240px; min-width: 0; }
+.repo-remove-confirm .btn { padding: 3px 10px; }
+/* the field registry: one row per field; an interactive row's editor opens directly beneath that row */
+.fld-list { display: flex; flex-direction: column; gap: 5px; }
+.fld-item { display: flex; flex-direction: column; gap: 5px; }
+.fld-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: default; }
+button.fld-row { cursor: pointer; }
+button.fld-row:hover { background: var(--surface-warm); }
+button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.fld-row.is-selected { border-color: var(--accent); }
+.fld-row.is-builtin .cfg-name { color: var(--muted); }
+.fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
+.fld-opt-confirm { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger); border-radius: var(--radius-md); background: var(--surface); }
+.fld-opt-confirm p { margin: 0; }
+/* a workstream is a small card: the head names it, the code line picks the
+ * repository and folder its agents start in, and one sentence says what that
+ * means on this machine — the part a bare select and a path box never said */
+.fld-ws { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.fld-ws-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--space-2); align-items: center; }
+.fld-ws-code { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); }
+.fld-ws-code .select, .fld-ws-code .input { min-width: 0; }
+.fld-ws-where { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); }
+.fld-ws-where b { font-weight: 500; color: var(--fg-2); }
+.fld-ws-checkout { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fld-ws-move { gap: 6px; }
+.vs-fields, .vs-columns { display: flex; flex-direction: column; }
+.stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
+.wip-in { width: 68px; padding: 4px 7px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; text-align: right; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.wip-in:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+}

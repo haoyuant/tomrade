@@ -1,3 +1,9 @@
+.shortcut-groups { display: grid; gap: var(--space-5); }
+.shortcut-group dl { margin: var(--space-2) 0 0; display: grid; gap: 6px; }
+.shortcut-row { display: grid; grid-template-columns: 9.5rem 1fr; gap: var(--space-3); align-items: baseline; }
+.shortcut-row dt { display: flex; flex-wrap: wrap; gap: 4px; }
+.shortcut-row dd { margin: 0; color: var(--fg-2); }
+
 /* Settings → Keyboard shortcuts: a row per command, its key caps click to re-record */
 .keys-pane { display: grid; gap: var(--space-4); }
 .keys-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

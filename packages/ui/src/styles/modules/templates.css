@@ -1,0 +1,23 @@
+@layer components {
+/* Resizable from its corner grip; these are its limits — the widest any Tomrade
+ * sheet goes, and never past the workspace row. */
+.palette.modal.sheet-templates {
+  width: min(1040px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(720px, calc(100vw - 64px)); max-width: min(1280px, calc(100vw - 64px));
+  min-height: min(480px, var(--overlay-max-h)); max-height: min(var(--overlay-max-h), 920px);
+}
+.template-body { container-type: inline-size; }
+.template-editor { display: grid; gap: var(--space-5); align-items: start; }
+.template-main, .template-side { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+/* Two columns once there is room: what it does on the left, when it runs and how it went on the right. */
+@container (min-width: 640px) {
+  .template-editor:not(.solo) { grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); }
+}
+.template-tickets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--space-3); align-items: start; }
+.template-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
+.template-card { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.template-days button { min-width: 44px; }
+.template-failed { color: var(--danger); }
+}

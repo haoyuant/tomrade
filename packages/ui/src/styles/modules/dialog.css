@@ -1,0 +1,52 @@
+@layer components {
+.dlg-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.dlg-body { overflow-y: auto; padding: var(--space-5); flex: 1; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.dlg-foot { display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* A real modal is centred on the workspace row and scrolls its own body. The
+ * command palette stays top-anchored — it is typed at, not read.
+ * `<Dialog>` stamps `.modal` on every sheet it renders, so height and axis are
+ * settled here once; a per-dialog class only ever picks a width. */
+.palette.modal {
+  top: var(--overlay-mid); transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 64px));
+  max-height: min(var(--overlay-max-h), 760px);
+}
+.palette.modal.wide { width: min(760px, calc(100vw - 64px)); }
+
+/* Settings outgrew one scroll, so its body is a menu beside a pane rather than
+ * one column. The rail borrows the sidebar's rows at a narrower width: one row
+ * per pane, the current one marked exactly the way a current board is.
+ * It is also the one sheet you move around inside, so it pins its height as
+ * well as its width: the pane scrolls, and the box never resizes under the menu
+ * row you are clicking — only from its corner grip, within these limits. Its
+ * header drags it aside, like a window's. */
+.palette.modal.sheet-settings {
+  width: min(964px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(640px, calc(100vw - 64px)); max-width: calc(100vw - 64px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
+}
+.palette.sheet-project-settings {
+  width: min(900px, calc(100vw - 64px));
+  height: min(var(--overlay-max-h), 700px);
+}
+/* `translate` adds to the centring `transform`; dialog.tsx sets the offsets */
+.palette.modal.is-movable { translate: var(--dlg-x, 0px) var(--dlg-y, 0px); }
+.palette.modal.is-movable .dlg-head { cursor: move; user-select: none; }
+.dlg-split { display: flex; flex: 1; min-height: 0; }
+.dlg-grip {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; z-index: 3;
+  cursor: nwse-resize; touch-action: none; opacity: 0.55;
+  background: linear-gradient(135deg, transparent 0 55%, var(--meta) 55% 61%, transparent 61% 72%, var(--meta) 72% 78%, transparent 78%);
+}
+.dlg-grip:hover { opacity: 1; }
+.dlg-nav {
+  width: 204px; flex-shrink: 0; overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  background: var(--bg); border-right: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+}

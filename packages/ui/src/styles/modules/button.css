@@ -78,4 +78,8 @@
 .overlay-open .titlebar .btn-primary {
   background: var(--surface-warm); color: var(--fg-2); box-shadow: var(--elev-ring);
 }
+
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.is-danger { color: var(--danger); }
 }

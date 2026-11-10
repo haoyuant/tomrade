@@ -1,0 +1,20 @@
+@layer components {
+/* Checkboxes follow the switch, not the OS: the surface inside its ring when
+   off, the accent with the mark cut in `--accent-on` when on. */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  position: relative; width: 15px; height: 15px; margin: 0; flex-shrink: 0; vertical-align: -2px;
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--surface); box-shadow: var(--elev-ring);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+input[type="checkbox"]:hover { background: var(--surface-warm); }
+input[type="checkbox"]:checked { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 5px; top: 2px; width: 3px; height: 7px;
+  border: solid var(--accent-on); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+input[type="checkbox"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
+}

@@ -1,4 +1,9 @@
 @layer components {
+.usage-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.usage-table th { text-align: left; font-weight: var(--font-weight-medium); color: var(--meta); font-size: var(--text-xs); padding: 0 var(--space-2) var(--space-1); border-bottom: 1px solid var(--border); }
+.usage-table td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-soft); }
+.usage-table .num { text-align: right; }
+
 /* Settings → Usage: one spacing rhythm for the whole pane. Every margin and
    gap comes from the app's 4/8/12/16/20/24 scale; the few chart sizes are named
    geometry so a change is deliberate, never a nudge. */

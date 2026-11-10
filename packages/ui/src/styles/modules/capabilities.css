@@ -20,29 +20,7 @@
 .capability-title > svg { color: var(--accent); flex: none; }
 .capability-line { margin: 0; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); }
 .capability-try { align-self: flex-start; margin: 0 var(--space-1); }
-.announcement-list { list-style: none; margin: 0; padding: 0; }
-.announcement-list li + li { border-top: 1px solid var(--border-soft); }
-.announcement-row { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-1); border: 0; background: none; color: var(--fg-2); font: inherit; text-align: left; cursor: pointer; }
-.announcement-row:hover { background: var(--surface-warm); }
-.announcement-row.is-unread { color: var(--fg); font-weight: 600; }
-.announcement-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.about-facts { margin: var(--space-3) 0 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
-.about-facts .field-row { grid-template-columns: 112px 1fr; }
-.about-facts .field-row:first-child { border-top: 0; }
-.about-path { min-width: 0; overflow-wrap: anywhere; }
-.about-note { flex-basis: 100%; }
-.about-license { margin-top: var(--space-4); }
-.agents-connect > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: var(--space-1) 0; }
-.agents-connect > summary::-webkit-details-marker { display: none; }
-.agents-connect > summary .sec-title { font-size: var(--text-md); }
-.agents-connect-chev { color: var(--meta); transform: rotate(-90deg); transition: transform 0.15s ease; }
-.agents-connect[open] .agents-connect-chev { transform: none; }
-.agents-connect[open] > .sec-lede { margin: var(--space-2) 0 var(--space-4); }
+
 /* the pane takes focus as a whole when a card opens from the keyboard */
 aside.detail:focus { outline: none; }
 aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.shortcut-groups { display: grid; gap: var(--space-5); }
-.shortcut-group dl { margin: var(--space-2) 0 0; display: grid; gap: 6px; }
-.shortcut-row { display: grid; grid-template-columns: 9.5rem 1fr; gap: var(--space-3); align-items: baseline; }
-.shortcut-row dt { display: flex; flex-wrap: wrap; gap: 4px; }
-.shortcut-row dd { margin: 0; color: var(--fg-2); }

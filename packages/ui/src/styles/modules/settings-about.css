@@ -29,7 +29,16 @@
 .update-notice-body { display: flex; align-items: flex-start; gap: var(--space-5); }
 .update-notice-body .meta-txt { margin: 0; }
 .update-notice-note { margin: var(--space-2) 0 0; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); }
-.announcement-notice .md-view { max-height: 50vh; overflow-y: auto; }
-.announcement-tag { font-size: var(--text-xs); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg-2); }
-.announcement-tag.is-important { border-color: var(--warn); color: var(--warn); }
-.announcement-date { margin: var(--space-3) 0 0; }
+
+.about-facts { margin: var(--space-3) 0 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.about-facts .field-row { grid-template-columns: 112px 1fr; }
+.about-facts .field-row:first-child { border-top: 0; }
+.about-path { min-width: 0; overflow-wrap: anywhere; }
+.about-note { flex-basis: 100%; }
+.about-license { margin-top: var(--space-4); }
+.agents-connect > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: var(--space-1) 0; }
+.agents-connect > summary::-webkit-details-marker { display: none; }
+.agents-connect > summary .sec-title { font-size: var(--text-md); }
+.agents-connect-chev { color: var(--meta); transform: rotate(-90deg); transition: transform 0.15s ease; }
+.agents-connect[open] .agents-connect-chev { transform: none; }
+.agents-connect[open] > .sec-lede { margin: var(--space-2) 0 var(--space-4); }

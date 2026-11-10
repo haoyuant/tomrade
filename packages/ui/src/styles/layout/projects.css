@@ -58,4 +58,6 @@
 @media (prefers-reduced-motion: reduce) {
   .restore-progress::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
 }
+
+.proj-new:focus-visible { box-shadow: var(--focus-ring); }
 }

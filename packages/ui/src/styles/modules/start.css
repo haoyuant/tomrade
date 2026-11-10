@@ -1,0 +1,24 @@
+@layer components {
+.start-problem { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
+.start-problem-lead { margin: 0; color: var(--fg); font-size: var(--text-sm); }
+.start-problem-detail { margin: 0; overflow-wrap: anywhere; }
+/* A pending Start: spinner, the step it is on, and an indeterminate bar — the backend sends no percentage. */
+.start-progress { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.start-progress p { margin: 0; }
+.start-progress-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--accent); }
+.start-progress-step { flex: 1 1 12em; min-width: 0; color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
+.start-progress-head > .num { flex: none; white-space: nowrap; }
+.start-progress-bar { position: relative; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
+.start-progress-bar > span { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
+.start-progress-steps { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--meta); }
+.start-progress-steps li[data-state="done"] { color: var(--fg); }
+.start-progress-steps li[data-state="done"]::before { content: "\2713  "; }
+.start-progress-steps li[data-state="current"] { color: var(--accent); font-weight: 600; }
+.gate-fix { display: grid; gap: var(--space-2); }
+
+.start-asked { padding: var(--space-2) var(--space-3); border: 1px solid var(--accent); border-radius: var(--radius-sm); }
+.start-asked p { margin: 0 0 4px; }
+.start-asked blockquote { margin: 0; color: var(--fg); }
+.start-warning { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius-sm); color: var(--fg); font-size: var(--text-xs); }
+.start-warning svg { flex: none; margin-top: 2px; color: var(--warn); }
+}

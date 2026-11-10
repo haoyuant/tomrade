@@ -1,0 +1,17 @@
+@layer components {
+/* the dialog family, sized where the design sizes it inline */
+/* one solid button per viewport: the chrome's CTA yields while an overlay owns
+   the screen, which is what .overlay-open exists for */
+html.overlay-open .titlebar .btn-primary {
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  box-shadow: var(--elev-ring);
+}
+/* width only — `.palette.modal` owns the axis and the height */
+.palette.sheet-md { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-view { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-board { width: min(620px, calc(100vw - 64px)); }
+.dlg-title { font-size: var(--text-lg); }
+.dlg-sub { font-size: var(--text-base); margin-bottom: var(--space-2); }
+.dense { line-height: var(--leading-dense); }
+}
