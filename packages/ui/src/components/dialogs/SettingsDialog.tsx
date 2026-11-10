@@ -156,7 +156,7 @@ export function SettingsDialog({
           />
         ) : null
     },
-    { id: "usage", label: t("usage.label"), icon: "i-bars" as IconId, group: "app" as const, render: () => <UsagePane /> },
+    { id: "usage", label: t("usage.label"), icon: "i-bars" as IconId, group: "app" as const, render: () => <UsagePane onLeave={() => onOpenChange(false)} /> },
     // Drawn only while the plugin that owns the section is loaded. One pane for MCP both ways:
     // Tomrade's own server, which agents reach, above the servers Tomrade reaches.
     ...(sections.data?.some((s) => s.id === "mcpServers")

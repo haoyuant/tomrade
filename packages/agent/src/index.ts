@@ -3,7 +3,7 @@ export { attachedMedia, claudeMediaBlocks, claudeMediaInput, codexMediaBlocks, c
 export { AgentMediaStore, MAX_MEDIA_BYTES, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 
 export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type GeneralPreparation, type GeneralStartOptions, type NewThreadOptions, type PlaybookDraft, type PlaybookDraftSave, type PlaybookImportInput, type PlaybookImportResult, type PlaybookRecommendation, type ThreadDetail, type ThreadOrigins, type WorkdirStatus } from "./service.js";
-export { aggregateUsage, dayKeyOf, dayStartOf, usageSummary, windowStart, MICRO_USD, type EngineUsage, type ModelUsage, type UsageDay, type UsageDuration, type UsageReport, type UsageRun, type UsageSummary, type UsageTotals } from "./usage.js";
+export { aggregateUsage, dayKeyOf, dayStartOf, ticketSpend, usageSummary, windowStart, MICRO_USD, type DeliverySpan, type DeliveryUsage, type EngineUsage, type TicketSpend, type TicketUsage, type ModelUsage, type UsageDay, type UsageDuration, type UsageReport, type UsageRun, type UsageSummary, type UsageTotals } from "./usage.js";
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, readOrigin, ORIGIN_FILE, VERSIONS_DIR, type PlaybookVariants } from "./playbooks.js";

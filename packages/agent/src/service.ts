@@ -33,7 +33,7 @@ import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { limitCause, untilLabel, type LimitCause } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
-import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
+import { ticketSpend, usageSummary, windowStart, type EngineUsage, type TicketSpend, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
@@ -167,6 +167,8 @@ declare module "@tomradex/ipc" {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string, afterSeq?: number) => ThreadDetail;
     "agent.usage": (days?: number) => UsageSummary;
+    /** One ticket's runs, all time, by agent and delivery. */
+    "agent.ticketUsage": (projectId: string, itemId: string) => TicketSpend;
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
     "agent.setRules": (projectId: string, body: string) => { body: string; file: string | null };
@@ -541,6 +543,7 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId, afterSeq) => ctx.agent.thread(projectId, threadId, afterSeq));
       ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
+      ctx.ipc.handle("agent.ticketUsage", (projectId: string, itemId: string) => ctx.agent.ticketUsage(projectId, itemId));
       ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
       ctx.ipc.handle("agent.setRules", (projectId, body) => {
         ctx.agent.setRules(projectId, body);
@@ -1044,24 +1047,53 @@ export class Agent extends Service implements AgentReader {
     const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
     const since = Math.min(windowStart(now, 7), windowStart(now, days));
     const runs: UsageRun[] = [];
-    for (const projectId of this.ctx.db.openIds()) {
-      const rows = this.ctx.db
-        .for(projectId)
-        .prepare("SELECT engine, status, started_at, ended_at, usage_json, metrics_json, cost_usd FROM plugin_agent_runs WHERE started_at >= ? AND status <> 'running' ORDER BY started_at")
-        .all(since) as { engine: string; status: UsageRun["status"]; started_at: number; ended_at: number | null; usage_json: string | null; metrics_json: string | null; cost_usd: number | null }[];
-      for (const r of rows) {
-        runs.push({
-          engine: r.engine,
-          status: r.status,
-          startedAt: r.started_at,
-          endedAt: r.ended_at,
-          usage: r.usage_json ? JSON.parse(r.usage_json) : null,
-          metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
-          costUsd: r.cost_usd
-        });
-      }
+    for (const projectId of this.ctx.db.openIds()) runs.push(...this.usageRuns(projectId, "r.started_at >= ?", [since]));
+    const summary = usageSummary(runs, { days, now, titles });
+    const items = contract(this.ctx, "items");
+    for (const ticket of summary.range.tickets) {
+      const item = items?.get(ticket.projectId, ticket.itemId);
+      ticket.key = item?.key ?? null;
+      ticket.title = item?.title ?? "";
     }
-    return usageSummary(runs, { days, now, titles });
+    return summary;
+  }
+
+  /** Finished runs of one project matching `where` (over runs `r` and their threads `t`), as the usage sums read them. */
+  private usageRuns(projectId: string, where: string, args: unknown[]): UsageRun[] {
+    if (!this.ctx.db.has(projectId)) return [];
+    const rows = this.ctx.db
+      .for(projectId)
+      .prepare(`SELECT r.engine, r.status, r.started_at, r.ended_at, r.usage_json, r.metrics_json, r.cost_usd, r.execution_json, t.item_id FROM plugin_agent_runs r LEFT JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE ${where} AND r.status <> 'running' ORDER BY r.started_at`)
+      .all(...args) as { engine: string; status: UsageRun["status"]; started_at: number; ended_at: number | null; usage_json: string | null; metrics_json: string | null; cost_usd: number | null; execution_json: string | null; item_id: string | null }[];
+    return rows.map((r) => ({
+      engine: r.engine,
+      status: r.status,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      usage: r.usage_json ? JSON.parse(r.usage_json) : null,
+      metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
+      costUsd: r.cost_usd,
+      projectId,
+      itemId: r.item_id,
+      deliveryId: r.execution_json ? ((JSON.parse(r.execution_json) as { deliveryId?: string }).deliveryId ?? null) : null
+    }));
+  }
+
+  /** One ticket's runs, all time — the same runs its Cost field sums — split by agent and by delivery. */
+  ticketUsage(projectId: string, itemId: string): TicketSpend {
+    const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
+    const runs = this.usageRuns(projectId, "t.item_id = ?", [itemId]);
+    const deliveries = this.ctx.db.has(projectId) ? new DeliveryStore(this.ctx.db).list(projectId, itemId) : [];
+    return ticketSpend(runs, deliveries, titles);
+  }
+
+  /** What each of these tickets, and each agent across them, spent since `since`: an auto run's report reads it. */
+  spendByTicket(projectId: string, itemIds: string[], since: number): { tickets: Map<string, TicketSpend>; engines: EngineUsage[] } {
+    const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
+    const runs = itemIds.length ? this.usageRuns(projectId, `r.started_at >= ? AND t.item_id IN (${itemIds.map(() => "?").join(", ")})`, [since, ...itemIds]) : [];
+    const tickets = new Map<string, TicketSpend>();
+    for (const itemId of new Set(runs.map((r) => r.itemId!))) tickets.set(itemId, ticketSpend(runs.filter((r) => r.itemId === itemId), [], titles));
+    return { tickets, engines: ticketSpend(runs, [], titles).engines };
   }
 
   /** What finished runs on these tickets cost since `since`: the sum engines reported, and how many runs reported nothing. */

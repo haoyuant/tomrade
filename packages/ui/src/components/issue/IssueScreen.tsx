@@ -13,6 +13,7 @@ import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import { TicketSessions } from "./TicketSessions";
+import { TicketSpend } from "./TicketSpend";
 import {
   BoardField,
   CustomField,
@@ -277,6 +278,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <PluginSections projectId={projectId} itemId={item.id} variant="sheet" />
             {item.kind === "ticket" && <TicketSessions projectId={projectId} itemId={item.id} variant="sheet" />}
+            {item.kind === "ticket" && <TicketSpend projectId={projectId} itemId={item.id} variant="sheet" />}
 
             <hr className="rule" />
             <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("detailPane.activityHeading")}</Eyebrow>
