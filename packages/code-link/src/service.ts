@@ -34,6 +34,7 @@ import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelV
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
+import { serveTicketCli } from "./ticket-cli.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
@@ -662,6 +663,20 @@ export class CodeLink extends Service implements CodeLinkReader {
         render: ({ projectId }) => syncPrompt(this.syncScope(projectId))
       });
       ctx.mcp.instruct(({ projectId }) => syncInstructions(this.syncScope(projectId)));
+      // `tomrade claim|note|link|…`: the same tools, for an agent whose MCP connection is missing.
+      ctx.mcp.cli(
+        "ticket",
+        serveTicketCli({
+          projectIds: () => this.ctx.db.openIds(),
+          foldersOf: (projectId) => this.repositoryFoldersOf(projectId).map((f) => f.path),
+          prefixOf: (projectId) => this.prefixOf(projectId),
+          sessionsOn: (projectId, itemId) => this.store.sessions(projectId, { itemId, live: true }),
+          itemId: (projectId, key) => this.ctx.items.getByKey(projectId, key)?.id ?? null,
+          bind: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
+          call: (name, args, opts) => ctx.mcp.call(name, args, opts),
+          words: () => this.words()
+        })
+      );
       // Terminals the user still has open from before a restart keep calling with their tokens; bind those again.
       for (const projectId of this.ctx.db.openIds()) this.rebindSessions(projectId);
       ctx.on("db/opened", (projectId) => this.rebindSessions(projectId));

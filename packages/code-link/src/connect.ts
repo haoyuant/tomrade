@@ -252,7 +252,7 @@ export function tomradeSection(input: ConnectInput, agents: ConnectedAgents, opt
     SECTION_HEADING,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server${servers.length ? ` (${servers.join(", ")})` : ""}.`,
-    "This section applies only when the `tomrade` MCP server is available in your session. Tomrade runs on one developer's machine; without it (no such server, or its tools fail to connect) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.",
+    `This section applies only when Tomrade answers in your session: through the \`tomrade\` MCP server or, when that server is missing or its tools fail to connect, through the \`tomrade\` command in a shell, which calls the same tools (\`tomrade claim ${example}\`, \`tomrade note "<one line>"\`, \`tomrade link --pr <url> --scope-checked\`, \`tomrade create "<title>"\`, \`tomrade list --search <words>\`, \`tomrade show ${example}\`; \`tomrade --help\` lists them). Tomrade runs on one developer's machine; when neither answers (no such server or command, or the command says Tomrade is not running) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.`,
     ...(reporting.length ? [reporting.join(" ")] : []),
     others.join(" "),
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
@@ -293,6 +293,8 @@ export function codexSyncSkill(input: ConnectInput): string {
     "---",
     "",
     syncPrompt({ projectName: input.projectName, prefix: input.prefix }),
+    "",
+    "Without the `tomrade` MCP tools in this session, the `tomrade` command makes the same calls in a shell for the steps it covers: `tomrade list --search <words>`, `tomrade show <KEY>`, `tomrade link --key <KEY> --pr <url> --scope-checked`, `tomrade note --key <KEY> \"<one line>\"`, `tomrade create \"<title>\"`.",
     ""
   ].join("\n");
 }

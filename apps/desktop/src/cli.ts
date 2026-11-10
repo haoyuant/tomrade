@@ -11,12 +11,43 @@ export type TermCommand =
   | { op: "start"; key: string; agent: string | null }
   /** Without a number it lists the panes. */
   | { op: "attach"; cell: number | null }
+  /** claim, note, link, create, list, show: the tools Tomrade's MCP server serves, for an agent without that connection. */
+  | { op: "ticket"; request: TicketRequest; json: boolean }
   | { op: "bad"; what: string };
+
+/** What `tomrade claim|note|link|create|list|show` sends (code-link's ticket command). */
+export interface TicketRequest {
+  op: "claim" | "note" | "link" | "create" | "list" | "show";
+  key?: string;
+  text?: string;
+  title?: string;
+  body?: string;
+  pr?: string;
+  branch?: string;
+  search?: string;
+  status?: string;
+  limit?: number;
+  parallel?: true;
+  scopeChecked?: true;
+}
+
+const TICKET_OPS = new Set(["claim", "note", "link", "create", "list", "show"]);
+/** Each command's options: a value it takes, or a switch. */
+const TICKET_FLAGS: Record<TicketRequest["op"], Record<string, "value" | "switch">> = {
+  claim: { "--parallel": "switch" },
+  note: { "--key": "value" },
+  link: { "--key": "value", "--pr": "value", "--branch": "value", "--scope-checked": "switch" },
+  create: { "--body": "value" },
+  list: { "--search": "value", "--status": "value", "--limit": "value" },
+  show: {}
+};
 
 /** What Tomrade answers (code-sessions' `TermAnswer`). */
 interface Answer {
   ok: boolean;
   text: string;
+  /** The tool's own answer, printed as JSON with --json. */
+  result?: unknown;
   cells?: string[];
   attach?: { herdr: string; socket: string; terminal: string };
   projectId?: string;
@@ -28,10 +59,72 @@ const TICKET = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 export const START_WAIT_MS = 90_000;
 const RETRY_MS = 500;
 
+/** `tomrade claim <KEY>`, `tomrade note [--key K] <text>`, `tomrade link [--key K] [--pr url] [--branch b] [--scope-checked]`, `tomrade create <title> [--body text]`, `tomrade list [--search s] [--status s] [--limit n]`, `tomrade show <KEY>`; --json on any. */
+function parseTicket(op: TicketRequest["op"], rest: string[]): TermCommand {
+  const flags = TICKET_FLAGS[op];
+  const given: Record<string, string | true> = {};
+  const plain: string[] = [];
+  let json = false;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i]!;
+    if (arg === "-h" || arg === "--help") return { op: "help" };
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (!arg.startsWith("--")) {
+      plain.push(arg);
+      continue;
+    }
+    const eq = arg.indexOf("=");
+    const name = eq > 0 ? arg.slice(0, eq) : arg;
+    const kind = flags[name];
+    if (!kind) return { op: "bad", what: name };
+    if (kind === "switch") {
+      if (eq > 0) return { op: "bad", what: arg };
+      given[name] = true;
+      continue;
+    }
+    const value = eq > 0 ? arg.slice(eq + 1) : rest[++i];
+    if (value === undefined || value === "") return { op: "bad", what: name };
+    given[name] = value;
+  }
+  const value = (name: string) => (typeof given[name] === "string" ? (given[name] as string) : undefined);
+  const request: TicketRequest = { op };
+  if (op === "claim" || op === "show") {
+    if (plain.length !== 1 || !TICKET.test(plain[0]!)) return { op: "bad", what: plain.join(" ") || op };
+    request.key = plain[0]!.toUpperCase();
+  } else if (op === "note") {
+    if (!plain.length) return { op: "bad", what: op };
+    request.text = plain.join(" ");
+  } else if (op === "create") {
+    if (!plain.length) return { op: "bad", what: op };
+    request.title = plain.join(" ");
+  } else if (plain.length) return { op: "bad", what: plain.join(" ") };
+  const key = value("--key");
+  if (key !== undefined) {
+    if (!TICKET.test(key)) return { op: "bad", what: key };
+    request.key = key.toUpperCase();
+  }
+  const limit = value("--limit");
+  if (limit !== undefined) {
+    if (!/^\d+$/.test(limit) || Number(limit) < 1) return { op: "bad", what: `--limit ${limit}` };
+    request.limit = Number(limit);
+  }
+  for (const [flag, field] of [["--body", "body"], ["--pr", "pr"], ["--branch", "branch"], ["--search", "search"], ["--status", "status"]] as const) {
+    const v = value(flag);
+    if (v !== undefined) request[field] = v;
+  }
+  if (given["--parallel"]) request.parallel = true;
+  if (given["--scope-checked"]) request.scopeChecked = true;
+  return { op: "ticket", request, json };
+}
+
 /** `tomrade term [folder] | --agent <agent> <KEY> | <KEY> | --attach [n]`; a ticket key is read as one only where no folder has that name. */
 export function parseArgs(args: string[], isDir: (dir: string) => boolean): TermCommand {
   const [sub, ...rest] = args;
   if (!sub || sub === "-h" || sub === "--help" || sub === "help") return { op: "help" };
+  if (TICKET_OPS.has(sub)) return parseTicket(sub as TicketRequest["op"], rest);
   if (sub !== "term") return { op: "bad", what: sub };
   let agent: string | null = null;
   let attach: number | null | undefined;
@@ -121,21 +214,21 @@ export async function runCli(args: string[], deps: CliDeps): Promise<number> {
     }
   }
 
-  const ask = async (body: Record<string, unknown>, mayStart = true): Promise<Answer> => {
+  const ask = async (body: Record<string, unknown>, mayStart = true, name: "term" | "ticket" = "term"): Promise<Answer> => {
     let launched = false;
     let until = 0;
     for (;;) {
       const config = deps.config();
       if (!config) return { ok: false, text: w("cliNotRunning") };
       try {
-        const res = await deps.fetch(`${config.url}/cli/term`, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" }, body: JSON.stringify(body) });
+        const res = await deps.fetch(`${config.url}/cli/${name}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" }, body: JSON.stringify(body) });
         // A Tomrade still starting has its port before the Terminal window answers on it.
         if (res.status === 503 && launched && Date.now() < until) {
           await deps.sleep(RETRY_MS);
           continue;
         }
         const data = (await res.json().catch(() => null)) as (Answer & { error?: string }) | null;
-        if (res.status === 503) return { ok: false, text: w("cliNoTerminalWindow") };
+        if (res.status === 503) return { ok: false, text: name === "term" ? w("cliNoTerminalWindow") : w("cliTomradeError", { reason: data?.error ?? "HTTP 503" }) };
         if (!res.ok || !data || typeof data.text !== "string") return { ok: false, text: w("cliTomradeError", { reason: data?.error ?? `HTTP ${res.status}` }) };
         return data;
       } catch (error) {
@@ -154,6 +247,17 @@ export async function runCli(args: string[], deps: CliDeps): Promise<number> {
     }
   };
 
+  if (command.op === "ticket") {
+    // An agent asks this when its MCP connection is missing: it says Tomrade is not running rather than start it.
+    const token = deps.env.TOMRADE_MCP_TOKEN?.trim();
+    const answer = await ask({ ...command.request, cwd, ...(token ? { token } : {}) }, false, "ticket");
+    if (!answer.ok) {
+      deps.err(command.json && answer.result !== undefined ? JSON.stringify(answer.result, null, 2) : answer.text);
+      return 1;
+    }
+    deps.out(command.json ? JSON.stringify(answer.result ?? null, null, 2) : answer.text);
+    return 0;
+  }
   const body =
     command.op === "open" ? { op: "open", cwd } : command.op === "start" ? { op: "start", cwd, key: command.key, agent: command.agent } : { op: "attach", cwd, ...(command.cell !== null ? { cell: command.cell } : {}) };
   if (command.op === "start") deps.err(w("cliStartingTicket", { key: command.key }));

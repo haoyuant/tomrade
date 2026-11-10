@@ -214,7 +214,18 @@ export const CODE_WORDS = defineWords("code-link", {
     ghTitle: "GitHub CLI (gh)",
     ghReady: "gh {{version}} at {{path}}, signed in",
     ghSignedOut: "gh {{version}} at {{path}}, not signed in. Optional: Tomrade uses gh to open and merge pull requests; run `gh auth login`, or connect GitHub in Tomrade's settings for repositories it reaches",
-    ghMissing: "Not installed. Optional: Tomrade uses gh to open and merge pull requests, and everything else works without it. Install it from {{url}}, then run `gh auth login`"
+    ghMissing: "Not installed. Optional: Tomrade uses gh to open and merge pull requests, and everything else works without it. Install it from {{url}}, then run `gh auth login`",
+    cliNoProject: "This folder is not in a repository of a Tomrade project: run the command from the project's checkout or one of its worktrees.",
+    cliNoKey: "No ticket named: pass its key, or run the command on the ticket's branch (its name carries the key).",
+    cliNoText: "Say what to note: tomrade note <text>",
+    cliNoTitle: "Name the ticket: tomrade create <title>",
+    cliNoTicket: "There is no ticket {{key}} in this project.",
+    cliClaimed: "Claimed {{key}} “{{title}}” ({{status}}); work on branch {{branch}}.",
+    cliNoted: "Noted on {{key}}.",
+    cliLinked: "Linked {{branch}} to {{key}} ({{status}}).",
+    cliCreated: "Created {{key}}: {{title}}",
+    cliNoneFound: "No tickets match.",
+    cliUnknownOp: "tomrade does not know {{op}}"
   },
   zh: {
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json、.cursor/hooks/tomrade 和 .cursor/hooks/tomrade.ps1——或选「仅连接本机」，把它们写进本机仓库目录并不纳入 git——（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
@@ -423,7 +434,18 @@ export const CODE_WORDS = defineWords("code-link", {
     ghTitle: "GitHub CLI（gh）",
     ghReady: "gh {{version}}，位于 {{path}}，已登录",
     ghSignedOut: "gh {{version}}，位于 {{path}}，未登录。可选：Tomrade 用 gh 创建和合并拉取请求；运行 `gh auth login`，或在 Tomrade 设置里连接 GitHub（对它能访问的仓库生效）",
-    ghMissing: "未安装。可选：Tomrade 用 gh 创建和合并拉取请求，其他功能不需要它。可以从 {{url}} 安装，再运行 `gh auth login`"
+    ghMissing: "未安装。可选：Tomrade 用 gh 创建和合并拉取请求，其他功能不需要它。可以从 {{url}} 安装，再运行 `gh auth login`",
+    cliNoProject: "这个文件夹不在任何 Tomrade 项目的仓库里：请在项目的仓库目录或它的某个工作树里运行。",
+    cliNoKey: "没有指明工单：请给出工单号，或在工单的分支上运行（分支名里带着工单号）。",
+    cliNoText: "请写下要记的内容：tomrade note <内容>",
+    cliNoTitle: "请给工单起个标题：tomrade create <标题>",
+    cliNoTicket: "这个项目里没有工单 {{key}}。",
+    cliClaimed: "已认领 {{key}}「{{title}}」（{{status}}），请在分支 {{branch}} 上工作。",
+    cliNoted: "已记在 {{key}} 上。",
+    cliLinked: "已把 {{branch}} 关联到 {{key}}（{{status}}）。",
+    cliCreated: "已创建 {{key}}：{{title}}",
+    cliNoneFound: "没有符合的工单。",
+    cliUnknownOp: "tomrade 不认识 {{op}}"
   }
 });
 
