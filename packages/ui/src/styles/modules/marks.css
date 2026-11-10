@@ -1,0 +1,23 @@
+@layer components {
+/* ─── status dot — shape-coded, not colour-coded ─────────────────────── */
+.sdot { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
+.sdot.done { color: var(--success); }
+
+/* ─── priority glyph — 5 levels, distinguishable without colour ──────── */
+.prio { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
+.prio.urgent { color: var(--danger); }
+
+/* ─── tags ───────────────────────────────────────────────────────────── */
+.tag {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-display); font-weight: var(--font-weight-medium);
+  font-size: var(--text-xs); line-height: 1.5;
+  padding: 1px 6px; border-radius: var(--radius-xs);
+  color: var(--tag-fg); background: var(--tag-bg-soft);
+  letter-spacing: var(--tracking-label);
+  white-space: nowrap;
+}
+.tag.faint { background: var(--tag-bg-faint); }
+.tag.strong { background: var(--tag-bg-strong); border-radius: var(--radius-sm); padding: 1px 7px; }
+.tag.neutral { background: var(--surface-warm); color: var(--muted); }
+}

@@ -1,0 +1,99 @@
+@layer components {
+/* transcript — typeset, not bubbles */
+.turn + .turn { margin-top: var(--space-5); }
+.turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.turn-user .turn-rule { width: 28px; height: 1px; background: var(--border); }
+.turn-user p { font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); text-align: right; max-width: 88%; }
+/* the machine-written brief that opened a ticket's session: folded, and read left to right */
+.turn-brief { align-items: flex-start; }
+.turn-brief > summary { cursor: pointer; list-style: none; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.turn-brief > summary::-webkit-details-marker { display: none; }
+.turn-brief > summary:hover { color: var(--fg-2); }
+.turn-brief > p { text-align: left; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn-ai { display: grid; grid-template-columns: 14px 1fr; gap: var(--space-2); }
+.turn-mark { display: flex; justify-content: center; padding-top: 6px; }
+.turn-ai .turn-body { font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); min-width: 0; }
+/* a reply written in Markdown: the Files look, sized for the panel */
+.agent-md { overflow-wrap: anywhere; }
+.agent-md h1, .agent-md h2 { font-size: var(--text-lg); margin: var(--space-4) 0 var(--space-2); }
+.agent-md h3, .agent-md h4, .agent-md h5, .agent-md h6 { font-size: var(--text-base); margin: var(--space-4) 0 var(--space-2); }
+.agent-md > :first-child { margin-top: 0; }
+.agent-md > :last-child { margin-bottom: 0; }
+.agent-md pre { overflow-wrap: normal; }
+.agent-md table { display: block; max-width: 100%; overflow-x: auto; }
+.turn-think { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.tool-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); padding: var(--space-3); margin-top: var(--space-2); }
+.tool-head { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); margin-bottom: var(--space-2); }
+.tool-row { display: flex; align-items: center; gap: var(--space-2); padding: 5px 0; border-top: 1px solid var(--border-soft); font-size: 14px; }
+.tool-row:first-of-type { border-top: 0; }
+/* tickets started from the conversation, and a delivery's merge offered there */
+.start-batch-list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 5px 0; }
+.start-batch-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.start-batch-result, .start-batch-list .gate-fix, .start-batch-list .start-progress { flex-basis: 100%; min-width: 0; }
+.start-batch-pick { flex-wrap: wrap; }
+.start-batch-pick .select { max-width: 14rem; }
+.start-batch-field { display: inline-flex; align-items: center; gap: 6px; }
+/* the troubleshooter's checklist and findings */
+.check-row .check-title { flex: none; color: var(--fg); }
+.check-row .t-title { color: var(--meta); font-size: var(--text-sm); }
+.check-row.is-ok > svg { color: var(--success); }
+.check-row.is-warn > svg { color: var(--warn); }
+.check-row.is-fail > svg { color: var(--danger); }
+.check-row.is-pending, .check-row.is-skip { color: var(--meta); }
+.finding { border-left: 2px solid var(--border); padding: 2px 0 2px var(--space-3); margin-top: var(--space-3); font-size: 14px; line-height: var(--leading-dense); }
+.finding.is-fail { border-left-color: var(--danger); }
+.finding.is-warn { border-left-color: var(--warn); }
+.finding.is-ok { border-left-color: var(--success); }
+.finding-head { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--fg); font-weight: 500; }
+.finding.is-fail .finding-head > svg { color: var(--danger); }
+.finding.is-warn .finding-head > svg { color: var(--warn); }
+.finding.is-ok .finding-head > svg { color: var(--success); }
+.finding-body { margin: 4px 0 0; color: var(--fg-2); }
+.my-report + .my-report { border-top: 1px solid var(--border-soft); padding-top: var(--space-3); }
+.my-report.is-new .num { color: var(--accent); }
+.my-report-summary { margin: 4px 0 0; color: var(--fg-2); font-size: 14px; }
+.my-report-reply { margin: 6px 0 0; padding-left: var(--space-3); border-left: 2px solid var(--accent); font-size: 14px; line-height: var(--leading-dense); }
+.palette.sheet-report { width: min(720px, calc(100vw - 64px)); }
+.report-sections { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: var(--text-sm); }
+.report-note { width: 100%; resize: vertical; }
+.report-preview { max-height: 280px; overflow: auto; margin: 0; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; word-break: break-word; color: var(--fg-2); }
+/* a plan's tree before it is written */
+.proposal-root { margin: 0 0 var(--space-2); font-weight: 500; color: var(--fg); }
+.proposal-epic { padding: var(--space-2) 0; border-top: 1px solid var(--border-soft); }
+.proposal-epic-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--fg); }
+.proposal-tickets { list-style: none; margin: 4px 0 0; padding: 0 0 0 var(--space-3); }
+.proposal-tickets li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 14px; }
+.proposal-ticket-title { color: var(--fg-2); }
+.proposal-body { flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-sm); color: var(--meta); }
+.proposal-notes { margin: var(--space-2) 0 0; padding-top: var(--space-2); border-top: 1px solid var(--border-soft); font-size: var(--text-sm); color: var(--meta); white-space: pre-wrap; }
+.tool-row .t-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.ai-error { color: var(--danger); font-size: 14px; line-height: var(--leading-dense); }
+.ai-error > p { margin: 0; }
+.profile-problem { padding: var(--space-2) var(--space-3); border: 1px solid var(--danger); border-radius: var(--radius-sm); color: var(--danger); font-size: var(--text-sm); }
+.profile-problem p { margin: 0; }
+.link-inline { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.ai-error-details { margin-top: 4px; color: var(--meta); font-size: var(--text-xs); }
+.ai-error-details summary { cursor: pointer; }
+.ai-error-details code { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); }
+.ai-error-details pre {
+  margin: 4px 0; max-height: 240px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-xs);
+}
+.ai-error-details .btn { color: var(--meta); }
+
+/* A sync as it runs, and what the last one did, folded until asked for. */
+.sync-activity { margin-top: var(--space-2); }
+.sync-activity .fold { margin-top: var(--space-1); }
+.sync-running { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sync-transfer { font-variant-numeric: tabular-nums; }
+.sync-failed { color: var(--danger); }
+.sync-details { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(--space-3); margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--fg-2); }
+.sync-details dt { color: var(--meta); }
+.sync-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sync-steps { margin: 0; padding-left: 1.2em; }
+.sync-steps li[data-ok="false"] { color: var(--danger); }
+.sync-output { margin: 0; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-xs); }
+/* the pending line reads as unresolved without animating — nothing here
+   loops, so reduced-motion needs no special case */
+.ai-pending { color: var(--meta); font-size: 14px; line-height: var(--leading-dense); }
+}

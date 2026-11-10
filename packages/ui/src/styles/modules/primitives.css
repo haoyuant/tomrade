@@ -1,0 +1,35 @@
+@layer components {
+/* ─── primitive adapters ──────────────────────────────────────────────
+ * Radix portals its menus and positions the wrapper itself, and cmdk marks
+ * the active row with data-selected. Both need the design's classes to stop
+ * positioning and start listening to the primitive. */
+.menu.is-floating {
+  position: static; top: auto; left: auto; right: auto;
+  max-height: min(324px, var(--radix-dropdown-menu-content-available-height, 324px));
+}
+.menu-row[data-highlighted] { background: var(--surface-warm); color: var(--fg); }
+.menu-row[data-highlighted] .m-sub,
+.menu-row[data-highlighted] .m-count { color: var(--muted); }
+.menu-row:hover .m-count { color: var(--muted); }
+.palette-row:hover .card-id,
+.palette-row[data-selected="true"] .card-id { color: var(--muted); }
+.menu-row[data-disabled] { opacity: 0.45; pointer-events: none; }
+.palette-row[data-selected="true"] { background: var(--surface-warm); color: var(--fg); }
+.palette-list [cmdk-group-heading] { padding: var(--space-3) var(--space-3) var(--space-1); }
+
+/* the dialog family, sized where the design sizes it inline */
+/* one solid button per viewport: the chrome's CTA yields while an overlay owns
+   the screen, which is what .overlay-open exists for */
+html.overlay-open .titlebar .btn-primary {
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  box-shadow: var(--elev-ring);
+}
+/* width only — `.palette.modal` owns the axis and the height */
+.palette.sheet-md { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-view { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-board { width: min(620px, calc(100vw - 64px)); }
+.dlg-title { font-size: var(--text-lg); }
+.dlg-sub { font-size: var(--text-base); margin-bottom: var(--space-2); }
+.dense { line-height: var(--leading-dense); }
+}

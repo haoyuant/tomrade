@@ -1,0 +1,108 @@
+/* Sunrise and Daybreak — the dawn poster's sun, out of the paper: sans type,
+   a lilac sky over an apricot horizon, vermilion running into gold. Their
+   lights and gradients live in styles/sunrise.css. */
+.sunrise, .daybreak, .glass {
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+.sunrise {
+  --bg: #f6f3f8;
+  --surface: #fffdfd;
+  --surface-warm: #efe8f1;
+  --fg: #241b3a;
+  --fg-2: #3a3052;
+  --muted: #554a6b;
+  --meta: #6a5f80;
+  --border: #e3dae8;
+  --border-soft: #ece5ef;
+  --border-input: #9187a3;
+  --accent: #c93a24;
+  --accent-on: #fffaf6;
+  --accent-light: #e0573a;
+  --accent-hover: var(--accent);
+  --accent-active: #a52d1a;
+  --success: #2f7a4f;
+  --warn: #9a6a00;
+  --danger: #b8233f;
+
+  /* the sunrise sky in order: sun, gold, lilac, twilight — validated for CVD on the surface */
+  --chart-1: #c93a24;
+  --chart-2: #b98208;
+  --chart-3: #7a5fd6;
+  --chart-4: #34499c;
+  --chart-5: #c2407e;
+  --chart-6: #2a86c8;
+  --chart-7: #a2582a;
+  --chart-8: #009488;
+  --chart-9: #9a4fb0;
+  --chart-10: #6f7a12;
+  --tag-bg-faint: #fdf1ed;
+  --tag-bg-soft: #fbe5de;
+  --tag-bg-base: #f6d4c9;
+  --tag-bg-strong: #f2c8bb;
+  --tag-fg: #a52d1a;
+  --elev-raised: 0 1px 2px rgba(60, 30, 80, 0.06), 0 8px 24px -8px rgba(60, 30, 80, 0.18);
+  --focus-ring: 0 0 0 2px var(--accent-active), 0 0 12px rgba(201, 58, 36, 0.35);
+
+  --sun-red: #e0482c;
+  --sun-gold: #f2a43a;
+  --sun-sky: #b9a8ec;
+  --sun-glow: rgba(201, 58, 36, 0.32);
+  --sun-haze: rgba(255, 166, 102, 0.26);
+  --sun-sky-haze: rgba(185, 168, 236, 0.20);
+  --sun-btn-from: #bf2e28;
+  --sun-btn-to: #d2511d;
+  --sun-sheen: rgba(255, 226, 170, 0.45);
+  --sun-card-light: rgba(242, 164, 58, 0.03);
+}
+.daybreak {
+  --bg: #120f24;
+  --surface: #1d1934;
+  --surface-warm: #282344;
+  --fg: #f3eefa;
+  --fg-2: #d9d1ea;
+  --muted: #bdb3d3;
+  --meta: #a49ac0;
+  --border: #342e54;
+  --border-soft: #2a2547;
+  --border-input: #6f6794;
+  --accent: #ff8a5c;
+  --accent-on: #1b1026;
+  --accent-light: #ffab7d;
+  --accent-hover: var(--accent);
+  --accent-active: #ffa476;        /* hover LIGHTENS on dark: contrast must rise */
+  --success: #6fdc9a;
+  --warn: #ffd166;
+  --danger: #ff6b81;
+
+  /* Sunrise's order at night: sun, gold, lilac, twilight — validated for CVD on the surface */
+  --chart-1: #ff8a5c;
+  --chart-2: #fec84b;
+  --chart-3: #b48df4;
+  --chart-4: #4777d2;
+  --chart-5: #f589b6;
+  --chart-6: #73edfa;
+  --chart-7: #ca7d44;
+  --chart-8: #6ed889;
+  --chart-9: #bc6ece;
+  --chart-10: #c8d563;
+  --tag-bg-faint: #221c3a;
+  --tag-bg-soft: #2b2143;
+  --tag-bg-base: #3a2a4f;
+  --tag-bg-strong: #443057;
+  --tag-fg: #ffb999;
+  --elev-raised: 0 10px 30px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 138, 92, 0.05);
+  --focus-ring: 0 0 0 2px var(--accent-active), 0 0 14px rgba(255, 138, 92, 0.45);
+
+  --sun-red: #ff6a4d;
+  --sun-gold: #ffc457;
+  --sun-sky: #6d5bd0;
+  --sun-glow: rgba(255, 122, 89, 0.38);
+  --sun-haze: rgba(255, 112, 80, 0.20);
+  --sun-sky-haze: rgba(109, 91, 208, 0.22);
+  --sun-btn-from: #ff7a59;
+  --sun-btn-to: #ffb347;
+  --sun-sheen: rgba(255, 240, 210, 0.55);
+  --sun-star: rgba(255, 244, 230, 0.82);
+  --sun-card-light: rgba(255, 255, 255, 0.035);
+}

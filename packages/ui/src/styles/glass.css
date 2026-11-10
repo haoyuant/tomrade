@@ -2,7 +2,7 @@
    static layer behind a page that never scrolls, drawn already soft, so the
    panes need no backdrop-filter: they are plain translucency over it and cost
    what a solid fill costs. Only what floats for a moment (menus, the palette,
-   sheets) blurs for real what is behind it. Colours come from --glass-* in app.css. */
+   sheets) blurs for real what is behind it. Colours come from --glass-* in theme/glass.css. */
 @layer components {
 .glass body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
