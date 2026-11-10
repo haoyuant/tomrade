@@ -10,6 +10,25 @@ import { Tools, defineTool } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 
 describe("the MCP surface", () => {
+  it("calls a tool for the tomrade command as the run its token names, else as an outside client, serving each only its own tools", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    const seen: { by: string; projectId?: string; connection?: string }[] = [];
+    ctx.tools.register(defineTool({ name: "touch", title: "Touch", description: "test", input: z.object({}), execute: (_args, inv) => { seen.push({ by: inv.by, projectId: inv.projectId, connection: inv.connection }); return "unscoped"; } }));
+    ctx.tools.register(defineTool({ name: "inside", title: "Inside", description: "test", input: z.object({}), mcp: false, execute: () => "never" }));
+    ctx.tools.register(defineTool({ name: "own", title: "Own", description: "test", input: z.object({}), mcp: "run", execute: () => "run only" }));
+    const unbind = ctx.mcp.bindRun("tok", { author: "ai:codex", execute: async (name) => `run:${name}` });
+    try {
+      expect(await ctx.mcp.call("touch", {}, { token: "tok" })).toBe("run:touch");
+      expect(await ctx.mcp.call("own", {}, { token: "tok" })).toBe("run:own");
+      expect(await ctx.mcp.call("touch", {}, { projectId: "p1", connection: "cli:s1" })).toBe("unscoped");
+      expect(seen).toEqual([{ by: "ai:mcp", projectId: "p1", connection: "cli:s1" }]);
+      await expect(ctx.mcp.call("own", {}, {})).rejects.toThrow("Unknown tool: own");
+      await expect(ctx.mcp.call("inside", {}, { token: "tok" })).rejects.toThrow("Unknown tool: inside");
+      // A token whose run ended calls as an outside client.
+      unbind();
+      expect(await ctx.mcp.call("touch", {}, { token: "tok" })).toBe("unscoped");
+    } finally { await ctx.fiber.dispose(); }
+  });
   it("rebinds an existing connection to the new run and denies idle or revoked tokens", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     let unscoped = 0;

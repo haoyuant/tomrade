@@ -517,6 +517,20 @@ export class Mcp extends Service implements McpReader {
     }, `mcp.cli(${name})`);
   }
 
+  /**
+   * A tool called as an MCP client would call it, for the `tomrade` command when the agent's MCP connection is
+   * missing: as the run that holds `token` (only the tools that run is served), else as an outside client.
+   */
+  async call(name: string, args: unknown, opts: { token?: string; projectId?: string; connection?: string } = {}): Promise<unknown> {
+    const tools = this.tools;
+    if (!tools) throw new Error("the MCP server needs the tools plugin");
+    // A terminal left open after its run ended keeps the token in its environment: it calls as an outside client.
+    const binding = opts.token ? this.bindings.get(opts.token) : undefined;
+    if (!tools.served(binding ? "run" : "public").some((tool) => tool.name === name)) throw new Error(`Unknown tool: ${name}`);
+    if (binding) return binding.execute(name, args);
+    return tools.execute(name, args, { by: "ai:mcp", projectId: opts.projectId, ...(opts.connection ? { connection: opts.connection } : {}) });
+  }
+
   /** Offer a prompt to every session opened from now on. Reversible with the plugin that registered it. */
   prompt(prompt: McpPrompt): () => void {
     return this.ctx.effect(() => {

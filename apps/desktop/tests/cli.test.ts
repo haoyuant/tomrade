@@ -152,3 +152,42 @@ describe("the tomrade command", () => {
     expect(bad.err[0]).toMatch(/^tomrade does not know --frob\n\nUsage:/);
   });
 });
+
+describe("tomrade claim, note, link, create, list and show", () => {
+  it("reads each command's arguments and refuses what it does not take", () => {
+    expect(parseArgs(["claim", "tom-7"], noDir)).toEqual({ op: "ticket", request: { op: "claim", key: "TOM-7" }, json: false });
+    expect(parseArgs(["claim", "TOM-7", "--parallel", "--json"], noDir)).toEqual({ op: "ticket", request: { op: "claim", key: "TOM-7", parallel: true }, json: true });
+    expect(parseArgs(["note", "tests", "green"], noDir)).toEqual({ op: "ticket", request: { op: "note", text: "tests green" }, json: false });
+    expect(parseArgs(["note", "--key=TOM-7", "wired"], noDir)).toEqual({ op: "ticket", request: { op: "note", key: "TOM-7", text: "wired" }, json: false });
+    expect(parseArgs(["link", "--pr", "https://github.com/a/b/pull/9", "--scope-checked"], noDir)).toEqual({ op: "ticket", request: { op: "link", pr: "https://github.com/a/b/pull/9", scopeChecked: true }, json: false });
+    expect(parseArgs(["create", "Write", "the", "README", "--body", "For newcomers."], noDir)).toEqual({ op: "ticket", request: { op: "create", title: "Write the README", body: "For newcomers." }, json: false });
+    expect(parseArgs(["list", "--search", "readme", "--status", "todo", "--limit", "5"], noDir)).toEqual({ op: "ticket", request: { op: "list", search: "readme", status: "todo", limit: 5 }, json: false });
+    expect(parseArgs(["show", "TOM-7"], noDir)).toEqual({ op: "ticket", request: { op: "show", key: "TOM-7" }, json: false });
+    expect(parseArgs(["claim"], noDir)).toEqual({ op: "bad", what: "claim" });
+    expect(parseArgs(["claim", "readme"], noDir)).toEqual({ op: "bad", what: "readme" });
+    expect(parseArgs(["note"], noDir)).toEqual({ op: "bad", what: "note" });
+    expect(parseArgs(["link", "--pr"], noDir)).toEqual({ op: "bad", what: "--pr" });
+    expect(parseArgs(["list", "--limit", "0"], noDir)).toEqual({ op: "bad", what: "--limit 0" });
+    expect(parseArgs(["show", "TOM-7", "--parallel"], noDir)).toEqual({ op: "bad", what: "--parallel" });
+  });
+
+  it("asks Tomrade's ticket command with the folder and the session's token, and never starts Tomrade", async () => {
+    const h = harness([() => json({ ok: true, text: "Claimed TOM-7 “Cart badge” (doing); work on branch tom-7/cart-badge.", result: { key: "TOM-7", branch: "tom-7/cart-badge" } })], { env: { PATH: "/usr/bin", TOMRADE_MCP_TOKEN: "tok" } });
+    expect(await runCli(["claim", "TOM-7"], h.deps)).toBe(0);
+    expect(h.sent).toEqual([{ url: "http://127.0.0.1:19090/cli/ticket", body: { op: "claim", key: "TOM-7", cwd: work, token: "tok" }, headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" } }]);
+    expect(h.out).toEqual(["Claimed TOM-7 “Cart badge” (doing); work on branch tom-7/cart-badge."]);
+    // --json prints the tool's own answer.
+    const j = harness([() => json({ ok: true, text: "TOM-7  todo  Cart badge", result: [{ key: "TOM-7" }] })]);
+    expect(await runCli(["list", "--json"], j.deps)).toBe(0);
+    expect(JSON.parse(j.out[0]!)).toEqual([{ key: "TOM-7" }]);
+    // Not running: said, not started.
+    const off = harness([() => refused()]);
+    expect(await runCli(["note", "wired"], off.deps)).toBe(1);
+    expect(off.spawned).toEqual([]);
+    expect(off.err).toEqual(["Tomrade is not running. Open it, then try again."]);
+    // A refusal is printed on stderr with exit 1.
+    const no = harness([() => json({ ok: false, text: "There is no ticket TOM-9 in this project." })]);
+    expect(await runCli(["show", "TOM-9"], no.deps)).toBe(1);
+    expect(no.err).toEqual(["There is no ticket TOM-9 in this project."]);
+  });
+});

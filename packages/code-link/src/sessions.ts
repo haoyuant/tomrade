@@ -33,6 +33,8 @@ export const HERDR_YIELD_MS = 30 * 1000;
 const CLAIM_HEARD_MS = 10 * 1000;
 const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
 const NO_TICKET_TOOL = /(?:^|[_.:/])work_without_ticket$/;
+/** `tomrade claim <KEY>` in a shell: the claim an agent makes when its MCP connection is missing. */
+const CLAIM_COMMAND = /(?:^|[\s;&|(`])tomrade(?:\.cmd)?\s+claim\s+(?:--?\S+\s+)*([A-Za-z][A-Za-z0-9]*-\d+)\b/;
 const FILE_TOOL = /(?:^|[_.:/])create_item$/;
 /** The tools that change files, under every agent's names; the shell tools; and the shell commands that write git history. */
 const WRITE_TOOL = /^(?:Edit|Write|MultiEdit|NotebookEdit|StrReplace|Delete|apply_patch|edit_file|write_file|create_file|str_replace_editor|str_replace_based_edit_tool)$/i;
@@ -266,17 +268,20 @@ export interface Standing {
 const WAYS_ON =
   "Decide first: a new piece of work the person asked for gets a ticket of its own — create_item (or the key they named), then claim_ticket — and goes on the branch the claim returns; when it is unclear a ticket is wanted (a tiny fix, an experiment, something they may want kept out of the backlog), ask the person; if they want it done here without one, call work_without_ticket with their words, then go on. Never edit or commit on the default branch, or on another ticket's branch, without one of these; reading, searching and explaining need nothing.";
 
+/** Hooks reach Tomrade even when the agent's MCP connection does not; the `tomrade` command then makes the same calls. */
+const CLI_WAY = "Without the tomrade MCP tools in this session, the `tomrade` command makes the same calls in a shell: `tomrade claim <KEY>`, `tomrade create <title>` (`tomrade --help` lists the rest).";
+
 /** What an outside session is told at its first code change without a ticket: the ticket its branch already names, else the ways on. */
 export const noTicketText = (at: Standing): string =>
   `Tomrade: this session holds no ticket, so it does not change code in ${at.repo} yet.${
     at.key ? ` The checkout is on branch ${at.branch}, which names ${at.key}: if this goes on with that work, call claim_ticket("${at.key}") and continue there.` : at.branch ? ` The checkout is on branch ${at.branch}.` : ""
-  } ${WAYS_ON}`;
+  } ${WAYS_ON} ${CLI_WAY}`;
 
 /** What an outside session hears as it starts in a project repository, so the choice is made before the first change, not at it. */
 export const openingText = (at: Standing): string =>
   `Tomrade follows this session in ${at.repo}; it holds no ticket${at.branch ? `, and the checkout is on branch ${at.branch}` : ""}.${
     at.key ? ` That branch names ${at.key}: to go on with that work, claim_ticket("${at.key}") once and continue there — no new ticket or branch per request.` : ""
-  } Before changing code here: a new piece of work the person asked for gets a ticket (create_item, then claim_ticket, and the work goes on its branch); when unsure a ticket is wanted, ask them; on their word to go without one, call work_without_ticket. Reading and explaining need nothing.`;
+  } Before changing code here: a new piece of work the person asked for gets a ticket (create_item, then claim_ticket, and the work goes on its branch); when unsure a ticket is wanted, ask them; on their word to go without one, call work_without_ticket. Reading and explaining need nothing. ${CLI_WAY}`;
 
 const outputText = (output: unknown): string => {
   if (typeof output === "string") return output;
@@ -677,6 +682,8 @@ export class Sessions {
         if (p.tool_name && CLAIM_TOOL.test(p.tool_name) && typeof p.tool_input?.key === "string") {
           this.claiming.set(sessionId, { projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
         }
+        const claimed = CLAIM_COMMAND.exec(shellCommand(p))?.[1];
+        if (claimed) this.claiming.set(sessionId, { projectId, key: claimed.toUpperCase(), at: Date.now() });
         if (p.tool_name && NO_TICKET_TOOL.test(p.tool_name)) this.excusing.set(sessionId, { projectId, at: Date.now() });
         if (p.tool_name && FILE_TOOL.test(p.tool_name) && typeof p.tool_input?.title === "string") {
           this.filing.set(sessionId, { projectId, title: p.tool_input.title.trim(), at: Date.now() });

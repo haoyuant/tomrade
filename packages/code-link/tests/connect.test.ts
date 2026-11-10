@@ -178,11 +178,14 @@ describe("connecting a repository", () => {
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session");
     expect(claude).not.toContain("get_project_rules");
     // The file is committed while Tomrade is one developer's: a clone without it is told to carry on as usual.
-    expect(claude).toContain("This section applies only when the `tomrade` MCP server is available in your session.");
+    expect(claude).toContain("everything below is void: work as usual");
+    // With the server missing, the command is the one other way in.
+    expect(claude).toContain("through the `tomrade` command in a shell, which calls the same tools (`tomrade claim APP-42`");
     expect(claude).toContain("and the `tomrade` server is available");
     const skill = fs.readFileSync(path.join(dir, ".agents", "skills", "tomrade-sync", "SKILL.md"), "utf8");
     expect(skill).toMatch(/^---\nname: tomrade-sync\ndescription: "Bring .*\(project \\"App\\"\).*"\n---\n/);
     expect(skill).toContain("ticket keys look like APP-42");
+    expect(skill).toContain("the `tomrade` command makes the same calls in a shell");
     const settings = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")) as { permissions: unknown; hooks: Record<string, unknown[]> };
     expect(settings.permissions).toEqual({ allow: ["Bash(pnpm test)"] });
     expect(settings.hooks.Stop).toHaveLength(2);
@@ -1091,6 +1094,66 @@ describe("an outside session before it claims", () => {
     await post("cli-2", { hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: second.key } });
     const two = (await ctx.tools.execute("claim_ticket", { key: second.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-2" })) as { sharedCheckout?: { tickets: string[] }[] };
     expect(two.sharedCheckout?.map((s) => s.tickets)).toEqual([[first.key]]);
+  });
+});
+
+describe("the tomrade command, for an agent whose MCP connection is missing", () => {
+  type Answer = { ok: boolean; text: string; result?: Record<string, unknown> };
+  const command = async (ctx: Awaited<ReturnType<typeof machine>>["ctx"], body: Record<string, unknown>): Promise<Answer> => {
+    const res = await fetch(`${ctx.mcp.url!.replace(/\/mcp$/, "")}/cli/ticket`, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Cli": "1" }, body: JSON.stringify(body) });
+    return (await res.json()) as Answer;
+  };
+  const hook = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], body: Record<string, unknown>) =>
+    fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: "cli-1", ...body }) });
+
+  it("claims, notes and links as the hooks session that ran it, with the guards MCP has", async () => {
+    const { ctx, codeLink, project, items, board, checkout } = await machine();
+    await hook(ctx, { hook_event_name: "SessionStart", cwd: checkout });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    const [session] = codeLink.sessionsOf(project.id);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Cart badge", by: "human" });
+    // Before the claim, a code change is refused; the refusal names the command.
+    const refused = (await (await hook(ctx, { hook_event_name: "PreToolUse", cwd: checkout, tool_name: "Edit", tool_input: { file_path: path.join(checkout, "a.ts") } })).json()) as Record<string, unknown>;
+    expect(JSON.stringify(refused)).toContain("tomrade claim <KEY>");
+
+    // Its PreToolUse announces the shell command, as it does an MCP claim.
+    await hook(ctx, { hook_event_name: "PreToolUse", cwd: checkout, tool_name: "Bash", tool_input: { command: `cd ${checkout} && tomrade claim ${item.key.toLowerCase()}` } });
+    const claimed = await command(ctx, { op: "claim", key: item.key, cwd: checkout });
+    expect(claimed).toMatchObject({ ok: true, result: { key: item.key, status: "doing", tracking: { tracked: true, sessionId: session!.id } } });
+    expect(claimed.text).toContain(`Claimed ${item.key}`);
+    const branch = String(claimed.result!.branch);
+
+    expect(await command(ctx, { op: "note", key: item.key, text: "wired", cwd: checkout })).toMatchObject({ ok: true, text: `Noted on ${item.key}.` });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]?.summary).toBe("wired");
+    // The session's link wants its diff checked, as over MCP.
+    const unchecked = await command(ctx, { op: "link", key: item.key, branch, pr: "https://github.com/acme/app/pull/9", cwd: checkout });
+    expect(unchecked).toMatchObject({ ok: false });
+    expect(unchecked.text).toContain("scopeChecked");
+    const linked = await command(ctx, { op: "link", key: item.key, branch, pr: "https://github.com/acme/app/pull/9", scopeChecked: true, cwd: checkout });
+    expect(linked).toMatchObject({ ok: true, result: { key: item.key, branch, prUrl: "https://github.com/acme/app/pull/9" } });
+  });
+
+  it("files, lists and shows tickets; takes the key from the branch; says when the folder is no project's", async () => {
+    const { ctx, project, checkout } = await machine();
+    const created = await command(ctx, { op: "create", title: "Write the README", body: "For new contributors.", cwd: checkout });
+    expect(created.ok).toBe(true);
+    const key = String(created.result!.key);
+    expect(created.text).toBe(`Created ${key}: Write the README`);
+    expect((await command(ctx, { op: "list", search: "README", cwd: checkout })).text).toContain(`${key}  backlog  Write the README`);
+    expect((await command(ctx, { op: "show", key: key.toLowerCase(), cwd: checkout })).text).toContain("For new contributors.");
+    expect(await command(ctx, { op: "show", key: `${key}0`, cwd: checkout })).toMatchObject({ ok: false });
+
+    // On the ticket's branch no key is needed; untracked, it says so instead of failing quietly.
+    git(["checkout", "-q", "-b", `${key.toLowerCase()}/readme`], checkout);
+    const noted = await command(ctx, { op: "note", text: "drafted", cwd: checkout });
+    expect(noted).toMatchObject({ ok: false, result: { key } });
+    expect(noted.text).toContain("not recorded");
+    expect(await command(ctx, { op: "frob", cwd: checkout })).toMatchObject({ ok: false, text: "tomrade does not know frob" });
+
+    // A second project: a folder in neither repository names no project.
+    ctx.projects.create({ name: "Other", keyPrefix: "OTH" });
+    expect(ctx.db.openIds()).toContain(project.id);
+    expect(await command(ctx, { op: "list", cwd: os.tmpdir() })).toMatchObject({ ok: false });
   });
 });
 
