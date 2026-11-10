@@ -76,7 +76,7 @@ export function HubSetup() {
               </div>
               <span className="meta-txt">{t("hubSetup.folderNote")}</span>
             </div>
-            <ul className="dash">
+            <ul className="dash-list">
               <li>{tx("hubSetup.bulletProjects", { path: <span className="num">projects/</span> })}</li>
               <li>{t("hubSetup.bulletCache")}</li>
               <li>{t("hubSetup.bulletMove")}</li>

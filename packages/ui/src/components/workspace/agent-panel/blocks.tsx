@@ -106,9 +106,9 @@ export function RetryRow({ block }: { block: Block & { type: "retry" } }) {
 
 /** An item key in prose: one word wide, live title on hover, the sidebar detail one click away — same as clicking the card on the board. */
 function KeyRef({ text, item, onOpenIssue }: { text: string; item: Item | undefined; onOpenIssue: (id: string) => void }) {
-  if (!item) return <span className="kref dead num">{text}</span>;
+  if (!item) return <span className="key-ref key-ref--dead num">{text}</span>;
   return (
-    <button type="button" className="kref num" title={`${item.title} · ${item.status}`} onClick={() => onOpenIssue(item.id)}>
+    <button type="button" className="key-ref num" title={`${item.title} · ${item.status}`} onClick={() => onOpenIssue(item.id)}>
       {text}
     </button>
   );
@@ -194,7 +194,7 @@ export function AgentMarkdown({ text, byKey, onOpenIssue, projectId }: { text: s
   const inner = useMemo(() => (base === null ? null : { __html: decorate(base, byKey) }), [base, byKey]);
   const onClick = (e: MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
-    const key = target.closest<HTMLElement>("button.kref[data-item-id]");
+    const key = target.closest<HTMLElement>("button.key-ref[data-item-id]");
     if (key) return onOpenIssue(key.dataset.itemId!);
     const anchor = target.closest<HTMLAnchorElement>("a");
     if (!anchor) return;
@@ -341,7 +341,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
           const result = wait ? undefined : card.results?.find((r) => r.itemId === ticket.itemId);
           return (
             <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={wait ?? (result ? (result.ok ? "started" : "stopped") : "pending")}>
-              <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{keyOf(ticket.itemId, ticket.key)}</button> {ticket.title}
+              <button type="button" className="key-ref num" onClick={() => onOpenIssue(ticket.itemId)}>{keyOf(ticket.itemId, ticket.key)}</button> {ticket.title}
               {gone.has(ticket.itemId) && !result?.ok && <span className="meta-txt dense start-batch-result" data-testid="start-batch-gone">{t("agentPanel.startBatchGone")}</span>}
               {wait === "starting" && <StartProgressNote mode="run" general={items.data?.find((item) => item.id === ticket.itemId)?.workType === "general"} branch={null} />}
               {wait === "queued" && <span className="meta-txt dense start-batch-result" data-testid="start-batch-queued">{t("agentPanel.startBatchQueued")}</span>}
@@ -443,7 +443,7 @@ export function MergeBlock({ card, projectId, threadId, onOpenIssue }: { card: M
     <div className="tool-card" data-testid="merge-offer" data-state={card.state}>
       <div className="tool-head">
         <Icon name="i-merge" size={12} />
-        <button type="button" className="kref num" onClick={() => onOpenIssue(card.itemId)}>{keyOf(card.itemId, card.key)}</button> {card.title}
+        <button type="button" className="key-ref num" onClick={() => onOpenIssue(card.itemId)}>{keyOf(card.itemId, card.key)}</button> {card.title}
       </div>
       <p className="tool-row">
         {card.prUrl ? (

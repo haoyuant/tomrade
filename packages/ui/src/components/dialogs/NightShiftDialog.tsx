@@ -48,7 +48,7 @@ function Asked({ projectId, proposal, onOpenIssue }: { projectId: string; propos
             <div className="inbox-list">
               {proposal.tickets.map((ticket) => (
                 <div className="inbox-row" key={ticket.itemId} data-testid="plan-asked-ticket">
-                  <div><button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}</div>
+                  <div><button type="button" className="key-ref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}</div>
                 </div>
               ))}
             </div>
@@ -85,7 +85,7 @@ function TicketRows({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue
       {shift.tickets.map((ticket) => (
         <div className="inbox-row" key={ticket.itemId} data-testid="night-shift-ticket" data-state={ticket.state}>
           <div>
-            <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
+            <button type="button" className="key-ref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
             {(ticket.origin || ticket.joinedAt) && <Tag tone="faint">{t("nightShift.added")}</Tag>}
             {ticket.note && <p className="meta-txt">{ticket.note}</p>}
             {ticket.origin && <p className="meta-txt">{t("nightShift.addedFrom", { key: ticket.origin.fromKey, why: ticket.origin.why })}</p>}
@@ -196,7 +196,7 @@ function Timeline({ shift, onOpenIssue }: { shift: NightShiftView; onOpenIssue: 
           <li key={`${step.itemId}:${step.kind}:${step.at}`} data-testid="plan-step" data-kind={step.kind}>
             <time className="meta-txt num">{new Date(step.at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}</time>
             <span>
-              <button type="button" className="kref num" onClick={() => onOpenIssue(step.itemId)}>{step.key}</button> {t(`nightShift.step_${step.kind}` as MessageKey)}
+              <button type="button" className="key-ref num" onClick={() => onOpenIssue(step.itemId)}>{step.key}</button> {t(`nightShift.step_${step.kind}` as MessageKey)}
               {step.note && <span className="meta-txt"> · {step.note}</span>}
             </span>
           </li>

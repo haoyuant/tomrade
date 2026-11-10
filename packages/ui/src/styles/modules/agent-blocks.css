@@ -162,10 +162,10 @@
 }
 
 /* Item keys in prose: one word wide, the card one click away. */
-.kref { display: inline-block; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--fg-2); font: inherit; font-size: 0.86em; text-decoration: none; white-space: nowrap; }
-button.kref { cursor: pointer; }
-.kref:not(.dead):hover { border-color: var(--accent); color: var(--accent); }
-.kref.dead { opacity: 0.6; }
+.key-ref { display: inline-block; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--fg-2); font: inherit; font-size: 0.86em; text-decoration: none; white-space: nowrap; }
+button.key-ref { cursor: pointer; }
+.key-ref:not(.key-ref--dead):hover { border-color: var(--accent); color: var(--accent); }
+.key-ref.key-ref--dead { opacity: 0.6; }
 .tlink { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; cursor: pointer; }
 .tlink:hover { text-decoration-thickness: 2px; }
 .rf-list { border: 1px solid var(--border-soft); border-top: 0; border-radius: 0 0 var(--radius-sm) var(--radius-sm); background: var(--surface); margin: 0; }

@@ -63,7 +63,7 @@ export function UpdatesTab() {
         <>
           <hr className="rule" />
           <SectionHead title={t("plugins.revokedTitle")} />
-          <ul className="dash">
+          <ul className="dash-list">
             {revoked.data.map((r) => (
               <li key={r.id} style={{ color: "var(--danger)" }}>
                 {t("plugins.revokedLine", { id: r.id, reason: r.reason })}

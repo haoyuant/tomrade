@@ -353,7 +353,7 @@ function ProjectsHome({ setupCard }: { setupCard: boolean }) {
               </div>
               <div className="panel">
                 <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("projectsScreen.toolsExposed")}</Eyebrow>
-                <ul className="dash">
+                <ul className="dash-list">
                   <li>{t("projectsScreen.canTickets")}</li>
                   <li>{t("projectsScreen.canUndo")}</li>
                   <li>{t("projectsScreen.lockedWritesBullet")}</li>

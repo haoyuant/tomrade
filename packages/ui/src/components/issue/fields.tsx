@@ -82,16 +82,16 @@ function Picker({
   onPick: (value: string) => void;
 }) {
   return (
-    <span className="fset">
+    <span className="field-select">
       {mark}
-      <select className="fsel" aria-label={label} value={value} onChange={(e) => onPick(e.target.value)}>
+      <select className="field-select__control" aria-label={label} value={value} onChange={(e) => onPick(e.target.value)}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.name}
           </option>
         ))}
       </select>
-      <Icon className="fchev" name="i-chevdown" size={11} aria-hidden />
+      <Icon className="field-select__chevron" name="i-chevdown" size={11} aria-hidden />
     </span>
   );
 }
@@ -221,11 +221,11 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
     write(item, { labels: item.labels.filter((l) => l !== name) }, tx("fields.removedLabelToast", { name: <b>{name}</b>, key: <span className="num">{item.key}</span> }));
 
   return (
-    <span className="labset">
+    <span className="label-set">
       {item.labels.map((l) => (
-        <span key={l} className="tag faint lab">
+        <span key={l} className="tag faint label-set__chip">
           {l}
-          <button type="button" className="lab-x" aria-label={t("fields.removeLabelAria", { name: l })} title={t("fields.removeLabelTitle", { name: l })} onClick={() => remove(l)}>
+          <button type="button" className="label-set__remove" aria-label={t("fields.removeLabelAria", { name: l })} title={t("fields.removeLabelTitle", { name: l })} onClick={() => remove(l)}>
             <Icon name="i-close" size={9} />
           </button>
         </span>
@@ -234,7 +234,7 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
         <>
           <input
             autoFocus
-            className="lab-in"
+            className="label-set__input"
             list={unused.length ? listId : undefined}
             aria-label={t("fields.newLabelAria")}
             placeholder={t("fields.labelPlaceholder")}
@@ -263,7 +263,7 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
       ) : (
         <button
           type="button"
-          className="lab-add"
+          className="label-set__add"
           title={t("fields.addLabelTitle")}
           onClick={() => {
             settled.current = false;
@@ -501,14 +501,14 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
   };
 
   return (
-    <span className="labset">
+    <span className="label-set">
       {related.map((r) => (
-        <span key={r.id} className="tag faint lab dep">
-          <button type="button" className="dep-open" title={r.title} onClick={() => onOpen(r.id)}>
+        <span key={r.id} className="tag faint label-set__chip label-set__chip--dep">
+          <button type="button" className="label-set__open" title={r.title} onClick={() => onOpen(r.id)}>
             <StatusMark status={r.status} size={11} />
             <span className="num">{r.key}</span>
           </button>
-          <button type="button" className="lab-x" aria-label={t("fields.removeDepAria", { key: r.key })} title={t("fields.removeDepTitle", { key: r.key })} onClick={() => remove(r)}>
+          <button type="button" className="label-set__remove" aria-label={t("fields.removeDepAria", { key: r.key })} title={t("fields.removeDepTitle", { key: r.key })} onClick={() => remove(r)}>
             <Icon name="i-close" size={9} />
           </button>
         </span>
@@ -517,7 +517,7 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
         <>
           <input
             autoFocus
-            className="lab-in dep-in"
+            className="label-set__input label-set__input--dep"
             list={candidates.length ? listId : undefined}
             aria-label={t(mode === "blocks" ? "fields.newBlocksAria" : "fields.newBlockedByAria")}
             placeholder={t("fields.depPlaceholder")}
@@ -546,7 +546,7 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
       ) : (
         <button
           type="button"
-          className="lab-add"
+          className="label-set__add"
           title={t(mode === "blocks" ? "fields.addBlocksTitle" : "fields.addBlockedByTitle")}
           onClick={() => {
             settled.current = false;
@@ -564,7 +564,7 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
 function InlineValue({ value, kind, label, onSave }: { value: string; kind: "text" | "number"; label: string; onSave: (next: string) => void }) {
   return (
     <InlineEdit
-      className={cn("fval", kind === "number" && "num")}
+      className={cn("field-value", kind === "number" && "num")}
       type={kind === "number" ? "number" : "text"}
       step={kind === "number" ? "any" : undefined}
       inputMode={kind === "number" ? "decimal" : undefined}
@@ -621,7 +621,7 @@ export function CustomField({ item, write, def }: FieldProps & { def: FieldDef }
     case "date":
       return (
         <input
-          className="fval num"
+          className="field-value num"
           type="date"
           aria-label={def.name}
           value={typeof current === "string" ? current : ""}

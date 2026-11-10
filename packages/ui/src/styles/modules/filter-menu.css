@@ -24,12 +24,12 @@
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label);
 }
-.chk {
+.menu-row__check {
   width: 14px; height: 14px; flex-shrink: 0; border-radius: 3px;
   background: var(--bg); box-shadow: 0 0 0 1px var(--border);
   display: grid; place-items: center; color: transparent;
 }
-.menu-row[aria-checked="true"] .chk {
+.menu-row[aria-checked="true"] .menu-row__check {
   background: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--accent-on);
 }
 .menu-foot {
@@ -52,14 +52,14 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .menu-row:hover .m-sub { color: var(--fg-2); }
-.menu-row.is-radio .chk { border-radius: 50%; }
+.menu-row.is-radio .menu-row__check { border-radius: 50%; }
 /* a row that leaves this screen rather than changing it — the arrow says so */
 .menu-row.m-link { color: var(--muted); font-size: var(--text-sm); }
 .menu-row.m-link:hover { color: var(--fg); }
 .menu-row .m-go { color: var(--meta); font-size: var(--text-xs); flex-shrink: 0; }
 .menu-row.m-link:hover .m-go { color: var(--fg-2); }
 /* greyed like a disabled row, but focusable: picking it goes to where it gets fixed */
-.menu-row.is-unready .chk,
+.menu-row.is-unready .menu-row__check,
 .menu-row.is-unready .m-name { opacity: 0.45; }
 .menu-row.is-unready:hover .m-go,
 .menu-row.is-unready[data-highlighted] .m-go { color: var(--fg-2); }
