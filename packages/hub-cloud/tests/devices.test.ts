@@ -7,7 +7,7 @@ import { Storage } from "@tomradex/storage";
 import Settings from "@tomradex/settings";
 import { CloudHub } from "../src/service.js";
 
-interface Row { device_id: string; name: string; facts: unknown; last_seen_at: string; updated_at: string; removed: boolean }
+interface Row { device_id: string; name: string; facts: unknown; last_seen_at: string; updated_at: string; removed: boolean; activity?: unknown; activity_at?: string | null }
 
 /** One account's side of the cloud: its machines' table as the migration keeps it, and the presence channel. */
 const cloud = vi.hoisted(() => ({
@@ -22,6 +22,11 @@ const cloud = vi.hoisted(() => ({
   /** The account's plan: how many machines it allows, null for no limit. */
   plan: { plan: "placeholder_plus", limit: null as number | null },
   planReads: 0,
+  /** Each summary of a machine's work that reached the database, and how often the machines' table was read. */
+  told: [] as { device: string; activity: unknown }[],
+  reads: 0,
+  /** True: an account server from before the activity columns. */
+  plain: false,
   presence: {} as Record<string, Record<string, unknown>[]>,
   listeners: new Set<() => void>(),
   topics: [] as string[],
@@ -64,6 +69,13 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         cloud.rows.set(id, { device_id: id, name: old && !old.removed ? old.name : args.p_name!, facts: args.p_facts, last_seen_at: now(), updated_at: now(), removed: false });
         return { data: { state: "registered" }, error: null };
       }
+      if (name === "tomrade_report_device_activity") {
+        if (cloud.plain) return { data: null, error: { message: "Could not find the function public.tomrade_report_device_activity", code: "PGRST202" } };
+        if (!old || old.removed) return { data: false, error: null };
+        cloud.told.push({ device: id, activity: structuredClone((args as { p_activity?: unknown }).p_activity) });
+        Object.assign(old, { activity: (args as { p_activity?: unknown }).p_activity, activity_at: now(), last_seen_at: now() });
+        return { data: true, error: null };
+      }
       if (name === "tomrade_device_seen") {
         cloud.seen.push(id);
         if (old && !old.removed) old.last_seen_at = now();
@@ -71,16 +83,21 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       }
       if (!old || old.removed) return missing;
       if (name === "tomrade_rename_device") old.name = args.p_name!;
-      if (name === "tomrade_remove_device") Object.assign(old, { removed: true, facts: {} });
+      if (name === "tomrade_remove_device") Object.assign(old, { removed: true, facts: {}, activity: {}, activity_at: null });
       return { data: null, error: null };
     },
     from: (table: string) => {
+      let columns = "";
       const query = {
-        select: () => query, eq: () => query, gt: () => query, order: () => query, is: () => query,
+        select: (asked: string) => { columns = asked; return query; }, eq: () => query, gt: () => query, order: () => query, is: () => query,
         range: async () => (cloud.offline ? down() : { data: [], error: null }),
         limit: async () => {
           if (cloud.offline) return down();
-          const rows = table === "tomrade_devices" ? [...cloud.rows.values()].filter((r) => !r.removed).map(({ removed: _removed, ...row }) => row) : [];
+          if (table !== "tomrade_devices") return { data: [], error: null };
+          const wide = columns.includes("activity");
+          if (wide && cloud.plain) return { data: null, error: { message: "column tomrade_devices.activity does not exist", code: "42703" } };
+          cloud.reads++;
+          const rows = [...cloud.rows.values()].filter((r) => !r.removed).map(({ removed: _removed, activity, activity_at, ...row }) => (wide ? { ...row, activity: activity ?? {}, activity_at: activity_at ?? null } : row));
           return { data: structuredClone(rows), error: null };
         }
       };
@@ -110,6 +127,7 @@ beforeEach(() => {
   cloud.offline = false; cloud.rows.clear(); cloud.registered = []; cloud.seen = []; cloud.refuse = null;
   cloud.presence = {}; cloud.listeners.clear(); cloud.topics = [];
   cloud.plan = { plan: "placeholder_plus", limit: null }; cloud.planReads = 0;
+  cloud.told = []; cloud.reads = 0; cloud.plain = false;
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -120,7 +138,7 @@ afterEach(async () => {
 /** What the machine's other services say it can do; `agent` and `machineSetup` are read through their contracts. */
 interface Abilities { engines: { id: string; title: string; ok: boolean; need?: string }[]; git: "ready" | "missing" }
 
-async function machine(device: string, opts: { dir?: string; appVersion?: string; offlineMs?: number } = {}) {
+async function machine(device: string, opts: { dir?: string; appVersion?: string; offlineMs?: number; activityMs?: number } = {}) {
   const dir = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-devices-"));
   if (!opts.dir) dirs.push(dir);
   const bag = await fresh({ hubDir: path.join(dir, "hub"), device, plugins: [
@@ -135,7 +153,7 @@ async function machine(device: string, opts: { dir?: string; appVersion?: string
   await bag.ctx.plugin(CloudHub, {
     url: "https://example.supabase.co", publishableKey: "sb_publishable_test", cacheFile: path.join(dir, "hub-cloud.json"),
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} }, syncMs: 60_000,
-    appVersion: opts.appVersion ?? "1.0.0", deviceOfflineMs: opts.offlineMs ?? 45_000
+    appVersion: opts.appVersion ?? "1.0.0", deviceOfflineMs: opts.offlineMs ?? 45_000, deviceActivityMs: opts.activityMs ?? 0
   });
   await settle();
   await bag.ctx.cloudHub.ready;
@@ -450,4 +468,149 @@ it("a removed machine that signs in again waits for a place when the account is 
   await b.cloud.sync();
   expect(b.cloud.devicesInfo().state).toBe("ready");
   expect(cloud.registered.at(-1)).toMatchObject({ device: "win-0001", rejoin: true });
+});
+
+const session = (key: string, state = "working", extra: Record<string, unknown> = {}) => ({ projectId: "p-0001", key, title: `Ticket ${key}`, agent: "claude-code", state, startedAt: 1_700_000_000_000, branch: `${key.toLowerCase()}/work`, ...extra });
+const idle = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+
+it("tells the account what this machine works on: only the fields it names, and nothing while it is idle", async () => {
+  const a = await machine("mac-0001");
+  for (let i = 0; i < 2; i++) await a.cloud.sync();
+  expect(cloud.told).toEqual([]);
+
+  a.cloud.reportActivity("sessions", [
+    session("TOM-1", "working", { cwd: "/Users/alice/code/app", transcript: "/Users/alice/.claude/t.jsonl", prompt: "the secret plan", activity: "Bash: cat ~/.ssh/id_rsa", summary: "said a lot", worktree: "/Users/alice/wt" }),
+    // Refused where they stand, without taking the rest with them.
+    session("TOM-2", "running"),
+    session("../../etc/passwd"),
+    { ...session("TOM-3"), agent: "/usr/local/bin/claude" },
+    { ...session("TOM-4"), branch: "/Users/alice/code/app" },
+    "not a session"
+  ]);
+  a.cloud.reportActivity("nightShifts", [{ projectId: "p-0001", done: 1, total: 4, startedAt: 1_700_000_000_000, briefPath: "/Users/alice/Tomrade/brief.md", spentUsd: 3 }]);
+  await vi.waitFor(() => expect(cloud.told).toHaveLength(1));
+  expect(cloud.told[0]).toEqual({ device: "mac-0001", activity: {
+    sessions: [
+      { projectId: "p-0001", key: "TOM-1", title: "Ticket TOM-1", agent: "claude-code", state: "working", startedAt: 1_700_000_000_000, branch: "tom-1/work" },
+      { projectId: "p-0001", key: "TOM-4", title: "Ticket TOM-4", agent: "claude-code", state: "working", startedAt: 1_700_000_000_000, branch: null }
+    ],
+    nightShifts: [{ projectId: "p-0001", done: 1, total: 4, startedAt: 1_700_000_000_000 }]
+  } });
+  expect(JSON.stringify(cloud.told)).not.toMatch(/Users|alice|secret|ssh|brief|spentUsd/);
+  // This machine reads its own as it is now.
+  expect(a.cloud.devices()[0]).toMatchObject({ self: true, sessions: [{ key: "TOM-1" }, { key: "TOM-4" }], nightShifts: [{ done: 1, total: 4 }] });
+
+  // Said again the same, in another order: nothing is written.
+  a.cloud.reportActivity("sessions", [{ ...session("TOM-4"), branch: null }, session("TOM-1")]);
+  await idle();
+  await a.cloud.sync();
+  expect(cloud.told).toHaveLength(1);
+
+  // The sessions end: they leave the summary.
+  a.cloud.reportActivity("sessions", []);
+  a.cloud.reportActivity("nightShifts", []);
+  await vi.waitFor(() => expect(cloud.told).toHaveLength(2));
+  expect(cloud.told[1]!.activity).toEqual({ sessions: [], nightShifts: [] });
+});
+
+it("writes at most once per interval however often a session changes, and ends on the latest", async () => {
+  const a = await machine("mac-0001", { activityMs: 150 });
+  await a.cloud.sync();
+  a.cloud.reportActivity("sessions", [session("TOM-1", "working")]);
+  // The first change after a quiet while goes at once.
+  await vi.waitFor(() => expect(cloud.told).toHaveLength(1), { timeout: 100 });
+  // An agent that flips state many times a second.
+  for (let i = 0; i < 40; i++) {
+    a.cloud.reportActivity("sessions", [session("TOM-1", i % 2 ? "working" : "waiting")]);
+    await idle(5);
+  }
+  a.cloud.reportActivity("sessions", [session("TOM-1", "blocked")]);
+  await idle(400);
+  expect(cloud.told.length).toBeLessThanOrEqual(4);
+  expect(cloud.told.at(-1)!.activity).toMatchObject({ sessions: [{ key: "TOM-1", state: "blocked" }] });
+});
+
+it("another machine sees the change within moments, without waiting for its next pass", async () => {
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  await a.cloud.sync();
+  await settle();
+  const other = () => a.cloud.devices().find((d) => d.id === "win-0001")!;
+  expect(other()).toMatchObject({ online: true, sessions: [], nightShifts: [], activityAt: null });
+
+  const told = a.changes.n;
+  b.cloud.reportActivity("sessions", [session("WIN-7", "waiting")]);
+  // No sync is called on A: B's presence says it changed, and A reads the table.
+  await vi.waitFor(() => expect(other().sessions).toEqual([{ projectId: "p-0001", key: "WIN-7", title: "Ticket WIN-7", agent: "claude-code", state: "waiting", startedAt: 1_700_000_000_000, branch: "win-7/work" }]), { timeout: 3000 });
+  expect(a.changes.n).toBeGreaterThan(told);
+  expect(other().activityAt).toBeGreaterThan(Date.now() - 5000);
+
+  b.cloud.reportActivity("sessions", []);
+  await vi.waitFor(() => expect(other().sessions).toEqual([]), { timeout: 3000 });
+});
+
+it("a machine that went off still shows what it was last doing, and when", async () => {
+  const a = await machine("mac-0001", { offlineMs: 0 });
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  b.cloud.reportActivity("sessions", [session("WIN-7")]);
+  await vi.waitFor(() => expect(cloud.told).toHaveLength(1));
+  const saidAt = Date.parse(cloud.rows.get("win-0001")!.activity_at!);
+  await stop(b);
+  await a.cloud.sync();
+  expect(a.cloud.devices().find((d) => d.id === "win-0001")).toMatchObject({ online: false, sessions: [{ key: "WIN-7", state: "working" }], activityAt: saidAt });
+});
+
+it("keeps a summary that could not be sent owed, and sends what is current once the account is reachable", async () => {
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  cloud.offline = true;
+  a.cloud.reportActivity("sessions", [session("TOM-1")]);
+  await idle();
+  a.cloud.reportActivity("sessions", [session("TOM-2")]);
+  await idle();
+  await a.cloud.sync();
+  expect(cloud.told).toEqual([]);
+  cloud.offline = false;
+  await a.cloud.sync();
+  expect(cloud.told.map((t) => t.activity)).toMatchObject([{ sessions: [{ key: "TOM-2" }] }]);
+});
+
+it("says nothing of its work from a machine the account has no place for, or was removed from", async () => {
+  cloud.plan = { plan: "free", limit: 1 };
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  expect(b.cloud.devicesInfo().state).toBe("over-limit");
+  b.cloud.reportActivity("sessions", [session("WIN-7")]);
+  await idle();
+  await b.cloud.sync();
+  expect(cloud.told).toEqual([]);
+
+  a.cloud.reportActivity("sessions", [session("TOM-1")]);
+  await vi.waitFor(() => expect(cloud.told).toHaveLength(1));
+  await a.cloud.removeDevice("mac-0001");
+  a.cloud.reportActivity("sessions", [session("TOM-2")]);
+  await idle();
+  expect(cloud.told).toHaveLength(1);
+  expect(cloud.rows.get("mac-0001")).toMatchObject({ removed: true, activity: {} });
+});
+
+it("an account server from before machines said what they work on still lists them", async () => {
+  cloud.plain = true;
+  const a = await machine("mac-0001");
+  const warn = vi.spyOn(a.ctx.logger, "warn").mockImplementation(() => {});
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  a.cloud.reportActivity("sessions", [session("TOM-1")]);
+  await idle();
+  await a.cloud.sync();
+  expect(a.cloud.devices().map((d) => [d.id, d.sessions.length, d.activityAt === null || d.self])).toEqual([["mac-0001", 1, true], ["win-0001", 0, true]]);
+  expect(cloud.told).toEqual([]);
+  warn.mockRestore();
 });

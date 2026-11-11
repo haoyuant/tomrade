@@ -14,7 +14,11 @@ const MutationSchema = RecordSchema.omit({ version: true }).extend({
 });
 export type Mutation = z.infer<typeof MutationSchema>;
 /** One of the account's machines, as its table has it. */
-const DeviceRowSchema = z.object({ device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string() });
+const DeviceRowSchema = z.object({
+  device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string(),
+  /** What it was last working on, and when it said so; absent on a row read from an account server without them. */
+  activity: z.json().optional(), activity_at: z.string().nullable().optional()
+});
 export type DeviceRow = z.infer<typeof DeviceRowSchema>;
 const DeviceMark = z.object({
   /** The facts about this machine the account last took, as text; null while it has none. */
@@ -24,7 +28,9 @@ const DeviceMark = z.object({
   /** Removed from the account's machines on another one. */
   removed: z.boolean().default(false),
   /** The account had no room for this machine when it last asked: the limit it met. */
-  over: z.object({ limit: z.number().int().nonnegative() }).nullable().default(null)
+  over: z.object({ limit: z.number().int().nonnegative() }).nullable().default(null),
+  /** What this machine is working on, as the account last took it, as text; null while it has taken none. */
+  activity: z.string().nullable().default(null)
 });
 /** The account's plan for machines: its id, and how many it allows (null: no limit). */
 const DevicePlan = z.object({ id: z.string(), limit: z.number().int().nonnegative().nullable() });
@@ -43,7 +49,7 @@ const State = z.object({
   terms: z.string().nullable().default(null),
   /** Requests that may have reached the cloud: never changed again, since a retry must say what the first said. */
   sent: z.array(z.string()).default([]),
-  device: DeviceMark.default({ acked: null, rejoin: false, removed: false, over: null }),
+  device: DeviceMark.default({ acked: null, rejoin: false, removed: false, over: null, activity: null }),
   /** The plan as the account last said it; null until it has. */
   plan: DevicePlan.nullable().default(null),
   /** The account's machines as last read, so a machine that starts offline still shows them. */
@@ -60,7 +66,7 @@ function canonical(v: unknown): unknown {
 
 const empty = (endpoint: string): CacheState => ({
   v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null, sent: [],
-  device: { acked: null, rejoin: false, removed: false, over: null }, plan: null, devices: []
+  device: { acked: null, rejoin: false, removed: false, over: null, activity: null }, plan: null, devices: []
 });
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");

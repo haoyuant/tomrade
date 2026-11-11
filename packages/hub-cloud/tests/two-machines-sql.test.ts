@@ -59,6 +59,10 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
           await sql.db.query("select public.tomrade_device_seen($1)", [args!.p_device]);
           return { data: null, error: null };
         }
+        if (name === "tomrade_report_device_activity") {
+          const r = await sql.db.query<{ ok: boolean }>("select public.tomrade_report_device_activity($1, $2::jsonb) as ok", [args!.p_device, JSON.stringify((args as { p_activity?: unknown }).p_activity)]);
+          return { data: r.rows[0]!.ok, error: null };
+        }
         if (name === "tomrade_device_plan") return { data: (await sql.db.query<{ result: unknown }>("select public.tomrade_device_plan() as result")).rows[0]!.result, error: null };
         if (name === "tomrade_remove_device") {
           await sql.db.query("select public.tomrade_remove_device($1)", [args!.p_device]);
@@ -91,10 +95,10 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         limit: () => inTurn(async () => {
           await asUser();
           try {
-            const r = await sql.db.query<{ device_id: string; name: string; facts: unknown; last_seen_at: Date; updated_at: Date }>(
-              `select device_id, name, facts, last_seen_at, updated_at from public.${table} where removed_at is null order by device_id`
+            const r = await sql.db.query<{ device_id: string; name: string; facts: unknown; last_seen_at: Date; updated_at: Date; activity: unknown; activity_at: Date | null }>(
+              `select device_id, name, facts, last_seen_at, updated_at, activity, activity_at from public.${table} where removed_at is null order by device_id`
             );
-            return { data: r.rows.map((row) => ({ ...row, last_seen_at: new Date(row.last_seen_at).toISOString(), updated_at: new Date(row.updated_at).toISOString() })), error: null };
+            return { data: r.rows.map((row) => ({ ...row, last_seen_at: new Date(row.last_seen_at).toISOString(), updated_at: new Date(row.updated_at).toISOString(), activity_at: row.activity_at ? new Date(row.activity_at).toISOString() : null })), error: null };
           } catch (error) {
             return failed(error);
           }
@@ -148,7 +152,7 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
   `);
   await sql.db.query("insert into auth.users values ($1)", [sql.user]);
-  for (const name of ["202609100001_hub.sql", "202611110001_devices.sql", "202611110002_device_limit.sql"]) await sql.db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
+  for (const name of ["202609100001_hub.sql", "202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql"]) await sql.db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
   // These tests play more machines than the free plan allows: the account subscribes to five.
   await sql.db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', 5)", [sql.user]);
 }, 60_000);
@@ -245,8 +249,15 @@ it("each machine sees the other among the account's machines, online, and hears 
   ]);
   expect(b.cloud.devices().find((d) => d.id === "hub-c")).toMatchObject({ self: false, online: true });
 
+  // What B works on reaches A through the real table, moments after B says it.
+  const ticket = { projectId: b.project.id, key: "MOA-7", title: "Faster on Windows", agent: "codex", state: "working", startedAt: 1_700_000_000_000, branch: "moa-7/faster" };
+  b.cloud.reportActivity("sessions", [{ ...ticket, cwd: "/Users/b/code" }]);
+  b.cloud.reportActivity("nightShifts", [{ projectId: b.project.id, done: 2, total: 5, startedAt: 1_700_000_000_000 }]);
+  await vi.waitFor(() => expect(a.cloud.devices().find((d) => d.id === "hub-d")).toMatchObject({ sessions: [ticket], nightShifts: [{ done: 2, total: 5 }] }), { timeout: 10_000 });
+
   await b.cloud.goOffline();
-  expect(a.cloud.devices().find((d) => d.id === "hub-d")).toMatchObject({ online: false });
+  // Off, and still saying what it was last doing.
+  expect(a.cloud.devices().find((d) => d.id === "hub-d")).toMatchObject({ online: false, sessions: [ticket] });
   // Renamed on one, read on the other.
   await a.cloud.renameDevice("hub-d", "The other one");
   await b.cloud.sync();

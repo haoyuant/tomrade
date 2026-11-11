@@ -28,7 +28,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `ipc` | The typed channel contract between the main process and the renderer. | `ipc` | — |
 | `db` | A pool of SQLite caches (`hub.db` plus one file per project), the core schema, plugin migrations. | `db` | — |
 | `hub` | This machine: its id, its Hub folder, the projects and checkouts it knows. | `hub` | — |
-| `hub-cloud` | The optional account: Hub metadata in Supabase, encrypted sessions, an offline outbox, and the account's machines — what each can do, and which are online. | `cloudHub` | hub, projects, storage |
+| `hub-cloud` | The optional account: Hub metadata in Supabase, encrypted sessions, an offline outbox, and the account's machines — what each can do, which are online, and which tickets each is working on. | `cloudHub` | hub, projects, storage |
 | `machine-setup` | What this machine still lacks: finds git, and installs it with the system's own mechanism on a click where there is one (macOS Command Line Tools, winget). | `machineSetup` | — |
 | `settings` | File-backed settings; plugins register sections by zod schema. | `settings` | hub, oplog, tools |
 | `write` | The write protocol: the `write/pre-commit` waterfall and the default policies. | — | — |
