@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import type { Context } from "cordis";
 import { z } from "zod";
+import type {} from "@tomradex/change-review";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
@@ -21,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
 import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
 import { IDLE_SECTION, IDLE_SWEEP_MS, IDLE_TAIL_LINES, IdleSettings, IdleTracker } from "./idle.js";
-import type { ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import type { ChangeReviewAsk, ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
@@ -1348,6 +1349,31 @@ function apply(ctx: Context, config: Config) {
   };
   const sessionOf = (projectId: string, id: string) => ctx.codeLink.sessionsOf(projectId, undefined, { ids: [id] }).find((s) => s.id === id);
 
+  /** One act of the review of a ticket's changes, as the app window's calls do it. Without the plugin there are no comments and nowhere to send any. */
+  const reviewAsk = async (projectId: string, itemId: string, ask: ChangeReviewAsk): Promise<unknown> => {
+    if (ask.op === "markReviewed") return ctx.codeLink.markReviewed(projectId, itemId, { linkId: ask.linkId });
+    const review = ctx.get("changeReview");
+    if (!review) {
+      if (ask.op === "comments") return [];
+      if (ask.op === "target") return { kind: "none" };
+      throw new Error("change review is not running");
+    }
+    switch (ask.op) {
+      case "comments":
+        return review.comments(projectId, itemId);
+      case "add":
+        return review.add(projectId, itemId, ask.draft);
+      case "edit":
+        return review.edit(projectId, ask.id, ask.edit);
+      case "remove":
+        return review.remove(projectId, ask.id);
+      case "target":
+        return review.target(projectId, itemId);
+      case "send":
+        return review.send(projectId, itemId, { deliver: ask.deliver });
+    }
+  };
+
   const turn = (win: Open, cell: string) => {
     const next = (win.turns.get(cell) ?? 0) + 1;
     win.turns.set(cell, next);
@@ -1827,6 +1853,16 @@ function apply(ctx: Context, config: Config) {
         if (opened && !opened.editor) ctx.emit("desktop/open-path", opened.file);
         return win.closed ? undefined : post(win, { type: "changedOpened", token: m.token, where: opened ? (opened.editor ?? "system") : null });
       }
+      case "changeReview": {
+        let value: unknown = null;
+        let error: string | undefined;
+        try {
+          value = await reviewAsk(projectId, m.itemId, m.ask);
+        } catch (err) {
+          error = errorMessage(err);
+        }
+        return win.closed ? undefined : post(win, { type: "changeReviewDone", token: m.token, value, ...(error ? { error } : {}) });
+      }
       case "openPr": {
         const s = sessionOf(projectId, m.sessionId);
         const itemId = s?.itemIds[0];
@@ -1971,6 +2007,10 @@ function apply(ctx: Context, config: Config) {
     });
   };
 
+  ctx.on("changeReview/changed", (projectId, itemId) => {
+    const win = open.get(projectId);
+    if (win && !win.closed) post(win, { type: "changeReviewChanged", itemId });
+  });
   ctx.on("codeLink/changed", (projectId) => {
     historyChanged(projectId);
     watchSoon();

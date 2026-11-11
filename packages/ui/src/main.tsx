@@ -6,6 +6,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
 import type {} from "@tomradex/repos";
+import type {} from "@tomradex/change-review";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/doctor";
 import type {} from "@tomradex/files";
@@ -109,6 +110,7 @@ if (window.tomrade) {
   subscribe("codeLink.startDefaultsChanged", () => void queryClient.invalidateQueries({ queryKey: keys.codeLink.startDefaults }));
   subscribe("codeLink.cellsChanged", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.codeLink.cells(projectId) }));
   subscribe("codeLink.sessionsChanged", sessionsRefresher(queryClient));
+  subscribe("changeReview.changed", (projectId, itemId) => void queryClient.invalidateQueries({ queryKey: keys.changeReview.comments(projectId, itemId) }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.

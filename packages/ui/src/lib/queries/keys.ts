@@ -136,6 +136,9 @@ export const keys = {
     models: (provider: string, baseURL: string | undefined, apiKey: string) => ["llm.models", provider, baseURL ?? "", apiKey] as const
   },
 
+  changeReview: {
+    comments: (projectId: string, itemId: string) => ["changeReview", projectId, "comments", itemId] as const
+  },
   codeLink: {
     root: ["codeLink"] as const,
     all: (projectId: string) => ["codeLink", projectId] as const,

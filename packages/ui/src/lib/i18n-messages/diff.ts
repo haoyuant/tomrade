@@ -70,7 +70,21 @@ export const diff = {
     commentsCount: "Comments ({{count}})",
     commentsToggle: "Show or hide the list of comments",
     commentsEmpty: "No comments yet. Point at a line and press + to write one.",
-    commentsOnFile: "{{count}} open comments"
+    commentsOnFile: "{{count}} open comments",
+    scopeSince: "Since my last review · {{when}}",
+    markReviewed: "Mark as reviewed",
+    markReviewedHint: "Remembers what is here now, so that later you can look at only what changed since.",
+    reviewedAt: "Last reviewed {{when}}",
+    markedReviewed: "Marked as reviewed. “Since my last review” starts from here.",
+    markReviewedNone: "Nothing to mark: this branch is merged, or is not on this machine.",
+    sendCommentsIdle: "Send comments",
+    sendComments: "Send comments to {{agent}} ({{count}})",
+    sendCommentsHint: "Hands every open comment not yet sent to the agent working this ticket, in one message.",
+    copyComments: "Copy comments ({{count}})",
+    copyCommentsHint: "No session of this ticket can take them from here. Copy them and paste them to your agent.",
+    commentsSent: "Comments sent to {{agent}} ({{count}}).",
+    commentsCopied: "Comments copied ({{count}}). Paste them to your agent.",
+    commentsCopyFailed: "The comments could not be copied to the clipboard."
   },
   zh: {
     summary: "{{count}} 个文件 · +{{additions}} −{{deletions}}",
@@ -143,6 +157,20 @@ export const diff = {
     commentsCount: "评论（{{count}}）",
     commentsToggle: "展开或收起评论列表",
     commentsEmpty: "还没有评论。把鼠标移到一行上，点 + 写一条。",
-    commentsOnFile: "{{count}} 条未解决的评论"
+    commentsOnFile: "{{count}} 条未解决的评论",
+    scopeSince: "自上次审阅以来 · {{when}}",
+    markReviewed: "标记为已审阅",
+    markReviewedHint: "记下现在的样子，之后可以只看这之后的改动。",
+    reviewedAt: "上次审阅：{{when}}",
+    markedReviewed: "已标记为已审阅。“自上次审阅以来”从现在算起。",
+    markReviewedNone: "无法标记：这个分支已合并，或不在这台机器上。",
+    sendCommentsIdle: "发送评论",
+    sendComments: "发送 {{count}} 条评论给 {{agent}}",
+    sendCommentsHint: "把所有还没发过的未解决评论，一次发给正在做这张工单的 Agent。",
+    copyComments: "复制 {{count}} 条评论",
+    copyCommentsHint: "这张工单没有能从这里送达的会话。复制后粘贴给你的 Agent。",
+    commentsSent: "已把 {{count}} 条评论发给 {{agent}}。",
+    commentsCopied: "已复制 {{count}} 条评论，粘贴给你的 Agent 即可。",
+    commentsCopyFailed: "评论没能复制到剪贴板。"
   }
 };

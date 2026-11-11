@@ -70,6 +70,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/agent-setup": "workspace:*",
     "@tomradex/boards": "workspace:*",
+    "@tomradex/change-review": "workspace:*",
     "@tomradex/code-link": "workspace:*",
     "@tomradex/code-sessions": "workspace:*",
     "@tomradex/community": "workspace:*",

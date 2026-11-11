@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../agent" },
+    { "path": "../change-review" },
     { "path": "../contracts" },
     { "path": "../code-link" },
     { "path": "../contributions" },

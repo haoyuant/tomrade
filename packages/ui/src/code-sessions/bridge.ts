@@ -1,5 +1,5 @@
 import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView, ReviewCursor } from "@tomradex/code-link";
-import type { WindowMessage, WindowPost, WindowState } from "@tomradex/code-sessions";
+import type { ChangeReviewAsk, WindowMessage, WindowPost, WindowState } from "@tomradex/code-sessions";
 
 export interface Look {
   theme: string;
@@ -46,13 +46,14 @@ type HistoryPage = Extract<WindowPost, { type: "historyPage" }>;
 type HistorySaid = Extract<WindowPost, { type: "historySaid" }>;
 type Reviewed = Extract<WindowPost, { type: "reviewFound" }>;
 /** A post that answers one ask, by its token. */
-type Answer = HistoryPage | HistorySaid | Extract<WindowPost, { type: "changesRead" | "changeFileRead" | "changedOpened" }>;
+type Answer = HistoryPage | HistorySaid | Extract<WindowPost, { type: "changesRead" | "changeFileRead" | "changedOpened" | "changeReviewDone" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, Set<(post: CellPost) => void>>();
 const toasts = new Set<(text: string) => void>();
 const shownIn = new Set<(post: ShownIn) => void>();
 const tails = new Set<(post: Tails) => void>();
 const historyChanged = new Set<() => void>();
+const reviewChanged = new Set<(itemId: string) => void>();
 /** Each History ask, by its token, waiting for its answer. */
 const answers = new Map<number, (post: Answer) => void>();
 /** Each card's answer on its way, by its token. */
@@ -70,10 +71,11 @@ surface()?.onMessage((raw) => {
   }
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "tails") for (const listener of tails) listener(post);
-  else if (post.type === "historyPage" || post.type === "historySaid" || post.type === "changesRead" || post.type === "changeFileRead" || post.type === "changedOpened") {
+  else if (post.type === "historyPage" || post.type === "historySaid" || post.type === "changesRead" || post.type === "changeFileRead" || post.type === "changedOpened" || post.type === "changeReviewDone") {
     answers.get(post.token)?.(post);
     answers.delete(post.token);
   } else if (post.type === "historyChanged") for (const listener of historyChanged) listener();
+  else if (post.type === "changeReviewChanged") for (const listener of reviewChanged) listener(post.itemId);
   else if (post.type === "reviewFound") for (const listener of reviewed) listener(post);
   else for (const listener of cells.get(post.cell) ?? []) listener(post);
 });
@@ -133,6 +135,19 @@ export const readChangeFile = (itemId: string, opts: ChangesOptions & ChangeFile
 /** One changed file opened in an editor, or by the system's own opener. */
 export const openChanged = (itemId: string, opts: { linkId?: string; path: string }) =>
   ask<Extract<Answer, { type: "changedOpened" }>>((token) => ({ type: "openChanged", token, itemId, ...opts })).then((post) => post.where);
+
+/** One act of the review of a ticket's changes; refused, it throws the plugin's words. */
+export const changeReview = <T>(itemId: string, asked: ChangeReviewAsk): Promise<T> =>
+  ask<Extract<Answer, { type: "changeReviewDone" }>>((token) => ({ type: "changeReview", token, itemId, ask: asked })).then((post) => {
+    if (post.error) throw new Error(post.error);
+    return post.value as T;
+  });
+
+/** A ticket's comments changed, here or in the app window. */
+export function onChangeReviewChanged(listener: (itemId: string) => void): () => void {
+  reviewChanged.add(listener);
+  return () => reviewChanged.delete(listener);
+}
 
 /** A session ended or a conversation moved while History is open. */
 export function onHistoryChanged(listener: () => void): () => void {

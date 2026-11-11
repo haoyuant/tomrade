@@ -1,3 +1,4 @@
+import type { ReviewDraft, ReviewEdit } from "@tomradex/change-review";
 import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView, Editor, ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
@@ -241,6 +242,16 @@ export interface WindowState {
 }
 
 /** What the window asks for. */
+/** What the window asks of the review of a ticket's changes: the comments on its lines, where they would go, and the review's mark. */
+export type ChangeReviewAsk =
+  | { op: "comments" }
+  | { op: "add"; draft: ReviewDraft }
+  | { op: "edit"; id: string; edit: ReviewEdit }
+  | { op: "remove"; id: string }
+  | { op: "target" }
+  | { op: "send"; deliver?: boolean }
+  | { op: "markReviewed"; linkId?: string };
+
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
@@ -315,6 +326,8 @@ export type WindowMessage =
   | { type: "changeFile"; token: number; itemId: string; opts: ChangesOptions & ChangeFileOptions }
   /** One changed file opened in an editor, or by the system when none is on PATH: answered with `changedOpened`. */
   | { type: "openChanged"; token: number; itemId: string; linkId?: string; path: string }
+  /** One act of the review of a ticket's changes: answered with `changeReviewDone`. */
+  | { type: "changeReview"; token: number; itemId: string; ask: ChangeReviewAsk }
   | { type: "focusHerdr"; sessionId: string }
   /** Bring forward the terminal app an outside session runs in. */
   | { type: "switchTo"; sessionId: string }
@@ -364,6 +377,10 @@ export type WindowPost =
   | { type: "changeFileRead"; token: number; file: ChangedFile | null }
   /** Where the changed file went; null when it is not on this machine. */
   | { type: "changedOpened"; token: number; where: Editor | "system" | null }
+  /** What the act came to, as the app window's call of the same name answers; `error` when it was refused. */
+  | { type: "changeReviewDone"; token: number; value: unknown; error?: string }
+  /** A ticket's comments changed: an open diff of it reads them again. */
+  | { type: "changeReviewChanged"; itemId: string }
   /** A session ended or a conversation moved while History is open: its first page is read again. */
   | { type: "historyChanged" }
   /** What the look back found for ⌘K's history. */
