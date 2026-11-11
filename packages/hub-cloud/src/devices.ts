@@ -302,15 +302,18 @@ export class Devices {
     const { data, error } = await client.rpc("tomrade_register_device", { p_device: deviceId, p_name: this.hostname(), p_facts: facts, p_rejoin: cache.data.device.rejoin });
     // Without a code the request never reached the database: it stays owed, and the next pass sends it.
     if (error && !error.code) throw new Error(error.message);
-    if (error) {
+    // An answer that is none of the three: an account server that does not know this machine's question.
+    const answer = error ? null : Registered.safeParse(data);
+    if (error || !answer?.success) {
+      const said = error?.message ?? "the account answered with nothing this build reads";
       // Refused: an account server older than this build, say. Said once, not every half minute.
-      if (this.warned !== error.message) this.host.home.logger.warn(`devices: this machine was not registered — ${error.message}`);
-      this.warned = error.message;
+      if (this.warned !== said) this.host.home.logger.warn(`devices: this machine was not registered — ${said}`);
+      this.warned = said;
       return;
     }
     this.warned = null;
     this.askedAt = Date.now();
-    const result = Registered.parse(data);
+    const result = answer.data;
     const before = cache.data.device;
     if (result.state === "over_limit") {
       // Still owed, and still allowed back if it was removed: a place may open.

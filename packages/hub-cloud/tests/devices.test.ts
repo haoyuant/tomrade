@@ -27,6 +27,8 @@ const cloud = vi.hoisted(() => ({
   reads: 0,
   /** True: an account server from before the activity columns. */
   plain: false,
+  /** True: the account answers a registration with nothing, as a stand-in that knows no such function does. */
+  blank: false,
   presence: {} as Record<string, Record<string, unknown>[]>,
   listeners: new Set<() => void>(),
   topics: [] as string[],
@@ -62,6 +64,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       const old = cloud.rows.get(id);
       if (name === "tomrade_register_device") {
         if (cloud.refuse) return { data: null, error: { message: cloud.refuse, code: "PGRST202" } };
+        if (cloud.blank) return { data: null, error: null };
         cloud.registered.push({ device: id, facts: args.p_facts, rejoin: !!args.p_rejoin });
         if (old?.removed && !args.p_rejoin) return { data: { state: "removed" }, error: null };
         const used = [...cloud.rows.values()].filter((r) => !r.removed).length;
@@ -127,7 +130,7 @@ beforeEach(() => {
   cloud.offline = false; cloud.rows.clear(); cloud.registered = []; cloud.seen = []; cloud.refuse = null;
   cloud.presence = {}; cloud.listeners.clear(); cloud.topics = [];
   cloud.plan = { plan: "placeholder_plus", limit: null }; cloud.planReads = 0;
-  cloud.told = []; cloud.reads = 0; cloud.plain = false;
+  cloud.told = []; cloud.reads = 0; cloud.plain = false; cloud.blank = false;
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -613,4 +616,18 @@ it("an account server from before machines said what they work on still lists th
   expect(a.cloud.devices().map((d) => [d.id, d.sessions.length, d.activityAt === null || d.self])).toEqual([["mac-0001", 1, true], ["win-0001", 0, true]]);
   expect(cloud.told).toEqual([]);
   warn.mockRestore();
+});
+
+it("an answer it cannot read leaves this machine unregistered, said once, and Hub sync alone", async () => {
+  cloud.blank = true;
+  const a = await machine("mac-0001");
+  const warn = vi.spyOn(a.ctx.logger, "warn").mockImplementation(() => {});
+  for (let i = 0; i < 3; i++) await a.cloud.sync();
+  expect(a.cloud.info().status.state).toBe("synced");
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "pending", devices: [] });
+  expect(warn.mock.calls.filter((args) => /not registered/.test(args.map(String).join(" ")))).toHaveLength(1);
+  warn.mockRestore();
+  cloud.blank = false;
+  await a.cloud.sync();
+  expect(a.cloud.devicesInfo().state).toBe("ready");
 });

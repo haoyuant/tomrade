@@ -15,6 +15,7 @@ import { PluginsPanel } from "./PluginsPanel";
 import { AgentAccessSection } from "./settings/AgentAccessSection";
 import { AssistantPane } from "./settings/AssistantPane";
 import { PlaybooksPane } from "./settings/PlaybooksPane";
+import { DevicesPane } from "./settings/DevicesPane";
 import { PANE_EXTRAS, PluginPane } from "./settings/PluginPane";
 import { ScopeTag } from "./settings/ScopeTag";
 import { AppIconSection } from "./settings/AppIconSection";
@@ -209,6 +210,7 @@ export function SettingsDialog({
       group: "app",
       render: () => <HubPane />
     },
+    { id: "devices", label: t("devices.label"), icon: "i-monitor", group: "app", render: () => <DevicesPane onLeave={() => onOpenChange(false)} /> },
     { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(
       (section): Pane => ({
