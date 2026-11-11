@@ -34,10 +34,11 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
   const n = (value: number) => new Intl.NumberFormat(f.lang, { maximumFractionDigits: 1 }).format(value);
   const compact = (value: number) => new Intl.NumberFormat(f.lang, { notation: "compact", maximumFractionDigits: 1 }).format(value);
   const fill = (text: string, slots: Record<string, number | string>) => text.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(slots[k] ?? ""));
-  type Patch = Partial<Record<"days" | "region" | "metric" | "lang" | "feature", string>>;
+  type Patch = Partial<Record<"days" | "region" | "metric" | "lang" | "feature" | "internal", string>>;
   // Every link carries the whole view; a card's window is written only where it differs from the page's.
   const query = (patch: Patch = {}, windows: Partial<Record<Card, WindowDays>> = {}) => {
-    const params = new URLSearchParams({ days: String(f.days), region: f.region, metric: f.metric, lang: f.lang, ...(f.feature ? { feature: f.feature } : {}), ...patch });
+    const params = new URLSearchParams({ days: String(f.days), region: f.region, metric: f.metric, lang: f.lang, ...(f.feature ? { feature: f.feature } : {}), internal: f.internal, ...patch });
+    if (params.get("internal") === "exclude") params.delete("internal");
     const days = Number(params.get("days"));
     for (const [card, w] of Object.entries({ ...f.windows, ...windows })) if (w !== days) params.set(`w_${card}`, String(w));
     return `?${params.toString()}`;
@@ -211,7 +212,8 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
   function insightsCard(state: InsightsState): string {
     const { entry } = state;
     const time = (iso: string) => iso.replace("T", " ").slice(0, 16);
-    const other = entry && (entry.region !== f.region || entry.days !== f.days);
+    const internalOf = (e: { internal?: Filters["internal"] }) => e.internal ?? "include";
+    const other = entry && (entry.region !== f.region || entry.days !== f.days || internalOf(entry) !== f.internal);
     const button = `<form method="post" action="/insights${escape(query())}" class="generate"><button type="submit"${state.running ? " disabled" : ""}>${escape(state.running ? t("generating") : entry && !other ? t("regenerate") : t("generate"))}</button></form>`;
     const notices = [
       state.error ? `<p role="alert" class="notice-inline error">${escape(state.error.kind === "unavailable" ? t("insightsUnavailable") : fill(t("insightsFailed"), { at: time(state.error.at) }))}</p>` : "",
@@ -229,7 +231,7 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
           <div><h3>${escape(t("suggestions"))}</h3>${list(insights.suggestions.map((s) => `<li><strong>${tag(s.priority, t(s.priority))}${escape(s.title)}</strong><span>${escape(s.detail)}</span></li>`))}</div>
         </div>`;
     }
-    const basis = entry ? `<span class="pill">${escape(fill(t("insightsBasis"), { from: entry.from, to: entry.to, region: t(entry.region), at: time(entry.generated_at) }))}${entry.cost_usd !== null ? ` · ${escape(fill(t("insightsCost"), { cost: entry.cost_usd.toFixed(3) }))}` : ""}</span>` : "";
+    const basis = entry ? `<span class="pill">${escape(fill(t("insightsBasis"), { from: entry.from, to: entry.to, region: t(entry.region), at: time(entry.generated_at) }))} · ${escape(t(internalOf(entry) === "exclude" ? "internalExclude" : "internalInclude"))}${entry.cost_usd !== null ? ` · ${escape(fill(t("insightsCost"), { cost: entry.cost_usd.toFixed(3) }))}` : ""}</span>` : "";
     return card({ id: "insights", title: t("insights"), hint: t("insightsHint"), span: "s12 ai", extra: `${basis}${button}`, body: notices + body });
   }
 
@@ -237,6 +239,7 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
   return `<!doctype html><html lang="${f.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${t("title")}</title><style>${STYLE}</style></head>
 <body><div class="top"><div class="brand"><span class="mark" aria-hidden="true"></span><div><h1>${t("title")}</h1><p>${t("subtitle")}</p></div></div>
   <div class="actions">${latest !== undefined ? `<span class="pill"><span class="dot${latest ? "" : " off"}"></span>${escape(t("latest"))} · ${escape(latest ? latest.replace("T", " ").slice(0, 16) : t("none"))}</span>` : ""}
+  <span title="${escape(t("internalHint"))}">${segmented(t("internalIds"), [["exclude", t("internalExclude"), href({ internal: "exclude" })], ["include", t("internalInclude"), href({ internal: "include" })]], f.internal)}</span>
   ${segmented(t("language"), [["zh", "中文", href({ lang: "zh" })], ["en", "EN", href({ lang: "en" })]], f.lang)}
   <a class="button" href="${escape(href({}))}">${escape(t("refresh"))}</a></div></div>
 <main><nav class="filters" aria-label="${escape(t("range"))}">
