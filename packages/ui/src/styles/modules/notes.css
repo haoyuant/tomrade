@@ -1,5 +1,6 @@
 /* Notes: writing in place, links between files, the search pane */
-.files-mode-bar { margin-bottom: var(--space-1); }
+/* Pinned while the file scrolls under it, so Read / Edit / Split is always at hand; its band covers the gutters too. */
+.files-mode-bar { position: sticky; top: 0; z-index: 2; margin: calc(-1 * var(--space-2)) calc(-1 * var(--files-gutter)) var(--space-1); padding: var(--space-2) var(--files-gutter); background: var(--bg); }
 .files-mode button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; }
 .files-save-state { font-size: var(--text-xs); }
 .files-save-state[data-state="dirty"] { color: var(--fg-2); }
