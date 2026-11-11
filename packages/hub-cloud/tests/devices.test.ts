@@ -19,6 +19,9 @@ const cloud = vi.hoisted(() => ({
   seen: [] as string[],
   /** Set: the database refuses a registration with this message, as one without the migration would. */
   refuse: null as string | null,
+  /** The account's plan: how many machines it allows, null for no limit. */
+  plan: { plan: "placeholder_plus", limit: null as number | null },
+  planReads: 0,
   presence: {} as Record<string, Record<string, unknown>[]>,
   listeners: new Set<() => void>(),
   topics: [] as string[],
@@ -46,12 +49,18 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         const op = (args as unknown as { p_mutation: { kind: string; key: string; value: unknown; base_version: number } }).p_mutation;
         return { data: { ok: true, record: { kind: op.kind, key: op.key, value: op.value, version: op.base_version + 1 } }, error: null };
       }
+      if (name === "tomrade_device_plan") {
+        cloud.planReads++;
+        return { data: { ...cloud.plan, used: [...cloud.rows.values()].filter((r) => !r.removed).length }, error: null };
+      }
       const id = args.p_device!;
       const old = cloud.rows.get(id);
       if (name === "tomrade_register_device") {
         if (cloud.refuse) return { data: null, error: { message: cloud.refuse, code: "PGRST202" } };
         cloud.registered.push({ device: id, facts: args.p_facts, rejoin: !!args.p_rejoin });
         if (old?.removed && !args.p_rejoin) return { data: { state: "removed" }, error: null };
+        const used = [...cloud.rows.values()].filter((r) => !r.removed).length;
+        if ((!old || old.removed) && cloud.plan.limit !== null && used >= cloud.plan.limit) return { data: { state: "over_limit", ...cloud.plan }, error: null };
         cloud.rows.set(id, { device_id: id, name: old && !old.removed ? old.name : args.p_name!, facts: args.p_facts, last_seen_at: now(), updated_at: now(), removed: false });
         return { data: { state: "registered" }, error: null };
       }
@@ -100,6 +109,7 @@ const contexts: { fiber: { dispose(): Promise<unknown> } }[] = [];
 beforeEach(() => {
   cloud.offline = false; cloud.rows.clear(); cloud.registered = []; cloud.seen = []; cloud.refuse = null;
   cloud.presence = {}; cloud.listeners.clear(); cloud.topics = [];
+  cloud.plan = { plan: "placeholder_plus", limit: null }; cloud.planReads = 0;
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -149,7 +159,7 @@ it("registers this machine with what it can do, and no path or credential", asyn
     { id: "claude-code", title: "Claude Code", ok: true },
     { id: "pi", title: "Pi", ok: false, need: "install" }
   ];
-  expect(a.cloud.devicesInfo()).toEqual({ state: "pending", devices: [] });
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "pending", devices: [] });
   await a.cloud.sync();
 
   expect(cloud.registered).toHaveLength(1);
@@ -208,7 +218,7 @@ it("keeps a change made offline owed, and sends it once the account is reachable
   const a = await machine("mac-0001");
   await a.cloud.sync();
   expect(cloud.registered).toEqual([]);
-  expect(a.cloud.devicesInfo()).toEqual({ state: "pending", devices: [] });
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "pending", devices: [] });
   cloud.offline = false;
   await a.cloud.sync();
   expect(cloud.registered).toHaveLength(1);
@@ -232,7 +242,7 @@ it("an account server without the devices table leaves Hub sync alone", async ()
   const warn = vi.spyOn(a.ctx.logger, "warn").mockImplementation(() => {});
   for (let i = 0; i < 3; i++) await a.cloud.sync();
   expect(a.cloud.info().status.state).toBe("synced");
-  expect(a.cloud.devicesInfo()).toEqual({ state: "pending", devices: [] });
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "pending", devices: [] });
   expect(warn.mock.calls.filter((args) => /not registered/.test(args.map(String).join(" ")))).toHaveLength(1);
   warn.mockRestore();
 });
@@ -318,7 +328,7 @@ it("a removed machine stays out until someone signs in on it again", async () =>
 
   // Still running with its session: it learns it was removed, leaves the presence, and does not come back by itself.
   for (let i = 0; i < 3; i++) await b.cloud.sync();
-  expect(b.cloud.devicesInfo()).toEqual({ state: "removed", devices: [] });
+  expect(b.cloud.devicesInfo()).toMatchObject({ state: "removed", devices: [] });
   expect(cloud.presence["win-0001"]).toBeUndefined();
   b.able.git = "missing";
   const sent = cloud.registered.length;
@@ -345,11 +355,99 @@ it("removing this machine takes it out at once, and signing out takes it offline
   await settle();
 
   await b.cloud.removeDevice("win-0001");
-  expect(b.cloud.devicesInfo()).toEqual({ state: "removed", devices: [] });
+  expect(b.cloud.devicesInfo()).toMatchObject({ state: "removed", devices: [] });
 
   cloud.seen = [];
   await a.cloud.signOut();
   expect(cloud.presence["mac-0001"]).toBeUndefined();
   expect(cloud.seen).toEqual(["mac-0001"]);
-  expect(a.cloud.devicesInfo()).toEqual({ state: "signed-out", devices: [] });
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "signed-out", devices: [] });
+});
+
+it("a third machine on the free plan has no place: it says so, lists the two that do, and its Hub still syncs", async () => {
+  cloud.plan = { plan: "free", limit: 2 };
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  const c = await machine("lin-0001");
+  await c.cloud.sync();
+  await settle();
+
+  const info = c.cloud.devicesInfo();
+  expect(info.state).toBe("over-limit");
+  expect(info.plan).toEqual({ id: "free", limit: 2, subscribeUrl: "https://tomrade.com/pricing/" });
+  // The machines that hold the places, to remove one from here; it is not among them, and sees none as online.
+  expect(info.devices.map((d) => [d.id, d.self, d.online])).toEqual([["mac-0001", false, false], ["win-0001", false, false]]);
+  expect(cloud.rows.has("lin-0001")).toBe(false);
+  expect(cloud.presence["lin-0001"]).toBeUndefined();
+  expect(c.cloud.info().status.state).toBe("synced");
+  expect(a.cloud.devicesInfo()).toMatchObject({ state: "ready", plan: { id: "free", limit: 2 } });
+
+  // It does not ask again on every pass.
+  const asked = cloud.registered.length;
+  for (let i = 0; i < 3; i++) await c.cloud.sync();
+  expect(cloud.registered).toHaveLength(asked);
+  expect(c.cloud.devicesInfo().state).toBe("over-limit");
+
+  // One of the two is removed from the machine that has no place: it takes the place.
+  await c.cloud.removeDevice("win-0001");
+  await c.cloud.sync();
+  await settle();
+  expect(c.cloud.devicesInfo().state).toBe("ready");
+  expect(c.cloud.devices().map((d) => d.id)).toEqual(["lin-0001", "mac-0001"]);
+  expect(c.cloud.devices()[0]).toMatchObject({ self: true, online: true });
+  expect(cloud.presence["lin-0001"]).toBeDefined();
+});
+
+it("a machine with no place takes one when the account subscribes, once asked to check again", async () => {
+  cloud.plan = { plan: "free", limit: 2 };
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  const c = await machine("lin-0001");
+  await c.cloud.sync();
+  expect(c.cloud.devicesInfo().state).toBe("over-limit");
+
+  cloud.plan = { plan: "placeholder_plus", limit: null };
+  await c.cloud.sync();
+  expect(c.cloud.devicesInfo().state).toBe("over-limit");
+  expect(await c.cloud.recheckDevices()).toMatchObject({ state: "ready", plan: { id: "placeholder_plus", limit: null } });
+  expect(c.cloud.devices().map((d) => d.id).sort()).toEqual(["lin-0001", "mac-0001", "win-0001"]);
+  // The others read the new plan when the number of machines changes.
+  await a.cloud.sync();
+  expect(a.cloud.devicesInfo().plan).toMatchObject({ id: "placeholder_plus", limit: null });
+});
+
+it("reads the plan when a run begins and when the machines change, not on every pass", async () => {
+  cloud.plan = { plan: "free", limit: 2 };
+  const a = await machine("mac-0001");
+  for (let i = 0; i < 4; i++) await a.cloud.sync();
+  expect(cloud.planReads).toBe(1);
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  for (let i = 0; i < 3; i++) await a.cloud.sync();
+  expect(cloud.planReads).toBe(3);
+});
+
+it("a removed machine that signs in again waits for a place when the account is full", async () => {
+  cloud.plan = { plan: "free", limit: 2 };
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  await a.cloud.removeDevice("win-0001");
+  const c = await machine("lin-0001");
+  await c.cloud.sync();
+  expect(c.cloud.devicesInfo().state).toBe("ready");
+
+  await b.cloud.sync();
+  expect(b.cloud.devicesInfo().state).toBe("removed");
+  await b.cloud.signIn("user@example.test", "password");
+  expect(b.cloud.devicesInfo()).toMatchObject({ state: "over-limit", plan: { limit: 2 } });
+  await b.cloud.removeDevice("lin-0001");
+  await b.cloud.sync();
+  expect(b.cloud.devicesInfo().state).toBe("ready");
+  expect(cloud.registered.at(-1)).toMatchObject({ device: "win-0001", rejoin: true });
 });
