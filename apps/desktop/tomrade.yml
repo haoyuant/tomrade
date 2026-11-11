@@ -81,6 +81,8 @@ modules:
     title: Night shift
   - id: prFeedback
     title: PR feedback
+  - id: changeReview
+    title: Change review
   - id: pet
     title: Pet
   - id: alerts
@@ -472,6 +474,10 @@ plugins:
   # back to the agent working it. Off until Settings says so; runs on this machine.
   - id: pr-feedback
     name: "@tomradex/pr-feedback"
+  # A person's comments on the lines of a ticket's diff, and the one act that hands
+  # them to the agent working the ticket. Kept on this machine.
+  - id: change-review
+    name: "@tomradex/change-review"
   # Tells the person when a run seems stuck, repeats itself or goes nowhere. It
   # only tells: a run is never stopped or changed.
   - id: watchdog
