@@ -4,6 +4,12 @@ import type { Terminal } from "@xterm/xterm";
 type SelectionTerminal = Pick<Terminal, "rows" | "cols" | "buffer" | "onSelectionChange" | "onWriteParsed" | "getSelectionPosition" | "select" | "clearSelection">;
 type Point = [col: number, line: number];
 type Range = { start: Point; end: Point };
+
+/**
+ * Where a double-click's word ends: xterm's own marks, and the full-width ones. Chinese has no spaces, so without
+ * these a word runs through the whole sentence.
+ */
+export const wordSeparator = " ()[]{}',\"`\u3000，。、；：！？（）［］｛｝【】《》〈〉「」『』〔〕“”‘’…—·～";
 /** Asks the pane to scroll, as the wheel does. */
 type Scroll = (direction: "up" | "down", lines: number) => void;
 
