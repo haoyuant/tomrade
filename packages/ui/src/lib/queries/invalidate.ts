@@ -80,7 +80,8 @@ export function invalidateFiles(qc: QueryClient, projectId: string, paths?: read
  * also by the board's badges and the other contributions. Tickets and threads are not asked again.
  */
 export function invalidateSessions(qc: QueryClient, projectId: string, moved: boolean): void {
-  for (const key of [keys.codeLink.sessionsAll(projectId), keys.codeLink.recentSessions(projectId), keys.codeLink.timelineAll(projectId), keys.codeLink.handoffAll(projectId), keys.codeLink.reviewAll(projectId), keys.sectionsAll(projectId)]) {
+  // An open diff too: a session's hook is the nearest thing to hearing its working tree change.
+  for (const key of [keys.codeLink.sessionsAll(projectId), keys.codeLink.recentSessions(projectId), keys.codeLink.timelineAll(projectId), keys.codeLink.handoffAll(projectId), keys.codeLink.reviewAll(projectId), keys.codeLink.changesAll(projectId), keys.sectionsAll(projectId)]) {
     void qc.invalidateQueries({ queryKey: key });
   }
   if (moved) invalidateContributions(qc, projectId);

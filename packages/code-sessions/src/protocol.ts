@@ -1,4 +1,4 @@
-import type { ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
+import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView, Editor, ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -307,6 +307,12 @@ export type WindowMessage =
   | { type: "snapshot"; cell: string; token: number; seq: number; width: number; height: number; bytes: Uint8Array }
   | { type: "openWorktree"; sessionId: string }
   | { type: "openPr"; sessionId: string }
+  /** What a session's ticket changed, for the diff its cell opens: answered with `changesRead`. */
+  | { type: "changes"; token: number; itemId: string; opts: ChangesOptions }
+  /** One file of those changes with every hunk: answered with `changeFileRead`. */
+  | { type: "changeFile"; token: number; itemId: string; opts: ChangesOptions & ChangeFileOptions }
+  /** One changed file opened in an editor, or by the system when none is on PATH: answered with `changedOpened`. */
+  | { type: "openChanged"; token: number; itemId: string; linkId?: string; path: string }
   | { type: "focusHerdr"; sessionId: string }
   /** Bring forward the terminal app an outside session runs in. */
   | { type: "switchTo"; sessionId: string }
@@ -352,6 +358,10 @@ export type WindowPost =
   | { type: "historyPage"; token: number; page: ReviewPage; sessions: SessionRow[]; agents: Record<string, string>; terminals: ClosedTerminalRow[] | null }
   /** The ended conversations that said the query, each with the line that says it; the session rows and agents' names as with a page. */
   | { type: "historySaid"; token: number; found: ReviewSaid; sessions: SessionRow[]; agents: Record<string, string> }
+  | { type: "changesRead"; token: number; view: ChangesView | null }
+  | { type: "changeFileRead"; token: number; file: ChangedFile | null }
+  /** Where the changed file went; null when it is not on this machine. */
+  | { type: "changedOpened"; token: number; where: Editor | "system" | null }
   /** A session ended or a conversation moved while History is open: its first page is read again. */
   | { type: "historyChanged" }
   /** What the look back found for ⌘K's history. */

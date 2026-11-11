@@ -165,4 +165,19 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/**
+ * The app's words in one given language, for a window that reads no settings of its own (the Terminal window):
+ * what calls `useI18n` under it speaks that language, with the default keys.
+ */
+export function LocaleWords({ locale, children }: { locale: Locale; children: ReactNode }) {
+  const words = useLocaleWords(locale);
+  const value = useMemo((): I18nContextValue => {
+    const t = (key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key), vars);
+    return { ...fallback, locale, t, tx: (key, vars) => t(key, vars as Record<string, string | number> | undefined) };
+    // `words` stands for a shipped language's words arriving: a new t once they have
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, words]);
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
 export const useI18n = () => useContext(Ctx);

@@ -88,3 +88,10 @@ export interface ChangesView {
   root: string | null;
   files: ChangedFile[];
 }
+
+/** How much a ticket's branch changes against its base: what the ticket says before the diff is opened. */
+export interface ChangesSummary {
+  files: number;
+  additions: number;
+  deletions: number;
+}

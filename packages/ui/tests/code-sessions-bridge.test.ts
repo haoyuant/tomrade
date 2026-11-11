@@ -11,7 +11,7 @@ let hear: (post: unknown) => void = () => {};
     send: (message: Record<string, unknown>) => void sent.push(message)
   }
 };
-const { answerSession, answerThreadAsk } = await import("../src/code-sessions/bridge");
+const { answerSession, answerThreadAsk, openChanged, readChangeFile, readChanges } = await import("../src/code-sessions/bridge");
 
 const settled = (p: Promise<void>) => {
   let done = false;
@@ -52,4 +52,23 @@ it("gives up waiting on an answer that never says it went, so its card is not st
   expect(allow()).toBe(false);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(allow()).toBe(true);
+});
+
+it("reads a ticket's changes, one of its files and where a file opened, each from the post that carries its token", async () => {
+  const view = readChanges("i1", { scope: { kind: "uncommitted" }, ignoreWhitespace: true });
+  const file = readChangeFile("i1", { path: "a.ts", full: true });
+  const where = openChanged("i1", { linkId: "l1", path: "a.ts" });
+  expect(sent).toEqual([
+    { type: "changes", token: expect.any(Number), itemId: "i1", opts: { scope: { kind: "uncommitted" }, ignoreWhitespace: true } },
+    { type: "changeFile", token: expect.any(Number), itemId: "i1", opts: { path: "a.ts", full: true } },
+    { type: "openChanged", token: expect.any(Number), itemId: "i1", linkId: "l1", path: "a.ts" }
+  ]);
+  const [a, b, c] = sent.map((m) => m.token as number);
+  // Answered out of order: each ask takes its own.
+  hear({ type: "changedOpened", token: c, where: "cursor" });
+  hear({ type: "changeFileRead", token: b, file: null });
+  hear({ type: "changesRead", token: a, view: { linkId: "l1", files: [] } });
+  expect(await where).toBe("cursor");
+  expect(await file).toBeNull();
+  expect(await view).toEqual({ linkId: "l1", files: [] });
 });

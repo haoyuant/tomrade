@@ -33,7 +33,20 @@ export const diff = {
     noNewline: "No newline at end of file",
     empty: "No changes.",
     emptyWhitespace: "Nothing but whitespace changed.",
-    loading: "Reading changes…"
+    loading: "Reading changes…",
+    title: "Changes",
+    sheetTitle: "Changes · {{key}}",
+    open: "View changes",
+    branchUnchanged: "Nothing committed on the branch yet",
+    scopeLabel: "What to compare",
+    scopeBranch: "Branch against its base",
+    scopeUncommitted: "Uncommitted changes",
+    scopeCommits: "One commit ({{count}})",
+    linkLabel: "Branch",
+    openInEditor: "Open in editor",
+    openedEditor: "Opened in {{editor}}.",
+    openedSystem: "Opened with the system's default app. Put Cursor's or VS Code's command on PATH to open it there.",
+    openMissing: "This file is not on this machine."
   },
   zh: {
     summary: "{{count}} 个文件 · +{{additions}} −{{deletions}}",
@@ -69,6 +82,19 @@ export const diff = {
     noNewline: "文件末尾没有换行",
     empty: "没有改动。",
     emptyWhitespace: "只有空白发生了变化。",
-    loading: "正在读取改动…"
+    loading: "正在读取改动…",
+    title: "改动",
+    sheetTitle: "改动 · {{key}}",
+    open: "查看改动",
+    branchUnchanged: "分支上还没有提交改动",
+    scopeLabel: "对比范围",
+    scopeBranch: "分支对比基准",
+    scopeUncommitted: "未提交的改动",
+    scopeCommits: "单个提交（{{count}}）",
+    linkLabel: "分支",
+    openInEditor: "在编辑器中打开",
+    openedEditor: "已在 {{editor}} 中打开。",
+    openedSystem: "已用系统默认应用打开。把 Cursor 或 VS Code 的命令加入 PATH 后，会在其中打开。",
+    openMissing: "这台机器上没有这个文件。"
   }
 };

@@ -1811,6 +1811,20 @@ function apply(ctx: Context, config: Config) {
         if (where) return void ctx.emit("desktop/reveal", where);
         return post(win, { type: "toast", text: words()("noWorktree") });
       }
+      case "changes": {
+        const view = await ctx.codeLink.changes(projectId, m.itemId, m.opts).catch(() => null);
+        return win.closed ? undefined : post(win, { type: "changesRead", token: m.token, view });
+      }
+      case "changeFile": {
+        const file = await ctx.codeLink.changeFile(projectId, m.itemId, m.opts).catch(() => null);
+        return win.closed ? undefined : post(win, { type: "changeFileRead", token: m.token, file });
+      }
+      case "openChanged": {
+        const opened = await ctx.codeLink.openInEditor(projectId, m.itemId, { linkId: m.linkId, path: m.path }).catch(() => null);
+        // No editor's command on PATH: the system opens it with whatever it has for the file.
+        if (opened && !opened.editor) ctx.emit("desktop/open-path", opened.file);
+        return win.closed ? undefined : post(win, { type: "changedOpened", token: m.token, where: opened ? (opened.editor ?? "system") : null });
+      }
       case "openPr": {
         const s = sessionOf(projectId, m.sessionId);
         const itemId = s?.itemIds[0];

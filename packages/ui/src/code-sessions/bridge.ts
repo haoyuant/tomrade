@@ -1,4 +1,4 @@
-import type { ReviewCursor } from "@tomradex/code-link";
+import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView, ReviewCursor } from "@tomradex/code-link";
 import type { WindowMessage, WindowPost, WindowState } from "@tomradex/code-sessions";
 
 export interface Look {
@@ -45,6 +45,8 @@ type Tails = Extract<WindowPost, { type: "tails" }>;
 type HistoryPage = Extract<WindowPost, { type: "historyPage" }>;
 type HistorySaid = Extract<WindowPost, { type: "historySaid" }>;
 type Reviewed = Extract<WindowPost, { type: "reviewFound" }>;
+/** A post that answers one ask, by its token. */
+type Answer = HistoryPage | HistorySaid | Extract<WindowPost, { type: "changesRead" | "changeFileRead" | "changedOpened" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, Set<(post: CellPost) => void>>();
 const toasts = new Set<(text: string) => void>();
@@ -52,7 +54,7 @@ const shownIn = new Set<(post: ShownIn) => void>();
 const tails = new Set<(post: Tails) => void>();
 const historyChanged = new Set<() => void>();
 /** Each History ask, by its token, waiting for its answer. */
-const answers = new Map<number, (post: HistoryPage | HistorySaid) => void>();
+const answers = new Map<number, (post: Answer) => void>();
 /** Each card's answer on its way, by its token. */
 const answering = new Map<number, () => void>();
 let tokens = 0;
@@ -68,7 +70,7 @@ surface()?.onMessage((raw) => {
   }
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "tails") for (const listener of tails) listener(post);
-  else if (post.type === "historyPage" || post.type === "historySaid") {
+  else if (post.type === "historyPage" || post.type === "historySaid" || post.type === "changesRead" || post.type === "changeFileRead" || post.type === "changedOpened") {
     answers.get(post.token)?.(post);
     answers.delete(post.token);
   } else if (post.type === "historyChanged") for (const listener of historyChanged) listener();
@@ -77,7 +79,7 @@ surface()?.onMessage((raw) => {
 });
 
 /** An ask the plugin answers once, by token. */
-function ask<T extends HistoryPage | HistorySaid>(message: (token: number) => WindowMessage): Promise<T> {
+function ask<T extends Answer>(message: (token: number) => WindowMessage): Promise<T> {
   return new Promise((resolve) => {
     const token = ++tokens;
     answers.set(token, (post) => resolve(post as T));
@@ -120,6 +122,17 @@ export const historyList = (opts: { before?: ReviewCursor | null; query?: string
 
 /** The ended conversations that said this, from their agents' records. */
 export const historySaid = (query: string): Promise<HistorySaid> => ask((token) => ({ type: "historySaid", token, query }));
+
+/** What a ticket changed, read by code link as the app window reads it. */
+export const readChanges = (itemId: string, opts: ChangesOptions): Promise<ChangesView | null> => ask<Extract<Answer, { type: "changesRead" }>>((token) => ({ type: "changes", token, itemId, opts })).then((post) => post.view);
+
+/** One file of those changes with every hunk. */
+export const readChangeFile = (itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> =>
+  ask<Extract<Answer, { type: "changeFileRead" }>>((token) => ({ type: "changeFile", token, itemId, opts })).then((post) => post.file);
+
+/** One changed file opened in an editor, or by the system's own opener. */
+export const openChanged = (itemId: string, opts: { linkId?: string; path: string }) =>
+  ask<Extract<Answer, { type: "changedOpened" }>>((token) => ({ type: "openChanged", token, itemId, ...opts })).then((post) => post.where);
 
 /** A session ended or a conversation moved while History is open. */
 export function onHistoryChanged(listener: () => void): () => void {

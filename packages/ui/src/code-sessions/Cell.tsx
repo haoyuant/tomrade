@@ -3,6 +3,7 @@ import type { ClosedTerminalRow, ConversationLine, Layout, SessionRow, TerminalP
 import { ConvoLines, ConvoTop, useOpenLines, type ConvoLine } from "~/components/ConversationRead";
 import { ContextMenu } from "~/components/ui/menu";
 import { onCell, send, type Look } from "./bridge";
+import { showChanges } from "./changes";
 import { keyLabel } from "./keys";
 import { live, sessionName, sessionStatus } from "./lists";
 import { Replay } from "./Replay";
@@ -281,6 +282,9 @@ export const Cell = memo(function Cell({ leaf, number, pane, session, terminal, 
                 )}
               </>
             ) : null}
+            {session.itemId && (
+              <button type="button" className="link-btn" data-testid="cs-changes" onClick={() => showChanges(session.itemId!, session.key)}>{say("changes")}</button>
+            )}
             <button type="button" className="link-btn" onClick={() => act("openWorktree")}>{say("openWorktree")}</button>
             <button type="button" className="link-btn" onClick={() => act("openPr")}>{say("openPr")}</button>
           </span>
