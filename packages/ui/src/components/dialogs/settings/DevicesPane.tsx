@@ -9,6 +9,7 @@ import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useHubInfo, useProjects } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { AcceptWork } from "./AcceptWork";
 
 const PLATFORMS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 
@@ -62,6 +63,7 @@ function DeviceList({ info, onLeave }: { info: DevicesInfo; onLeave: () => void 
       {info.state === "pending" && <p className="panel meta-txt" data-testid="devices-pending">{t("devices.pending")}</p>}
       {info.devices.map((device) => <DeviceCard key={device.id} device={device} canRemove={!device.self} onLeave={onLeave} />)}
       {info.state === "ready" && info.devices.length === 1 && <p className="meta-txt" data-testid="devices-only-one">{t("devices.onlyOne")}</p>}
+      {info.state === "ready" && <AcceptWork devices={info.devices} />}
       {info.state !== "pending" && (
         <div className="panel device-plan" data-testid="devices-plan">
           <Tag tone="neutral">{t(info.plan.id === "free" ? "devices.planFree" : "devices.planPaid")}</Tag>
@@ -116,6 +118,7 @@ function DeviceCard({ device, canRemove, onLeave }: { device: DeviceView; canRem
           <span key={agent.id} className={`tag neutral device-agent${agent.ready ? "" : " unready"}`} title={agent.ready ? undefined : t("devices.agentNotReady", { agent: agent.title })}>{agent.title}</span>
         )) : <span className="meta-txt">{t("devices.agentsNone")}</span>}
         {!device.git && <Tag tone="faint">{t("devices.gitMissing")}</Tag>}
+        {device.accept?.on && <Tag tone="faint" title={t(`devices.ceiling_${device.accept.ceiling}`)}>{t("devices.acceptsWork")}</Tag>}
         {device.repos.length > 0 && <span className="meta-txt">{t("devices.reposCount", { n: device.repos.length })}</span>}
       </div>
       {working && (

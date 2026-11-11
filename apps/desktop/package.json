@@ -139,6 +139,7 @@
     "@tomradex/plugins": "workspace:*",
     "@tomradex/pr-feedback": "workspace:*",
     "@tomradex/watchdog": "workspace:*",
+    "@tomradex/dispatch": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/pty-host": "workspace:*",
     "@tomradex/repos": "workspace:*",
