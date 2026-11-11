@@ -1,8 +1,9 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import type { Git } from "@tomradex/git";
-import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
+import { execGit, type Git } from "@tomradex/git";
+import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeReviewed, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { addedFileHunks, parseFileList, parsePatch, type ListedFile, type PatchFile } from "./changes-parse.js";
 import { currentLinks, primaryOf } from "./scan/absorb.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
@@ -21,6 +22,12 @@ const PATHSPEC_CHARS = 24_000;
 const COMMITS_MAX = 200;
 /** What a commit with no parent, or a branch with no commit, is compared with. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+/** The largest file git does not track that a review's snapshot keeps: past it, the file is not copied into the repository. */
+const SNAPSHOT_FILE_BYTES = 1024 * 1024;
+/** Where the commit of a code link's last review is kept from being collected. */
+const reviewedRef = (linkId: string) => `refs/tomrade/reviewed/${linkId}`;
+/** A snapshot is nobody's commit: it must not fail for want of the person's identity, nor carry it. */
+const SNAPSHOT_AUTHOR = { GIT_AUTHOR_NAME: "Tomrade", GIT_AUTHOR_EMAIL: "tomrade@localhost", GIT_COMMITTER_NAME: "Tomrade", GIT_COMMITTER_EMAIL: "tomrade@localhost" };
 
 const GENERATED_NAMES = new Set(["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "bun.lock", "bun.lockb", "Cargo.lock", "Gemfile.lock", "composer.lock", "poetry.lock", "uv.lock", "Pipfile.lock", "go.sum", "flake.lock"]);
 
@@ -43,12 +50,20 @@ interface Target {
   /** Where git runs: the folder with the working tree for `uncommitted`, any folder of the repository otherwise. */
   dir: string;
   range: Range;
+  /**
+   * The working tree is compared with a commit that may hold files git does not track: they are read through an index
+   * of their own (`index`, set while one read lasts), where a plain diff would call them deleted.
+   */
+  untrackedToo?: boolean;
+  index?: string;
 }
 
 export interface ChangesDeps {
   ctx: Context;
   store: CodeLinkStore;
   git: Git;
+  /** The git command itself, for the few calls that need an index of their own. */
+  binary: string;
   worktreeOf: (projectId: string, itemId: string) => string | null;
 }
 
@@ -57,12 +72,14 @@ export class Changes {
   private readonly ctx: Context;
   private readonly store: CodeLinkStore;
   private readonly git: Git;
+  private readonly binary: string;
   private readonly worktreeOf: ChangesDeps["worktreeOf"];
 
   constructor(deps: ChangesDeps) {
     this.ctx = deps.ctx;
     this.store = deps.store;
     this.git = deps.git;
+    this.binary = deps.binary;
     this.worktreeOf = deps.worktreeOf;
   }
 
@@ -70,14 +87,108 @@ export class Changes {
   async changes(projectId: string, itemId: string, opts: ChangesOptions = {}): Promise<ChangesView | null> {
     const target = await this.target(projectId, itemId, opts);
     if (!target) return null;
-    return { ...target.view, files: await this.files(target, Boolean(opts.ignoreWhitespace)) };
+    return this.reading(target, async (t) => ({ ...t.view, files: await this.files(t, Boolean(opts.ignoreWhitespace)) }));
   }
 
   /** One file of that answer with every hunk, up to `FILE_BYTES`; null when the scope does not change it. */
   async changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     const target = await this.target(projectId, itemId, opts);
     if (!target) return null;
-    return this.file(target, opts.path, Boolean(opts.ignoreWhitespace), Boolean(opts.full));
+    return this.reading(target, (t) => this.file(t, opts.path, Boolean(opts.ignoreWhitespace), Boolean(opts.full)));
+  }
+
+  /**
+   * Records what the person now sees of a code link as reviewed: a snapshot of its working tree where one is here, else
+   * the branch's tip. Null for a merged link, and for one git cannot show here.
+   */
+  async markReviewed(projectId: string, itemId: string, opts: { linkId?: string } = {}): Promise<ChangeReviewed | null> {
+    const target = await this.target(projectId, itemId, { linkId: opts.linkId });
+    if (!target || target.link.mergedSha || !target.view.head) return null;
+    const folder = target.view.root;
+    const sha = (folder ? await this.snapshot(folder) : null) ?? target.view.head;
+    const kept = await this.git(["update-ref", reviewedRef(target.link.id), sha], { cwd: target.dir, ok: true });
+    if (kept.code !== 0) return null;
+    const reviewed = { sha, at: Date.now() };
+    this.store.setReviewed(projectId, target.link.id, sha, reviewed.at);
+    return reviewed;
+  }
+
+  /** One git command reading and writing `index` instead of the folder's own. */
+  private async gitWith(index: string, args: string[], opts: { cwd: string; stdin?: string; env?: Record<string, string> }): Promise<{ stdout: string; code: number }> {
+    try {
+      const { stdout } = await execGit(this.binary, args, { cwd: opts.cwd, stdin: opts.stdin, maxBuffer: 16 * 1024 * 1024, env: { ...opts.env, GIT_INDEX_FILE: index } });
+      return { stdout, code: 0 };
+    } catch (error) {
+      const e = error as { code?: number | string | null; stdout?: string | Buffer };
+      return { stdout: String(e.stdout ?? ""), code: typeof e.code === "number" ? e.code : 1 };
+    }
+  }
+
+  /** A copy of the folder's index to work on, so nothing done with it shows in the folder; gone when `work` ends. */
+  private async withIndex<T>(folder: string, work: (index: string) => Promise<T>): Promise<T | null> {
+    const at = await this.git(["rev-parse", "--git-path", "index"], { cwd: folder, ok: true });
+    if (at.code !== 0 || !at.stdout.trim()) return null;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-index-"));
+    const index = path.join(tmp, "index");
+    try {
+      const own = path.resolve(folder, at.stdout.trim());
+      // A repository nothing was ever added to has no index yet.
+      if (fs.existsSync(own)) fs.copyFileSync(own, index);
+      return await work(index);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  /** The files git does not track, named to `git add` in the copy `index`: `intent` records them without storing them. */
+  private addUntracked(folder: string, index: string, files: string[], intent: boolean): Promise<{ code: number }> {
+    return this.gitWith(index, ["--literal-pathspecs", "add", "--ignore-errors", ...(intent ? ["--intent-to-add"] : []), "--pathspec-from-file=-", "--pathspec-file-nul"], { cwd: folder, stdin: `${files.join("\0")}\0` });
+  }
+
+  /**
+   * The folder's working tree as a commit on top of its HEAD: what git tracks as it now is, and the files it does not
+   * track up to `SNAPSHOT_FILE_BYTES`. HEAD itself when nothing differs; null when it could not be made. The folder's
+   * index, HEAD, stash and files are left as they are.
+   */
+  private async snapshot(folder: string): Promise<string | null> {
+    const head = await this.sha(folder, "HEAD");
+    if (!head) return null;
+    return this.withIndex(folder, async (index) => {
+      if ((await this.gitWith(index, ["add", "--update", "--ignore-errors"], { cwd: folder })).code !== 0) return null;
+      const small = (await this.untracked(folder)).filter((file) => {
+        try {
+          const stat = fs.lstatSync(path.join(folder, file));
+          return stat.isFile() && stat.size <= SNAPSHOT_FILE_BYTES;
+        } catch {
+          return false;
+        }
+      });
+      if (small.length) await this.addUntracked(folder, index, small, false);
+      const tree = (await this.gitWith(index, ["write-tree"], { cwd: folder })).stdout.trim();
+      const same = await this.git(["rev-parse", "--verify", "--quiet", `${head}^{tree}`], { cwd: folder, ok: true });
+      if (!tree) return null;
+      if (same.code === 0 && same.stdout.trim() === tree) return head;
+      // Never signed: a person's commit.gpgSign would ask for their key.
+      const made = await this.gitWith(index, ["commit-tree", "--no-gpg-sign", tree, "-p", head, "-m", "Tomrade: reviewed"], { cwd: folder, env: SNAPSHOT_AUTHOR });
+      return made.code === 0 ? made.stdout.trim() || null : null;
+    });
+  }
+
+  /** One read of a target; where it compares the working tree with a snapshot, through an index that knows the untracked files. */
+  private async reading<T>(target: Target, read: (target: Target) => Promise<T>): Promise<T> {
+    if (!target.untrackedToo) return read(target);
+    const answer = await this.withIndex(target.dir, async (index) => {
+      const fresh = await this.untracked(target.dir);
+      if (fresh.length) await this.addUntracked(target.dir, index, fresh, true);
+      return { value: await read({ ...target, index }) };
+    });
+    // Without an index of its own the answer is still git's, less exact about files it does not track.
+    return answer ? answer.value : read({ ...target, untrackedToo: false });
+  }
+
+  /** A read of the target's range: through its own index when it has one. */
+  private async run(target: Target, args: string[], stdin?: string): Promise<{ stdout: string; code: number }> {
+    return target.index ? this.gitWith(target.index, args, { cwd: target.dir, stdin }) : this.git(args, { cwd: target.dir, ok: true, stdin });
   }
 
   private async sha(dir: string, ref: string): Promise<string | null> {
@@ -152,10 +263,20 @@ export class Changes {
     if (!base || !head) return null;
 
     const commits = await this.commits(dir, base, head);
-    const scopes: ChangeScopeKind[] = ["branch", ...(folder ? (["uncommitted"] as const) : []), ...(commits.length ? (["commit"] as const) : [])];
+    const mark = this.store.reviewed(projectId, link.id);
+    const reviewed = mark && (await this.sha(dir, mark.sha)) ? mark : null;
+    // Once merged, what came since a review is the default branch's work as much as the ticket's.
+    const since = reviewed && !link.mergedSha;
+    const scopes: ChangeScopeKind[] = ["branch", ...(folder ? (["uncommitted"] as const) : []), ...(commits.length ? (["commit"] as const) : []), ...(since ? (["since"] as const) : [])];
     const repos = new Map(links.map((l) => [l.id, this.ctx.repos.get(projectId, l.repoId)?.name ?? ""]));
-    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch, repoName: repos.get(l.id) ?? "" })), scopes, commits, root: folder };
+    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch, repoName: repos.get(l.id) ?? "" })), scopes, reviewed, commits, root: folder };
     const asked = opts.scope ?? { kind: "branch" };
+
+    if (asked.kind === "since" && since) {
+      const scope: ChangeScope = { kind: "since" };
+      if (folder) return { link, dir: folder, range: { from: reviewed.sha, to: null }, untrackedToo: true, view: { ...view, scope, base: reviewed.sha, head: null } };
+      return { link, dir, range: { from: reviewed.sha, to: head }, view: { ...view, scope, base: reviewed.sha, head } };
+    }
 
     if (asked.kind === "uncommitted" && folder) {
       const at = await this.sha(folder, "HEAD");
@@ -167,7 +288,7 @@ export class Changes {
       const scope: ChangeScope = { kind: "commit", sha: commit.sha };
       return { link, dir, range: { from: parent ?? EMPTY_TREE, to: commit.sha }, view: { ...view, scope, base: parent, head: commit.sha } };
     }
-    // A scope this machine cannot show (no worktree here, a commit the branch no longer has) falls back to the branch.
+    // A scope this machine cannot show (no worktree here, a commit the branch no longer has, nothing reviewed yet) falls back to the branch.
     return { link, dir, range: { from: base, to: head }, view: { ...view, scope: { kind: "branch" }, base, head } };
   }
 
@@ -177,7 +298,7 @@ export class Changes {
   }
 
   private async listed(target: Target, ignoreWhitespace: boolean): Promise<ListedFile[]> {
-    const out = await this.git([...this.diffArgs(target.range, ignoreWhitespace), "--raw", "--numstat", "-z"], { cwd: target.dir, ok: true });
+    const out = await this.run(target, [...this.diffArgs(target.range, ignoreWhitespace), "--raw", "--numstat", "-z"]);
     return out.code === 0 ? parseFileList(out.stdout) : [];
   }
 
@@ -185,7 +306,7 @@ export class Changes {
   private async patch(target: Target, ignoreWhitespace: boolean, only: ListedFile[] | null, maxBytes = Infinity, full = false): Promise<Map<string, PatchFile> | null> {
     const paths = only ? ["--", ...only.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path]))] : [];
     // Every unchanged line as context: the whole file comes back as one hunk.
-    const out = await this.git([...this.diffArgs(target.range, ignoreWhitespace), ...(full ? [`--unified=${WHOLE_FILE}`] : []), ...paths], { cwd: target.dir, ok: true });
+    const out = await this.run(target, [...this.diffArgs(target.range, ignoreWhitespace), ...(full ? [`--unified=${WHOLE_FILE}`] : []), ...paths]);
     // Cut off by the runner's own limit: what arrived is still good up to its last whole line when a limit was asked for.
     if (out.code !== 0 && (maxBytes === Infinity || !out.stdout)) return null;
     return new Map(parsePatch(out.stdout, out.code === 0 ? maxBytes : Math.min(maxBytes, out.stdout.length - 1)).map((f) => [f.path, f]));
@@ -240,7 +361,8 @@ export class Changes {
 
   private async files(target: Target, ignoreWhitespace: boolean): Promise<ChangedFile[]> {
     const listed = await this.listed(target, ignoreWhitespace);
-    const fresh = target.range.to === null ? await this.untracked(target.dir) : [];
+    // With an index of its own, git lists the files it does not track among the rest.
+    const fresh = target.range.to === null && !target.index ? await this.untracked(target.dir) : [];
     const generated = await this.generated(target.dir, [...listed.map((f) => f.path), ...fresh]);
 
     // What fits in one answer, in git's order; the rest keeps its counts and waits for `changeFile`.
@@ -285,7 +407,7 @@ export class Changes {
     const listed = (await this.listed(target, ignoreWhitespace)).find((f) => f.path === file);
     const generated = (await this.generated(target.dir, [file])).has(file);
     if (!listed) {
-      if (target.range.to !== null || !(await this.untracked(target.dir, file)).includes(file)) return null;
+      if (target.range.to !== null || target.index || !(await this.untracked(target.dir, file)).includes(file)) return null;
       return this.newFile(target.dir, file, generated, FILE_BYTES);
     }
     if (listed.binary) return { ...listed, generated, truncated: false, hunks: null };
