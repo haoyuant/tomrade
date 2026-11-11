@@ -182,9 +182,11 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
       asked = 0;
       if (!origin) return;
       const went = moved(was, screen);
-      // Rows moving elsewhere on the screen (a footer growing, say) leave the drag where it is.
-      const from = Math.max(drag?.lo ?? 0, Math.min(drag?.hi ?? terminal.rows - 1, origin.start[1] - top));
-      if (went && from >= went.first && from <= went.last) {
+      // Rows moving elsewhere on the screen (a footer growing, say) leave the drag where it is. Once carried on, the
+      // region's ends wobble by a blank row that matches on one paint and not the next: most of it moving is the body.
+      const from = Math.max(0, Math.min(terminal.rows - 1, origin.start[1] - top));
+      const ours = went && (drag ? 2 * (Math.min(went.last, drag.hi) - Math.max(went.first, drag.lo) + 1) > drag.hi - drag.lo + 1 : from >= went.first && from <= went.last);
+      if (went && ours) {
         if (!drag) {
           drag = { lo: 0, hi: 0, seen: new Map(context) };
           was.forEach((text, y) => drag?.seen.set(top + y, text));
