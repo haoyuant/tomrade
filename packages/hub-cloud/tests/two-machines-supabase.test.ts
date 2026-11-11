@@ -146,6 +146,11 @@ it.skipIf(!enabled)("each machine sees the other among the account's machines, o
   expect(b.cloud.devices().find((d) => d.id === "supabase-c")).toMatchObject({ self: false, online: true });
   expect(a.cloud.devices().find((d) => d.self)).toMatchObject({ id: "supabase-c", online: true });
 
+  const ticket = { projectId: b.project.id, key: "MOA-7", title: "Faster on Windows", agent: "codex", state: "waiting", startedAt: 1_700_000_000_000, branch: "moa-7/faster" };
+  b.cloud.reportActivity("sessions", [{ ...ticket, cwd: "/Users/b/code" }]);
+  // No pass on A: B's presence says it changed.
+  await vi.waitFor(() => expect(other()).toMatchObject({ sessions: [ticket] }), { timeout: 30_000, interval: 250 });
+
   await a.cloud.renameDevice("supabase-d", "The other one");
   await b.cloud.sync();
   expect(b.cloud.devices().find((d) => d.self)).toMatchObject({ name: "The other one" });

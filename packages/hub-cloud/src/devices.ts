@@ -18,7 +18,33 @@ export interface DeviceFacts {
   repos: string[];
 }
 
-export interface DeviceView extends DeviceFacts {
+/** A ticket one of a machine's coding sessions holds. Nothing of the conversation, and no path. */
+export interface DeviceSession {
+  projectId: string;
+  key: string;
+  title: string;
+  /** The agent's engine id. */
+  agent: string;
+  /** `waiting`: on the person. `blocked`: it cannot go on by itself — credentials, a merge, an error. */
+  state: "working" | "waiting" | "blocked";
+  startedAt: number;
+  branch: string | null;
+}
+
+/** An auto run going on a machine: how many of its tickets are through. */
+export interface DeviceShift {
+  projectId: string;
+  done: number;
+  total: number;
+  startedAt: number;
+}
+
+export interface DeviceActivity {
+  sessions: DeviceSession[];
+  nightShifts: DeviceShift[];
+}
+
+export interface DeviceView extends DeviceFacts, DeviceActivity {
   id: string;
   name: string;
   /** This very machine. */
@@ -26,6 +52,8 @@ export interface DeviceView extends DeviceFacts {
   online: boolean;
   /** When it was last known to be here; for one that is online, now. */
   lastSeenAt: number;
+  /** When it last said what it works on, null if it never has. For a machine that is off, that is its last known work. */
+  activityAt: number | null;
 }
 
 export interface DevicesInfo {
@@ -49,7 +77,22 @@ const Facts = z.object({
   agents: z.array(z.object({ id: z.string(), title: z.string(), ready: z.boolean() })).catch([]),
   repos: z.array(z.string()).catch([])
 });
-const Row = z.object({ device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string() });
+const Row = z.object({
+  device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string(),
+  activity: z.json().optional(), activity_at: z.string().nullable().optional()
+});
+// Each as the database takes it: an entry that would be refused there is left out here, not the whole summary with it.
+const ID = /^[A-Za-z0-9_-]{1,64}$/;
+const Session = z.object({
+  projectId: z.string().regex(ID), key: z.string().regex(/^[^\s/\\:]{1,24}-[0-9]{1,9}$/), title: z.string().transform((t) => t.slice(0, 200)),
+  agent: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/), state: z.enum(["working", "waiting", "blocked"]), startedAt: z.number().int().nonnegative(),
+  branch: z.string().nullable().transform((b) => (b && /^[^/\\:~\s][^\\:~\s]{0,199}$/.test(b) ? b : null))
+});
+const Shift = z.object({ projectId: z.string().regex(ID), done: z.number().int().nonnegative(), total: z.number().int().nonnegative(), startedAt: z.number().int().nonnegative() });
+const Shown = z.object({ sessions: z.array(Session).catch([]), nightShifts: z.array(Shift).catch([]) });
+const NOTHING: DeviceActivity = { sessions: [], nightShifts: [] };
+/** A machine that has said nothing reads as one with nothing going on: an idle one writes nothing. */
+const SILENT = JSON.stringify(NOTHING);
 const Registered = z.object({ state: z.enum(["registered", "removed", "over_limit"]), limit: z.number().int().nonnegative().optional(), plan: z.string().optional() });
 const Plan = z.object({ plan: z.string(), limit: z.number().int().nonnegative().nullable() });
 
@@ -74,6 +117,8 @@ export interface DevicesHost {
   appVersion: string;
   /** How long after its presence ends a machine still counts as online: a dropped connection usually comes back. */
   offlineAfterMs: number;
+  /** The least time between two writes of what this machine works on. */
+  activityMs: number;
   /** Where a person subscribes for more machines. */
   subscribeUrl: string;
   /** The signed-in account, or null. */
@@ -102,6 +147,15 @@ export class Devices {
   private planAt = 0;
   private planFor = -1;
   private askedAt = 0;
+  /** What this machine works on now, by who reports it; when the account was last told, and the wait before it is told again. */
+  private parts: DeviceActivity = { sessions: [], nightShifts: [] };
+  private toldAt = 0;
+  private telling: ReturnType<typeof setTimeout> | null = null;
+  /** The account server has no activity columns: ask for none. */
+  private plain = false;
+  /** The last change each machine announced on the presence channel, and the read that follows a new one. */
+  private announced = new Map<string, number>();
+  private reading: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly host: DevicesHost) {}
 
@@ -172,6 +226,52 @@ export class Devices {
     if (!equal(rows, cache.data.devices)) { cache.data.devices = rows; cache.save(); this.host.changed(); }
     if (this.registered()) this.connect();
     else this.close();
+    // What a write that could not go still owes.
+    if (this.registered() && (cache.data.device.activity ?? SILENT) !== JSON.stringify(this.parts)) await this.tell();
+  }
+
+  /**
+   * What this machine works on, from the service that knows: replaces what `part` said before. Only the fields
+   * named above leave; anything else an entry carries is dropped here, and the database refuses it again.
+   */
+  report(part: keyof DeviceActivity, entries: readonly unknown[]): void {
+    const schema = part === "sessions" ? Session : Shift;
+    const kept = entries.flatMap((entry) => { const parsed = schema.safeParse(entry); return parsed.success ? [parsed.data] : []; }).slice(0, part === "sessions" ? 50 : 20);
+    kept.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    if (equal(kept, this.parts[part])) return;
+    this.parts = { ...this.parts, [part]: kept };
+    this.host.changed();
+    this.tellSoon();
+  }
+
+  /** At once when the account has not been told for a while; otherwise once that while is over, with the latest. */
+  private tellSoon(): void {
+    if (this.telling) return;
+    this.telling = setTimeout(() => { this.telling = null; void this.tell().catch(() => undefined); }, Math.max(0, this.toldAt + this.host.activityMs - Date.now()));
+    this.telling.unref?.();
+  }
+
+  private async tell(): Promise<void> {
+    const { cache, client, deviceId } = this.host;
+    const print = JSON.stringify(this.parts);
+    if (!this.host.userId() || !this.registered() || this.plain || (cache.data.device.activity ?? SILENT) === print) return;
+    this.toldAt = Date.now();
+    const { data, error } = await client.rpc("tomrade_report_device_activity", { p_device: deviceId, p_activity: this.parts });
+    // Not reached: the next pass sends what is current then.
+    if (error && !error.code) return;
+    if (error) {
+      if (this.warned !== error.message) this.host.home.logger.warn(`devices: what this machine works on was not sent — ${error.message}`);
+      this.warned = error.message;
+      return;
+    }
+    if (data === false) return;
+    cache.data.device = { ...cache.data.device, activity: print };
+    cache.save();
+    // The others read the table again when they see this.
+    const channel = this.channel;
+    if (channel) void Promise.resolve(channel.track({ at: Date.now(), act: this.toldAt })).catch(() => undefined);
+    // Changed again while this one went.
+    if (JSON.stringify(this.parts) !== print) this.tellSoon();
   }
 
   /** The account's plan, read when the run begins, when the number of machines changes, and now and then. */
@@ -218,7 +318,8 @@ export class Devices {
       if (result.plan) cache.data.plan = { id: result.plan, limit: result.limit ?? FREE_DEVICE_LIMIT };
     } else {
       const removed = result.state === "removed";
-      cache.data.device = { acked: removed ? null : print, rejoin: false, removed, over: null };
+      // A machine back after removal starts with nothing said about its work: the row was emptied.
+      cache.data.device = { acked: removed ? null : print, rejoin: false, removed, over: null, activity: before.acked === null ? null : before.activity };
       if (!removed) this.seenAt = Date.now();
     }
     cache.save();
@@ -226,7 +327,14 @@ export class Devices {
   }
 
   private async read(): Promise<DeviceRow[]> {
-    const { data, error } = await this.host.client.from("tomrade_devices").select("device_id,name,facts,last_seen_at,updated_at").is("removed_at", null).order("device_id").limit(200);
+    const columns = "device_id,name,facts,last_seen_at,updated_at";
+    const ask = (select: string) => this.host.client.from("tomrade_devices").select(select).is("removed_at", null).order("device_id").limit(200);
+    let { data, error } = await ask(this.plain ? columns : `${columns},activity,activity_at`);
+    if (error?.code === "42703" && !this.plain) {
+      // An account server from before machines said what they work on.
+      this.plain = true;
+      ({ data, error } = await ask(columns));
+    }
     if (error) throw new Error(error.message);
     return z.array(Row).parse(data);
   }
@@ -243,7 +351,10 @@ export class Devices {
       const self = row.device_id === deviceId;
       const gone = this.left.get(row.device_id);
       const online = !out && (self || this.present.has(row.device_id) || (!!gone && gone.until > now));
-      return { ...Facts.parse(row.facts ?? {}), id: row.device_id, name: row.name, self, online, lastSeenAt: online ? now : Math.max(Date.parse(row.last_seen_at) || 0, gone?.at ?? 0) };
+      // This machine's own, as it is now rather than as last sent.
+      const activity = self ? this.parts : Shown.catch(NOTHING).parse(row.activity ?? {});
+      const activityAt = self ? now : row.activity_at ? Date.parse(row.activity_at) || null : null;
+      return { ...Facts.parse(row.facts ?? {}), ...activity, id: row.device_id, name: row.name, self, online, lastSeenAt: online ? now : Math.max(Date.parse(row.last_seen_at) || 0, gone?.at ?? 0), activityAt };
     });
     // This machine first, then the ones that are on, then by name.
     devices.sort((a, b) => Number(b.self) - Number(a.self) || Number(b.online) - Number(a.online) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
@@ -262,7 +373,7 @@ export class Devices {
     const { error } = await client.rpc("tomrade_remove_device", { p_device: id });
     if (error) throw this.failure(error);
     if (id === deviceId) {
-      cache.data.device = { acked: null, rejoin: false, removed: true, over: null };
+      cache.data.device = { acked: null, rejoin: false, removed: true, over: null, activity: null };
       cache.data.devices = [];
       cache.save();
       this.close();
@@ -305,7 +416,7 @@ export class Devices {
     try {
       const channel = this.host.client.channel(`tomrade-devices:${userId}`, { config: { private: true, presence: { key: this.host.deviceId } } });
       channel.on("presence", { event: "sync" }, () => {
-        if (this.channel === channel) this.seen(channel.presenceState<{ leaving?: boolean }>());
+        if (this.channel === channel) this.seen(channel.presenceState<{ leaving?: boolean; act?: number }>());
       });
       channel.subscribe((status) => {
         if (status !== "SUBSCRIBED" || this.channel !== channel) return;
@@ -326,7 +437,15 @@ export class Devices {
   }
 
   /** Who the channel says is here. One that left keeps counting as online for a while, unless it said it was leaving. */
-  private seen(state: Record<string, { leaving?: boolean }[]>): void {
+  private seen(state: Record<string, { leaving?: boolean; act?: number }[]>): void {
+    // A machine that just said what it works on: read the table now rather than at the next pass.
+    for (const [id, metas] of Object.entries(state)) {
+      const act = Math.max(0, ...metas.map((m) => (typeof m.act === "number" ? m.act : 0)));
+      if (id === this.host.deviceId || !act || this.announced.get(id) === act) continue;
+      this.announced.set(id, act);
+      this.reading ??= setTimeout(() => { this.reading = null; void this.refresh().catch(() => undefined); }, 300);
+      this.reading.unref?.();
+    }
     const here = new Set(Object.entries(state).filter(([, metas]) => !metas.length || metas.some((m) => !m.leaving)).map(([id]) => id));
     const leaving = new Set(Object.keys(state).filter((id) => !here.has(id)));
     let changed = false;
@@ -361,6 +480,8 @@ export class Devices {
     this.channelUser = null;
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    if (this.reading) { clearTimeout(this.reading); this.reading = null; }
+    this.announced.clear();
     this.present = new Set();
     this.left.clear();
     return channel;
@@ -382,6 +503,7 @@ export class Devices {
 
   /** Out of the channel without a word: the process is ending, or this machine is no longer one of the account's. */
   close(): void {
+    if (this.telling) { clearTimeout(this.telling); this.telling = null; }
     const channel = this.disconnect();
     if (channel) void Promise.resolve().then(() => this.host.client.removeChannel(channel)).catch(() => undefined);
   }

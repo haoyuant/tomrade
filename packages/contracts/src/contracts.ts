@@ -35,6 +35,12 @@ export interface CloudHubReader {
   };
   /** The Supabase client; each caller types the queries it makes. */
   readonly client: any;
+  /**
+   * What this machine works on, told to the account's other machines: `sessions` are the tickets its coding
+   * sessions hold (`projectId`, `key`, `title`, `agent`, `state`, `startedAt`, `branch`), `nightShifts` its auto
+   * runs (`projectId`, `done`, `total`, `startedAt`). Replaces what that part said before; any other field is dropped.
+   */
+  reportActivity(part: "sessions" | "nightShifts", entries: readonly unknown[]): void;
 }
 
 export interface DbReader {

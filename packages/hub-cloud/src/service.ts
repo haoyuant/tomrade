@@ -93,7 +93,9 @@ export const CloudConfig = z.object({
   /** This build, as the account's other machines read it. */
   appVersion: z.string().default("dev"),
   /** How long after its presence ends another machine still counts as online. */
-  deviceOfflineMs: z.number().int().min(0).default(45_000)
+  deviceOfflineMs: z.number().int().min(0).default(45_000),
+  /** The least time between two writes of what this machine works on. */
+  deviceActivityMs: z.number().int().min(0).default(3_000)
 });
 type Config = z.infer<typeof CloudConfig>;
 const Credentials = z.object({ email: z.email(), password: z.string().min(1).max(1024) });
@@ -189,7 +191,7 @@ export class CloudHub extends Service implements CloudHubReader {
     const settings = this.ctx.settings;
     this.machines = new Devices({
       home: this.home, client: this.client, cache: this.cache, deviceId: this.ctx.hub.deviceId,
-      appVersion: this.config.appVersion, offlineAfterMs: this.config.deviceOfflineMs,
+      appVersion: this.config.appVersion, offlineAfterMs: this.config.deviceOfflineMs, activityMs: this.config.deviceActivityMs,
       subscribeUrl: new URL(SUBSCRIBE_PATH, this.config.site).href,
       userId: () => this.user?.id ?? null, schedule: () => this.schedule(),
       changed: () => { this.home.emit("cloudHub/devices"); this.home.get("ipc")?.send("devices.changed"); }
@@ -467,6 +469,10 @@ export class CloudHub extends Service implements CloudHubReader {
   }
   async removeDevice(id: string): Promise<void> {
     await this.machines.remove(z.string().min(1).max(64).parse(id));
+  }
+  /** What this machine works on, for the account's other machines; see `Devices.report`. */
+  reportActivity(part: "sessions" | "nightShifts", entries: readonly unknown[]): void {
+    this.machines.report(part, entries);
   }
   async recheckDevices(): Promise<DevicesInfo> {
     this.machines.recheck();

@@ -54,6 +54,7 @@ import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, termi
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
 import { ghRow, probeGh, type GhStatus } from "./gh.js";
+import { tellDeviceSessions } from "./device-activity.js";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, rollupChecks, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult, type PrChecks } from "./landing.js";
@@ -491,6 +492,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     });
     for (const projectId of this.ctx.db.openIds()) this.foldTwinClaims(projectId);
     this.ctx.on("db/opened", (projectId) => this.foldTwinClaims(projectId));
+    tellDeviceSessions(this.ctx, (projectId) => this.store.sessions(projectId, { live: true }));
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.panel = new SessionPanel(this.ctx, this.store);
     this.review = new Review({ ctx: this.ctx, store: this.store, read: (projectId, sessionId, before) => this.conversation(projectId, sessionId, before), recorded: (projectId, sessionId) => this.herdr.rawOutputThere(projectId, sessionId) });
