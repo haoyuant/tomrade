@@ -3179,6 +3179,7 @@ export const ja: PartialMessages = {
     convoReadOnly: "会話（読み取り専用）",
     paneEarlier: "このペインでの以前のセッション",
     paneEarlierCount: "このペインでの以前のセッション（{{n}}）",
+    paneEarlierWhere: "{{where}} · 以前",
     fold: "セッションバーを折りたたむ",
     unfold: "セッションバーを表示",
     projectTitle: "このウィンドウのプロジェクト：{{project}}",

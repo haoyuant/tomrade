@@ -60,22 +60,22 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
   );
 }
 
-/** What ran in a pane before what it shows now, oldest first: each opens in a pane as an ended session. */
-function PaneTimeline({ open, past, locale, selected, onPick }: { open: boolean; past: SessionRow[]; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
+/** What ran in a pane before what it shows now, oldest first: each opens in a pane as an ended session. Not indented: each says the place it ran in, as its pane's card does. */
+function PaneTimeline({ open, past, where, locale, selected, onPick }: { open: boolean; past: SessionRow[]; where: string; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
   const say = useSay();
   const day = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   return (
-    <Collapse as="ol" open={open} className="cs-list cs-timeline fold-row-body" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
+    <Collapse as="ol" open={open} className="cs-list cs-timeline" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
       {past.map((s) => (
         <li key={s.id}>
           <button type="button" className="cs-row" data-status="done" data-ended aria-current={selected.has(s.id) ? "true" : undefined} title={say("pickHint", { mod: MOD })} onClick={(e) => onPick(s, besideClick(e))}>
             <span className="cs-row-head">
               <span className={s.key ? "cs-row-name mono" : "cs-row-name"}>{s.key ?? s.conversation ?? sessionName(s)}</span>
-              <span className="cs-row-meta">{s.agentName ?? s.agent}</span>
+              <span className="cs-where">{say("paneEarlierWhere", { where })}</span>
             </span>
             {s.key && s.title && <span className="cs-row-title">{s.title}</span>}
-            <span className="cs-row-meta">{`${day(s.startedAt)}–${s.endedAt ? hour(s.endedAt) : ""}`}</span>
+            <span className="cs-row-meta">{`${s.agentName ?? s.agent} · ${day(s.startedAt)}–${s.endedAt ? hour(s.endedAt) : ""}`}</span>
           </button>
         </li>
       ))}
@@ -121,7 +121,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
           <FoldChevron open={unfolded.has(at)} label={label} testId="cs-pane-history" onToggle={() => toggle(at)} />
           <span className="cs-bundle-head">{label}</span>
         </span>
-        <PaneTimeline open={unfolded.has(at)} past={past} locale={locale} selected={selected} onPick={picks.onSession} />
+        <PaneTimeline open={unfolded.has(at)} past={past} where={whereOf(r, cellOf(marks.cells, r), say)} locale={locale} selected={selected} onPick={picks.onSession} />
       </>
     );
   };
