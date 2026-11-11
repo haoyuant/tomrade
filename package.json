@@ -21,6 +21,7 @@
     "build:backend": "tsc -b",
     "install:dev": "node scripts/install-dev.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
+    "design-system": "node scripts/design-system/build.mjs",
     "dump-config": "pnpm --filter @tomrade/desktop dump-config",
     "analytics": "pnpm --filter @tomradex/store-admin analytics"
   },

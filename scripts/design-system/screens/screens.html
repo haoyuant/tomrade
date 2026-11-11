@@ -1,0 +1,247 @@
+<!--@screen W-01|workspace|Board|Backlog view as a board|sunrise|The main screen: sidebar, the Backlog view as a board, the assistant folded to its rail.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include banner-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include airail-->
+<!--@endscreen-->
+
+<!--@screen H-01|home|Projects|Every project on this machine|sunrise|The home screen: every project on this machine as a card, and a new one.-->
+<div class="shell-main">
+  <div class="app">
+    <header class="titlebar">
+      <span class="crumb-title">Tomrade</span>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-title" style="color:var(--muted)">Projects</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn btn-icon no-drag" aria-label="Usage">[[i-bars 17]]</button>
+      <button class="btn btn-icon no-drag" aria-label="Settings">[[i-gear 17]]</button>
+    </header>
+    <div class="sheet">
+      <div class="wrap wrap-wide">
+        <div class="sec-head">
+          <div>
+            <h1 class="sec-title">Projects</h1>
+            <p class="sec-lede" style="margin-top:4px">Every project is a folder you can see. Its backlog is one list of tickets with built-in and custom fields; saved views filter, group and sort it without moving anything.</p>
+          </div>
+        </div>
+        <div class="proj-grid">
+          <div class="proj-cell">
+            <button class="proj" aria-current="true">
+              <span class="row" style="gap:7px">[[i-stack 15 accent]]<span class="eyebrow">Active</span></span>
+              <span class="proj-name" style="margin-top:var(--space-3)">Tomrade</span>
+              <span class="proj-desc">Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.</span>
+              <span class="proj-boards"><span class="tag neutral">UI</span><span class="tag neutral">Core &amp; data</span><span class="tag neutral">MCP server</span><span class="tag neutral">Desktop shell</span></span>
+              <span class="proj-foot">
+                <span class="stat-pair"><span class="stat-v">4</span><span class="stat-k">workstreams</span></span>
+                <span class="stat-pair"><span class="stat-v plain">22</span><span class="stat-k">open</span></span>
+                <span class="stat-pair"><span class="stat-v plain">25</span><span class="stat-k">tickets</span></span>
+                <span class="stat-pair" style="margin-left:auto;text-align:right"><span class="stat-k num">2m ago</span><span class="stat-k">last write</span></span>
+              </span>
+            </button>
+            <button class="btn btn-icon proj-gear" aria-label="Tomrade settings">[[i-gear 14]]</button>
+          </div>
+          <div class="proj-cell">
+            <button class="proj">
+              <span class="row" style="gap:7px">[[i-stack 15 accent]]<span class="eyebrow">Active</span></span>
+              <span class="proj-name" style="margin-top:var(--space-3)">Muduo</span>
+              <span class="proj-desc">A C++ network library, read and annotated chapter by chapter.</span>
+              <span class="proj-boards"><span class="tag neutral">Reading</span><span class="tag neutral">Notes</span></span>
+              <span class="proj-foot">
+                <span class="stat-pair"><span class="stat-v">2</span><span class="stat-k">workstreams</span></span>
+                <span class="stat-pair"><span class="stat-v plain">9</span><span class="stat-k">open</span></span>
+                <span class="stat-pair"><span class="stat-v plain">31</span><span class="stat-k">tickets</span></span>
+                <span class="stat-pair" style="margin-left:auto;text-align:right"><span class="stat-k num">3d ago</span><span class="stat-k">last write</span></span>
+              </span>
+            </button>
+            <button class="btn btn-icon proj-gear" aria-label="Muduo settings">[[i-gear 14]]</button>
+          </div>
+          <div class="proj-cell">
+            <button class="proj">
+              <span class="row" style="gap:7px">[[i-archive 15 meta]]<span class="eyebrow">Archived</span></span>
+              <span class="proj-name" style="margin-top:var(--space-3)">Tomrade Legacy</span>
+              <span class="proj-desc">The pre-reboot design: Supabase, FastAPI and TanStack Start. Kept read-only for reference; superseded by the local-first architecture.</span>
+              <span class="proj-boards"><span class="tag neutral">Main</span></span>
+              <span class="proj-foot">
+                <span class="stat-pair"><span class="stat-v">1</span><span class="stat-k">workstreams</span></span>
+                <span class="stat-pair"><span class="stat-v plain">0</span><span class="stat-k">open</span></span>
+                <span class="stat-pair"><span class="stat-v plain">0</span><span class="stat-k">tickets</span></span>
+                <span class="stat-pair" style="margin-left:auto;text-align:right"><span class="stat-k num">–</span><span class="stat-k">last write</span></span>
+              </span>
+            </button>
+            <button class="btn btn-icon proj-gear" aria-label="Tomrade Legacy settings">[[i-gear 14]]</button>
+          </div>
+          <button class="proj-new">[[i-plus 20]]<span class="proj-name" style="color:inherit">New project</span><span class="proj-desc">Creates a “Main” workstream and the default views.</span></button>
+        </div>
+        <hr class="rule">
+        <button class="fold-head" aria-expanded="false" style="font-size:var(--text-base)">[[i-chev 12]]<span class="fold-title">Connect an outside agent</span></button>
+      </div>
+    </div>
+    <footer class="statusbar">
+      <span class="status-item"><span class="live-dot"></span>MCP <span class="num">127.0.0.1:55723</span></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="status-item status-link">[[i-bug 12]]Troubleshoot</button>
+      <button class="status-item status-link">[[i-send 12]]Feedback</button>
+    </footer>
+  </div>
+</div>
+<!--@endscreen-->
+
+<!--@screen W-02|workspace|Ticket detail|Docked beside the board|dawn|A ticket opened from the board: the detail pane docks between the board and the assistant rail.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+      <aside class="detail" tabindex="-1" aria-label="TOM-18">
+        <div class="detail-head"><span class="card-id">TOM-18</span><span class="tag neutral">UI</span><span class="spacer" style="flex:1"></span><button class="btn btn-primary">Start</button><button class="btn btn-ghost">[[i-lock 13]]Lock</button><button class="btn btn-icon is-danger" aria-label="Delete">[[i-trash 14]]</button><button class="btn btn-icon" aria-label="Expand">[[i-expand 14]]</button><button class="btn btn-icon" aria-label="Close">[[i-close 14]]</button></div>
+        <div class="detail-body">
+          <h2 class="detail-title">Command palette over boards, views, issues and actions</h2>
+          <dl class="fieldstrip">
+            <div class="field-row"><dt>Work type</dt><dd>Coding</dd></div>
+            <div class="field-row"><dt>Status</dt><dd>[[s-backlog 12 sdot]]Backlog</dd></div>
+            <div class="field-row"><dt>Priority</dt><dd>[[p-2 12 prio]]Medium</dd></div>
+            <div class="field-row"><dt>Epic</dt><dd>None</dd></div>
+            <div class="field-row"><dt>Labels</dt><dd><span class="tag">ui</span><button class="btn btn-ghost" style="padding:1px 6px;font-size:var(--text-xs)">[[i-plus 11]]Label</button></dd></div>
+            <div class="field-row"><dt>Blocked by</dt><dd><button class="btn btn-ghost" style="padding:1px 6px;font-size:var(--text-xs)">[[i-plus 11]]Ticket</button></dd></div>
+            <div class="field-row"><dt>Blocks</dt><dd><button class="btn btn-ghost" style="padding:1px 6px;font-size:var(--text-xs)">[[i-plus 11]]Ticket</button></dd></div>
+            <div class="field-row"><dt>Workstream</dt><dd>UI</dd></div>
+            <div class="field-row"><dt>Area</dt><dd>Desktop</dd></div>
+            <div class="field-row"><dt>Last change</dt><dd>Human · 2d ago</dd></div>
+          </dl>
+          <div class="issue-body">
+            <p>One palette spanning every board-view pair, every issue and every action. This becomes the primary navigation: the sidebar is for orientation, the palette is for speed.</p>
+          </div>
+          <div class="detail-sect">
+            <span class="eyebrow">History</span>
+            <div class="ledger">
+              <div class="ledger-row"><span class="ledger-mark"><span class="prov-tick" style="height:12px"></span></span><span class="ledger-txt"><b>Claude Code</b> set Labels to ui · 2d</span></div>
+              <div class="ledger-row"><span class="ledger-mark"></span><span class="ledger-txt"><b>You</b> created this ticket · 4d</span></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include airail-->
+<!--@endscreen-->
+
+<!--@screen W-03|workspace|Command palette|⌘K over the board|daybreak|⌘K over the board with the assistant open: tickets, views and actions in one list.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include ai-->
+<div class="scrim" style="position:absolute"></div>
+<div class="palette" role="dialog" aria-label="Command palette" style="position:absolute">
+  <input class="palette-input" id="pal" value="theme" aria-label="Search everything">
+  <div class="palette-list">
+    <p class="eyebrow palette-group">Tickets</p>
+    <button class="palette-row" data-selected="true"><span class="palette-mark">[[s-todo 12 sdot]]</span><span class="p-label">Add matcha to ThemePreference and the four-segment switcher</span><span class="card-id">TOM-9</span></button>
+    <button class="palette-row"><span class="palette-mark">[[s-todo 12 sdot]]</span><span class="p-label">Conflict banner is dark-only and unreadable in light mode</span><span class="card-id">TOM-10</span></button>
+    <button class="palette-row"><span class="palette-mark">[[s-verifying 12 sdot]]</span><span class="p-label">Theme crossfade unwinds under reduced motion</span><span class="card-id">TOM-6</span></button>
+    <p class="eyebrow palette-group">Views</p>
+    <button class="palette-row"><span class="palette-mark">[[i-stack 14]]</span><span class="p-label">By epic · Theme token refactor</span></button>
+    <p class="eyebrow palette-group">Actions</p>
+    <button class="palette-row"><span class="palette-mark">[[i-sun 14]]</span><span class="p-label">Theme · Sunrise</span></button>
+    <button class="palette-row"><span class="palette-mark">[[i-moon 14]]</span><span class="p-label">Theme · Daybreak</span></button>
+    <button class="palette-row"><span class="palette-mark">[[i-gear 14]]</span><span class="p-label">Open settings</span><span class="kbd">⌘,</span></button>
+  </div>
+  <div class="palette-foot">↑↓ to move · ↵ to open · Esc to close</div>
+</div>
+<!--@endscreen-->
+
+<!--@screen S-01|settings|Appearance|Settings sheet over the board|paper|The settings sheet over the board, open on Appearance: the eight themes and automatic switching.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include airail-->
+<div class="scrim" style="position:absolute"></div>
+<div class="palette modal sheet-settings" role="dialog" aria-label="Settings" style="position:absolute;top:50%;height:700px">
+  <div class="dlg-head"><h2 class="dlg-title" style="font-size:var(--text-lg)">Settings</h2><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Close settings">[[i-close 14]]</button></div>
+  <div class="dlg-split">
+    <nav class="dlg-nav" aria-label="Settings sections">
+      <div class="side-group">
+        <p class="side-label eyebrow">This machine</p>
+        <div class="side-list" style="display:flex;flex-direction:column;gap:1px">
+          <button class="side-row" aria-current="true">[[i-sun 14 ico]]<span class="side-name">Appearance</span></button>
+          <button class="side-row">[[i-globe 14 ico]]<span class="side-name">Language</span></button>
+          <button class="side-row">[[i-terminal 14 ico]]<span class="side-name">Assistant</span></button>
+          <button class="side-row">[[i-link 14 ico]]<span class="side-name">Agent access</span></button>
+          <button class="side-row">[[i-plug 14 ico]]<span class="side-name">Plugins</span></button>
+          <button class="side-row">[[i-cloud 14 ico]]<span class="side-name">Hub</span></button>
+        </div>
+      </div>
+    </nav>
+    <div class="dlg-body">
+      <div class="sec-head"><div><h3 class="sec-title">Appearance</h3><p class="sec-lede" style="margin-top:4px">Choose from nine built-in themes, or create your own. Sunrise, the default for new users, runs vermilion into gold over a lilac sky; Daybreak is its dark twin.</p></div></div>
+      <p class="eyebrow" style="margin:var(--space-5) 0 var(--space-3)">Theme</p>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)">
+        [[swatch sunrise|Sunrise|i-sun]]
+        [[swatch daybreak|Daybreak|i-moon]]
+        [[swatch glass|Glass|i-stack]]
+        [[swatch sakura|Sakura|i-leaf]]
+        [[swatch dawn|Dawn|i-sun]]
+        [[swatch paper|Paper|i-sun|current]]
+        [[swatch ink|Ink|i-moon]]
+        [[swatch matcha|Matcha|i-leaf]]
+      </div>
+      <hr class="rule">
+      <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">Automatic switching</span><div class="seg" role="group" aria-label="Automatic switching"><button aria-pressed="true">None</button><button aria-pressed="false">System</button><button aria-pressed="false">Schedule</button><button aria-pressed="false">Shuffle</button></div></div>
+      <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">Stop decorative animation<span class="meta-txt" style="display:block;font-family:var(--font-body)">Stops the moving light of Sunrise and Daybreak, to spare the GPU and the battery.</span></span><button class="switch" role="switch" aria-checked="false" aria-label="Stop decorative animation"></button></div>
+      <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">AI theme from a picture<span class="meta-txt" style="display:block;font-family:var(--font-body)">Your pictures behind the windows, colours to match</span></span><button class="btn btn-secondary">[[i-upload 14]]Choose a picture…</button></div>
+    </div>
+  </div>
+</div>
+<!--@endscreen-->

@@ -29,7 +29,10 @@ export interface ChartPayload {
 const CHART_WORDS: MessageKey[] = ["duration", "uses", "activeIds", "rate", "cohort", "returned", "pending", "today", "newAccounts", "siteInstalls", "updates", "pageviews", "generating", "clicks", "impressions", "views", "viewUniques", "clones"];
 const WINDOW_WORDS: Record<WindowDays, MessageKey> = { 7: "days7", 30: "days30", 90: "days90", 180: "days180", 365: "days365" };
 
-export function renderDashboard(f: Filters, view?: View, error?: "failed" | "invalid", insights?: InsightsState): string {
+/** What the redirect after "Send to Tomrade" says: the ticket's key, or why there is none. */
+export type SendOutcome = { key: string } | { error: "unavailable" | "failed" };
+
+export function renderDashboard(f: Filters, view?: View, error?: "failed" | "invalid", insights?: InsightsState, sent?: SendOutcome): string {
   const t = translator(f.lang);
   const n = (value: number) => new Intl.NumberFormat(f.lang, { maximumFractionDigits: 1 }).format(value);
   const compact = (value: number) => new Intl.NumberFormat(f.lang, { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -215,7 +218,9 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
     const button = `<form method="post" action="/insights${escape(query())}" class="generate"><button type="submit"${state.running ? " disabled" : ""}>${escape(state.running ? t("generating") : entry && !other ? t("regenerate") : t("generate"))}</button></form>`;
     const notices = [
       state.error ? `<p role="alert" class="notice-inline error">${escape(state.error.kind === "unavailable" ? t("insightsUnavailable") : fill(t("insightsFailed"), { at: time(state.error.at) }))}</p>` : "",
-      other ? `<p class="notice-inline">${escape(t("insightsOther"))}</p>` : ""
+      other ? `<p class="notice-inline">${escape(t("insightsOther"))}</p>` : "",
+      sent && "key" in sent ? `<p role="status" class="notice-inline">${escape(fill(t("sentAs"), { key: sent.key }))}</p>` : "",
+      sent && "error" in sent ? `<p role="alert" class="notice-inline error">${escape(t(sent.error === "unavailable" ? "sendUnavailable" : "sendFailed"))}</p>` : ""
     ].join("");
     let body = `<p class="muted">${escape(t("insightsNone"))}</p>`;
     if (entry) {
@@ -229,8 +234,9 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
           <div><h3>${escape(t("suggestions"))}</h3>${list(insights.suggestions.map((s) => `<li><strong>${tag(s.priority, t(s.priority))}${escape(s.title)}</strong><span>${escape(s.detail)}</span></li>`))}</div>
         </div>`;
     }
+    const send = entry ? `<form method="post" action="/insights/send${escape(query())}" class="generate"><button type="submit">${escape(t("sendToTomrade"))}</button></form>` : "";
     const basis = entry ? `<span class="pill">${escape(fill(t("insightsBasis"), { from: entry.from, to: entry.to, region: t(entry.region), at: time(entry.generated_at) }))}${entry.cost_usd !== null ? ` · ${escape(fill(t("insightsCost"), { cost: entry.cost_usd.toFixed(3) }))}` : ""}</span>` : "";
-    return card({ id: "insights", title: t("insights"), hint: t("insightsHint"), span: "s12 ai", extra: `${basis}${button}`, body: notices + body });
+    return card({ id: "insights", title: t("insights"), hint: t("insightsHint"), span: "s12 ai", extra: `${basis}${send}${button}`, body: notices + body });
   }
 
   const latest = view && data ? data.report.latest : undefined;
