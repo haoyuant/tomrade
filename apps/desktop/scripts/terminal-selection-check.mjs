@@ -19,12 +19,13 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript(`(async () => { ${follower}
       window.term = new Terminal({cols: 60, rows: 12, scrollback: 0});
       term.open(document.getElementById('term'));
-      window.follower = followSelection(term, document.getElementById('term'));
+      window.offset = 0;
+      window.follower = followSelection(term, document.getElementById('term'), (direction, lines) => paint(offset + (direction === 'up' ? -lines : lines)));
       window.paintRows = async (rows) => {
         await new Promise(resolve => term.write(rows.map((text, y) => '\\x1b[' + (y + 1) + ';1H\\x1b[2K' + text).join(''), resolve));
         await new Promise(resolve => setTimeout(resolve, 60));
       };
-      window.paint = (offset) => paintRows(['Fixed header', ...Array.from({length: 9}, (_, i) => 'Body line ' + (offset + i)), 'Fixed input', 'Fixed status']);
+      window.paint = (offset) => (window.offset = offset, paintRows)(['Fixed header', ...Array.from({length: 9}, (_, i) => 'Body line ' + (offset + i)), 'Fixed input', 'Fixed status']);
       window.copy = () => {
         const data = new DataTransfer();
         document.getElementById('term').dispatchEvent(new ClipboardEvent('copy', {clipboardData: data, bubbles: true, cancelable: true}));
@@ -34,7 +35,7 @@ app.whenReady().then(async () => {
     })()`);
     const js = (code) => win.webContents.executeJavaScript(code);
     const box = await js(`(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return {x:r.x, y:r.y, w:r.width/60, h:r.height/12}; })()`);
-    const mouse = (type, col, row) => win.webContents.sendInputEvent({ type, x: Math.round(box.x + box.w * col), y: Math.round(box.y + box.h * (row + .5)), button: "left", clickCount: 1 });
+    const mouse = (type, col, row) => win.webContents.sendInputEvent({ type, x: Math.round(box.x + box.w * col), y: Math.round(box.y + box.h * (row + .5)), button: "left", clickCount: 1, modifiers: type === "mouseUp" ? [] : ["leftButtonDown"] });
     const select = async (col, row, endCol, endRow) => {
       mouse("mouseDown", col, row);
       mouse("mouseMove", endCol, endRow);
@@ -79,6 +80,39 @@ app.whenReady().then(async () => {
     await check("scroll back restores the short shell selection", `term.getSelectionPosition()?.start.y === 4 && term.getSelection() === ${JSON.stringify(shellPicked)}`);
     await js("paintRows(['', '', 'shell changed outside the selection', '', '', '', '', '', '', '', '', ''])");
     await check("unique selected text still follows when unselected context changes", `term.getSelectionPosition()?.start.y === 2 && copy() === ${JSON.stringify(shellPicked)}`);
+    const body = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => "Body line " + (from + i)).join("\n");
+    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    await js("paint(0)");
+    mouse("mouseDown", 0, 4);
+    mouse("mouseMove", 12, 6);
+    await js("paint(2)");
+    await check("held: the start stays on its text, the end under the pointer", `term.getSelectionPosition()?.start.y === 2 && term.getSelection() === ${JSON.stringify(body(3, 7))}`);
+    await js("paint(6)");
+    await check("held: the start scrolls out of view, and stays in the copy", `term.getSelection() === ${JSON.stringify(body(6, 11))} && copy() === ${JSON.stringify(body(3, 11))}`);
+    mouse("mouseMove", 5, 8);
+    mouse("mouseUp", 5, 8);
+    await wait(100);
+    await check("held: the pointer moves the end after a scroll", `copy() === ${JSON.stringify(body(3, 12) + "\nBody ")}`);
+    await js("paint(0)");
+    await check("released: the dragged selection follows like any other", `term.getSelectionPosition()?.start.y === 4 && term.getSelection() === ${JSON.stringify(body(3, 8))} && copy() === ${JSON.stringify(body(3, 12) + "\nBody ")}`);
+    mouse("mouseDown", 0, 4);
+    mouse("mouseMove", 3, 13);
+    await wait(500);
+    mouse("mouseUp", 3, 13);
+    await wait(150);
+    const reached = await js("offset");
+    if (reached < 2) throw new Error(`Pointer below the terminal did not scroll: ${reached}`);
+    await check("pointer below the terminal scrolls and selects down to the last body row", `copy() === ${JSON.stringify(body(3, reached + 8))}`);
+    await wait(300);
+    await check("released: the scrolling stops", `offset === ${reached}`);
+    mouse("mouseDown", 6, 5);
+    mouse("mouseMove", 3, -2);
+    await wait(500);
+    mouse("mouseUp", 3, -2);
+    await wait(150);
+    const back = await js("offset");
+    if (back >= reached) throw new Error(`Pointer above the terminal did not scroll: ${back}`);
+    await check("pointer above the terminal scrolls and selects up to the first body row", `copy() === ${JSON.stringify(body(back, reached + 3) + "\nBody l")}`);
     await js("follower.dispose()");
   } catch (error) {
     console.error(error);

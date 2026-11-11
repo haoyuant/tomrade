@@ -230,7 +230,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     }
     setClosed(undefined);
     setScroll(null);
-    const selection = followSelection(terminal, el);
+    const selection = followSelection(terminal, el, (direction, lines) => send({ type: "scroll", cell, direction, lines, column: Math.floor(terminal.cols / 2), row: Math.floor(terminal.rows / 2) }));
     // Copy takes the selection's snapshot, also once the pane has scrolled it away; paste goes in as xterm pastes.
     const canCopy = () => selection.text() !== null || terminal.hasSelection();
     const copy = () => {
