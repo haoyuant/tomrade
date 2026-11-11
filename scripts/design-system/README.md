@@ -21,7 +21,22 @@ They only read the repository:
 
 `screens/screens.html` is the list of screens. Each `<!--@screen ID|area|name|state|theme|about-->` block is one artboard: `W01-Board.dc.html`, titled "W-01 · Board", placed on its area's page in ID order and listed in the index. IDs: `W` workspace, `H` home, `S` settings; add an area in `AREAS` in `build-screens.mjs`.
 
-What several screens share (titlebar, sidebar, view head and query bar, board columns, status bar, assistant) is written once in `screens/parts.html` and pulled in with `<!--@include name-->`. Cards are `[[card KEY|title|status|priority|workstream|age|provenance|epic:hue|labels]]`, icons `[[i-plus 14]]`. Markup uses the app's class names only, so the design system styles it.
+What several screens share (titlebar, sidebar, view head and query bar, board columns, status bar, assistant) is written once in `screens/parts.html` and pulled in with `<!--@include name-->`. Cards are `[[card KEY|title|status|priority|workstream|age|provenance|epic:hue|labels]]`, icons `[[i-plus 14]]` (`meta` or `accent` colours one, `rot180` or `rot-90` turns it). Markup uses the app's class names only, so the design system styles it.
+
+Diffs are drawn as `DiffView` and `DiffFile` draw them, in the unified layout:
+
+- `[[ditem M|path|additions|deletions|viewed]]` is a row in the file list; `[[dfile INDEX|M|path|additions|deletions|open|viewed|note]]` opens a file's `<section>` with its head, and the screen closes it.
+- A hunk is a block whose lines start, at column 0, with their sign, as in a patch; `GAP` is the unchanged lines above it, and `⟦…⟧` marks the words that changed against the line's pair:
+
+  ```
+  <!--@hunk ts 7 7 6|function header-->
+   const score = defaultFilter(value, search, keywords);
+  -return score > 0 ? 0.5 + score ⟦/ 2⟧ : 0;
+  +return score > 0 ? 0.5 + score ⟦* 0.49⟧ : 0;
+  <!--@endhunk-->
+  ```
+
+  Line numbers, the change stops and a rough syntax colouring (`ts` or `css`) are added by the build. Set `--diff-gutter` on the `.diff__body` around the hunks to the digits of the largest line number plus one, in `ch`.
 
 ## Republishing
 

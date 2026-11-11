@@ -15,7 +15,7 @@ const out = path.resolve(outArg);
 const syms = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(out, "icons.json"), "utf8")).map((s) => [s.id, s]));
 const THEMES = ["sunrise", "daybreak", "glass", "sakura", "dawn", "paper", "ink", "matcha"];
 const AREAS = [
-  { id: "workspace", name: "Workspace", about: "Inside a project: the board, a ticket, the palette." },
+  { id: "workspace", name: "Workspace", about: "Inside a project: the board, a ticket, the palette, its changes." },
   { id: "home", name: "Home", about: "Before a project is open." },
   { id: "settings", name: "Settings", about: "Sheets over the workspace." },
 ];
@@ -24,8 +24,91 @@ const W = 1440, H = 900, GAP = 80;
 const parts = {};
 for (const m of fs.readFileSync(path.join(here, "screens/parts.html"), "utf8").matchAll(/<!--@part (\S+)-->\n([\s\S]*?)<!--@end-->/g)) parts[m[1]] = m[2];
 
+// ── diffs, drawn as DiffFile.tsx draws them (unified layout) ────────────
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\[/g, "&#91;").replace(/\{/g, "&#123;");
+const KEYWORDS = new Set("export import from const let var function return if else for of in new type interface extends class async await typeof as default".split(" "));
+const LITERALS = new Set(["true", "false", "null", "undefined"]);
+// A rough stand-in for the app's highlighter: one kind per character, for the classes diff.css colours.
+function kinds(text, lang) {
+  const kind = new Array(text.length).fill(null);
+  const mark = (from, to, k) => { for (let i = from; i < to; i++) kind[i] ??= k; };
+  const lead = text.length - text.trimStart().length;
+  if (lang === "ts" && /^(\/\/|\/\*|\*)/.test(text.trimStart())) { mark(lead, text.length, "comment"); return kind; }
+  const pattern = lang === "css"
+    ? /(\/\*.*?\*\/)|("[^"]*"|'[^']*')|(-?\b\d+(?:\.\d+)?(?:px|ch|em|rem|%|vh|vw|ms|s|deg)?\b)|([a-z-]+)(?=\()|(--[\w-]+|[a-z-]+(?=\s*:\s))/g
+    : /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)/g;
+  for (const m of text.matchAll(pattern)) {
+    const [whole, comment, string, number, word] = m;
+    const from = m.index, to = from + whole.length;
+    if (comment) mark(from, to, "comment");
+    else if (string) mark(from, to, "string");
+    else if (number) mark(from, to, "literal");
+    else if (lang === "css") mark(from, to, word ? "function" : "property");
+    else if (KEYWORDS.has(word)) mark(from, to, "keyword");
+    else if (LITERALS.has(word)) mark(from, to, "literal");
+    else if (text[to] === "(") mark(from, to, "function");
+    else if (/^[A-Z]/.test(word)) mark(from, to, "type");
+  }
+  return kind;
+}
+// One line of code: ⟦…⟧ marks the words that changed against its pair, as words.ts finds them.
+function code(src, lang) {
+  let text = "";
+  const changed = [];
+  for (const piece of src.split(/(⟦[^⟧]*⟧)/)) {
+    const on = piece.startsWith("⟦");
+    const t = on ? piece.slice(1, -1) : piece;
+    text += t;
+    changed.push(...new Array(t.length).fill(on));
+  }
+  const kind = kinds(text, lang);
+  let html = "";
+  for (let i = 0; i < text.length;) {
+    let j = i;
+    while (j < text.length && kind[j] === kind[i] && changed[j] === changed[i]) j++;
+    const cls = [kind[i] && `diff__tok diff__tok--${kind[i]}`, changed[i] && "diff__word"].filter(Boolean).join(" ");
+    html += cls ? `<span class="${cls}">${esc(text.slice(i, j))}</span>` : esc(text.slice(i, j));
+    i = j;
+  }
+  return html;
+}
+// <!--@hunk LANG OLD NEW GAP|header--> then one line per row, its first character the sign (' ', '+', '-').
+// GAP is the unchanged lines before it (0 for none); LANG is ts or css.
+function hunk(lang, oldStart, newStart, gap, header, body) {
+  let o = +oldStart, n = +newStart, before = "context";
+  const rows = body.split("\n").map((raw) => {
+    const sign = raw[0] ?? " ";
+    const k = sign === "+" ? "add" : sign === "-" ? "del" : "context";
+    if (sign !== " " && sign !== "+" && sign !== "-" && raw !== "") throw new Error("hunk line without a sign: " + raw);
+    const stop = k !== "context" && before === "context" ? ' data-diff-stop="true"' : "";
+    before = k;
+    const oldNo = k === "add" ? "" : o++, newNo = k === "del" ? "" : n++;
+    return `<div class="diff__row"${stop}><span class="diff__num diff__num--${k}">${oldNo}</span><span class="diff__num diff__num--${k}">${newNo}</span><span class="diff__code diff__code--${k}"><span class="diff__sign" aria-hidden="true">${sign === " " || raw === "" ? " " : sign === "-" ? "-" : "+"}</span>${code(raw.slice(1), lang)}</span></div>`;
+  });
+  const label = +gap ? `<button type="button" class="diff__gap" title="Show ${gap} unchanged lines">${gap} unchanged lines</button>` : "";
+  const name = header ? `<span class="diff__hunk-name">${esc(header)}</span>` : "";
+  return `<div class="diff__hunk"><div class="diff__hunk-head${label || name ? "" : " diff__hunk-head--bare"}">${label}${name}</div>${rows.join("")}</div>`;
+}
+const STATUS = { A: ["added", "Added"], M: ["modified", "Modified"], D: ["deleted", "Deleted"], R: ["renamed", "Renamed"] };
+const fileStatus = (s) => { const [cls, label] = STATUS[s] ?? (() => { throw new Error("no file status " + s); })(); return `<span class="diff__status diff__status--${cls}" title="${label}" aria-label="${label}">${s}</span>`; };
+const filePath = (p) => { const cut = p.lastIndexOf("/") + 1; return `${cut ? `<span class="diff__dir">${p.slice(0, cut)}</span>` : ""}<span class="diff__name">${p.slice(cut)}</span>`; };
+const counts = (add, del) => `<span class="diff__counts num"><span class="diff__count diff__count--add">+${add}</span> <span class="diff__count diff__count--del">−${del}</span></span>`;
+
 function expand(html, used) {
+  html = html.replace(/<!--@hunk (ts|css) (\d+) (\d+) (\d+)(?:\|([^>]*?))?-->\n([\s\S]*?)\n<!--@endhunk-->/g, (_, lang, o, n, gap, header, body) => hunk(lang, o, n, gap, header, body));
+  if (/<!--@hunk/.test(html)) throw new Error("malformed @hunk block");
   html = html.replace(/<!--@include (\S+)-->/g, (_, n) => { if (!parts[n]) throw new Error("no part " + n); return parts[n]; });
+  // a file in a diff's list: [[ditem STATUS|path|additions|deletions|viewed]]
+  html = html.replace(/\[\[ditem ([^\]]+)\]\]/g, (_, a) => {
+    const [status, p, add, del, viewed] = a.split("|");
+    return `<button type="button" class="diff__item${viewed ? " is-viewed" : ""}" title="${p}">${fileStatus(status)}<span class="diff__path">${filePath(p)}</span>${viewed ? '[[i-check 12 diff__item-check]]' : counts(add, del)}</button>`;
+  });
+  // a file's head in the diff: [[dfile INDEX|STATUS|path|additions|deletions|open|viewed|note]]; opens a <section>, the screen closes it
+  html = html.replace(/\[\[dfile ([^\]]+)\]\]/g, (_, a) => {
+    const [i, status, p, add, del, open, viewed, note] = a.split("|");
+    const on = open === "open";
+    return `<section class="diff__file" data-diff-index="${i}" data-path="${p}"${on ? ' data-open="true"' : ""}><header class="diff__file-head"><button type="button" class="btn btn-icon fold-chev" aria-expanded="${on}" aria-label="Show or hide ${p}" title="Show or hide ${p}">[[i-chevdown 14${on ? "" : " rot-90"}]]</button>${fileStatus(status)}<span class="diff__path" title="${p}">${filePath(p)}</span>${!on && note ? `<span class="meta-txt diff__note">${note}</span>` : ""}<span class="diff__file-tools">${counts(add, del)}${status === "D" ? "" : '<button type="button" class="btn btn-icon" aria-label="Open in editor" title="Open in editor">[[i-popout 14]]</button>'}<label class="diff__viewed"><input type="checkbox"${viewed === "viewed" ? " checked" : ""}>Viewed</label></span></header>`;
+  });
   // cards: [[card key|title|status|prio|ws|date|prov|epic:hue|tags]]; a tag written !x is a plugin badge
   html = html.replace(/\[\[card ([^\]]+)\]\]/g, (_, a) => {
     const [key, title, status, prio, ws, date, prov, epic, tags] = a.split("|");
@@ -44,13 +127,15 @@ function expand(html, used) {
     const on = cur === "current";
     return `<button aria-pressed="${on}" style="display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid ${on ? "var(--accent)" : "var(--border)"};box-shadow:${on ? "var(--elev-ring-accent)" : "none"};border-radius:var(--radius-md);background:var(--surface);text-align:left"><span data-theme="${id}" style="display:flex;gap:6px;align-items:flex-end;height:64px;padding:8px;border-radius:var(--radius-sm);background:var(--bg);box-shadow:var(--elev-ring)"><span style="flex:1;height:100%;border-radius:var(--radius-xs);background:var(--surface);box-shadow:var(--elev-ring)"></span><span style="width:22px;height:12px;border-radius:var(--radius-xs);background:var(--accent)"></span></span><span class="row" style="font-family:var(--font-display);font-size:14px;color:var(--fg)">[[${icon} 13 meta]]${name}</span></button>`;
   });
-  // icons: [[id size cls...]]; `accent` / `meta` colour the icon instead of naming a class
-  html = html.replace(/\[\[([isp]-[a-z0-9-]+) (\d+)((?: [a-z-]+)*)\]\]/g, (_, id, size, cls) => {
+  // icons: [[id size cls...]]; `accent` / `meta` colour the icon and `rot180` / `rot-90` turn it, instead of naming a class
+  html = html.replace(/\[\[([isp]-[a-z0-9-]+) (\d+)((?: [a-z0-9_-]+)*)\]\]/g, (_, id, size, cls) => {
     if (!syms[id]) throw new Error("no icon " + id);
     used.add(id);
     const classes = cls.trim().split(/\s+/).filter(Boolean);
-    const style = classes.includes("accent") ? ' style="color:var(--accent)"' : classes.includes("meta") ? ' style="color:var(--meta)"' : "";
-    const c = classes.filter((x) => x !== "accent" && x !== "meta").join(" ");
+    const rot = classes.find((x) => /^rot-?\d+$/.test(x));
+    const styles = [classes.includes("accent") && "color:var(--accent)", classes.includes("meta") && "color:var(--meta)", rot && `transform:rotate(${rot.slice(3)}deg)`].filter(Boolean);
+    const style = styles.length ? ` style="${styles.join(";")}"` : "";
+    const c = classes.filter((x) => x !== "accent" && x !== "meta" && x !== rot).join(" ");
     return `<svg${c ? ` class="${c}"` : ""} width="${size}" height="${size}"${style} aria-hidden="true"><use href="#${id}"></use></svg>`;
   });
   if (/\[\[/.test(html)) throw new Error("unexpanded macro: " + html.match(/\[\[[^\]]*\]\]/)[0]);
