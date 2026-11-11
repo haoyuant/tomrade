@@ -737,9 +737,15 @@ export interface SessionPatch {
   endedAt?: number | null;
 }
 
+/** A pull request this machine saw open, or a branch it saw merged, for the activation funnel. */
+export type PullStep = "open_pr" | "merge";
+
 /** Rows live in their project's file, so every read and write names the project first. */
 export class CodeLinkStore {
-  constructor(private readonly pool: Db) {}
+  constructor(
+    private readonly pool: Db,
+    private readonly onPull?: (step: PullStep) => void
+  ) {}
 
   private db(projectId: string): ProjectDb {
     return this.pool.for(projectId);
@@ -875,6 +881,7 @@ export class CodeLinkStore {
       now,
       now
     );
+    if (patch.prState === "open") this.onPull?.("open_pr");
     return this.link(projectId, id)!;
   }
 
@@ -921,6 +928,18 @@ export class CodeLinkStore {
     if (!sets.length) return;
     values.push(id);
     db.prepare(`UPDATE plugin_code_link_links SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+    this.notePull(current, patch);
+  }
+
+  // Only a change this machine writes counts (rows synced from another device never pass here), and a merge only
+  // once the link was seen unmerged first (an open pull request or a scanned head), so linking an old merged one does not.
+  private notePull(before: Record<string, unknown>, patch: LinkPatch): void {
+    if (!this.onPull) return;
+    const prBefore = (before.pr_state as PrState | null) ?? null;
+    if (patch.prState === "open" && prBefore === null) this.onPull("open_pr");
+    const mergedBefore = before.merged_sha != null || prBefore === "merged";
+    const mergedNow = !!patch.mergedSha || patch.prState === "merged";
+    if (!mergedBefore && mergedNow && (prBefore === "open" || before.head_sha != null)) this.onPull("merge");
   }
 
   removeLink(projectId: string, id: string): void {

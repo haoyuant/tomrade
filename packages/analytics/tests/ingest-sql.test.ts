@@ -42,6 +42,7 @@ beforeAll(async () => {
   await db.exec(migration("202611040002_analytics_new_install_cap.sql"));
   await db.exec(migration("202611060002_analytics_event_unused_indexes.sql"));
   await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+  await db.exec(migration("202611110102_analytics_activation_claims.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -328,6 +329,15 @@ describe("activation funnel", () => {
     await put(id("d"), d0 + 8 * DAY + HOUR, "start");
     await put(id("d"), d0 + 8 * DAY + 2 * HOUR, "open_pr");
     await put(id("d"), d0 + 9 * DAY, "merge");
+    // H: set up, then a ticket claimed from the terminal before Tomrade started one; the claim is the start.
+    await put(id("h"), d0, null);
+    await put(id("h"), d0 + HOUR, "setup_done");
+    await put(id("h"), d0 + 2 * HOUR, "claim_external");
+    await put(id("h"), d0 + 6 * HOUR, "start");
+    // I: set up and claimed only.
+    await put(id("i"), d0, null);
+    await put(id("i"), d0 + HOUR, "setup_done");
+    await put(id("i"), d0 + 7 * HOUR, "claim_external");
     // E: installed before the range.
     await put(id("e"), d0 - 20 * DAY, null);
     await put(id("e"), d0 + HOUR, "setup_done");
@@ -341,18 +351,18 @@ describe("activation funnel", () => {
 
   it("follows the range's installs up to now, each step needing every one before it", async () => {
     const result = await activation(d0 - DAY, d0 + DAY);
-    expect(result.funnel).toEqual({ installs: 5, setup_done: 3, start: 3, open_pr: 2, merge: 2 });
-    // C's start counts towards the time to start though it skipped setup: 1h, 3h, 5h, 8d.
-    expect(result.first_start).toEqual({ median_ms: 4 * HOUR, n: 4 });
-    expect(result.merged_7d).toEqual({ cohort: 5, merged: 1 });
-    expect(result.week_return).toEqual({ cohort: 5, returned: 2 });
+    expect(result.funnel).toEqual({ installs: 7, setup_done: 5, start: 5, open_pr: 2, merge: 2 });
+    // C's start counts towards the time to start though it skipped setup, and H's is its claim: 1h, 2h, 3h, 5h, 7h, 8d.
+    expect(result.first_start).toEqual({ median_ms: 4 * HOUR, n: 6 });
+    expect(result.merged_7d).toEqual({ cohort: 7, merged: 1 });
+    expect(result.week_return).toEqual({ cohort: 7, returned: 2 });
   });
 
   it("narrows to a region and leaves no median when nobody started", async () => {
     const result = await activation(d0 - DAY, d0 + DAY, "cn");
     expect(result.funnel).toEqual({ installs: 1, setup_done: 0, start: 0, open_pr: 0, merge: 0 });
     expect(result.first_start).toEqual({ median_ms: null, n: 0 });
-    expect((await activation(d0 - DAY, d0 + DAY, "all")).funnel).toMatchObject({ installs: 5 });
+    expect((await activation(d0 - DAY, d0 + DAY, "all")).funnel).toMatchObject({ installs: 7 });
   });
 
   it("holds a cohort too young for its windows out of them", async () => {
