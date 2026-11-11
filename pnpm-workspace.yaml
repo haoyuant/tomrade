@@ -25,6 +25,11 @@ overrides:
 # opaque block on a clear terminal: its rectangles read colour bits only.
 # Its glyphs blend alpha apart from colour: on a clear canvas alpha came out squared,
 # and the page washed dim text out.
+# Terminals share one glyph atlas, and it moves glyphs when its pages merge: a terminal
+# whose frame was half built drew the rows before the merge from where the glyphs had been,
+# and kept them so until its next frame. A frame is now built again when the atlas changed
+# under it, and clearing the atlas starts it over on one page rather than leaving its
+# merged pages unused for good.
 # xterm's double-click walks left over a wide character's second cell without asking
 # whether the character is a word separator, so a full-width mark never ended a word there.
 # The Windows installer counts Tomrade's running processes with .Count, which Windows
