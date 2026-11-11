@@ -221,7 +221,9 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     terminal.loadAddon(serialize);
     terminal.open(el);
     const gpu = drawWithWebgl(terminal, el);
-    const localLinks = fileLinks(terminal, linkHandler.activate);
+    const localLinks = fileLinks(terminal, (_e, url, or) => {
+      if (!terminal.hasSelection()) send({ type: "openLink", url, ...(or ? { or } : {}) });
+    });
     term.current = terminal;
     try {
       fit.fit();
