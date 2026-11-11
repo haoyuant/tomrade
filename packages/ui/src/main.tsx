@@ -46,6 +46,8 @@ if (window.tomrade) {
     void queryClient.invalidateQueries({ queryKey: keys.account });
     void queryClient.invalidateQueries({ queryKey: keys.settings });
   });
+  // One of the account's machines came or went, was renamed or removed, or is working on something else.
+  subscribe("devices.changed", () => void queryClient.invalidateQueries({ queryKey: keys.devices }));
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: keys.contributions }));
   // An agent, or another machine, changed a setting: the theme and language follow at once.
   subscribe("settings.changed", (next) => {

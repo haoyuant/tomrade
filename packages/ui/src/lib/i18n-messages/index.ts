@@ -69,6 +69,7 @@ import { pluginLayout } from "./pluginLayout";
 import { history } from "./history";
 import { hubSetup } from "./hubSetup";
 import { hubPane } from "./hubPane";
+import { devices } from "./devices";
 import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
@@ -125,6 +126,7 @@ export const en = {
 
   hubSetup: hubSetup.en,
   hubPane: hubPane.en,
+  devices: devices.en,
   restore: restore.en,
   repositories: repositories.en,
   projectsScreen: projectsScreen.en,
@@ -215,6 +217,7 @@ export const zh: typeof en = {
 
   hubSetup: hubSetup.zh,
   hubPane: hubPane.zh,
+  devices: devices.zh,
   restore: restore.zh,
   repositories: repositories.zh,
   projectsScreen: projectsScreen.zh,
