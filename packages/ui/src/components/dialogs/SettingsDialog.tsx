@@ -14,6 +14,7 @@ import { ImPane } from "./ImPane";
 import { PluginsPanel } from "./PluginsPanel";
 import { AgentAccessSection } from "./settings/AgentAccessSection";
 import { AssistantPane } from "./settings/AssistantPane";
+import { PlaybooksPane } from "./settings/PlaybooksPane";
 import { PANE_EXTRAS, PluginPane } from "./settings/PluginPane";
 import { ScopeTag } from "./settings/ScopeTag";
 import { AppIconSection } from "./settings/AppIconSection";
@@ -154,6 +155,16 @@ export function SettingsDialog({
             onFindEngines={() => go("plugins", "engine")}
             focusEngine={open ? engine : undefined}
           />
+        ) : null
+    },
+    {
+      id: "playbooks",
+      label: t("playbooks.settingsTitle"),
+      icon: "i-stack" as IconId,
+      group: "app" as const,
+      render: () =>
+        settings.data ? (
+          <PlaybooksPane scope={scopeOf("agent")} settings={settings.data} onSave={(next) => save.mutate(next, { onError: reportError })} />
         ) : null
     },
     { id: "usage", label: t("usage.label"), icon: "i-bars" as IconId, group: "app" as const, render: () => <UsagePane onLeave={() => onOpenChange(false)} /> },
