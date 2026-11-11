@@ -1,5 +1,3 @@
 @layer components {
-.menu-search { padding: 4px var(--space-2) 6px; }
-.menu-search .input { width: 100%; }
 .menu-note { padding: 4px var(--space-3); margin: 0; }
 }
