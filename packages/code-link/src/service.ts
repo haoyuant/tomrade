@@ -31,7 +31,7 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
-import type { ChangedFile, ChangesOptions, ChangesView } from "./changes.js";
+import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView } from "./changes.js";
 import { Changes } from "./changes-read.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
@@ -260,7 +260,7 @@ declare module "@tomradex/ipc" {
     /** What a ticket changed, for one of its code links and one scope; null when git has nothing of it here. */
     "codeLink.changes": (projectId: string, itemId: string, opts?: ChangesOptions) => ChangesView | null;
     /** One file of that answer with every hunk, for a file the answer left out or cut short. */
-    "codeLink.changeFile": (projectId: string, itemId: string, opts: ChangesOptions & { path: string }) => ChangedFile | null;
+    "codeLink.changeFile": (projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions) => ChangedFile | null;
     /** Merged pull requests of the last `days` days across open projects, by engine: first-pass rate and engine-reported spend. */
     "codeLink.scorecard": (days?: number) => Scorecard;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
@@ -1823,7 +1823,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** One file of `changes` with every hunk. */
-  changeFile(projectId: string, itemId: string, opts: ChangesOptions & { path: string }): Promise<ChangedFile | null> {
+  changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     return this.changesReader.changeFile(projectId, itemId, opts);
   }
 

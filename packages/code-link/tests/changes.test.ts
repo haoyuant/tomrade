@@ -300,6 +300,10 @@ describe("a ticket's changes, read from git", () => {
       expect((await codeLink.changeFile(project.id, item.id, { path: "new-name.ts" }))!).toMatchObject({ status: "renamed", oldPath: "old-name.ts" });
       expect((await codeLink.changeFile(project.id, item.id, { path: "pnpm-lock.yaml" }))!.hunks![0].lines[0].text).toBe("lockfileVersion: 9");
       expect(await codeLink.changeFile(project.id, item.id, { path: "untouched.ts" })).toBeNull();
+      // Asked for whole, a file is one hunk that starts at its first line.
+      const whole = (await codeLink.changeFile(project.id, item.id, { path: "README.md", full: true }))!;
+      expect(whole.hunks).toHaveLength(1);
+      expect(whole.hunks![0]).toMatchObject({ oldStart: 1, newStart: 1 });
 
       const one = (await codeLink.changes(project.id, item.id, { scope: { kind: "commit", sha: first.slice(0, 10) } }))!;
       expect(one.scope).toEqual({ kind: "commit", sha: first });

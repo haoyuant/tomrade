@@ -64,6 +64,13 @@ export interface ChangesOptions {
   ignoreWhitespace?: boolean;
 }
 
+/** Which file `codeLink.changeFile` reads, and how much of it. */
+export interface ChangeFileOptions {
+  path: string;
+  /** The unchanged lines too, so the file comes back as one hunk: what unfolding between hunks shows. */
+  full?: boolean;
+}
+
 /** What a ticket changed, for one code link and one scope. */
 export interface ChangesView {
   linkId: string;

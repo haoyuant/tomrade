@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Git } from "@tomradex/git";
-import type { ChangeCommit, ChangedFile, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesView } from "./changes.js";
+import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesView } from "./changes.js";
 import { addedFileHunks, parseFileList, parsePatch, type ListedFile, type PatchFile } from "./changes-parse.js";
 import { currentLinks, primaryOf } from "./scan/absorb.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
@@ -12,6 +12,8 @@ const BULK_LINES = 20_000;
 const BULK_FILES = 300;
 const BULK_FILE_LINES = 3_000;
 const BULK_FILE_BYTES = 400 * 1024;
+/** More context lines than a file has. */
+const WHOLE_FILE = 10_000_000;
 /** The most of one file `changeFile` hands back. */
 const FILE_BYTES = 2 * 1024 * 1024;
 /** Pathspecs go on the command line, which Windows caps near 32 000 characters. */
@@ -72,10 +74,10 @@ export class Changes {
   }
 
   /** One file of that answer with every hunk, up to `FILE_BYTES`; null when the scope does not change it. */
-  async changeFile(projectId: string, itemId: string, opts: ChangesOptions & { path: string }): Promise<ChangedFile | null> {
+  async changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     const target = await this.target(projectId, itemId, opts);
     if (!target) return null;
-    return this.file(target, opts.path, Boolean(opts.ignoreWhitespace));
+    return this.file(target, opts.path, Boolean(opts.ignoreWhitespace), Boolean(opts.full));
   }
 
   private async sha(dir: string, ref: string): Promise<string | null> {
@@ -167,9 +169,10 @@ export class Changes {
   }
 
   /** The patch of these files (of every file when `only` is null) by path; null when git could not hand it over whole. */
-  private async patch(target: Target, ignoreWhitespace: boolean, only: ListedFile[] | null, maxBytes = Infinity): Promise<Map<string, PatchFile> | null> {
+  private async patch(target: Target, ignoreWhitespace: boolean, only: ListedFile[] | null, maxBytes = Infinity, full = false): Promise<Map<string, PatchFile> | null> {
     const paths = only ? ["--", ...only.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path]))] : [];
-    const out = await this.git([...this.diffArgs(target.range, ignoreWhitespace), ...paths], { cwd: target.dir, ok: true });
+    // Every unchanged line as context: the whole file comes back as one hunk.
+    const out = await this.git([...this.diffArgs(target.range, ignoreWhitespace), ...(full ? [`--unified=${WHOLE_FILE}`] : []), ...paths], { cwd: target.dir, ok: true });
     // Cut off by the runner's own limit: what arrived is still good up to its last whole line when a limit was asked for.
     if (out.code !== 0 && (maxBytes === Infinity || !out.stdout)) return null;
     return new Map(parsePatch(out.stdout, out.code === 0 ? maxBytes : Math.min(maxBytes, out.stdout.length - 1)).map((f) => [f.path, f]));
@@ -265,7 +268,7 @@ export class Changes {
     return files;
   }
 
-  private async file(target: Target, file: string, ignoreWhitespace: boolean): Promise<ChangedFile | null> {
+  private async file(target: Target, file: string, ignoreWhitespace: boolean, full: boolean): Promise<ChangedFile | null> {
     const listed = (await this.listed(target, ignoreWhitespace)).find((f) => f.path === file);
     const generated = (await this.generated(target.dir, [file])).has(file);
     if (!listed) {
@@ -273,7 +276,7 @@ export class Changes {
       return this.newFile(target.dir, file, generated, FILE_BYTES);
     }
     if (listed.binary) return { ...listed, generated, truncated: false, hunks: null };
-    const patch = await this.patch(target, ignoreWhitespace, [listed], FILE_BYTES);
+    const patch = await this.patch(target, ignoreWhitespace, [listed], FILE_BYTES, full);
     if (!patch) return { ...listed, generated, truncated: true, hunks: null };
     const parsed = patch.get(file);
     return { ...listed, generated, truncated: parsed?.truncated ?? false, hunks: parsed?.hunks ?? [] };
