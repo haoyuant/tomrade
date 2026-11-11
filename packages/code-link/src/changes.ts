@@ -30,7 +30,7 @@ export interface ChangedFile {
   /** Where a renamed file was. */
   oldPath: string | null;
   status: ChangeStatus;
-  /** Null for a binary file. */
+  /** Null for a binary file, and for an untracked file too large to read with the rest. */
   additions: number | null;
   deletions: number | null;
   binary: boolean;
@@ -62,6 +62,13 @@ export interface ChangesOptions {
   /** `branch` when omitted. */
   scope?: ChangeScope;
   ignoreWhitespace?: boolean;
+}
+
+/** Which file `codeLink.changeFile` reads, and how much of it. */
+export interface ChangeFileOptions {
+  path: string;
+  /** The unchanged lines too, so the file comes back as one hunk: what unfolding between hunks shows. */
+  full?: boolean;
 }
 
 /** What a ticket changed, for one code link and one scope. */
