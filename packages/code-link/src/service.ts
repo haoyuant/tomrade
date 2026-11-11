@@ -31,7 +31,7 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
-import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
+import type { ChangedFile, ChangeFileOptions, ChangeReviewed, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { fileInside, findEditor, openInEditor, type EditorOpened } from "./editor.js";
 import { Changes } from "./changes-read.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
@@ -265,6 +265,8 @@ declare module "@tomradex/ipc" {
     "codeLink.changeFile": (projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions) => ChangedFile | null;
     /** How much the ticket's branch changes: files and lines, for the ticket to say before its diff is opened. */
     "codeLink.changesSummary": (projectId: string, itemId: string) => ChangesSummary | null;
+    /** Records what the person now sees of a code link as reviewed; `since` then shows what changed after it. */
+    "codeLink.markReviewed": (projectId: string, itemId: string, opts?: { linkId?: string }) => ChangeReviewed | null;
     /** Opens one changed file in Cursor or VS Code; with neither on PATH the file's path comes back for the system to open. Null when it is not on this machine. */
     "codeLink.openInEditor": (projectId: string, itemId: string, opts: { linkId?: string; path: string }) => EditorOpened | null;
     /** Merged pull requests of the last `days` days across open projects, by engine: first-pass rate and engine-reported spend. */
@@ -570,7 +572,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       scan: (projectId) => this.scan(projectId),
       worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId)
     });
-    this.changesReader = new Changes({ ctx: this.ctx, store: this.store, git: this.git, worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId) });
+    this.changesReader = new Changes({ ctx: this.ctx, store: this.store, git: this.git, binary: this.config.gitBinary, worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId) });
     this.repoConnect = new RepoConnect({
       ctx: this.ctx,
       store: this.store,
@@ -845,6 +847,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.changes", (projectId, itemId, opts) => ctx.codeLink.changes(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.changeFile", (projectId, itemId, opts) => ctx.codeLink.changeFile(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.changesSummary", (projectId, itemId) => ctx.codeLink.changesSummary(projectId, itemId));
+      ctx.ipc.handle("codeLink.markReviewed", (projectId, itemId, opts) => ctx.codeLink.markReviewed(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.openInEditor", (projectId, itemId, opts) => ctx.codeLink.openInEditor(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.scorecard", (days) => ctx.codeLink.scorecard(Date.now(), typeof days === "number" ? days : 30));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
@@ -1836,6 +1839,13 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** One file of `changes` with every hunk. */
   changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     return this.changesReader.changeFile(projectId, itemId, opts);
+  }
+
+  /** What the person now sees of a code link, recorded as reviewed: its working tree where one is here, else the branch's tip. */
+  async markReviewed(projectId: string, itemId: string, opts?: { linkId?: string }): Promise<ChangeReviewed | null> {
+    const reviewed = await this.changesReader.markReviewed(projectId, itemId, opts);
+    if (reviewed) this.notify(projectId);
+    return reviewed;
   }
 
   /** Which editor's command is on PATH; a seam for tests, which must not start a real editor. */

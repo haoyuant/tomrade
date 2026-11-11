@@ -1,5 +1,5 @@
-/** Which two versions a ticket's diff compares. */
-export type ChangeScope = { kind: "branch" } | { kind: "uncommitted" } | { kind: "commit"; sha: string };
+/** Which two versions a ticket's diff compares; `since` is what changed after the person last reviewed it. */
+export type ChangeScope = { kind: "branch" } | { kind: "uncommitted" } | { kind: "commit"; sha: string } | { kind: "since" };
 export type ChangeScopeKind = ChangeScope["kind"];
 
 export interface ChangeLine {
@@ -50,6 +50,14 @@ export interface ChangeCommit {
   at: number;
 }
 
+/** What a person had in front of them when they last reviewed a code link, on this machine. */
+export interface ChangeReviewed {
+  /** A commit holding that state: the branch's tip, or a snapshot of the working tree kept under `refs/tomrade/reviewed/`. */
+  sha: string;
+  /** Milliseconds. */
+  at: number;
+}
+
 export interface ChangeLinkChoice {
   id: string;
   branch: string;
@@ -76,8 +84,10 @@ export interface ChangesView {
   linkId: string;
   /** Every current code link of the ticket that has a branch; more than one means a picker. */
   links: ChangeLinkChoice[];
-  /** The scopes this machine can show for the link: `uncommitted` only with a worktree here. */
+  /** The scopes this machine can show for the link: `uncommitted` only with a worktree here, `since` only after a review. */
   scopes: ChangeScopeKind[];
+  /** The link's last review, while git still has its commit; null before the first. */
+  reviewed: ChangeReviewed | null;
   /** The branch's own commits, newest first. */
   commits: ChangeCommit[];
   scope: ChangeScope;

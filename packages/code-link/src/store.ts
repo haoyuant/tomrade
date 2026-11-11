@@ -231,6 +231,18 @@ INSERT INTO plugin_code_link_repo_seen (repo_id, project_id, remote, remote_deta
   SELECT repo_id, project_id, remote, remote_detail, remote_at, scanned_sha, default_sha, scanned_at, updated_at FROM plugin_code_link_repos;
 UPDATE plugin_code_link_repos SET remote = 'unknown', remote_detail = NULL, remote_at = NULL, scanned_sha = NULL, default_sha = NULL, scanned_at = NULL;
 `
+  },
+  // What a person last reviewed of a code link: a commit in this machine's repository, so it stays on this machine.
+  {
+    version: 23,
+    up: `
+CREATE TABLE plugin_code_link_reviewed (
+  link_id    TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  sha        TEXT NOT NULL,
+  at         INTEGER NOT NULL
+);
+`
   }
 ];
 
@@ -242,7 +254,8 @@ export const TABLES = {
   plugin_code_link_proposals: { project: "project_id", export: { order: "id" } },
   plugin_code_link_sessions: { project: "project_id", export: false },
   plugin_code_link_hooks_heard: { project: "project_id", export: false },
-  plugin_code_link_repo_seen: { project: "project_id", export: false }
+  plugin_code_link_repo_seen: { project: "project_id", export: false },
+  plugin_code_link_reviewed: { project: "project_id", export: false }
 } as const;
 
 export type LinkSource = "start" | "scan" | "mcp" | "manual";
@@ -944,6 +957,18 @@ export class CodeLinkStore {
 
   removeLink(projectId: string, id: string): void {
     this.db(projectId).prepare("DELETE FROM plugin_code_link_links WHERE id = ?").run(id);
+    this.db(projectId).prepare("DELETE FROM plugin_code_link_reviewed WHERE link_id = ?").run(id);
+  }
+
+  /** What a person last reviewed of a code link on this machine; null before the first review. */
+  reviewed(projectId: string, linkId: string): { sha: string; at: number } | null {
+    return (this.db(projectId).prepare("SELECT sha, at FROM plugin_code_link_reviewed WHERE link_id = ?").get(linkId) as { sha: string; at: number } | undefined) ?? null;
+  }
+
+  setReviewed(projectId: string, linkId: string, sha: string, at: number): void {
+    this.db(projectId)
+      .prepare("INSERT INTO plugin_code_link_reviewed (link_id, project_id, sha, at) VALUES (?, ?, ?, ?) ON CONFLICT(link_id) DO UPDATE SET sha = excluded.sha, at = excluded.at")
+      .run(linkId, projectId, sha, at);
   }
 
   // ── repositories ───────────────────────────────────────────────────────────

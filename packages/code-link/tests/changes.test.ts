@@ -396,6 +396,8 @@ describe("a ticket's changes, read from git", () => {
       expect([view.base, view.head]).toEqual([git(["rev-parse", `${mergeSha}^1`], checkout), mergeSha]);
       expect(view.files.map((f) => [f.path, f.status])).toEqual([["landed.ts", "added"]]);
       expect(view.scopes).toEqual(["branch", "commit"]);
+      // What landed is not reviewed again here.
+      expect(await codeLink.markReviewed(project.id, merged.id)).toBeNull();
 
       const lost = ticket("Thrown away");
       const gone = `tom-${lost.keyNum}/gone`;
@@ -410,6 +412,101 @@ describe("a ticket's changes, read from git", () => {
       git(["branch", "-q", "-D", gone], checkout);
       expect(await codeLink.changes(project.id, lost.id)).toBeNull();
       expect(await codeLink.changeFile(project.id, lost.id, { path: "wip.ts" })).toBeNull();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  }, 60_000);
+
+  it("remembers what was reviewed, uncommitted work included, and shows only what changed since", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine();
+    try {
+      const item = ticket("Review in rounds");
+      const branch = `tom-${item.keyNum}/rounds`;
+      git(["checkout", "-q", "-b", branch, "main"], checkout);
+      write(checkout, "README.md", "# app\n\none\nTWO\nthree\n");
+      const tip = commit(checkout, `${item.key}: reword`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+
+      // Nothing reviewed yet: no such scope, and asking for it shows the branch.
+      const before = (await codeLink.changes(project.id, item.id, { scope: { kind: "since" } }))!;
+      expect(before.reviewed).toBeNull();
+      expect(before.scopes).toEqual(["branch", "uncommitted", "commit"]);
+      expect(before.scope).toEqual({ kind: "branch" });
+      expect(await codeLink.markReviewed(project.id, ticket("Nothing in git yet").id)).toBeNull();
+
+      // Reviewed with work in progress: an edit, a staged file, files git does not track, one of them too large to keep.
+      write(checkout, "README.md", "# app\n\none\nTWO\nthree\nfour\n");
+      write(checkout, "staged.ts", "export const staged = 1;\n");
+      git(["add", "staged.ts"], checkout);
+      write(checkout, "notes/todo.md", "- [ ] write\n");
+      write(checkout, "huge.txt", "x\n".repeat(600_000));
+      write(checkout, ".git/info/exclude", "secret.env\n");
+      write(checkout, "secret.env", "KEY=1\n");
+      const state = () => [git(["status", "--porcelain"], checkout), git(["diff", "--cached", "--name-only"], checkout), git(["rev-parse", "HEAD"], checkout), git(["stash", "list"], checkout)];
+      const was = state();
+      const mark = (await codeLink.markReviewed(project.id, item.id))!;
+      expect(state()).toEqual(was);
+      expect(mark.sha).not.toBe(tip);
+      expect(git(["rev-parse", `${mark.sha}^1`], checkout)).toBe(tip);
+      expect(git(["ls-tree", "-r", "--name-only", mark.sha], checkout).split("\n").sort()).toEqual([".gitattributes", "README.md", "notes/todo.md", "old-name.ts", "package.json", "staged.ts", "win.txt"]);
+      expect(git(["show", `${mark.sha}:README.md`], checkout)).toContain("four");
+
+      const none = (await codeLink.changes(project.id, item.id, { scope: { kind: "since" } }))!;
+      expect(none.scope).toEqual({ kind: "since" });
+      expect(none.scopes).toEqual(["branch", "uncommitted", "commit", "since"]);
+      expect(none.reviewed).toEqual(mark);
+      expect([none.base, none.head]).toEqual([mark.sha, null]);
+      expect(git(["rev-parse", `refs/tomrade/reviewed/${none.linkId}`], checkout)).toBe(mark.sha);
+      // Only the file the snapshot left out is still new.
+      expect(none.files.map((f) => [f.path, f.status])).toEqual([["huge.txt", "added"]]);
+      fs.rmSync(path.join(checkout, "huge.txt"));
+
+      // More work after the review: only that shows, whether git tracks the file or not.
+      write(checkout, "README.md", "# app\n\none\nTWO\nthree\nfour\nfive\n");
+      write(checkout, "notes/todo.md", "- [x] write\n- [ ] ship\n");
+      write(checkout, "later.ts", "export const later = true;\n");
+      fs.rmSync(path.join(checkout, "old-name.ts"));
+      const since = (await codeLink.changes(project.id, item.id, { scope: { kind: "since" } }))!;
+      const files = byPath(since.files);
+      expect([...files.keys()].sort()).toEqual(["README.md", "later.ts", "notes/todo.md", "old-name.ts"]);
+      expect(files.get("README.md")).toMatchObject({ status: "modified", additions: 1, deletions: 0 });
+      expect(files.get("notes/todo.md")).toMatchObject({ status: "modified", additions: 2, deletions: 1 });
+      expect(files.get("later.ts")).toMatchObject({ status: "added", additions: 1, truncated: false });
+      expect(files.get("later.ts")!.hunks![0].lines.map((l) => l.text)).toEqual(["export const later = true;"]);
+      expect(files.get("old-name.ts")).toMatchObject({ status: "deleted", deletions: 3 });
+      const whole = (await codeLink.changeFile(project.id, item.id, { scope: { kind: "since" }, path: "README.md", full: true }))!;
+      expect(whole.hunks).toHaveLength(1);
+      expect(whole.hunks![0].lines.filter((l) => l.kind !== "context")).toEqual([{ kind: "add", old: null, new: 7, text: "five" }]);
+      expect((await codeLink.changeFile(project.id, item.id, { scope: { kind: "since" }, path: "notes/todo.md" }))!.hunks![0].lines.map((l) => l.kind)).toEqual(["del", "add", "add"]);
+      expect(await codeLink.changeFile(project.id, item.id, { scope: { kind: "since" }, path: "staged.ts" })).toBeNull();
+      expect(await codeLink.changeFile(project.id, item.id, { scope: { kind: "since" }, path: "secret.env" })).toBeNull();
+      // The other scopes read as they did.
+      expect((await codeLink.changes(project.id, item.id, { scope: { kind: "uncommitted" } }))!.files.map((f) => f.path).sort()).toEqual(["README.md", "later.ts", "notes/todo.md", "old-name.ts", "staged.ts"]);
+      expect((await codeLink.changes(project.id, item.id))!.files.map((f) => f.path)).toEqual(["README.md"]);
+
+      // The next review replaces the last; committing what was reviewed is nothing new.
+      const again = (await codeLink.markReviewed(project.id, item.id))!;
+      expect(again.sha).not.toBe(mark.sha);
+      const landed = commit(checkout, `${item.key}: the rest`);
+      const committed = (await codeLink.changes(project.id, item.id, { scope: { kind: "since" } }))!;
+      expect(committed.reviewed).toEqual(again);
+      expect(committed.files).toEqual([]);
+      // A clean tree is its own snapshot.
+      expect((await codeLink.markReviewed(project.id, item.id))!.sha).toBe(landed);
+
+      // Checked out nowhere: the tip is what was reviewed, and what the branch gained since is read from its commits.
+      git(["checkout", "-q", "main"], checkout);
+      expect((await codeLink.markReviewed(project.id, item.id))!.sha).toBe(landed);
+      git(["checkout", "-q", branch], checkout);
+      write(checkout, "more.ts", "export {};\n");
+      const more = commit(checkout, `${item.key}: more`);
+      git(["checkout", "-q", "main"], checkout);
+      const away = (await codeLink.changes(project.id, item.id, { scope: { kind: "since" } }))!;
+      expect(away.scope).toEqual({ kind: "since" });
+      expect([away.base, away.head, away.root]).toEqual([landed, more, null]);
+      expect(away.files.map((f) => [f.path, f.status])).toEqual([["more.ts", "added"]]);
+      expect((await codeLink.changeFile(project.id, item.id, { scope: { kind: "since" }, path: "more.ts" }))!.hunks![0].lines).toHaveLength(1);
     } finally {
       await ctx.fiber.dispose();
     }
