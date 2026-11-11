@@ -82,6 +82,14 @@
   font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
 }
 .label-set__input:focus { outline: none; box-shadow: var(--focus-ring); }
+/* dependency chips in the field strips: a label chip that opens an issue */
+.label-set__chip.label-set__chip--dep { padding-left: 5px; }
+.label-set__open {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: transparent; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.label-set__open:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-xs); }
 
 /* click-to-edit text — the read view is a button, so the whole line is one
    hit target and one tab stop, and the write view is a textarea that grows.
