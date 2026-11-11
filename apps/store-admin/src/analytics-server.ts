@@ -66,7 +66,11 @@ export function dashboardServer(load: (f: Filters) => Promise<View>, insights?: 
     catch { res.writeHead(400); res.end(renderDashboard(filters(new URLSearchParams()), undefined, "invalid")); return; }
     let view: View;
     try { view = await load(f); }
-    catch { res.writeHead(502); res.end(renderDashboard(f, undefined, "failed")); return; }
+    catch (error) {
+      // The page says only that it failed; the terminal running the dashboard gets which query and why.
+      console.error(`analytics load failed: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(502); res.end(renderDashboard(f, undefined, "failed")); return;
+    }
     const key = url.searchParams.get("sent") ?? "";
     const error = url.searchParams.get("senderror");
     const sent: SendOutcome | undefined = /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(key) ? { key } : error === "unavailable" || error === "failed" ? { error } : undefined;
