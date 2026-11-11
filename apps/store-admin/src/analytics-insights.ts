@@ -16,6 +16,8 @@ export interface InsightsEntry {
   /** Absent in entries from before the switch, which read every id. */
   internal?: Filters["internal"];
   generated_at: string; cost_usd: number | null; insights: Insights;
+  /** The aggregates the analyst read, kept so the analysis can be sent on with its data; absent in older files. */
+  input?: unknown;
 }
 /** What the page shows: the analysis for this view (or the newest one), the last failure, and whether one is running. */
 export interface InsightsState {
@@ -91,7 +93,7 @@ export function insightsSystem(lang: Filters["lang"]): string {
     "You receive the internal usage dashboard's aggregates for one period and the period of equal length before it, as JSON. Definitions:",
     "- active_ids: anonymous installation IDs active in the period (installations, not people; IDs from two deployments are summed, not joined).",
     "- active_minutes: foreground active time; uses: counted feature uses. Features are named like area.feature.",
-    "- activation: installations first seen in the period, followed to now; each funnel step counts those that also reached every step before it (installs → setup_done → start = first ticket started → open_pr → merge). first_start is the median time to the first ticket start; merged_7d and week_return only count installations old enough.",
+    "- activation: installations first seen in the period, followed to now; each funnel step counts those that also reached every step before it (installs → setup_done → start = first ticket started in Tomrade or claimed from a terminal → open_pr → merge). first_start is the median time to the first ticket start or claim; merged_7d and week_return only count installations old enough.",
     "- next_day_retention: of IDs first seen on a day, how many came back the next day; the last day or two are not yet observable.",
     "- site: tomrade.com installer downloads (installs), updater downloads (updates), page views and visits, copied daily from Cloudflare up to yesterday. accounts: registered accounts (no region).",
     "- search: Google Search Console for tomrade.com (clicks, impressions, average position, lower is better; top queries and landing pages); the last few days are still revised. github: the app repository's views, clones and stars; GitHub keeps traffic for 14 days, so earlier days may be missing. Neither has a region, and either may be null when not set up.",
@@ -177,9 +179,10 @@ export function insightsService(deps: {
         deps.load(f, parts),
         deps.load({ region: f.region, internal: f.internal, from: windowStart(prevTo, f.days), to: prevTo }, parts)
       ]);
-      const { insights, cost_usd } = await deps.analyst(insightsSystem(f.lang), JSON.stringify(insightsInput(f, current, previous)));
+      const input = insightsInput(f, current, previous);
+      const { insights, cost_usd } = await deps.analyst(insightsSystem(f.lang), JSON.stringify(input));
       const entries = await readAll();
-      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, internal: f.internal, generated_at: now().toISOString(), cost_usd, insights };
+      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, internal: f.internal, generated_at: now().toISOString(), cost_usd, insights, input };
       await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
       const temp = `${file}.${process.pid}.tmp`;
       await writeFile(temp, JSON.stringify({ version: 1, entries }, null, 2), { mode: 0o600 });

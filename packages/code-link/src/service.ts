@@ -468,7 +468,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   [Service.init]() {
     this.ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
-    this.store = new CodeLinkStore(this.ctx.db);
+    this.store = new CodeLinkStore(this.ctx.db, (step) => contract(this.home, "analytics")?.activate("code.link", step));
     for (const projectId of this.ctx.db.openIds()) this.store.repairLegacyDeliveries(projectId);
     this.ctx.on("db/opened", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.ctx.on("storage/imported", (projectId) => this.store.repairLegacyDeliveries(projectId));
@@ -1418,6 +1418,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
     if (result.ok) {
+      // Every starter (Start button, night shift, schedules, follow-ons, MCP) comes through here; a continued thread is not a new start.
+      if (!result.continued) contract(this.home, "analytics")?.activate("code.link", "start");
       this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
       // A start from a conversation, MCP or another window: every open Start button names the new choice at once.
       this.home.emit("codeLink/start-defaults");

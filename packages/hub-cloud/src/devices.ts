@@ -16,6 +16,19 @@ export interface DeviceFacts {
   agents: { id: string; title: string; ready: boolean }[];
   /** Remotes of the repositories this machine has a checkout of. */
   repos: string[];
+  /** Whether it takes work from the account's other machines, and within what; absent on a machine that does not say. */
+  accept?: DeviceAccept;
+}
+
+/** What a machine lets the account's other machines send it. Its own limits are checked there, whatever this says. */
+export interface DeviceAccept {
+  on: boolean;
+  /** The projects it takes work for. */
+  projects: "all" | string[];
+  /** The most a sent session may do without asking: read, ask, edits or full. */
+  ceiling: "read" | "ask" | "edits" | "full";
+  /** Sessions at once. */
+  concurrent: number;
 }
 
 /** A ticket one of a machine's coding sessions holds. Nothing of the conversation, and no path. */
@@ -72,10 +85,16 @@ export interface DevicesInfo {
   plan: { id: string; limit: number | null; subscribeUrl: string };
 }
 
+// As the database takes it: a description that would be refused there is left out here.
+const Accept = z.object({
+  on: z.boolean(), projects: z.union([z.literal("all"), z.array(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)).max(200)]),
+  ceiling: z.enum(["read", "ask", "edits", "full"]), concurrent: z.number().int().min(1).max(8)
+});
 const Facts = z.object({
   platform: z.string().catch(""), arch: z.string().catch(""), version: z.string().catch(""), git: z.boolean().catch(false),
   agents: z.array(z.object({ id: z.string(), title: z.string(), ready: z.boolean() })).catch([]),
-  repos: z.array(z.string()).catch([])
+  repos: z.array(z.string()).catch([]),
+  accept: Accept.optional().catch(undefined)
 });
 const Row = z.object({
   device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string(),
@@ -153,6 +172,9 @@ export class Devices {
   private telling: ReturnType<typeof setTimeout> | null = null;
   /** The account server has no activity columns: ask for none. */
   private plain = false;
+  /** What other services say of this machine, by part; and whether the account server takes such a part at all. */
+  private said = new Map<"accept", () => unknown>();
+  private bare = false;
   /** The last change each machine announced on the presence channel, and the read that follows a new one. */
   private announced = new Map<string, number>();
   private reading: ReturnType<typeof setTimeout> | null = null;
@@ -176,10 +198,22 @@ export class Devices {
       this.git = { at: Date.now(), ready: status?.state === "ready" };
     }
     const repos = Object.entries(home.hub.catalog.repos()).filter(([remote, r]) => r.checkout && shareable(remote)).map(([remote]) => remote);
+    let accept: DeviceAccept | undefined;
+    if (!this.bare && this.said.has("accept")) {
+      const parsed = Accept.safeParse(this.said.get("accept")!());
+      if (parsed.success) accept = parsed.data;
+    }
     return {
+      ...(accept ? { accept } : {}),
       platform: process.platform, arch: process.arch, version: /^[0-9A-Za-z.+-]{1,40}$/.test(this.host.appVersion) ? this.host.appVersion : "dev",
       git: this.git.ready, agents: agents.sort((a, b) => a.id.localeCompare(b.id)).slice(0, 32), repos: repos.sort().slice(0, 500)
     };
+  }
+
+  /** Another service's word about this machine, read each time its facts are. */
+  describe(part: "accept", read: () => unknown): void {
+    this.said.set(part, read);
+    this.host.schedule();
   }
 
   /** The name a machine gives itself until the account renames it. */
@@ -302,6 +336,12 @@ export class Devices {
     const { data, error } = await client.rpc("tomrade_register_device", { p_device: deviceId, p_name: this.hostname(), p_facts: facts, p_rejoin: cache.data.device.rejoin });
     // Without a code the request never reached the database: it stays owed, and the next pass sends it.
     if (error && !error.code) throw new Error(error.message);
+    if (error && facts.accept && /Invalid device fields/.test(error.message)) {
+      // An account server from before machines said whether they take work: register without saying it.
+      this.bare = true;
+      const { accept: _accept, ...rest } = facts;
+      return this.register(rest, JSON.stringify(rest));
+    }
     // An answer that is none of the three: an account server that does not know this machine's question.
     const answer = error ? null : Registered.safeParse(data);
     if (error || !answer?.success) {

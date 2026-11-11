@@ -1,0 +1,195 @@
+<!--@part titlebar-->
+<header class="titlebar">
+  <button class="btn btn-icon no-drag" aria-label="All projects">[[i-home 16]]</button>
+  <span class="title-sep"></span>
+  <button class="btn btn-ghost" id="projSwitch" style="padding:4px 8px" aria-label="Switch project">[[i-stack 15 ico]]<span>Tomrade</span>[[i-chevdown 13 chev]]</button>
+  <span class="crumb-sep">/</span>
+  <span class="crumb-title">Backlog</span>
+  <span class="spacer" style="flex:1"></span>
+  <button class="btn btn-ghost no-drag">[[i-search 14]]<span>Search</span><span class="kbd">⌘K</span></button>
+  <button class="btn btn-primary no-drag">[[i-plus 14]]New</button>
+  <button class="btn btn-ghost no-drag titlebar-night-shift">[[i-moon 15]]<span class="lbl">Auto run</span></button>
+  <button class="btn btn-ghost no-drag titlebar-terminal">[[i-terminal 15]]<span class="lbl">Terminal window</span></button>
+  <button class="btn btn-icon no-drag" aria-label="Usage">[[i-bars 17]]</button>
+  <button class="btn btn-icon no-drag" aria-label="Settings">[[i-gear 17]]</button>
+</header>
+<!--@end-->
+
+<!--@part sidebar-->
+<aside class="sidebar">
+  <div class="side-head"><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Collapse sidebar">[[i-panel 15]]</button></div>
+  <div class="side-scroll">
+    <section class="side-group side-module">
+      <div class="side-label-row side-module-head"><button class="btn btn-icon side-module-fold" aria-label="Fold Files">[[i-chevdown 12]]</button><span class="side-label-btn side-module-btn">[[i-folder 15]]<span class="side-module-title">FILES</span></span><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Search notes">[[i-search 13]]</button><button class="btn btn-icon" aria-label="New file">[[i-plus 13]]</button></div>
+      <div class="side-module-body"><p class="side-module-empty" style="display:flex;align-items:center;gap:6px">[[i-upload 12]]Drag files here</p></div>
+    </section>
+    <section class="side-group side-module">
+      <div class="side-label-row side-module-head"><span class="side-module-fold-space"></span><span class="side-label-btn side-module-btn">[[i-alarm 15]]<span class="side-module-title">ROUTINES</span></span></div>
+    </section>
+    <section class="side-group side-module">
+      <div class="side-label-row side-module-head"><button class="btn btn-icon side-module-fold" aria-label="Fold Backlog">[[i-chevdown 12]]</button><span class="side-label-btn side-module-btn" aria-current="true">[[i-board 15]]<span class="side-module-title">BACKLOG</span></span></div>
+      <div class="side-module-body">
+        <div class="side-sub side-views">
+          <div class="side-sub-label">Views</div>
+          <div class="side-list" style="display:flex;flex-direction:column;gap:1px">
+            <button class="side-row is-view" aria-current="true">[[i-board 15 ico]]<span class="side-name">Backlog</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-clock 15 ico]]<span class="side-name">Recently updated</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-cards 15 ico]]<span class="side-name">By status</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-stack 15 ico]]<span class="side-name">By epic</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-alarm 15 ico]]<span class="side-name">By priority</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-panel 15 ico]]<span class="side-name">By workstream</span><span class="side-count num">21</span></button>
+            <button class="side-row is-view">[[i-clock 15 ico]]<span class="side-name">Sprint 12</span><span class="side-count num">12</span></button>
+            <button class="side-row is-view">[[i-bug 15 ico]]<span class="side-name">Bugs</span><span class="side-count num">3</span></button>
+            <button class="side-row is-view">[[i-pen 15 ico]]<span class="side-name">Agent writes</span><span class="side-count num">4</span></button>
+            <button class="side-row is-view">[[i-filter 15 ico]]<span class="side-name">Triage</span><span class="side-count num">14</span></button>
+            <button class="side-row is-view">[[i-graph 15 ico]]<span class="side-name">Dependencies</span><span class="side-count num">21</span></button>
+            <button class="side-row side-add side-new-view" style="margin-top:2px">[[i-plus 14 ico]]<span class="side-name">New view</span></button>
+          </div>
+        </div>
+        <div class="side-sub side-workstreams">
+          <div class="side-sub-label">Workstreams<span class="spacer" style="flex:1"></span><button class="btn btn-icon side-ws-manage" aria-label="Manage workstreams">[[i-sliders 12]]</button></div>
+          <div class="side-list" style="display:flex;flex-direction:column;gap:1px">
+            <div class="side-ws-container"><button class="side-row is-workstream">[[i-panel 15 ico]]<span class="side-ws-text"><span class="side-name">UI</span><span class="side-ws-repo num">[[i-branch 11]]<span class="side-ws-repo-name">tomrade</span></span></span><span class="side-count num">12</span></button></div>
+            <div class="side-ws-container"><button class="side-row is-workstream">[[i-stack 15 ico]]<span class="side-ws-text"><span class="side-name">Core &amp; data</span><span class="side-ws-repo num">[[i-branch 11]]<span class="side-ws-repo-name">tomrade</span></span></span><span class="side-count num">5</span></button></div>
+            <div class="side-ws-container"><button class="side-row is-workstream">[[i-plug 15 ico]]<span class="side-ws-text"><span class="side-name">MCP server</span><span class="side-ws-repo num is-none"><span class="side-ws-repo-name">No repository</span></span></span><span class="side-count num">4</span></button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="side-settings"><button class="side-row side-project-settings">[[i-gear 15 ico]]<span class="side-name">Project settings</span></button></div>
+</aside>
+<!--@end-->
+
+<!--@part tabs-->
+<div class="tab-strip" role="tablist" aria-label="Open tabs">
+  <div class="tab is-backlog" role="tab" aria-selected="true">[[i-board 13 tab-ico]]<span class="tab-name">Backlog</span></div>
+  <div class="tab is-file" role="tab" aria-selected="false">[[i-file 13 tab-ico]]<span class="tab-name">design-system.md</span><button class="tab-close" aria-label="Close tab">[[i-close 10]]</button></div>
+</div>
+<!--@end-->
+
+<!--@part viewhead-->
+<div class="board-head view-head">
+  [[i-board 16 view-ico]]
+  <h1 class="board-title view-title"><button class="view-name">Backlog</button></h1>
+  <span class="board-facts meta-txt"><span class="num">21</span> shown of <span class="num">21</span></span>
+  <span class="spacer" style="flex:1"></span>
+  <div class="seg quiet layout-seg" role="group" aria-label="Layout"><button aria-pressed="true" aria-label="Board">[[i-board 14 ico]]</button><button aria-pressed="false" aria-label="Table">[[i-bars 14 ico]]</button><button aria-pressed="false" aria-label="Graph">[[i-graph 14 ico]]</button></div>
+  <button class="btn btn-ghost">[[i-sliders 14]]<span class="lbl">View</span></button>
+  <button class="btn btn-ghost">[[i-cards 14]]<span class="lbl">Fields</span></button>
+</div>
+<div class="query-bar">
+  <label class="qb-search">[[i-search 13 ico]]<input class="qb-search-input" id="qbs" placeholder="Search tickets" aria-label="Search tickets"><span class="kbd">/</span></label>
+  <button class="qb-btn qb-add">[[i-filter 13 ico]]<span class="lbl">Filter</span>[[i-chevdown 12 chev]]</button>
+  <div class="qb-right">
+    <button class="qb-btn qb-column-by">[[i-board 13 ico]]<span class="lbl">Column by</span><span>Status</span>[[i-chevdown 12 chev]]</button>
+    <button class="qb-btn qb-group-by">[[i-stack 13 ico]]<span class="lbl">Swimlanes</span><span>None</span>[[i-chevdown 12 chev]]</button>
+    <button class="qb-btn qb-sort">[[i-bars 13 ico]]<span class="lbl">Sort</span><span>Manual</span>[[i-chevdown 12 chev]]</button>
+  </div>
+</div>
+<!--@end-->
+
+<!--@part banner-->
+<div class="banner" role="alert">[[i-warn 15 b-mark]]<span>The workstream “UI” has no local repository on this machine (tomrade), so its tickets can't start here.</span><button class="btn btn-secondary">Set local repository…</button><button class="btn btn-ghost" style="padding:3px 8px">Dismiss</button></div>
+<!--@end-->
+
+<!--@part epics-->
+<div class="epic-strip" role="toolbar" aria-label="Epics">
+  <span class="epic-strip-label">[[i-stack 13]]Epics</span>
+  <button class="epic-chip">[[s-doing 12 sdot]]<span class="epic-chip-name">MCP surface</span><span class="epic-chip-n num">1/2</span></button>
+  <button class="epic-chip">[[s-todo 12 sdot]]<span class="epic-chip-name">Theme token refactor</span><span class="epic-chip-n num">0/4</span></button>
+  <button class="epic-chip">[[s-todo 12 sdot]]<span class="epic-chip-name">AI panel</span><span class="epic-chip-n num">0/4</span></button>
+  <button class="epic-chip">[[s-doing 12 sdot]]<span class="epic-chip-name">Multi-board architecture</span><span class="epic-chip-n num">2/6</span></button>
+</div>
+<!--@end-->
+
+<!--@part columns-->
+<div class="board-scroll-area" data-has-more="true">
+  <div class="col-track">
+    <div class="col" role="group" aria-label="Backlog, 7 tickets">
+      <div class="col-head"><span class="col-num">01</span><span class="col-name">Backlog</span><span class="col-count num">7</span></div>
+      <div class="col-body">
+        [[card TOM-18|Command palette over boards, views, issues and actions|s-backlog||i-panel UI|2d|||ui]]
+        [[card TOM-19|Inline column composer; retire the New Ticket modal|s-backlog||i-panel UI|2d|ai||ui]]
+        [[card TOM-20|items.priority column and the five-level glyph|s-backlog|p-1|i-stack Core &amp; data|3d|ai|Multi-board architecture:150|core]]
+        [[card TOM-21|labels and item_labels tables, indexed for FTS5|s-backlog|p-1|i-stack Core &amp; data|3d||Multi-board architecture:150|core]]
+        [[card TOM-22|Fields sheet: rename and retire options|s-backlog||i-panel UI|4d|||ui]]
+      </div>
+    </div>
+    <div class="col" role="group" aria-label="To Do, 6 tickets">
+      <div class="col-head"><span class="col-num">02</span><span class="col-name">To Do</span><span class="col-count num">6</span></div>
+      <div class="col-body">
+        [[card TOM-8|Auto-create a default view for existing boards|s-todo|p-3|i-stack Core &amp; data|5h||Multi-board architecture:150|migration,!blocked]]
+        [[card TOM-9|Add matcha to ThemePreference and the four-segment switcher|s-todo|p-3|i-panel UI|6h||Theme token refactor:300|ui,!blocked]]
+        [[card TOM-10|Conflict banner is dark-only and unreadable in light mode|s-todo|p-3|i-panel UI|2m||Theme token refactor:300|bug,!blocked]]
+        [[card TOM-11|tomrade.list_items: accept a boardId filter|s-todo|p-3|i-plug MCP server|1d||MCP surface:60|mcp,!blocked]]
+      </div>
+    </div>
+    <div class="col" role="group" aria-label="Doing, 3 tickets">
+      <div class="col-head"><span class="col-num">03</span><span class="col-name">Doing</span><span class="col-count num">3</span></div>
+      <div class="col-body">
+        [[card TOM-12|Undo walks past a purge tombstone to the write before it|s-doing|p-4|i-stack Core &amp; data|12m|ai||core]]
+        [[card TOM-14|Status bar ribbon names the last write and its author|s-doing||i-panel UI|1h|lock||ui]]
+        [[card TOM-15|Keyboard twin for every board write: ⌥← ⌥→|s-doing|p-3|i-panel UI|3h|ai|AI panel:20|ui,a11y]]
+      </div>
+    </div>
+    <div class="col" role="group" aria-label="Verifying, 2 tickets">
+      <div class="col-head"><span class="col-num">04</span><span class="col-name">Verifying</span><span class="col-count num">2</span></div>
+      <div class="col-body">
+        [[card TOM-6|Theme crossfade unwinds under reduced motion|s-verifying||i-panel UI|now|||ui]]
+        [[card TOM-7|MCP server binds a free port and reports it|s-verifying|p-1|i-plug MCP server|2d||MCP surface:60|mcp]]
+      </div>
+    </div>
+  </div>
+  <div class="board-scroll-fade" aria-hidden="true"></div>
+  <button class="board-scroll-hint">Scroll right to see more columns [[i-chev 12]]</button>
+</div>
+<!--@end-->
+
+<!--@part statusbar-->
+<footer class="statusbar">
+  <span class="status-item"><span class="live-dot"></span>MCP <span class="num">127.0.0.1:55723</span></span>
+  <span class="status-item status-ribbon"><span class="ribbon-tick"></span><span class="status-clip">You created view · now</span></span>
+  <span class="status-item">tomrade</span>
+  <button class="btn btn-ghost status-undo" style="padding:2px 7px;font-size:var(--text-xs)">[[i-undo 12]]Undo</button>
+  <button class="btn btn-ghost status-redo" style="padding:2px 7px;font-size:var(--text-xs)">[[i-redo 12]]Redo</button>
+  <button class="btn btn-ghost status-history" style="padding:2px 7px;font-size:var(--text-xs)">[[i-history 12]]History</button>
+  <span class="spacer" style="flex:1"></span>
+  <button class="status-item status-link">[[i-bug 12]]Troubleshoot</button>
+  <button class="status-item status-link">[[i-send 12]]Feedback</button>
+</footer>
+<!--@end-->
+
+<!--@part ai-->
+<aside class="ai" style="width:440px">
+  <div class="ai-head"><span style="font-family:var(--font-display);font-size:var(--text-base);color:var(--fg)">Assistant</span><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Guide">[[i-keyboard 15]]</button><button class="btn btn-icon" aria-label="Collapse assistant">[[i-panel 15]]</button></div>
+  <div class="ai-scroll">
+    <div class="turn turn-ai">
+      <span class="turn-mark"><span class="prov-tick" style="height:12px"></span></span>
+      <div class="turn-body">
+        <p>I can read this board and write to it. Every write I make is attributed, grouped by run, and revertible in one click.</p>
+        <div class="starters" role="group" aria-label="Ways to start">
+          <button class="starter">[[i-chev 12]]What should I work on next?</button>
+          <button class="starter">[[i-filter 12]]Tidy up the backlog</button>
+          <button class="starter">[[i-plus 12]]Add a ticket…</button>
+          <button class="starter">[[i-pen 12]]Write a document…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="ai-foot">
+    <div class="ai-composer">[[i-plus 14]]<textarea class="ai-input" id="aiin" rows="1" placeholder="Reply, or / for commands" aria-label="Message the assistant"></textarea><button class="btn btn-icon" aria-label="Send">[[i-send 14]]</button></div>
+    <div class="ai-knobs" style="justify-content:space-between">
+      <span style="display:flex;gap:6px"><button class="tag chip-btn ctx-chip">[[i-stack 11]]Whole project[[i-chevdown 10]]</button><button class="tag chip-btn ai-ws">[[i-monitor 11]]Backlog[[i-chevdown 10]]</button></span>
+      <span style="display:flex;gap:6px"><button class="tag chip-btn">Tomrade[[i-chevdown 10]]</button><button class="tag chip-btn">Effort[[i-chevdown 10]]</button></span>
+    </div>
+  </div>
+</aside>
+<!--@end-->
+
+<!--@part airail-->
+<aside class="rail ai-rail" style="padding-top:var(--space-3)">
+  <button class="btn btn-icon rail-btn" aria-label="Expand assistant">[[i-panel 15]]</button>
+  <span class="rail-label">Assistant</span>
+</aside>
+<!--@end-->

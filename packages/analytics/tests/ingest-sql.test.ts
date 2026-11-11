@@ -35,11 +35,14 @@ beforeAll(async () => {
   await db.exec("create role anon; create role authenticated; create role service_role;");
   await db.exec(migration("202610230001_analytics.sql"));
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
+  await db.exec(migration("202610230003_analytics_aggregate.sql"));
   await db.exec(migration("202610290001_analytics_activation.sql"));
   await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
   await db.exec(migration("202611040001_analytics_internal_functions.sql"));
   await db.exec(migration("202611040002_analytics_new_install_cap.sql"));
   await db.exec(migration("202611060002_analytics_event_unused_indexes.sql"));
+  await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+  await db.exec(migration("202611110102_analytics_activation_claims.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -326,6 +329,15 @@ describe("activation funnel", () => {
     await put(id("d"), d0 + 8 * DAY + HOUR, "start");
     await put(id("d"), d0 + 8 * DAY + 2 * HOUR, "open_pr");
     await put(id("d"), d0 + 9 * DAY, "merge");
+    // H: set up, then a ticket claimed from the terminal before Tomrade started one; the claim is the start.
+    await put(id("h"), d0, null);
+    await put(id("h"), d0 + HOUR, "setup_done");
+    await put(id("h"), d0 + 2 * HOUR, "claim_external");
+    await put(id("h"), d0 + 6 * HOUR, "start");
+    // I: set up and claimed only.
+    await put(id("i"), d0, null);
+    await put(id("i"), d0 + HOUR, "setup_done");
+    await put(id("i"), d0 + 7 * HOUR, "claim_external");
     // E: installed before the range.
     await put(id("e"), d0 - 20 * DAY, null);
     await put(id("e"), d0 + HOUR, "setup_done");
@@ -339,18 +351,18 @@ describe("activation funnel", () => {
 
   it("follows the range's installs up to now, each step needing every one before it", async () => {
     const result = await activation(d0 - DAY, d0 + DAY);
-    expect(result.funnel).toEqual({ installs: 5, setup_done: 3, start: 3, open_pr: 2, merge: 2 });
-    // C's start counts towards the time to start though it skipped setup: 1h, 3h, 5h, 8d.
-    expect(result.first_start).toEqual({ median_ms: 4 * HOUR, n: 4 });
-    expect(result.merged_7d).toEqual({ cohort: 5, merged: 1 });
-    expect(result.week_return).toEqual({ cohort: 5, returned: 2 });
+    expect(result.funnel).toEqual({ installs: 7, setup_done: 5, start: 5, open_pr: 2, merge: 2 });
+    // C's start counts towards the time to start though it skipped setup, and H's is its claim: 1h, 2h, 3h, 5h, 7h, 8d.
+    expect(result.first_start).toEqual({ median_ms: 4 * HOUR, n: 6 });
+    expect(result.merged_7d).toEqual({ cohort: 7, merged: 1 });
+    expect(result.week_return).toEqual({ cohort: 7, returned: 2 });
   });
 
   it("narrows to a region and leaves no median when nobody started", async () => {
     const result = await activation(d0 - DAY, d0 + DAY, "cn");
     expect(result.funnel).toEqual({ installs: 1, setup_done: 0, start: 0, open_pr: 0, merge: 0 });
     expect(result.first_start).toEqual({ median_ms: null, n: 0 });
-    expect((await activation(d0 - DAY, d0 + DAY, "all")).funnel).toMatchObject({ installs: 5 });
+    expect((await activation(d0 - DAY, d0 + DAY, "all")).funnel).toMatchObject({ installs: 7 });
   });
 
   it("holds a cohort too young for its windows out of them", async () => {
@@ -373,6 +385,72 @@ describe("activation funnel", () => {
       await expect(db.query("select public.tomrade_analytics_activation(current_date, current_date, null)")).rejects.toThrow();
     } finally {
       await db.exec("reset role");
+    }
+  });
+});
+
+describe("a registry this server does not have yet", () => {
+  const NEWER = FEATURE_REGISTRY_VERSION + 1;
+  const anon = "f".repeat(26);
+  const event = (registry: number, feature_id: string, action: string, install_seq: number, ts = Date.now()) =>
+    ({ ...base(), anon_id: anon, registry, install_seq, ts, event_id: randomUUID(), event: "feature.activate", feature_id, action, dim: null });
+
+  afterAll(async () => {
+    await db.exec("reset role");
+    await db.query("delete from public.tomrade_analytics_event where anon_id = $1", [anon]);
+  });
+
+  it("reads the newest one below it, keeping what it lacks uncounted and the client's version stored", async () => {
+    const { rows } = await ingest(batch([
+      event(NEWER, "backlog.plugin", "open", 1),
+      event(NEWER, "backlog.board", "open_again", 2),
+      event(NEWER, "future.thing", "open", 3)
+    ]));
+    expect(rows[0]!.result).toEqual({ accepted: 3, duplicates: 0, rejected: 0, received: 3 });
+    const stored = await db.query<{ feature_id: string; counted: boolean; unknown_feature: boolean; registry: number }>(
+      "select feature_id, counted, unknown_feature, registry from public.tomrade_analytics_event where anon_id = $1 order by install_seq",
+      [anon]
+    );
+    expect(stored.rows).toEqual([
+      { feature_id: "backlog.plugin", counted: true, unknown_feature: false, registry: NEWER },
+      { feature_id: "backlog.board", counted: false, unknown_feature: false, registry: NEWER },
+      { feature_id: "future.thing", counted: false, unknown_feature: true, registry: NEWER }
+    ]);
+  });
+
+  it("counts, once its registry arrives, the uses that came before it and rolls their day up again", async () => {
+    await db.exec("reset role");
+    const ts = Date.now() - 2 * 86_400_000;
+    const day = new Date(ts).toISOString().slice(0, 10);
+    await db.query("select public.tomrade_analytics_ensure_month($1::timestamptz)", [new Date(ts).toISOString()]);
+    // As production stored them before the fix: a use and a step, both uncounted, under a registry not pushed yet.
+    for (const [seq, feature_id, action] of [[10, "backlog.board", "open"], [11, "onboarding", "setup_done"]] as const) {
+      await db.query(
+        `insert into public.tomrade_analytics_event (event_id, schema, registry, event, anon_id, install_seq, ts, client, platform, region, feature_id, action, counted, unknown_feature)
+         values (gen_random_uuid(), 1, $1, 'feature.activate', $2, $3, $4::timestamptz, '0.9.0', 'macos', 'other', $5, $6, false, true)`,
+        [NEWER, anon, seq, new Date(ts).toISOString(), feature_id, action]
+      );
+    }
+    await db.query("select public.tomrade_analytics_aggregate($1::date, $1::date)", [day]);
+    const uses = async () => (await db.query<{ action: string; events: number; counted_events: number }>(
+      "select action, events, counted_events from public.tomrade_analytics_action_daily where day = $1::date and client_minor = '0.9' order by action",
+      [day]
+    )).rows;
+    expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 0 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+
+    await db.query(
+      `insert into public.tomrade_analytics_registry (registry, feature_id, action, counted, dims)
+       select $1, feature_id, action, counted, dims from public.tomrade_analytics_registry where registry = $2`,
+      [NEWER, FEATURE_REGISTRY_VERSION]
+    );
+    try {
+      await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+      expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 1 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+      // Run again, nothing moves.
+      await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+      expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 1 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+    } finally {
+      await db.query("delete from public.tomrade_analytics_registry where registry = $1", [NEWER]);
     }
   });
 });

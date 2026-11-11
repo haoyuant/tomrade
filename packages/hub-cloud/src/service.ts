@@ -474,6 +474,13 @@ export class CloudHub extends Service implements CloudHubReader {
   reportActivity(part: "sessions" | "nightShifts", entries: readonly unknown[]): void {
     this.machines.report(part, entries);
   }
+  /** Another service's word about this machine for the account's others; see `Devices.describe`. */
+  describeDevice(part: "accept", read: () => unknown): void {
+    this.machines.describe(part, read);
+  }
+  refreshDevice(): void {
+    this.schedule();
+  }
   async recheckDevices(): Promise<DevicesInfo> {
     this.machines.recheck();
     if (this.active) await this.active;

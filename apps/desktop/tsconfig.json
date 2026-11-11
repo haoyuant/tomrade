@@ -21,6 +21,9 @@
       "path": "../../packages/watchdog"
     },
     {
+      "path": "../../packages/dispatch"
+    },
+    {
       "path": "../../packages/archify"
     },
     {

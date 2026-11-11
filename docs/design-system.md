@@ -51,12 +51,7 @@ Layout utilities (`.row`, `.row-between`, `.wrap`, `.rule`, `.grid-2`,
 
 ## Tokens
 
-Four themes, one declaration set. Dawn (`.dawn`) is the default: warm paper,
-vermilion accents, and brown ink, drawn from the login poster. `:root` is Paper;
-`.dark` (Ink), `.matcha`, and `.dawn` override the colour tokens that vary.
-Saved theme preferences remain in effect. Everything else —
-type scale, leading, tracking, radii, spacing, chrome geometry — is declared
-once and never re-declared per theme.
+Eight built-in themes, one declaration set, in the picker's order (`lib/theme.tsx`): Sunrise (`.sunrise`, the default for new users), Daybreak, Glass, Sakura, Dawn, Paper (`:root`), Ink (`.dark`) and Matcha. `:root` is Paper; every other theme overrides the colour tokens that vary, and Sunrise, Daybreak, Glass and Sakura add scene layers and their own fonts. Saved theme preferences remain in effect. The Claude Design copy of this system is rebuilt from these files by `pnpm design-system` (`scripts/design-system/`). Everything else — type scale, leading, tracking, radii, spacing, chrome geometry — is declared once and never re-declared per theme.
 
 Theme-invariant scales live inside Tailwind's `@theme` block, so one
 declaration serves both the component CSS (`var(--text-sm)`) and the utilities

@@ -28,6 +28,16 @@ button.device-ticket:hover { color: var(--accent); text-decoration: underline; t
 .device-over p { margin: 0; font-size: var(--text-sm); }
 .device-over-title { color: var(--fg); font-weight: var(--font-weight-medium); }
 .device-over .device-actions .btn { padding: 3px 12px; font-size: var(--text-sm); }
+.accept-work { display: flex; flex-direction: column; gap: var(--space-3); }
+.accept-row { display: flex; align-items: center; gap: var(--space-4); }
+.accept-row > div:first-child { flex: 1; min-width: 0; }
+.accept-row .meta-txt { margin: 2px 0 0; }
+.accept-row .input { width: auto; max-width: 260px; flex-shrink: 0; }
+.accept-name { font-size: var(--text-sm); color: var(--fg); }
+.accept-warning { margin: 0; padding: var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--fg); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
+.accept-projects { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.accept-project, .accept-check { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.accept-log { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
 .ticket-elsewhere { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); margin: var(--space-2) 0; }
 .ticket-elsewhere.last { color: var(--meta); }
 }

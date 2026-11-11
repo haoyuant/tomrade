@@ -41,6 +41,13 @@ export interface CloudHubReader {
    * runs (`projectId`, `done`, `total`, `startedAt`). Replaces what that part said before; any other field is dropped.
    */
   reportActivity(part: "sessions" | "nightShifts", entries: readonly unknown[]): void;
+  /**
+   * Something more this machine says of itself to the account's other machines, read whenever it registers.
+   * `accept`: whether it takes their work, and within what (`on`, `projects`, `ceiling`, `concurrent`).
+   */
+  describeDevice(part: "accept", read: () => unknown): void;
+  /** What `describeDevice` reads has changed: register again soon. */
+  refreshDevice(): void;
 }
 
 export interface DbReader {

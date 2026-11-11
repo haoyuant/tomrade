@@ -10,7 +10,7 @@ const BEFORE = [
   "202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202610230003_analytics_aggregate.sql",
   "202610230004_analytics_feature_days.sql", "202610290001_analytics_activation.sql", "202610310001_analytics_plugin_layout.sql",
   "202611040001_analytics_internal_functions.sql", "202611040002_analytics_new_install_cap.sql", "202611040004_accounts_platforms.sql",
-  "202611060002_analytics_event_unused_indexes.sql"
+  "202611060002_analytics_event_unused_indexes.sql", "202611110101_analytics_registry_fallback.sql", "202611110102_analytics_activation_claims.sql"
 ];
 const REAL = "rrrrrrrrrrrrrrrrrrrrrrrrrr";
 const CHECKOUT = "cccccccccccccccccccccccccc";

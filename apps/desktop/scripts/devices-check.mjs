@@ -44,7 +44,7 @@ async function fakeSupabase() {
     user: null, password: null, limit: 2,
     /** The account's machines, by id; `removed` keeps one out. */
     devices: new Map([
-      ["win-000001", { device_id: "win-000001", name: "DESKTOP-WIN", facts: { platform: "win32", arch: "x64", version: "0.29.0", git: true, agents: [{ id: "claude-code", title: "Claude Code", ready: true }, { id: "codex", title: "Codex", ready: false }], repos: ["https://github.com/acme/app"] }, last_seen_at: ago(2 * HOUR), updated_at: ago(2 * HOUR), activity: { sessions: [], nightShifts: [] }, activity_at: ago(2 * HOUR), removed: false }],
+      ["win-000001", { device_id: "win-000001", name: "DESKTOP-WIN", facts: { platform: "win32", arch: "x64", version: "0.29.0", git: true, agents: [{ id: "claude-code", title: "Claude Code", ready: true }, { id: "codex", title: "Codex", ready: false }], repos: ["https://github.com/acme/app"], accept: { on: true, projects: "all", ceiling: "edits", concurrent: 1 } }, last_seen_at: ago(2 * HOUR), updated_at: ago(2 * HOUR), activity: { sessions: [], nightShifts: [] }, activity_at: ago(2 * HOUR), removed: false }],
       ["old-000001", { device_id: "old-000001", name: "Old Mac", facts: { platform: "darwin", arch: "x64", version: "0.20.0", git: false, agents: [], repos: [] }, last_seen_at: ago(40 * 24 * HOUR), updated_at: ago(40 * 24 * HOUR), activity: {}, activity_at: null, removed: false }]
     ]),
     registered: []
@@ -211,6 +211,25 @@ const run = async () => {
   check("what it was doing reads as last known", (await winCard()).includes("Last known, 2h ago") && (await winCard()).includes(ticket.key) && (await winCard()).includes("Faster on Windows"), await winCard());
   await shot("devices-03-two-light");
 
+  // ── accepting work from the other computers ──────────────────────────
+  const accept = `document.querySelector('[data-testid="accept-work"]')`;
+  const sw = `document.querySelector('[data-testid="accept-switch"]')`;
+  const said = () => supabase.state.devices.get(self)?.facts?.accept;
+  check("this computer does not accept work until asked to", await until(`${sw}?.getAttribute('aria-checked') === 'false'`) && !(await $(`!!document.querySelector('[data-testid="accept-warning"]')`)) && said()?.on === false, said());
+  check("the other computer says it accepts work", (await winCard()).includes("Accepts work"), await winCard());
+  check("a request is turned away while it is off", ctx.dispatch.admit({ from: "win-000001", projectId: project.id, key: ticket.key }).reason === "off");
+  await press(sw);
+  check("turning it on says what that means", await until(`(document.querySelector('[data-testid="accept-warning"]')?.textContent ?? '').includes('run an agent on this computer and change code here')`), await $(`${accept}?.textContent`));
+  check("and the account's other computers are told, with the limit", await (async () => { for (let i = 0; i < 40 && said()?.on !== true; i++) await sleep(250); return said()?.on === true && said().ceiling === "edits" && said().projects === "all"; })(), said());
+  check("the limit starts at editing files, not full access", (await $(`document.querySelector('[data-testid="accept-ceiling"]')?.value`)) === "edits");
+  const took = ctx.dispatch.admit({ from: "win-000001", projectId: project.id, key: ticket.key }, ["bypassPermissions", "acceptEdits", "default"]);
+  const refused = ctx.dispatch.admit({ from: "win-000001", projectId: project.id, key: ticket.key, permissionMode: "bypassPermissions" });
+  check("a request within the limits is taken, one above them is not", took.ok && took.permissionMode === "acceptEdits" && !refused.ok && refused.reason === "permission", { took, refused });
+  check("both are in the record, with who asked", await until(`(document.querySelector('[data-testid="accept-log"]')?.textContent ?? '').includes('Turned away from DESKTOP-WIN: it asked for more access than this computer allows')`) && (await $(`${accept}?.textContent`)).includes("Taken from DESKTOP-WIN"), await $(`document.querySelector('[data-testid="accept-log"]')?.textContent`));
+  await shot("devices-03b-accept-on");
+  await press(sw);
+  check("it can be turned off again, and then takes nothing", await until(`${sw}?.getAttribute('aria-checked') === 'false'`) && ctx.dispatch.admit({ from: "win-000001", projectId: project.id, key: ticket.key }).reason === "off");
+
   // ── the other comes online ───────────────────────────────────────────
   // Its presence, as the channel would say it: this stand-in speaks no Realtime.
   ctx.cloudHub.machines.seen({ [self]: [{ at: Date.now() }], "win-000001": [{ at: Date.now() }] });
@@ -263,6 +282,7 @@ const run = async () => {
   await sleep(700);
   const zh = await paneText();
   check("中文：设备页、这台电脑、免费版名额", zh.includes("登录了你账号的电脑") && zh.includes("这台电脑") && zh.includes("在线") && zh.includes("已用 1 / 2 台电脑") && zh.includes("在另一台电脑上登录同一个账号"), zh);
+  check("中文：接单开关和记录", zh.includes("接受我其他设备派来的工作") && zh.includes("最近的派单请求") && zh.includes("它要求的权限超出了这台电脑允许的范围"), zh);
   await shot("devices-08-zh");
 };
 
