@@ -156,6 +156,19 @@ function RuleEditor({ rule, index, count, engines, onChange, onDelete, onMove }:
           </Field>
         </div>
       )}
+      <Field label={t("nightShift.thenNotOn")} htmlFor={`${id}-not-on`}>
+        <input
+          id={`${id}-not-on`}
+          className="input"
+          data-testid="plan-rule-not-on"
+          placeholder={t("nightShift.thenNotOnHint")}
+          defaultValue={(rule.then.notOn ?? []).join(", ")}
+          onBlur={(event) => {
+            const names = event.target.value.split(/[,，]/).map((name) => name.trim()).filter(Boolean).slice(0, 20);
+            if (names.join("|") !== (rule.then.notOn ?? []).join("|")) then(without(rule.then, "notOn", names.length ? names : undefined));
+          }}
+        />
+      </Field>
     </div>
   );
 }

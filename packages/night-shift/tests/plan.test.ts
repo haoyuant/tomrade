@@ -67,7 +67,7 @@ describe("a model's plan", () => {
 
   it("a mangled reply costs only the part that was mangled", () => {
     const parsed = PlanReply.parse({ summary: 3, suggested: ["A"], excluded: "none", dependencies: [{ before: 1 }] });
-    expect(parsed).toEqual({ summary: "", suggested: ["A"], excluded: [], dependencies: [], concurrency: null, concurrencyWhy: "" });
+    expect(parsed).toEqual({ summary: "", suggested: ["A"], excluded: [], dependencies: [], concurrency: null, concurrencyWhy: "", devices: [] });
   });
 });
 

@@ -51,8 +51,10 @@ const run = async () => {
     if (!opts.system.startsWith("You plan")) throw new Error("no judgement in this check");
     await planHeld;
     if (planRefusal) throw new Error(planRefusal);
-    return { summary: "Ship the export.", concurrency: 3, concurrencyWhy: "They touch different code.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }] };
+    return { summary: "Ship the export.", concurrency: 3, concurrencyWhy: "They touch different code.", suggested: suggesting, excluded: [], dependencies: [{ before: second.key, after: later.key, why: "It documents what the later one changes" }], devices: placing };
   };
+  /** Tickets the planner would run on another computer. */
+  let placing = [];
   let suggesting = [first.key, second.key];
   let planHeld = Promise.resolve();
   let planRefusal = "";
@@ -409,6 +411,46 @@ const run = async () => {
   await press(test("plan-asked-start"));
   check("Start starts exactly what was shown", await (async () => { for (let i = 0; i < 40 && !ctx.nightShift.current(project.id); i++) await sleep(50); return ctx.nightShift.current(project.id)?.tickets[0]?.itemId === wanted.id && ctx.nightShift.current(project.id)?.settings.autoMerge === true; })());
   check("and the dialog follows it", await waitFor(`!!${test("night-shift-going")}`));
+  ctx.nightShift.stop(project.id, ctx.nightShift.current(project.id).id);
+
+  // ── where a ticket would run ──────────────────────────────────────────
+  // The run that was just stopped ends once its one ticket is through.
+  ctx.items.update(project.id, wanted.id, { status: "done" }, "human");
+  for (let i = 0; i < 40 && ctx.nightShift.current(project.id); i++) {
+    await ctx.nightShift.tick();
+    await sleep(100);
+  }
+  await press(closeDialog);
+  await sleep(400);
+  // The account has another computer, which accepts work; this one is a Mac.
+  const accept = { on: true, projects: "all", ceiling: "edits", concurrent: 1 };
+  // This check runs without the account service: a stand-in says what it would.
+  ctx.provide("cloudHub", { info: () => ({ user: null }), devices: () => [
+    { id: "mac", name: "Studio", self: true, online: true, platform: "darwin", agents: [{ id: "standin", title: "Stand-in coder", ready: true }], repos: [], sessions: [] },
+    { id: "win", name: "Windows tower", self: false, online: true, platform: "win32", agents: [{ id: "claude-code", title: "Claude Code", ready: true }], repos: [], sessions: [], accept }
+  ] });
+  const sentAway = [];
+  ctx.dispatch.queue.send = async (input) => { sentAway.push(input); return { id: "sent", ...input }; };
+  const labelled = (title, labels) => ctx.items.create({ projectId: project.id, boardId: board.id, title, labels, status: "todo", workType: "coding", by: "human" });
+  const forWindows = labelled("Faster on Windows", ["windows"]);
+  const idea = labelled("The installer leaves a stale registry key", []);
+  const forLinux = labelled("Package for Linux", ["linux"]);
+  suggesting = [forWindows.key, idea.key, forLinux.key];
+  placing = [{ key: idea.key, device: "Windows tower", why: "It is about the Windows installer." }];
+  starts.length = 0;
+  await press(test("sidebar-auto-run"));
+  await waitFor(`!!${test("plan-view")}`);
+  const row = (key) => `[...document.querySelectorAll('[data-testid="plan-elsewhere-row"]')].find((r) => r.textContent.includes(${JSON.stringify(key)}))`;
+  check("a ticket labelled windows, planned on a Mac, is offered to the Windows computer and ticked", await waitFor(`!!${row(forWindows.key)} && ${row(forWindows.key)}.textContent.includes('→ Windows tower') && ${row(forWindows.key)}.dataset.source === 'rule' && ${row(forWindows.key)}.querySelector('input').checked`), await $(`${test("plan-elsewhere")}?.textContent`));
+  check("the planner's idea is shown as one, with its reason, and waits for a tick", await $(`${row(idea.key)}?.dataset.source === 'model' && ${row(idea.key)}.textContent.includes("The planner's idea: It is about the Windows installer.") && !${row(idea.key)}.querySelector('input').checked`), await $(`${row(idea.key)}?.textContent`));
+  check("a label no computer answers to says why the ticket stays here", await $(`[...document.querySelectorAll('[data-testid="plan-elsewhere-stays"]')].some((r) => r.textContent.includes(${JSON.stringify(forLinux.key)}) && r.textContent.includes('none of your computers is one'))`), await $(`${test("plan-elsewhere")}?.textContent`));
+  await sleep(300);
+  await shot("plan-elsewhere");
+  await press(test("night-shift-start"));
+  check("starting sends what was ticked to the other computer, and only that", await (async () => { for (let i = 0; i < 40 && !ctx.nightShift.current(project.id); i++) await sleep(100); return sentAway.length === 1 && sentAway[0].itemId === forWindows.id && sentAway[0].to === "win" && sentAway[0].projectId === project.id; })(), sentAway);
+  const going = ctx.nightShift.current(project.id)?.tickets.map((t) => t.itemId) ?? [];
+  check("the rest runs here, without the one that was sent", going.includes(idea.id) && going.includes(forLinux.id) && !going.includes(forWindows.id), going);
+  check("and the person is told what went", await waitFor(`[...document.querySelectorAll('.toast')].some((n) => n.textContent.includes('Sent to another computer: ${forWindows.key}'))`));
   ctx.nightShift.stop(project.id, ctx.nightShift.current(project.id).id);
   check("harness reached the end", true);
 };

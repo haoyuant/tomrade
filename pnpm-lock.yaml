@@ -2028,6 +2028,9 @@ importers:
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
+      '@tomradex/dispatch':
+        specifier: workspace:*
+        version: link:../dispatch
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain

@@ -1269,3 +1269,141 @@ it("tells the account's other machines that a run goes on here and how far it ha
     await t.ctx.fiber.dispose();
   }
 });
+
+describe("where a planned ticket would run", () => {
+  const accept = { on: true, projects: "all", ceiling: "edits", concurrent: 1 };
+  const computers = () => [
+    { id: "mac", name: "Studio", self: true, online: true, platform: "darwin", agents: [{ id: "claude-code", title: "Claude Code", ready: true }], repos: [], sessions: [] },
+    { id: "win", name: "Windows tower", self: false, online: true, platform: "win32", agents: [{ id: "claude-code", title: "Claude Code", ready: true }, { id: "codex", title: "Codex", ready: false }], repos: ["https://github.com/acme/app"], sessions: [], accept }
+  ];
+  /** The account's computers, as its service would read them. */
+  const withComputers = (f: { ctx: Context }, list: Record<string, unknown>[] = computers()) => {
+    const state = { list };
+    f.ctx.provide("cloudHub", { devices: () => state.list } as never);
+    return state;
+  };
+  const make = (f: Awaited<ReturnType<typeof bootWithReport>>["f"], title: string, labels: string[] = []) =>
+    f.items.create({ projectId: f.project.id, boardId: f.ctx.boards.list(f.project.id)[0]!.id, title, labels, status: "todo", workType: "coding", by: "human" });
+
+  it("a ticket labelled windows, planned on a Mac, is suggested for the Windows computer — with or without a model", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      withComputers(f);
+      const win = make(f, "Faster on Windows", ["windows"]);
+      const plain = make(f, "Tidy the README");
+      const mac = make(f, "Fix the menu bar", ["macos"]);
+      llm.planReply = { summary: "Three.", suggested: [win.key, plain.key, mac.key], excluded: [], dependencies: [] };
+      const plan = await f.ctx.nightShift.plan(f.project.id);
+      const node = (key: string) => plan.nodes.find((n) => n.key === key)!;
+      expect(node(win.key)).toMatchObject({ suggested: true, device: { id: "win", name: "Windows tower", kind: "send", source: "rule", why: "Its label asks for that computer." } });
+      // Nothing says otherwise, or this computer is what the label asks for: here.
+      expect(node(plain.key).device).toBeNull();
+      expect(node(mac.key).device).toBeNull();
+      expect(node(mac.key).deviceNote).toBeUndefined();
+
+      // No model: the rules alone say the same.
+      llm.working = false;
+      const facts = await f.ctx.nightShift.plan(f.project.id);
+      expect(facts.analyzed).toBe(false);
+      expect(facts.nodes.find((n) => n.key === win.key)).toMatchObject({ device: { id: "win", kind: "send", source: "rule" } });
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("tells the planner of the computers that accept work, and takes its idea only where no label speaks and the rules allow", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const state = withComputers(f, [...computers(), { id: "lin", name: "Build box", self: false, online: true, platform: "linux", agents: [], repos: [], sessions: [] }]);
+      const installer = make(f, "The Windows installer leaves a stale registry key");
+      const labelled = make(f, "Fix the menu bar", ["macos"]);
+      const made = make(f, "Something else");
+      llm.planReply = {
+        summary: "Three.", suggested: [installer.key, labelled.key, made.key], excluded: [], dependencies: [],
+        devices: [
+          { key: installer.key, device: "Windows tower", why: "It is about the Windows installer." },
+          { key: labelled.key, device: "Windows tower", why: "Why not." },
+          { key: made.key, device: "Build box", why: "It has spare time." },
+          { key: "NOPE-1", device: "Windows tower", why: "A key nobody has." }
+        ]
+      };
+      const plan = await f.ctx.nightShift.plan(f.project.id);
+      const node = (key: string) => plan.nodes.find((n) => n.key === key)!;
+      expect(node(installer.key).device).toEqual({ id: "win", name: "Windows tower", kind: "send", source: "model", why: "It is about the Windows installer." });
+      // Its label says macOS, and this is the Mac: the planner is overruled.
+      expect(node(labelled.key).device).toBeNull();
+      // A computer that does not accept work is not the planner's to pick.
+      expect(node(made.key).device).toBeNull();
+
+      const shown = (llm.asked.at(-1) as unknown as { system: string; user: string });
+      expect(shown.user).toContain("OTHER COMPUTERS of this person that accept work");
+      expect(shown.user).toContain("- Windows tower (win32; agents: claude-code; repositories checked out: 1)");
+      expect(shown.user).not.toContain("Build box");
+      expect(shown.user).not.toContain("Studio");
+      expect(shown.system).toContain('"devices": [{"key", "device": name, "why"}]');
+
+      // Going offline is not something the planner was told: it is not asked again, and the idea no longer stands.
+      const calls = llm.calls;
+      state.list = state.list.map((d) => (d.id === "win" ? { ...d, online: false } : d));
+      const later = await f.ctx.nightShift.plan(f.project.id);
+      expect(llm.calls).toBe(calls);
+      expect(later.nodes.find((n) => n.key === installer.key)!.device).toBeNull();
+      // A computer that starts accepting work is: the planner is asked again.
+      state.list = state.list.map((d) => (d.id === "lin" ? { ...d, accept, agents: [{ id: "codex", title: "Codex", ready: true }] } : d));
+      await f.ctx.nightShift.plan(f.project.id);
+      expect(llm.calls).toBe(calls + 1);
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("says why a labelled ticket stays here, waits for a computer that is off, and keeps work off one a rule names", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const state = withComputers(f);
+      const win = make(f, "Faster on Windows", ["windows"]);
+      const linux = make(f, "Package for Linux", ["linux"]);
+      const named = make(f, "On that one", ["device:windows tower"]);
+      llm.planReply = { summary: "", suggested: [win.key, linux.key, named.key], excluded: [], dependencies: [] };
+      const node = async (key: string) => (await f.ctx.nightShift.plan(f.project.id)).nodes.find((n) => n.key === key)!;
+      expect(await node(linux.key)).toMatchObject({ device: null, deviceNote: "Its label asks for “linux”, and none of your computers is one: it stays here." });
+      expect((await node(named.key)).device).toMatchObject({ id: "win", kind: "send", source: "rule" });
+
+      state.list = state.list.map((d) => (d.id === "win" ? { ...d, online: false } : d));
+      expect((await node(win.key)).device).toEqual({ id: "win", name: "Windows tower", kind: "wait", source: "rule", why: "Its label asks for Windows tower, which is off: sent, it waits there." });
+      state.list = state.list.map((d) => (d.id === "win" ? { ...d, online: true, sessions: [{}] } : d));
+      expect((await node(win.key)).device).toMatchObject({ kind: "wait", why: "Its label asks for Windows tower, which is busy: sent, it waits there." });
+      state.list = state.list.map((d) => (d.id === "win" ? { ...d, sessions: [], accept: { ...accept, on: false } } : d));
+      expect(await node(win.key)).toMatchObject({ device: null, deviceNote: "Its label asks for Windows tower, which does not accept work: it stays here." });
+      state.list = state.list.map((d) => (d.id === "win" ? { ...d, accept, agents: [] } : d));
+      expect((await node(win.key)).deviceNote).toBe("Its label asks for Windows tower, which has no coding agent ready: it stays here.");
+      state.list = computers();
+
+      // The project's rules keep this kind of work off that computer, whichever rule sets how it runs.
+      f.ctx.nightShift.setRules(f.project.id, [
+        { id: "r1", name: "Windows work", when: { label: "windows" }, then: { engine: "claude-code" } },
+        { id: "r2", name: "Not on the tower", when: { workType: "coding" }, then: { notOn: ["Windows Tower"] } }
+      ]);
+      expect(await node(win.key)).toMatchObject({ device: null, deviceNote: "Its label asks for Windows tower, and a rule keeps this work off it: it stays here." });
+      // In Chinese.
+      f.ctx.settings.set({ ...f.ctx.settings.get(), language: "zh" });
+      expect((await node(win.key)).deviceNote).toBe("它的标签指定了「Windows tower」，但有规则不让这类工作去那台电脑：留在本机。");
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+
+  it("says nothing of computers where the account has no other, and shows the planner none", async () => {
+    const { f, llm } = await bootWithReport();
+    try {
+      const win = make(f, "Faster on Windows", ["windows"]);
+      llm.planReply = { summary: "", suggested: [win.key], excluded: [], dependencies: [] };
+      const alone = await f.ctx.nightShift.plan(f.project.id);
+      expect(alone.nodes[0]).not.toHaveProperty("device");
+      expect((llm.asked.at(-1) as unknown as { user: string; system: string }).user).not.toContain("OTHER COMPUTERS");
+      expect((llm.asked.at(-1) as unknown as { system: string }).system).not.toContain('"devices"');
+    } finally {
+      await f.ctx.fiber.dispose();
+    }
+  });
+});
