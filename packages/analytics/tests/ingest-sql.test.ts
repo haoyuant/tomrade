@@ -35,11 +35,13 @@ beforeAll(async () => {
   await db.exec("create role anon; create role authenticated; create role service_role;");
   await db.exec(migration("202610230001_analytics.sql"));
   await db.exec(migration("202610230002_analytics_region_scope.sql"));
+  await db.exec(migration("202610230003_analytics_aggregate.sql"));
   await db.exec(migration("202610290001_analytics_activation.sql"));
   await db.exec(migration("202610310001_analytics_plugin_layout.sql"));
   await db.exec(migration("202611040001_analytics_internal_functions.sql"));
   await db.exec(migration("202611040002_analytics_new_install_cap.sql"));
   await db.exec(migration("202611060002_analytics_event_unused_indexes.sql"));
+  await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -373,6 +375,72 @@ describe("activation funnel", () => {
       await expect(db.query("select public.tomrade_analytics_activation(current_date, current_date, null)")).rejects.toThrow();
     } finally {
       await db.exec("reset role");
+    }
+  });
+});
+
+describe("a registry this server does not have yet", () => {
+  const NEWER = FEATURE_REGISTRY_VERSION + 1;
+  const anon = "f".repeat(26);
+  const event = (registry: number, feature_id: string, action: string, install_seq: number, ts = Date.now()) =>
+    ({ ...base(), anon_id: anon, registry, install_seq, ts, event_id: randomUUID(), event: "feature.activate", feature_id, action, dim: null });
+
+  afterAll(async () => {
+    await db.exec("reset role");
+    await db.query("delete from public.tomrade_analytics_event where anon_id = $1", [anon]);
+  });
+
+  it("reads the newest one below it, keeping what it lacks uncounted and the client's version stored", async () => {
+    const { rows } = await ingest(batch([
+      event(NEWER, "backlog.plugin", "open", 1),
+      event(NEWER, "backlog.board", "open_again", 2),
+      event(NEWER, "future.thing", "open", 3)
+    ]));
+    expect(rows[0]!.result).toEqual({ accepted: 3, duplicates: 0, rejected: 0, received: 3 });
+    const stored = await db.query<{ feature_id: string; counted: boolean; unknown_feature: boolean; registry: number }>(
+      "select feature_id, counted, unknown_feature, registry from public.tomrade_analytics_event where anon_id = $1 order by install_seq",
+      [anon]
+    );
+    expect(stored.rows).toEqual([
+      { feature_id: "backlog.plugin", counted: true, unknown_feature: false, registry: NEWER },
+      { feature_id: "backlog.board", counted: false, unknown_feature: false, registry: NEWER },
+      { feature_id: "future.thing", counted: false, unknown_feature: true, registry: NEWER }
+    ]);
+  });
+
+  it("counts, once its registry arrives, the uses that came before it and rolls their day up again", async () => {
+    await db.exec("reset role");
+    const ts = Date.now() - 2 * 86_400_000;
+    const day = new Date(ts).toISOString().slice(0, 10);
+    await db.query("select public.tomrade_analytics_ensure_month($1::timestamptz)", [new Date(ts).toISOString()]);
+    // As production stored them before the fix: a use and a step, both uncounted, under a registry not pushed yet.
+    for (const [seq, feature_id, action] of [[10, "backlog.board", "open"], [11, "onboarding", "setup_done"]] as const) {
+      await db.query(
+        `insert into public.tomrade_analytics_event (event_id, schema, registry, event, anon_id, install_seq, ts, client, platform, region, feature_id, action, counted, unknown_feature)
+         values (gen_random_uuid(), 1, $1, 'feature.activate', $2, $3, $4::timestamptz, '0.9.0', 'macos', 'other', $5, $6, false, true)`,
+        [NEWER, anon, seq, new Date(ts).toISOString(), feature_id, action]
+      );
+    }
+    await db.query("select public.tomrade_analytics_aggregate($1::date, $1::date)", [day]);
+    const uses = async () => (await db.query<{ action: string; events: number; counted_events: number }>(
+      "select action, events, counted_events from public.tomrade_analytics_action_daily where day = $1::date and client_minor = '0.9' order by action",
+      [day]
+    )).rows;
+    expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 0 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+
+    await db.query(
+      `insert into public.tomrade_analytics_registry (registry, feature_id, action, counted, dims)
+       select $1, feature_id, action, counted, dims from public.tomrade_analytics_registry where registry = $2`,
+      [NEWER, FEATURE_REGISTRY_VERSION]
+    );
+    try {
+      await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+      expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 1 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+      // Run again, nothing moves.
+      await db.exec(migration("202611110101_analytics_registry_fallback.sql"));
+      expect(await uses()).toEqual([{ action: "open", events: 1, counted_events: 1 }, { action: "setup_done", events: 1, counted_events: 0 }]);
+    } finally {
+      await db.query("delete from public.tomrade_analytics_registry where registry = $1", [NEWER]);
     }
   });
 });
