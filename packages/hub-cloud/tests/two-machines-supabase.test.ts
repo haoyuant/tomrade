@@ -24,6 +24,8 @@ const enabled = !!(URL && KEY && SERVICE);
 if (enabled && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(URL)) throw new Error("TOMRADE_E2E_SUPABASE_URL must be a local Supabase");
 
 const account = { email: `two-machines-${randomUUID()}@example.test`, password: `pw-${randomUUID()}`, id: "" };
+/** A second account, on the free plan. */
+const free = { email: `free-plan-${randomUUID()}@example.test`, password: `pw-${randomUUID()}`, id: "" };
 const admin = () => createClient(URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
 
 /** Mutations sent to the Hub, counted where every request leaves. */
@@ -42,6 +44,12 @@ beforeAll(async () => {
   const { data, error } = await admin().auth.admin.createUser({ email: account.email, password: account.password, email_confirm: true });
   if (error) throw error;
   account.id = data.user.id;
+  // The first tests play four machines on it: more than the free plan allows.
+  const { error: unpaid } = await admin().from("tomrade_entitlements").insert({ user_id: account.id, plan: "placeholder_plus", device_limit: null });
+  if (unpaid) throw unpaid;
+  const made = await admin().auth.admin.createUser({ email: free.email, password: free.password, email_confirm: true });
+  if (made.error) throw made.error;
+  free.id = made.data.user.id;
 }, 60_000);
 
 afterAll(async () => {
@@ -49,6 +57,7 @@ afterAll(async () => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   globalThis.fetch = realFetch;
   if (account.id) await admin().auth.admin.deleteUser(account.id);
+  if (free.id) await admin().auth.admin.deleteUser(free.id);
 });
 
 /** Each machine keeps its own session, as each app's keychain does. */
@@ -57,7 +66,7 @@ const memoryStorage = (): SupportedStorage => {
   return { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => void kept.set(k, v), removeItem: (k) => void kept.delete(k) };
 };
 
-async function machine(device: string) {
+async function machine(device: string, as = account) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-hub-supabase-"));
   dirs.push(dir);
   const bag = await fresh({ hubDir: path.join(dir, "hub"), device, plugins: [
@@ -70,7 +79,7 @@ async function machine(device: string) {
   await bag.ctx.plugin(CloudHub, { url: URL, publishableKey: KEY, cacheFile: path.join(dir, "hub-cloud.json"), sessionStorage: memoryStorage(), syncMs: 60_000 });
   await settle();
   await bag.ctx.cloudHub.ready;
-  await bag.ctx.cloudHub.signIn(account.email, account.password, true);
+  await bag.ctx.cloudHub.signIn(as.email, as.password, true);
   return { ...bag, cloud: bag.ctx.cloudHub };
 }
 
@@ -146,6 +155,24 @@ it.skipIf(!enabled)("each machine sees the other among the account's machines, o
 
   await a.cloud.removeDevice("supabase-d");
   await b.cloud.sync();
-  expect(b.cloud.devicesInfo()).toEqual({ state: "removed", devices: [] });
+  expect(b.cloud.devicesInfo()).toMatchObject({ state: "removed", devices: [] });
   expect(a.cloud.devices().map((d) => d.id)).not.toContain("supabase-d");
+}, 120_000);
+
+it.skipIf(!enabled)("three machines racing for a free account's two places: two take them, the third has none until one is removed", async () => {
+  // Each machine's sign-in registers it: all three ask at once.
+  const three = await Promise.all(["free-a", "free-b", "free-c"].map((device) => machine(device, free)));
+  for (const m of three) await m.cloud.sync();
+  const states = three.map((m) => m.cloud.devicesInfo().state).sort();
+  expect(states).toEqual(["over-limit", "ready", "ready"]);
+  const out = three.find((m) => m.cloud.devicesInfo().state === "over-limit")!;
+  expect(out.cloud.devicesInfo()).toMatchObject({ plan: { id: "free", limit: 2 } });
+  expect(out.cloud.devices()).toHaveLength(2);
+  expect(out.cloud.info().status.state).toBe("synced");
+  const { data } = await admin().from("tomrade_devices").select("device_id").eq("user_id", free.id).is("removed_at", null);
+  expect(data).toHaveLength(2);
+
+  await out.cloud.removeDevice(out.cloud.devices()[0]!.id);
+  await out.cloud.sync();
+  expect(out.cloud.devicesInfo().state).toBe("ready");
 }, 120_000);

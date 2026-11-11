@@ -59,6 +59,11 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
           await sql.db.query("select public.tomrade_device_seen($1)", [args!.p_device]);
           return { data: null, error: null };
         }
+        if (name === "tomrade_device_plan") return { data: (await sql.db.query<{ result: unknown }>("select public.tomrade_device_plan() as result")).rows[0]!.result, error: null };
+        if (name === "tomrade_remove_device") {
+          await sql.db.query("select public.tomrade_remove_device($1)", [args!.p_device]);
+          return { data: null, error: null };
+        }
         if (name === "tomrade_rename_device") {
           await sql.db.query("select public.tomrade_rename_device($1, $2)", [args!.p_device, args!.p_name]);
           return { data: null, error: null };
@@ -143,7 +148,9 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
   `);
   await sql.db.query("insert into auth.users values ($1)", [sql.user]);
-  for (const name of ["202609100001_hub.sql", "202611110001_devices.sql"]) await sql.db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
+  for (const name of ["202609100001_hub.sql", "202611110001_devices.sql", "202611110002_device_limit.sql"]) await sql.db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
+  // These tests play more machines than the free plan allows: the account subscribes to five.
+  await sql.db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', 5)", [sql.user]);
 }, 60_000);
 afterAll(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -244,4 +251,21 @@ it("each machine sees the other among the account's machines, online, and hears 
   await a.cloud.renameDevice("hub-d", "The other one");
   await b.cloud.sync();
   expect(b.cloud.devices().find((d) => d.self)).toMatchObject({ id: "hub-d", name: "The other one" });
+}, 60_000);
+
+it("the machine past the plan's limit has no place until one of the others is removed", async () => {
+  // Four are registered above; the plan allows five.
+  const e = await machine("hub-e");
+  await e.cloud.sync();
+  expect(e.cloud.devicesInfo()).toMatchObject({ state: "ready", plan: { id: "placeholder_plus", limit: 5 } });
+  const f = await machine("hub-f");
+  await f.cloud.sync();
+  expect(f.cloud.devicesInfo()).toMatchObject({ state: "over-limit", plan: { id: "placeholder_plus", limit: 5 } });
+  expect(f.cloud.devices().map((d) => d.id).sort()).toEqual(["hub-a", "hub-b", "hub-c", "hub-d", "hub-e"]);
+  expect(f.cloud.info().status.state).toBe("synced");
+
+  await f.cloud.removeDevice("hub-a");
+  await f.cloud.sync();
+  expect(f.cloud.devicesInfo().state).toBe("ready");
+  expect(f.cloud.devices().map((d) => d.id).sort()).toEqual(["hub-b", "hub-c", "hub-d", "hub-e", "hub-f"]);
 }, 60_000);

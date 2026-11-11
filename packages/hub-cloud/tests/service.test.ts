@@ -74,8 +74,9 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
     },
     removeChannel: async () => "ok",
     rpc: async (name: string, args?: { p_mutation: Mutation; p_device?: string; p_name?: string; p_facts?: unknown }) => {
-      if (name === "tomrade_register_device" || name === "tomrade_device_seen") {
+      if (name === "tomrade_register_device" || name === "tomrade_device_seen" || name === "tomrade_device_plan") {
         if (remote.offline) return { data: null, error: { message: "offline" } };
+        if (name === "tomrade_device_plan") return { data: { plan: "placeholder_plus", limit: null, used: remote.devices.size }, error: null };
         if (name === "tomrade_device_seen") return { data: null, error: null };
         const at = "2026-11-11T00:00:00.000Z";
         remote.devices.set(args!.p_device!, { device_id: args!.p_device!, name: remote.devices.get(args!.p_device!)?.name ?? args!.p_name!, facts: args!.p_facts, last_seen_at: at, updated_at: at });

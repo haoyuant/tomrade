@@ -9,6 +9,7 @@ import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord, type Mutation } from "./cache.js";
 import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
 import { Devices, type DeviceView, type DevicesInfo } from "./devices.js";
+import { SUBSCRIBE_PATH } from "./plans.js";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -74,6 +75,8 @@ declare module "@tomradex/ipc" {
     "devices.rename": (id: string, name: string) => DevicesInfo;
     /** Takes a machine out of the account's machines until someone signs in on it again. */
     "devices.remove": (id: string) => DevicesInfo;
+    /** Asks the account again for this machine's place and its plan, after subscribing or removing a machine elsewhere. */
+    "devices.recheck": () => DevicesInfo;
   }
   interface Broadcasts { "account.changed": () => void; "devices.changed": () => void }
 }
@@ -187,6 +190,7 @@ export class CloudHub extends Service implements CloudHubReader {
     this.machines = new Devices({
       home: this.home, client: this.client, cache: this.cache, deviceId: this.ctx.hub.deviceId,
       appVersion: this.config.appVersion, offlineAfterMs: this.config.deviceOfflineMs,
+      subscribeUrl: new URL(SUBSCRIBE_PATH, this.config.site).href,
       userId: () => this.user?.id ?? null, schedule: () => this.schedule(),
       changed: () => { this.home.emit("cloudHub/devices"); this.home.get("ipc")?.send("devices.changed"); }
     });
@@ -239,6 +243,7 @@ export class CloudHub extends Service implements CloudHubReader {
       ctx.ipc.handle("devices.info", () => this.devicesInfo());
       ctx.ipc.handle("devices.rename", async (id, name) => { await this.renameDevice(id, name); return this.devicesInfo(); });
       ctx.ipc.handle("devices.remove", async (id) => { await this.removeDevice(id); return this.devicesInfo(); });
+      ctx.ipc.handle("devices.recheck", () => this.recheckDevices());
     });
     const { data: { subscription } } = this.client.auth.onAuthStateChange((event, session) => {
       // Do not await another Supabase operation while its auth callback holds the session lock.
@@ -462,6 +467,12 @@ export class CloudHub extends Service implements CloudHubReader {
   }
   async removeDevice(id: string): Promise<void> {
     await this.machines.remove(z.string().min(1).max(64).parse(id));
+  }
+  async recheckDevices(): Promise<DevicesInfo> {
+    this.machines.recheck();
+    if (this.active) await this.active;
+    await this.sync();
+    return this.devicesInfo();
   }
   /** This machine leaves the account's presence, as on quit: the others see it offline at once. */
   goOffline(): Promise<void> {

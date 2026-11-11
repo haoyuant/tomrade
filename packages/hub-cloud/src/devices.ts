@@ -3,7 +3,8 @@ import type { Context } from "cordis";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { contract, errorMessage } from "@tomradex/contracts";
-import { equal, type CloudCache, type DeviceRow } from "./cache.js";
+import { equal, type CloudCache, type DevicePlan, type DeviceRow } from "./cache.js";
+import { FREE_DEVICE_LIMIT, FREE_PLAN } from "./plans.js";
 
 /** What a machine says about itself to the account's other machines. No path, no credential. */
 export interface DeviceFacts {
@@ -31,9 +32,16 @@ export interface DevicesInfo {
   /**
    * `signed-out`: devices need an account. `pending`: this machine has not reached the account yet.
    * `removed`: it was removed from another machine, and stays out until someone signs in here again.
+   * `over-limit`: the account's plan has no room for this machine. `devices` then lists the machines that
+   * hold the places, so one can be removed; none of them reads as online, since this machine is not among them.
    */
-  state: "signed-out" | "pending" | "ready" | "removed";
+  state: "signed-out" | "pending" | "ready" | "removed" | "over-limit";
   devices: DeviceView[];
+  /**
+   * How many machines the account may have (null: no limit) under which plan, and where to subscribe for
+   * more. Until the account has answered, the free plan's.
+   */
+  plan: { id: string; limit: number | null; subscribeUrl: string };
 }
 
 const Facts = z.object({
@@ -42,7 +50,8 @@ const Facts = z.object({
   repos: z.array(z.string()).catch([])
 });
 const Row = z.object({ device_id: z.string(), name: z.string(), facts: z.json(), last_seen_at: z.string(), updated_at: z.string() });
-const Registered = z.object({ state: z.enum(["registered", "removed"]) });
+const Registered = z.object({ state: z.enum(["registered", "removed", "over_limit"]), limit: z.number().int().nonnegative().optional(), plan: z.string().optional() });
+const Plan = z.object({ plan: z.string(), limit: z.number().int().nonnegative().nullable() });
 
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 /** A remote on a server, with no password in it: what the database takes. A folder or a file URL stays here. */
@@ -54,6 +63,8 @@ const shareable = (remote: string): boolean =>
 const GIT_MS = 600_000;
 /** A machine that comes online stamps the account at most this often. */
 const SEEN_MS = 600_000;
+/** How often the plan is asked for again, and how often a machine the account had no room for asks again. */
+const PLAN_MS = 600_000;
 
 export interface DevicesHost {
   home: Context;
@@ -63,6 +74,8 @@ export interface DevicesHost {
   appVersion: string;
   /** How long after its presence ends a machine still counts as online: a dropped connection usually comes back. */
   offlineAfterMs: number;
+  /** Where a person subscribes for more machines. */
+  subscribeUrl: string;
   /** The signed-in account, or null. */
   userId(): string | null;
   /** The list, or who is online, changed. */
@@ -85,6 +98,10 @@ export class Devices {
   private git: { at: number; ready: boolean } | null = null;
   private seenAt = 0;
   private warned: string | null = null;
+  /** When the plan was last read, how many machines the account had then, and when this machine last asked for a place. */
+  private planAt = 0;
+  private planFor = -1;
+  private askedAt = 0;
 
   constructor(private readonly host: DevicesHost) {}
 
@@ -125,23 +142,54 @@ export class Devices {
     const facts = await this.facts();
     const print = JSON.stringify(facts);
     if (!alive()) return;
-    if (cache.data.device.rejoin || (!cache.data.device.removed && cache.data.device.acked !== print)) await this.register(facts, print);
-    let rows = this.registered() ? await this.read() : null;
-    if (rows && !rows.some((r) => r.device_id === this.host.deviceId)) {
-      // Its row is gone though the account took it before: removed elsewhere, which registering again says.
-      cache.data.device = { ...cache.data.device, acked: null };
-      await this.register(facts, print);
-      rows = this.registered() ? await this.read() : null;
-    }
-    if (!alive()) return;
-    if (!rows) {
-      if (!cache.data.device.removed) return;
+    const mark = cache.data.device;
+    // A machine the account had no room for asks again now and then, not on every pass; sooner when a place opens.
+    const waiting = !!mark.over && Date.now() - this.askedAt < PLAN_MS;
+    if (!waiting && (mark.rejoin || (!mark.removed && mark.acked !== print))) await this.register(facts, print);
+    if (cache.data.device.removed) {
+      if (!alive()) return;
       this.close();
       if (cache.data.devices.length) { cache.data.devices = []; cache.save(); this.host.changed(); }
       return;
     }
+    if (!this.registered() && !cache.data.device.over) return;
+    let rows = await this.read();
+    if (this.registered() && !rows.some((r) => r.device_id === this.host.deviceId)) {
+      // Its row is gone though the account took it before: removed elsewhere, which registering again says.
+      cache.data.device = { ...cache.data.device, acked: null };
+      await this.register(facts, print);
+      if (cache.data.device.removed) return this.pass(alive);
+      rows = await this.read();
+    }
+    const over = cache.data.device.over;
+    if (over && rows.length < over.limit) {
+      // A place opened: one of the others was removed.
+      await this.register(facts, print);
+      rows = await this.read();
+    }
+    await this.readPlan(rows.length);
+    if (!alive()) return;
     if (!equal(rows, cache.data.devices)) { cache.data.devices = rows; cache.save(); this.host.changed(); }
-    this.connect();
+    if (this.registered()) this.connect();
+    else this.close();
+  }
+
+  /** The account's plan, read when the run begins, when the number of machines changes, and now and then. */
+  private async readPlan(machines: number): Promise<void> {
+    const { cache } = this.host;
+    if (cache.data.plan && this.planFor === machines && Date.now() - this.planAt < PLAN_MS) return;
+    const { data, error } = await this.host.client.rpc("tomrade_device_plan");
+    if (error && !error.code) throw new Error(error.message);
+    this.planAt = Date.now();
+    this.planFor = machines;
+    // An account server without plans: nothing to show beyond the free plan's numbers.
+    const parsed = error ? null : Plan.safeParse(data);
+    if (!parsed?.success) return;
+    const plan: DevicePlan = { id: parsed.data.plan, limit: parsed.data.limit };
+    if (equal(plan, cache.data.plan)) return;
+    cache.data.plan = plan;
+    cache.save();
+    this.host.changed();
   }
 
   /** The account has this machine, as far as this machine knows. */
@@ -161,12 +209,20 @@ export class Devices {
       return;
     }
     this.warned = null;
-    const removed = Registered.parse(data).state === "removed";
+    this.askedAt = Date.now();
+    const result = Registered.parse(data);
     const before = cache.data.device;
-    cache.data.device = { acked: removed ? null : print, rejoin: false, removed };
+    if (result.state === "over_limit") {
+      // Still owed, and still allowed back if it was removed: a place may open.
+      cache.data.device = { ...before, acked: null, removed: false, over: { limit: result.limit ?? FREE_DEVICE_LIMIT } };
+      if (result.plan) cache.data.plan = { id: result.plan, limit: result.limit ?? FREE_DEVICE_LIMIT };
+    } else {
+      const removed = result.state === "removed";
+      cache.data.device = { acked: removed ? null : print, rejoin: false, removed, over: null };
+      if (!removed) this.seenAt = Date.now();
+    }
     cache.save();
-    if (!removed) this.seenAt = Date.now();
-    if (before.removed !== removed || (before.acked === null) !== (cache.data.device.acked === null)) this.host.changed();
+    if (!equal(before, cache.data.device) && !(before.acked !== null && cache.data.device.acked !== null)) this.host.changed();
   }
 
   private async read(): Promise<DeviceRow[]> {
@@ -177,18 +233,21 @@ export class Devices {
 
   info(): DevicesInfo {
     const { cache, deviceId } = this.host;
-    if (!this.host.userId()) return { state: "signed-out", devices: [] };
-    if (cache.data.device.removed) return { state: "removed", devices: [] };
+    const held = cache.data.plan ?? { id: FREE_PLAN, limit: FREE_DEVICE_LIMIT };
+    const plan = { ...held, subscribeUrl: this.host.subscribeUrl };
+    if (!this.host.userId()) return { state: "signed-out", devices: [], plan };
+    if (cache.data.device.removed) return { state: "removed", devices: [], plan };
+    const out = !!cache.data.device.over;
     const now = Date.now();
     const devices = cache.data.devices.map((row): DeviceView => {
       const self = row.device_id === deviceId;
       const gone = this.left.get(row.device_id);
-      const online = self || this.present.has(row.device_id) || (!!gone && gone.until > now);
+      const online = !out && (self || this.present.has(row.device_id) || (!!gone && gone.until > now));
       return { ...Facts.parse(row.facts ?? {}), id: row.device_id, name: row.name, self, online, lastSeenAt: online ? now : Math.max(Date.parse(row.last_seen_at) || 0, gone?.at ?? 0) };
     });
     // This machine first, then the ones that are on, then by name.
     devices.sort((a, b) => Number(b.self) - Number(a.self) || Number(b.online) - Number(a.online) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-    return { state: cache.data.device.acked === null ? "pending" : "ready", devices };
+    return { state: out ? "over-limit" : cache.data.device.acked === null ? "pending" : "ready", devices, plan };
   }
 
   async rename(id: string, name: string): Promise<void> {
@@ -203,7 +262,7 @@ export class Devices {
     const { error } = await client.rpc("tomrade_remove_device", { p_device: id });
     if (error) throw this.failure(error);
     if (id === deviceId) {
-      cache.data.device = { acked: null, rejoin: false, removed: true };
+      cache.data.device = { acked: null, rejoin: false, removed: true, over: null };
       cache.data.devices = [];
       cache.save();
       this.close();
@@ -215,6 +274,8 @@ export class Devices {
 
   private async refresh(): Promise<void> {
     const rows = await this.read();
+    // A place may have opened for this machine, or the plan may read differently now.
+    if (this.host.cache.data.device.over) { this.askedAt = 0; this.host.schedule(); }
     if (equal(rows, this.host.cache.data.devices)) return;
     this.host.cache.data.devices = rows;
     this.host.cache.save();
@@ -223,6 +284,12 @@ export class Devices {
 
   private failure(error: { message: string; code?: string }): Error {
     return new Error(error.code ? error.message : `[network] ${error.message}`);
+  }
+
+  /** The person asks again, having subscribed or removed a machine elsewhere: the next pass asks for a place and the plan at once. */
+  recheck(): void {
+    this.askedAt = 0;
+    this.planAt = 0;
   }
 
   /** Someone signed in here: a machine that was removed may register again. */

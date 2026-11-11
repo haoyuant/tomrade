@@ -22,8 +22,13 @@ const DeviceMark = z.object({
   /** Someone signed in here since it last registered: a machine that was removed may come back. */
   rejoin: z.boolean().default(false),
   /** Removed from the account's machines on another one. */
-  removed: z.boolean().default(false)
+  removed: z.boolean().default(false),
+  /** The account had no room for this machine when it last asked: the limit it met. */
+  over: z.object({ limit: z.number().int().nonnegative() }).nullable().default(null)
 });
+/** The account's plan for machines: its id, and how many it allows (null: no limit). */
+const DevicePlan = z.object({ id: z.string(), limit: z.number().int().nonnegative().nullable() });
+export type DevicePlan = z.infer<typeof DevicePlan>;
 const State = z.object({
   v: z.literal(1), endpoint: z.string(), userId: z.string().nullable(), hubId: z.string().nullable(),
   /** The owner's address, so a signed-out machine can still say whose projects it holds. */
@@ -38,7 +43,9 @@ const State = z.object({
   terms: z.string().nullable().default(null),
   /** Requests that may have reached the cloud: never changed again, since a retry must say what the first said. */
   sent: z.array(z.string()).default([]),
-  device: DeviceMark.default({ acked: null, rejoin: false, removed: false }),
+  device: DeviceMark.default({ acked: null, rejoin: false, removed: false, over: null }),
+  /** The plan as the account last said it; null until it has. */
+  plan: DevicePlan.nullable().default(null),
   /** The account's machines as last read, so a machine that starts offline still shows them. */
   devices: z.array(DeviceRowSchema).default([])
 });
@@ -53,7 +60,7 @@ function canonical(v: unknown): unknown {
 
 const empty = (endpoint: string): CacheState => ({
   v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null, sent: [],
-  device: { acked: null, rejoin: false, removed: false }, devices: []
+  device: { acked: null, rejoin: false, removed: false, over: null }, plan: null, devices: []
 });
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
