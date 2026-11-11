@@ -622,6 +622,21 @@ describe("starting a ticket", () => {
     await untilRunsSettle(world.agent);
   });
 
+  it("counts a ticket Tomrade starts for the activation funnel, once and not again when its thread continues", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    await codeLink.scan(project.id);
+    const activate = vi.fn();
+    ctx.provide("analytics", { activate } as never);
+    const item = ticket("Counted once");
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: true, continued: false });
+    await untilRunsSettle(world.agent);
+    expect(await codeLink.start(project.id, item.id, { mode: "run", message: "and the tests" })).toMatchObject({ ok: true, continued: true });
+    await untilRunsSettle(world.agent);
+    expect(activate.mock.calls.filter(([, action]) => action === "start")).toEqual([["code.link", "start"]]);
+  });
+
   it("answers each gate with the thing that clears it", async () => {
     const world = await machine(null);
     const { codeLink, ctx, project, board, ticket } = world;
