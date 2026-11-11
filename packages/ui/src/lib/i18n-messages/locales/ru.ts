@@ -3261,6 +3261,7 @@ export const ru: PartialMessages = {
     convoReadOnly: "Разговор, только для чтения",
     paneEarlier: "Раньше в этой панели",
     paneEarlierCount: "Раньше в этой панели ({{n}})",
+    paneEarlierWhere: "{{where}} · раньше",
     fold: "Свернуть панель сеансов",
     unfold: "Показать панель сеансов",
     projectTitle: "Проект этого окна: {{project}}",

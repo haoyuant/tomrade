@@ -126,10 +126,12 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* The last few to end, below a rule so they never read as still going. A cell's ended view shares the class: li only. */
 li.cs-ended { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
 li.cs-ended > .fold-box { --collapse-gap: 4px; }
-/* A pane that ran sessions before: its chevron left of the card, the earlier sessions under it. */
+/* A pane that ran sessions before: a fold line under its card, the earlier sessions under that; the card keeps its full width. */
 .cs-fold-row { gap: 2px; }
-.cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
-.cs-timeline { margin: 4px 0 3px; padding-left: calc(22px + 2px); }
+.cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
+.cs-card + .cs-fold-row { margin-top: 2px; }
+.cs-timeline { margin: 4px 0 3px; }
+.cs-timeline .cs-row { border-style: dashed; }
 
 .cs-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--space-2) var(--cs-gutter); border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }

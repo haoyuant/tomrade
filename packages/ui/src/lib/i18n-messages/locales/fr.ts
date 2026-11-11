@@ -3149,6 +3149,7 @@ export const fr: PartialMessages = {
     convoReadOnly: "La conversation, en lecture seule",
     paneEarlier: "Plus tôt dans ce volet",
     paneEarlierCount: "Plus tôt dans ce volet ({{n}})",
+    paneEarlierWhere: "{{where}} · avant",
     fold: "Replier la barre des sessions",
     unfold: "Afficher la barre des sessions",
     projectTitle: "Projet de cette fenêtre : {{project}}",

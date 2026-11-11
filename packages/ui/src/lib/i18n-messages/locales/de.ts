@@ -3149,6 +3149,7 @@ export const de: PartialMessages = {
     convoReadOnly: "Die Unterhaltung, schreibgeschützt",
     paneEarlier: "Früher in diesem Bereich",
     paneEarlierCount: "Früher in diesem Bereich ({{n}})",
+    paneEarlierWhere: "{{where}} · früher",
     fold: "Sitzungsleiste einklappen",
     unfold: "Sitzungsleiste anzeigen",
     projectTitle: "Projekt dieses Fensters: {{project}}",
