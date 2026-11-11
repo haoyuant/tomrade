@@ -823,6 +823,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/change-review':
+        specifier: workspace:*
+        version: link:../change-review
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
@@ -3225,6 +3228,9 @@ importers:
       '@tomradex/build-page':
         specifier: workspace:*
         version: link:../build-page
+      '@tomradex/change-review':
+        specifier: workspace:*
+        version: link:../change-review
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link

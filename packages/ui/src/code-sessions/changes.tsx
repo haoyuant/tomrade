@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChangesDialog } from "~/components/diff/TicketChanges";
 import type { ChangesSource } from "~/lib/changes";
 import { LocaleWords, useI18n } from "~/lib/i18n";
-import { onState, openChanged, readChangeFile, readChanges } from "./bridge";
+import { changeReview, onChangeReviewChanged, onState, openChanged, readChangeFile, readChanges } from "./bridge";
 
 /** The ticket whose changes the window shows over its cells; one at a time. */
 interface Shown {
@@ -28,7 +28,15 @@ const sourceOf = (itemId: string): ChangesSource => ({
   key: ["changes", itemId],
   changes: (opts) => readChanges(itemId, opts),
   file: (opts) => readChangeFile(itemId, opts),
-  open: (opts) => openChanged(itemId, opts)
+  open: (opts) => openChanged(itemId, opts),
+  commentsKey: ["changeComments", itemId],
+  comments: () => changeReview(itemId, { op: "comments" }),
+  addComment: (draft) => changeReview(itemId, { op: "add", draft }),
+  editComment: (id, edit) => changeReview(itemId, { op: "edit", id, edit }),
+  removeComment: (id) => changeReview(itemId, { op: "remove", id }),
+  reviewTarget: () => changeReview(itemId, { op: "target" }),
+  sendComments: (opts) => changeReview(itemId, { op: "send", deliver: opts?.deliver }),
+  markReviewed: (opts) => changeReview(itemId, { op: "markReviewed", linkId: opts?.linkId })
 });
 
 function Sheet({ target, onNotice }: { target: Shown; onNotice: (text: string) => void }) {
@@ -44,6 +52,7 @@ function Sheet({ target, onNotice }: { target: Shown; onNotice: (text: string) =
       void qc.invalidateQueries({ queryKey: source.key });
     });
   }, [qc, source]);
+  useEffect(() => onChangeReviewChanged((itemId) => itemId === target.itemId && void qc.invalidateQueries({ queryKey: source.commentsKey })), [qc, source, target.itemId]);
   return <ChangesDialog open onOpenChange={(open) => !open && set(null)} title={target.key ? t("diff.sheetTitle", { key: target.key }) : t("diff.title")} source={source} viewedKey={target.itemId} onNotice={onNotice} />;
 }
 
