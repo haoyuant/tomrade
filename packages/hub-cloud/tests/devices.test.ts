@@ -29,6 +29,8 @@ const cloud = vi.hoisted(() => ({
   plain: false,
   /** True: the account answers a registration with nothing, as a stand-in that knows no such function does. */
   blank: false,
+  /** True: an account server from before machines said whether they take work. */
+  noAccept: false,
   presence: {} as Record<string, Record<string, unknown>[]>,
   listeners: new Set<() => void>(),
   topics: [] as string[],
@@ -65,6 +67,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       if (name === "tomrade_register_device") {
         if (cloud.refuse) return { data: null, error: { message: cloud.refuse, code: "PGRST202" } };
         if (cloud.blank) return { data: null, error: null };
+        if (cloud.noAccept && (args.p_facts as { accept?: unknown }).accept) return { data: null, error: { message: "Invalid device fields", code: "22023" } };
         cloud.registered.push({ device: id, facts: args.p_facts, rejoin: !!args.p_rejoin });
         if (old?.removed && !args.p_rejoin) return { data: { state: "removed" }, error: null };
         const used = [...cloud.rows.values()].filter((r) => !r.removed).length;
@@ -130,7 +133,7 @@ beforeEach(() => {
   cloud.offline = false; cloud.rows.clear(); cloud.registered = []; cloud.seen = []; cloud.refuse = null;
   cloud.presence = {}; cloud.listeners.clear(); cloud.topics = [];
   cloud.plan = { plan: "placeholder_plus", limit: null }; cloud.planReads = 0;
-  cloud.told = []; cloud.reads = 0; cloud.plain = false; cloud.blank = false;
+  cloud.told = []; cloud.reads = 0; cloud.plain = false; cloud.blank = false; cloud.noAccept = false;
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -630,4 +633,40 @@ it("an answer it cannot read leaves this machine unregistered, said once, and Hu
   cloud.blank = false;
   await a.cloud.sync();
   expect(a.cloud.devicesInfo().state).toBe("ready");
+});
+
+it("says whether this machine takes work when another service tells it, and again when that changes", async () => {
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  expect(cloud.registered.at(-1)!.facts).not.toHaveProperty("accept");
+  let accept: Record<string, unknown> = { on: false, projects: "all", ceiling: "edits", concurrent: 1 };
+  a.cloud.describeDevice("accept", () => accept);
+  await a.cloud.sync();
+  expect(cloud.registered.at(-1)!.facts).toMatchObject({ accept });
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  expect(b.cloud.devices().find((d) => d.id === "mac-0001")!.accept).toEqual(accept);
+  expect(b.cloud.devices().find((d) => d.self)!.accept).toBeUndefined();
+
+  accept = { on: true, projects: ["p-0001"], ceiling: "full", concurrent: 2, secret: "/Users/alice" };
+  a.cloud.refreshDevice();
+  await a.cloud.sync();
+  expect(cloud.registered.at(-1)!.facts).toMatchObject({ accept: { on: true, projects: ["p-0001"], ceiling: "full", concurrent: 2 } });
+  expect(JSON.stringify(cloud.registered.at(-1))).not.toMatch(/secret|alice/);
+  // A description the database would refuse is left out, not sent.
+  accept = { on: true, projects: ["/Users/alice/code"], ceiling: "full", concurrent: 2 };
+  const sent = cloud.registered.length;
+  await a.cloud.sync();
+  expect(cloud.registered).toHaveLength(sent + 1);
+  expect(cloud.registered.at(-1)!.facts).not.toHaveProperty("accept");
+});
+
+it("an account server from before machines said whether they take work still registers this one", async () => {
+  cloud.noAccept = true;
+  const a = await machine("mac-0001");
+  a.cloud.describeDevice("accept", () => ({ on: true, projects: "all", ceiling: "edits", concurrent: 1 }));
+  for (let i = 0; i < 3; i++) await a.cloud.sync();
+  expect(a.cloud.devicesInfo().state).toBe("ready");
+  expect(cloud.registered).toHaveLength(1);
+  expect(cloud.registered[0]!.facts).not.toHaveProperty("accept");
 });
