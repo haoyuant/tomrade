@@ -188,6 +188,110 @@
 </div>
 <!--@endscreen-->
 
+<!--@screen W-04|workspace|Diff|A ticket's changes, unified|dawn|A ticket's changes, opened from its detail pane: the files beside their diffs, unified, with what was already viewed folded.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include airail-->
+<div class="scrim" style="position:absolute"></div>
+<div class="palette modal sheet-changes" role="dialog" aria-label="Changes · TOM-18" style="position:absolute;top:50%;height:820px">
+  <div class="dlg-head"><h2 class="dlg-title" style="font-size:var(--text-lg)">Changes · TOM-18</h2><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Close">[[i-close 14]]</button></div>
+  <div class="changes-sheet">
+    <div class="diff" tabindex="0" data-layout="unified">
+      <div class="diff__bar">
+        <select class="input diff__pick" aria-label="What to compare"><option selected>Branch against its base</option><option>Uncommitted changes</option></select>
+        <span class="diff__summary num">5 files · +55 −2</span>
+        <span class="meta-txt num">2 of 5 viewed</span>
+        <span class="spacer"></span>
+        <label class="diff__option"><input type="checkbox">Ignore whitespace</label>
+        <span class="diff__steps" title="n / p: next or previous change. ] / [: next or previous file."><button type="button" class="btn btn-icon" aria-label="Previous change (p)" title="Previous change (p)">[[i-chevdown 14 rot180]]</button><button type="button" class="btn btn-icon" aria-label="Next change (n)" title="Next change (n)">[[i-chevdown 14]]</button></span>
+        <div class="seg quiet" role="group" aria-label="Layout"><button type="button" aria-pressed="true">Unified</button><button type="button" aria-pressed="false">Split</button></div>
+      </div>
+      <div class="diff__panes">
+        <nav class="diff__list" aria-label="Files (5)">
+          [[ditem M|packages/ui/src/components/workspace/CommandPalette.tsx|2|1]]
+          [[ditem M|packages/ui/src/lib/i18n-messages/commandPalette.ts|1|0|viewed]]
+          [[ditem M|packages/ui/src/lib/paletteFilter.ts|11|1]]
+          [[ditem M|packages/ui/src/styles/modules/command-palette.css|3|0]]
+          [[ditem A|packages/ui/tests/palette-filter.test.ts|38|0|viewed]]
+        </nav>
+        <div class="diff__files">
+          [[dfile 0|M|packages/ui/src/components/workspace/CommandPalette.tsx|2|1|open]]
+            <div class="diff__body" style="--diff-gutter:4ch">
+<!--@hunk ts 188 188 187|export function CommandPalette({ open, onOpenChange }: Props) {-->
+         {items.map((item) => (
+           <Command.Item
+             key={item.id}
+-            keywords={⟦[item.title]⟧}
++            keywords={⟦[item.key, item.title]⟧}
+             onSelect={() => openItem(item)}
+           >
+             <StatusMark status={item.status} />
++            <span className="card-id">{item.key}</span>
+             <span className="p-label">{item.title}</span>
+<!--@endhunk-->
+            </div>
+          </section>
+          [[dfile 1|M|packages/ui/src/lib/i18n-messages/commandPalette.ts|1|0|closed|viewed]]</section>
+          [[dfile 2|M|packages/ui/src/lib/paletteFilter.ts|11|1|open]]
+            <div class="diff__body" style="--diff-gutter:3ch">
+<!--@hunk ts 7 7 6-->
+ export const LOOK_BACK = "\u0000look-back";
+ 
++/** A ticket's key typed whole (TOM-18, tom 18) puts that ticket first, above any fuzzy match. */
++const KEY = /^([a-z]+)[-\s]?(\d+)$/i;
++
++function keyOf(search: string): string | null {
++  const m = KEY.exec(search.trim());
++  return m ? `${m[1].toUpperCase()}-${m[2]}` : null;
++}
++
+ /** ⌘K's filter: what ran before matches only by its title or ticket, and always ranks below every other row. */
+ export function paletteFilter(value: string, search: string, keywords?: string[]): number {
+   if (keywords?.[0] !== LOOK_BACK) {
++    const key = keyOf(search);
++    if (key && keywords?.includes(key)) return 1;
+     const score = defaultFilter(value, search, keywords);
+-    return score > 0 ? 0.5 + score ⟦/ 2⟧ : 0;
++    return score > 0 ? 0.5 + score ⟦* 0.49⟧ : 0;
+   }
+   const by = keywords.slice(1).join(" ");
+<!--@endhunk-->
+            </div>
+          </section>
+          [[dfile 3|M|packages/ui/src/styles/modules/command-palette.css|3|0|open]]
+            <div class="diff__body" style="--diff-gutter:3ch">
+<!--@hunk css 31 31 30|.palette-row-->
+ .palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++/* A ticket's key reads after its title, quiet until the row is the one ↵ opens. */
++.palette-row .card-id { flex-shrink: 0; margin-left: auto; color: var(--meta); }
++.palette-row[data-selected="true"] .card-id { color: var(--fg-2); }
+ .palette-mark { display: inline-flex; width: 16px; justify-content: center; }
+<!--@endhunk-->
+            </div>
+          </section>
+          [[dfile 4|A|packages/ui/tests/palette-filter.test.ts|38|0|closed|viewed]]</section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!--@endscreen-->
+
 <!--@screen S-01|settings|Appearance|Settings sheet over the board|paper|The settings sheet over the board, open on Appearance: the eight themes and automatic switching.-->
 <div class="shell-main">
   <div class="app">
@@ -220,7 +324,8 @@
           <button class="side-row">[[i-terminal 14 ico]]<span class="side-name">Assistant</span></button>
           <button class="side-row">[[i-link 14 ico]]<span class="side-name">Agent access</span></button>
           <button class="side-row">[[i-plug 14 ico]]<span class="side-name">Plugins</span></button>
-          <button class="side-row">[[i-cloud 14 ico]]<span class="side-name">Hub</span></button>
+          <button class="side-row">[[i-home 14 ico]]<span class="side-name">Hub</span></button>
+          <button class="side-row">[[i-monitor 14 ico]]<span class="side-name">Devices</span></button>
         </div>
       </div>
     </nav>
@@ -241,6 +346,87 @@
       <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">Automatic switching</span><div class="seg" role="group" aria-label="Automatic switching"><button aria-pressed="true">None</button><button aria-pressed="false">System</button><button aria-pressed="false">Schedule</button><button aria-pressed="false">Shuffle</button></div></div>
       <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">Stop decorative animation<span class="meta-txt" style="display:block;font-family:var(--font-body)">Stops the moving light of Sunrise and Daybreak, to spare the GPU and the battery.</span></span><button class="switch" role="switch" aria-checked="false" aria-label="Stop decorative animation"></button></div>
       <div class="cfg-row" style="padding-inline:0"><span class="cfg-name">AI theme from a picture<span class="meta-txt" style="display:block;font-family:var(--font-body)">Your pictures behind the windows, colours to match</span></span><button class="btn btn-secondary">[[i-upload 14]]Choose a picture…</button></div>
+    </div>
+  </div>
+</div>
+<!--@endscreen-->
+
+<!--@screen S-02|settings|Devices|Settings sheet over the board|sakura|The settings sheet on Devices: this computer, another one online and taking work, a third offline with what it last ran.-->
+<div class="shell-main">
+  <div class="app">
+    <!--@include titlebar-->
+    <div class="workspace">
+      <!--@include sidebar-->
+      <div class="main-col">
+        <!--@include tabs-->
+        <div class="board-region" data-layout="board">
+          <!--@include viewhead-->
+          <!--@include epics-->
+          <!--@include columns-->
+        </div>
+      </div>
+    </div>
+    <!--@include statusbar-->
+  </div>
+</div>
+<!--@include airail-->
+<div class="scrim" style="position:absolute"></div>
+<div class="palette modal sheet-settings" role="dialog" aria-label="Settings" style="position:absolute;top:50%;height:760px">
+  <div class="dlg-head"><h2 class="dlg-title" style="font-size:var(--text-lg)">Settings</h2><span class="spacer" style="flex:1"></span><button class="btn btn-icon" aria-label="Close settings">[[i-close 14]]</button></div>
+  <div class="dlg-split">
+    <nav class="dlg-nav" aria-label="Settings sections">
+      <div class="side-group">
+        <p class="side-label eyebrow">This machine</p>
+        <div class="side-list" style="display:flex;flex-direction:column;gap:1px">
+          <button class="side-row">[[i-sun 14 ico]]<span class="side-name">Appearance</span></button>
+          <button class="side-row">[[i-globe 14 ico]]<span class="side-name">Language</span></button>
+          <button class="side-row">[[i-terminal 14 ico]]<span class="side-name">Assistant</span></button>
+          <button class="side-row">[[i-link 14 ico]]<span class="side-name">Agent access</span></button>
+          <button class="side-row">[[i-plug 14 ico]]<span class="side-name">Plugins</span></button>
+          <button class="side-row">[[i-home 14 ico]]<span class="side-name">Hub</span></button>
+          <button class="side-row" aria-current="true">[[i-monitor 14 ico]]<span class="side-name">Devices</span></button>
+        </div>
+      </div>
+    </nav>
+    <div class="dlg-body">
+      <div class="sec-head"><div><h3 class="sec-title">Devices</h3><p class="sec-lede" style="margin-top:4px">The computers signed in to your account: which are online, what each can run, and which tickets each is working on.</p></div></div>
+      <div class="device-list" style="margin-top:var(--space-5)">
+        <div class="panel device-card" data-online="true">
+          <div class="device-head"><span class="device-name">Studio MacBook Pro</span><span class="tag strong">This computer</span><span class="device-presence"><span class="live-dot"></span>Online</span></div>
+          <div class="device-facts"><span>macOS · arm64</span><span>Tomrade 0.29.0</span><span class="tag neutral device-agent">Claude Code</span><span class="tag neutral device-agent">Codex</span><span class="meta-txt">Repositories: 3</span></div>
+          <div class="device-work">
+            <p class="device-work-head">Working on</p>
+            <div class="device-session"><span class="card-id">TOM-12</span><button type="button" class="device-ticket" title="Open TOM-12">Undo walks past a purge tombstone to the write before it</button><span class="meta-txt">Claude Code · working</span></div>
+          </div>
+          <div class="device-actions"><button type="button" class="btn btn-ghost">Rename</button></div>
+        </div>
+        <div class="panel device-card" data-online="true">
+          <div class="device-head"><span class="device-name">Mac mini</span><span class="device-presence"><span class="live-dot"></span>Online</span></div>
+          <div class="device-facts"><span>macOS · arm64</span><span>Tomrade 0.29.0</span><span class="tag neutral device-agent">Claude Code</span><span class="tag faint" title="Edit files, ask before commands">Accepts work</span><span class="meta-txt">Repositories: 2</span></div>
+          <div class="device-work">
+            <p class="device-work-head">Working on</p>
+            <div class="device-session"><span class="card-id">TOM-14</span><button type="button" class="device-ticket" title="Open TOM-14">Status bar ribbon names the last write and its author</button><span class="meta-txt">Claude Code · waiting for you</span></div>
+            <p class="device-session meta-txt">Auto run: 3 of 5</p>
+          </div>
+          <div class="device-actions"><button type="button" class="btn btn-ghost">Rename</button><button type="button" class="btn btn-ghost">Remove</button></div>
+        </div>
+        <div class="panel device-card offline" data-online="false">
+          <div class="device-head"><span class="device-name">Windows desktop</span><span class="device-presence">Last online 2h ago</span></div>
+          <div class="device-facts"><span>Windows · x64</span><span>Tomrade 0.28.4</span><span class="tag neutral device-agent unready" title="Claude Code: installed, not signed in or not set up">Claude Code</span><span class="tag faint">No git</span></div>
+          <div class="device-work">
+            <p class="device-work-head">Last known, 2h ago</p>
+            <div class="device-session"><span class="card-id">TOM-15</span><button type="button" class="device-ticket" title="Open TOM-15">Keyboard twin for every board write: ⌥← ⌥→</button><span class="meta-txt">Claude Code · blocked</span></div>
+          </div>
+          <div class="device-actions"><button type="button" class="btn btn-ghost">Rename</button><button type="button" class="btn btn-ghost">Remove</button></div>
+        </div>
+        <div class="panel accept-work">
+          <div class="accept-row">
+            <div><div class="accept-name">Accept work from my other devices</div><p class="meta-txt">Your other computers can send a ticket here and this computer starts on it. Off unless you turn it on.</p></div>
+            <button type="button" class="switch" role="switch" aria-checked="false" aria-label="Accept work from my other devices"></button>
+          </div>
+        </div>
+        <div class="panel device-plan"><span class="tag neutral">Subscription</span><span>3 computers, no limit</span></div>
+      </div>
     </div>
   </div>
 </div>
