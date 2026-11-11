@@ -277,11 +277,19 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "openLink", url: "file:///tmp/bad%ZZ" });
   await say({ type: "openLink", url: "javascript:alert(1)" });
   await say({ type: "openLink", url: "relative/path.pdf" });
+  // A path read over two rows of the terminal: the whole when it is a file, else the first row's part.
+  const joined = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-link-"));
+  fs.writeFileSync(path.join(joined, "shot.png"), "");
+  await say({ type: "openLink", url: path.join(joined, "shot.png"), or: joined });
+  await say({ type: "openLink", url: `${joined}Done`, or: joined });
   expect(events).toEqual([
     ["desktop/open-path", report],
     ["desktop/open-path", source],
-    ["desktop/open-path", path.join(os.homedir(), "report.pdf")]
+    ["desktop/open-path", path.join(os.homedir(), "report.pdf")],
+    ["desktop/open-path", path.join(joined, "shot.png")],
+    ["desktop/open-path", joined]
   ]);
+  fs.rmSync(joined, { recursive: true });
 
   // The layout is remembered for the project; asked once about herdr, the answer sticks.
   const layout = { type: "split" as const, id: "x", direction: "row" as const, ratio: 0.4, a: { type: "leaf" as const, id: "c1", sessionId: "s1" }, b: { type: "leaf" as const, id: "c2", sessionId: null } };

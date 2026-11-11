@@ -1829,16 +1829,21 @@ function apply(ctx: Context, config: Config) {
         return void ctx.emit("desktop/open-external", (await ctx.codeLink.herdrInstall()).guide);
       case "openLink": {
         if (/^https?:\/\//i.test(m.url)) return void ctx.emit("desktop/open-external", m.url);
-        let target = m.url;
-        try {
-          if (/^file:/i.test(target)) target = fileURLToPath(target);
-        } catch {
-          return;
-        }
-        if (target.startsWith("~/")) target = path.join(os.homedir(), target.slice(2));
-        // Source references often carry a line and column; the system app opens the file itself.
-        target = target.replace(/:\d+(?::\d+)?$/, "");
-        if (path.isAbsolute(target)) ctx.emit("desktop/open-path", target);
+        const local = (url: string): string | null => {
+          let target = url;
+          try {
+            if (/^file:/i.test(target)) target = fileURLToPath(target);
+          } catch {
+            return null;
+          }
+          if (target.startsWith("~/")) target = path.join(os.homedir(), target.slice(2));
+          // Source references often carry a line and column; the system app opens the file itself.
+          target = target.replace(/:\d+(?::\d+)?$/, "");
+          return path.isAbsolute(target) ? target : null;
+        };
+        const whole = local(m.url);
+        const target = m.or && !(whole && fs.existsSync(whole)) ? local(m.or) : whole;
+        if (target) ctx.emit("desktop/open-path", target);
         return;
       }
       case "switchTerminal": {
