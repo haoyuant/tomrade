@@ -233,6 +233,8 @@ async function machine() {
   bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
   await bag.ctx.repos.setCheckout(remote, checkout);
   await settle();
+  // Setting the checkout starts a scan of its own; a test's scan would join it and miss what the test did since.
+  await bag.ctx.codeLink.scan(bag.project.id);
   bag.ctx.codeLink.pulls = async () => null;
   const ticket = (title: string) => bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, status: "todo", by: "human" });
   return { ...bag, codeLink: bag.ctx.codeLink, checkout, ticket };
