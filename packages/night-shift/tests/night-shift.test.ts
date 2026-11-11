@@ -1240,3 +1240,32 @@ describe("what an agent finds along the way", () => {
     }
   });
 });
+
+it("tells the account's other machines that a run goes on here and how far it has come, and when it is over", async () => {
+  const t = await boot();
+  try {
+    const told: unknown[][] = [];
+    t.ctx.provide("cloudHub", { reportActivity: (part: string, entries: unknown[]) => { if (part === "nightShifts") told.push(entries); } } as never);
+    await settle();
+    // No run: said once as the account service appears.
+    expect(told).toEqual([[]]);
+    const a = t.make("A");
+    const b = t.make("B");
+    const shift = t.s.start(t.project.id, { itemIds: [a.id, b.id], mode: "terminal", engine: "claude-code", concurrency: 1 });
+    await t.s.tick();
+    expect(told.at(-1)).toEqual([{ projectId: t.project.id, done: 0, total: 2, startedAt: shift.startedAt }]);
+    t.items.update(t.project.id, a.id, { status: "verifying" }, "human");
+    t.code.sessionsList[0]!.state = "waiting";
+    await t.s.tick();
+    expect(told.at(-1)).toEqual([{ projectId: t.project.id, done: 1, total: 2, startedAt: shift.startedAt }]);
+    // Nothing but where the run is and how far.
+    expect(Object.keys((told.at(-1) as Record<string, unknown>[])[0]!)).toEqual(["projectId", "done", "total", "startedAt"]);
+    t.s.stop(t.project.id, shift.id);
+    for (const session of t.code.sessionsList) session.state = "ended";
+    await t.s.tick();
+    expect(t.s.current(t.project.id)).toBeNull();
+    expect(told.at(-1)).toEqual([]);
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});

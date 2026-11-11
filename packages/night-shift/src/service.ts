@@ -13,7 +13,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type { LlmService } from "@tomradex/llm";
 import type {} from "@tomradex/settings";
-import { errorMessage, localeOf } from "@tomradex/contracts";
+import { contract, errorMessage, localeOf } from "@tomradex/contracts";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type BriefSpend, type Delivery, type SpendLine } from "./brief.js";
 import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
@@ -94,6 +94,9 @@ export interface ShiftProposal {
   text: string;
   expiresAt: number;
 }
+
+/** A ticket the run is through with, however it went. */
+const SETTLED: ReadonlySet<TicketState> = new Set(["delivered", "done", "failed", "skipped"]);
 
 /** Long enough to find the message; a yes hours later would answer a plan that has gone stale. */
 const PROPOSAL_MS = 30 * 60_000;
@@ -259,6 +262,13 @@ export class NightShifts extends Service {
     };
     for (const projectId of this.home.db.openIds()) resume(projectId);
     this.home.on("db/opened", resume);
+    // The account's other machines see that a run goes on here, and how far it has come.
+    const tellDevices = () => contract(this.home, "cloudHub")?.reportActivity?.("nightShifts", this.home.db.openIds().flatMap((projectId) => {
+      const shift = this.running(projectId);
+      return shift ? [{ projectId, done: shift.tickets.filter((t) => SETTLED.has(t.state)).length, total: shift.tickets.length, startedAt: shift.startedAt }] : [];
+    }));
+    this.home.on("nightShift/changed", tellDevices);
+    this.home.inject(["cloudHub"], tellDevices);
     this.home.on("codeLink/changed", (projectId) => {
       if (this.going.has(projectId)) this.kick();
     });

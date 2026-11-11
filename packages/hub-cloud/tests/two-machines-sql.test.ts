@@ -20,7 +20,10 @@ const sql = vi.hoisted(() => ({
   /** Mutations that reached the database. */
   mutations: 0,
   /** One call at a time: each sets who is asking before it asks. */
-  turn: Promise.resolve() as Promise<unknown>
+  turn: Promise.resolve() as Promise<unknown>,
+  /** Who is on the account's presence channel, and who listens to it. */
+  presence: {} as Record<string, Record<string, unknown>[]>,
+  listeners: new Set<() => void>()
 }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
@@ -45,9 +48,30 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       signOut: async () => ({ error: null }),
       updateUser: async () => ({ data: { user: user() }, error: null })
     },
-    rpc: (name: string, args?: { p_hub: string; p_mutation: unknown }) => inTurn(async () => {
+    rpc: (name: string, args?: { p_hub: string; p_mutation: unknown; p_device?: string; p_name?: string; p_facts?: unknown; p_rejoin?: boolean }) => inTurn(async () => {
       await asUser();
       try {
+        if (name === "tomrade_register_device") {
+          const r = await sql.db.query<{ result: unknown }>("select public.tomrade_register_device($1, $2, $3::jsonb, $4) as result", [args!.p_device, args!.p_name, JSON.stringify(args!.p_facts), !!args!.p_rejoin]);
+          return { data: r.rows[0]!.result, error: null };
+        }
+        if (name === "tomrade_device_seen") {
+          await sql.db.query("select public.tomrade_device_seen($1)", [args!.p_device]);
+          return { data: null, error: null };
+        }
+        if (name === "tomrade_report_device_activity") {
+          const r = await sql.db.query<{ ok: boolean }>("select public.tomrade_report_device_activity($1, $2::jsonb) as ok", [args!.p_device, JSON.stringify((args as { p_activity?: unknown }).p_activity)]);
+          return { data: r.rows[0]!.ok, error: null };
+        }
+        if (name === "tomrade_device_plan") return { data: (await sql.db.query<{ result: unknown }>("select public.tomrade_device_plan() as result")).rows[0]!.result, error: null };
+        if (name === "tomrade_remove_device") {
+          await sql.db.query("select public.tomrade_remove_device($1)", [args!.p_device]);
+          return { data: null, error: null };
+        }
+        if (name === "tomrade_rename_device") {
+          await sql.db.query("select public.tomrade_rename_device($1, $2)", [args!.p_device, args!.p_name]);
+          return { data: null, error: null };
+        }
         if (name === "tomrade_ensure_hub") return { data: (await sql.db.query<{ id: string }>("select public.tomrade_ensure_hub() as id")).rows[0]!.id, error: null };
         if (name === "tomrade_mutate_hub") {
           sql.mutations++;
@@ -66,6 +90,19 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         eq: (_column: string, value: string) => ((where.hub = value), query),
         gt: (_column: string, value: string) => ((where.since = value), query),
         order: () => query,
+        is: () => query,
+        // The machines' table: RLS alone decides whose rows come back.
+        limit: () => inTurn(async () => {
+          await asUser();
+          try {
+            const r = await sql.db.query<{ device_id: string; name: string; facts: unknown; last_seen_at: Date; updated_at: Date; activity: unknown; activity_at: Date | null }>(
+              `select device_id, name, facts, last_seen_at, updated_at, activity, activity_at from public.${table} where removed_at is null order by device_id`
+            );
+            return { data: r.rows.map((row) => ({ ...row, last_seen_at: new Date(row.last_seen_at).toISOString(), updated_at: new Date(row.updated_at).toISOString(), activity_at: row.activity_at ? new Date(row.activity_at).toISOString() : null })), error: null };
+          } catch (error) {
+            return failed(error);
+          }
+        }),
         range: (from: number, to: number) => inTurn(async () => {
           await asUser();
           try {
@@ -81,7 +118,22 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         })
       };
       return query;
-    }
+    },
+    channel: (_topic: string, opts: { config: { presence: { key: string } } }) => {
+      const key = opts.config.presence.key;
+      const tell = () => { for (const fn of [...sql.listeners]) fn(); };
+      let onSync = () => {};
+      const channel = {
+        on: (_type: string, _filter: unknown, fn: () => void) => { onSync = fn; return channel; },
+        subscribe: (said: (status: string) => void) => { sql.listeners.add(onSync); queueMicrotask(() => said("SUBSCRIBED")); return channel; },
+        presenceState: () => structuredClone(sql.presence),
+        track: async (meta: Record<string, unknown>) => { sql.presence[key] = [meta]; tell(); return "ok"; },
+        untrack: async () => { delete sql.presence[key]; tell(); return "ok"; },
+        close: () => { sql.listeners.delete(onSync); delete sql.presence[key]; tell(); }
+      };
+      return channel;
+    },
+    removeChannel: async (channel: { close(): void }) => { channel.close(); return "ok"; }
   };
 } }));
 
@@ -100,7 +152,9 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
   `);
   await sql.db.query("insert into auth.users values ($1)", [sql.user]);
-  await sql.db.exec(fs.readFileSync(new URL("../../../supabase/migrations/202609100001_hub.sql", import.meta.url), "utf8"));
+  for (const name of ["202609100001_hub.sql", "202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql"]) await sql.db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
+  // These tests play more machines than the free plan allows: the account subscribes to five.
+  await sql.db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', 5)", [sql.user]);
 }, 60_000);
 afterAll(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -181,4 +235,48 @@ it("two machines on one account agree through the real Hub, settle a clash once 
   expect(sql.mutations).toBe(sent);
   for (const spy of told) expect(spy).not.toHaveBeenCalled();
   for (const m of both) expect(m.cloud.info()).toMatchObject({ pending: 0, conflicts: [] });
+}, 60_000);
+
+it("each machine sees the other among the account's machines, online, and hears it leave", async () => {
+  const a = await machine("hub-c");
+  await a.cloud.sync();
+  const b = await machine("hub-d");
+  await b.cloud.sync();
+  await vi.waitFor(() => expect(a.cloud.devices().map((d) => d.id)).toContain("hub-d"), { timeout: 10_000 });
+  expect(a.cloud.devices().filter((d) => ["hub-c", "hub-d"].includes(d.id))).toMatchObject([
+    { id: "hub-c", self: true, online: true, platform: process.platform },
+    { id: "hub-d", self: false, online: true, platform: process.platform }
+  ]);
+  expect(b.cloud.devices().find((d) => d.id === "hub-c")).toMatchObject({ self: false, online: true });
+
+  // What B works on reaches A through the real table, moments after B says it.
+  const ticket = { projectId: b.project.id, key: "MOA-7", title: "Faster on Windows", agent: "codex", state: "working", startedAt: 1_700_000_000_000, branch: "moa-7/faster" };
+  b.cloud.reportActivity("sessions", [{ ...ticket, cwd: "/Users/b/code" }]);
+  b.cloud.reportActivity("nightShifts", [{ projectId: b.project.id, done: 2, total: 5, startedAt: 1_700_000_000_000 }]);
+  await vi.waitFor(() => expect(a.cloud.devices().find((d) => d.id === "hub-d")).toMatchObject({ sessions: [ticket], nightShifts: [{ done: 2, total: 5 }] }), { timeout: 10_000 });
+
+  await b.cloud.goOffline();
+  // Off, and still saying what it was last doing.
+  expect(a.cloud.devices().find((d) => d.id === "hub-d")).toMatchObject({ online: false, sessions: [ticket] });
+  // Renamed on one, read on the other.
+  await a.cloud.renameDevice("hub-d", "The other one");
+  await b.cloud.sync();
+  expect(b.cloud.devices().find((d) => d.self)).toMatchObject({ id: "hub-d", name: "The other one" });
+}, 60_000);
+
+it("the machine past the plan's limit has no place until one of the others is removed", async () => {
+  // Four are registered above; the plan allows five.
+  const e = await machine("hub-e");
+  await e.cloud.sync();
+  expect(e.cloud.devicesInfo()).toMatchObject({ state: "ready", plan: { id: "placeholder_plus", limit: 5 } });
+  const f = await machine("hub-f");
+  await f.cloud.sync();
+  expect(f.cloud.devicesInfo()).toMatchObject({ state: "over-limit", plan: { id: "placeholder_plus", limit: 5 } });
+  expect(f.cloud.devices().map((d) => d.id).sort()).toEqual(["hub-a", "hub-b", "hub-c", "hub-d", "hub-e"]);
+  expect(f.cloud.info().status.state).toBe("synced");
+
+  await f.cloud.removeDevice("hub-a");
+  await f.cloud.sync();
+  expect(f.cloud.devicesInfo().state).toBe("ready");
+  expect(f.cloud.devices().map((d) => d.id).sort()).toEqual(["hub-b", "hub-c", "hub-d", "hub-e", "hub-f"]);
 }, 60_000);

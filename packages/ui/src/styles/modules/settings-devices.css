@@ -1,0 +1,49 @@
+/* settings · devices */
+@layer components {
+.device-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.device-card { display: flex; flex-direction: column; gap: var(--space-3); }
+.device-card.offline .device-name, .device-card.offline .device-facts, .device-card.offline .device-work { opacity: 0.62; }
+.device-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.device-name { font-size: var(--text-md, 15px); color: var(--fg); font-weight: var(--font-weight-medium); min-width: 0; overflow-wrap: anywhere; }
+.device-presence { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--text-xs); color: var(--fg-2); white-space: nowrap; }
+.device-card.offline .device-presence { color: var(--meta); }
+.device-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.device-agent.unready { opacity: 0.6; text-decoration: line-through; }
+.device-work { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+.device-work .eyebrow, .device-work-head { font-size: var(--text-xs); color: var(--meta); margin: 0; }
+.device-session { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--text-sm); min-width: 0; }
+.device-session .device-ticket { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); text-align: left; }
+button.device-ticket { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+button.device-ticket:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.device-session .card-id { flex-shrink: 0; }
+.device-session .meta-txt { flex-shrink: 0; white-space: nowrap; }
+.device-actions { display: flex; align-items: center; gap: var(--space-2); }
+.device-actions .btn { padding: 2px 10px; font-size: var(--text-xs); }
+.device-rename { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
+.device-rename .input { flex: 1; min-width: 0; }
+.device-plan { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.device-plan .meta-txt { margin: 0; }
+.device-plan .btn { margin-left: auto; }
+.device-over { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.device-over p { margin: 0; font-size: var(--text-sm); }
+.device-over-title { color: var(--fg); font-weight: var(--font-weight-medium); }
+.device-over .device-actions .btn { padding: 3px 12px; font-size: var(--text-sm); }
+.accept-work { display: flex; flex-direction: column; gap: var(--space-3); }
+.accept-row { display: flex; align-items: center; gap: var(--space-4); }
+.accept-row > div:first-child { flex: 1; min-width: 0; }
+.accept-row .meta-txt { margin: 2px 0 0; }
+.accept-row .input { width: auto; max-width: 260px; flex-shrink: 0; }
+.accept-name { font-size: var(--text-sm); color: var(--fg); }
+.accept-warning { margin: 0; padding: var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--fg); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
+.accept-projects { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.accept-project, .accept-check { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.accept-log { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+.run-on { padding-bottom: var(--space-3); margin-bottom: var(--space-3); border-bottom: 1px solid var(--border-soft); }
+.run-on-row { display: flex; align-items: center; gap: var(--space-3); }
+.run-on-name { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg); }
+.run-on-row .input { width: auto; max-width: 280px; }
+.run-on .meta-txt { margin: 0; }
+.ticket-elsewhere .status-link { margin-left: var(--space-2); }
+.ticket-elsewhere { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); margin: var(--space-2) 0; }
+.ticket-elsewhere.last { color: var(--meta); }
+}

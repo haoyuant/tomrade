@@ -8,7 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
 import { terminalTheme } from "~/lib/xtermTheme";
 import { onCell, pathForFile, send } from "./bridge";
-import { followSelection } from "./selection";
+import { followSelection, wordSeparator } from "./selection";
 import { fileLinks } from "./fileLinks";
 import { clipboardKey, isInterrupt, modifiedEnter } from "./keys";
 import { offerClipboard } from "./clipboard";
@@ -212,7 +212,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
         if (!terminal.hasSelection()) send({ type: "openLink", url });
       }
     };
-    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler, rightClickSelectsWord: false });
+    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, allowTransparency: clear, theme: terminalTheme(clear), linkHandler, rightClickSelectsWord: false, wordSeparator });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
@@ -221,7 +221,9 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     terminal.loadAddon(serialize);
     terminal.open(el);
     const gpu = drawWithWebgl(terminal, el);
-    const localLinks = fileLinks(terminal, linkHandler.activate);
+    const localLinks = fileLinks(terminal, (_e, url, or) => {
+      if (!terminal.hasSelection()) send({ type: "openLink", url, ...(or ? { or } : {}) });
+    });
     term.current = terminal;
     try {
       fit.fit();

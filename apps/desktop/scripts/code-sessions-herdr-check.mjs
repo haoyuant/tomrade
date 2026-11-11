@@ -1328,12 +1328,12 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, earlier.id, { herdrPane: sessions[0].pane, title: "之前在这个窗格里", prompted: true, state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     // Another pane has its own history by now: the chevron is the one on this pane's row.
-    const paneRow = `[...document.querySelectorAll('.cs-list > li')].find((li) => li.querySelector(':scope > .cs-fold-row .cs-row-head > :first-child')?.textContent === ${JSON.stringify(sessions[0].item.key)})`;
+    const paneRow = `[...document.querySelectorAll('.cs-list > li')].find((li) => li.querySelector(':scope > .cs-card .cs-row-head > :first-child')?.textContent === ${JSON.stringify(sessions[0].item.key)})`;
     const history = await wait(async () => tjs(`(() => { const li = ${paneRow}; const chev = li?.querySelector('[data-testid=cs-pane-history]'); if (!chev) return false; if (chev.getAttribute('aria-expanded') !== 'true') chev.click(); return [...li.querySelectorAll('[data-testid=cs-timeline] .cs-row')].some((r) => r.textContent.includes('之前在这个窗格里')); })()`), 8000);
     await tjs(`[...(${paneRow})?.querySelectorAll('[data-testid=cs-timeline] .cs-row') ?? []].find((r) => r.textContent.includes('之前在这个窗格里'))?.click(); true`);
     // It has no record to read back: its cell says only who worked it.
     const openedBefore = history && (await wait(async () => tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].some((e) => e.textContent.includes('Codex'))`), 8000));
-    check("窗格之前跑过的会话：行左边的箭头展开时间线，点一条在格子里打开", history && openedBefore, JSON.stringify(await tjs(`({ timeline: [...document.querySelectorAll('[data-testid=cs-timeline] .cs-row')].map((r) => r.textContent), ended: [...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 80)) })`)));
+    check("窗格之前跑过的会话：卡片下方那行的箭头展开时间线，点一条在格子里打开", history && openedBefore, JSON.stringify(await tjs(`({ timeline: [...document.querySelectorAll('[data-testid=cs-timeline] .cs-row')].map((r) => r.textContent), ended: [...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 80)) })`)));
 
     // Put back what that cell showed: the restart below types in its terminal.
     await tjs(`document.querySelector('[data-testid=cs-toast-action]')?.click(); true`);

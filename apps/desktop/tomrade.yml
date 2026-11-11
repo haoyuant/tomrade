@@ -208,6 +208,7 @@ plugins:
     name: ./dist/hub-cloud.js
     config:
       userData: "${userData}"
+      appVersion: "${appVersion}"
   # The one GitHub account this machine uses — for the backlog's repository,
   # Files, code checkouts and publishing — and the git credential helper that
   # hands its token to git, so no remote URL carries it.
@@ -475,6 +476,13 @@ plugins:
   # only tells: a run is never stopped or changed.
   - id: watchdog
     name: "@tomradex/watchdog"
+  # Whether this machine takes tickets sent from the account's other machines,
+  # and within which limits. Off until Settings → Devices says so; every request
+  # is decided here and kept in a record on this machine.
+  - id: dispatch
+    name: ./dist/dispatch.js
+    config:
+      userData: "${userData}"
   # The project's files: a folder tree beside the backlog, every save a
   # version, shared through a remote the project names. Optional — tickets keep
   # only versioned references, which read as unavailable without it.

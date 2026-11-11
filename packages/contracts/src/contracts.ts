@@ -35,6 +35,21 @@ export interface CloudHubReader {
   };
   /** The Supabase client; each caller types the queries it makes. */
   readonly client: any;
+  /**
+   * What this machine works on, told to the account's other machines: `sessions` are the tickets its coding
+   * sessions hold (`projectId`, `key`, `title`, `agent`, `state`, `startedAt`, `branch`), `nightShifts` its auto
+   * runs (`projectId`, `done`, `total`, `startedAt`). Replaces what that part said before; any other field is dropped.
+   */
+  reportActivity(part: "sessions" | "nightShifts", entries: readonly unknown[]): void;
+  /**
+   * Something more this machine says of itself to the account's other machines, read whenever it registers.
+   * `accept`: whether it takes their work, and within what (`on`, `projects`, `ceiling`, `concurrent`).
+   */
+  describeDevice(part: "accept", read: () => unknown): void;
+  /** What `describeDevice` reads has changed: register again soon. */
+  refreshDevice(): void;
+  /** Tells the account's other machines that are on that something named `name` changed; they hear `cloudHub/signal`. */
+  signal(name: string): void;
 }
 
 export interface DbReader {
@@ -105,11 +120,18 @@ export interface CommunityReader {
 }
 
 export interface AgentReader {
+  /** The engines that may take a code turn on this machine, with whether each is ready to. */
+  codeEngines(): { id: string; title: string; available(): Promise<{ ok: boolean; need?: string; capabilities?: readonly string[] }> }[];
   recommendPlaybook(
     projectId: string,
     input: { title: string; body?: string | null; workType?: "coding" | "general" },
     opts?: { withinMs?: number; signal?: AbortSignal; keywordsOnly?: boolean }
   ): Promise<{ playbookId: string | null; workType: "coding" | "general"; source?: "llm" | "fallback" }>;
+}
+
+/** What this machine has of the tools Tomrade runs, `@tomradex/machine-setup`. */
+export interface MachineSetupReader {
+  git(): Promise<{ state: "ready" | "missing" | "broken" }>;
 }
 
 /** What one check found. `Action` is what the troubleshooter can offer about it. */
@@ -152,6 +174,7 @@ export interface Contracts {
   files: FilesReader;
   hub: HubReader;
   items: ItemsReader & ItemsWriter;
+  machineSetup: MachineSetupReader;
   mcp: McpReader;
   projects: ProjectsReader;
   repos: ReposReader;

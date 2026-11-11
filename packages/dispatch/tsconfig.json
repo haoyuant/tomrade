@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../code-link" },
+    { "path": "../contracts" },
+    { "path": "../hub-cloud" },
+    { "path": "../domain" },
+    { "path": "../hub" },
+    { "path": "../ipc" },
+    { "path": "../settings" }
+  ]
+}

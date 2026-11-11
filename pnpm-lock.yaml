@@ -12,6 +12,7 @@ overrides:
 
 patchedDependencies:
   '@xterm/addon-webgl@0.18.0': f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9
+  '@xterm/xterm@5.5.0': 3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9
   app-builder-lib@26.15.3: 0e73b0551fb400b907eaeb4f7dcf7bea44f09e727d70dc7965338f187c16cf09
   cordis@4.0.0-rc.8: 5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d
 
@@ -100,6 +101,9 @@ importers:
       '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../../packages/desktop-surface
+      '@tomradex/dispatch':
+        specifier: workspace:*
+        version: link:../../packages/dispatch
       '@tomradex/doctor':
         specifier: workspace:*
         version: link:../../packages/doctor
@@ -933,6 +937,64 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/dispatch:
+    dependencies:
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomradex/hub-cloud':
+        specifier: workspace:*
+        version: link:../hub-cloud
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -3011,6 +3073,9 @@ importers:
       '@tomradex/announcements':
         specifier: workspace:*
         version: link:../announcements
+      '@tomradex/dispatch':
+        specifier: workspace:*
+        version: link:../dispatch
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -3040,19 +3105,19 @@ importers:
         version: link:../theme-image
       '@xterm/addon-fit':
         specifier: 0.10.0
-        version: 0.10.0(@xterm/xterm@5.5.0)
+        version: 0.10.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/addon-serialize':
         specifier: 0.13.0
-        version: 0.13.0(@xterm/xterm@5.5.0)
+        version: 0.13.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/addon-web-links':
         specifier: 0.11.0
-        version: 0.11.0(@xterm/xterm@5.5.0)
+        version: 0.11.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/addon-webgl':
         specifier: 0.18.0
-        version: 0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0)
+        version: 0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/xterm':
         specifier: 5.5.0
-        version: 5.5.0
+        version: 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
       '@xyflow/react':
         specifier: 12.11.5
         version: 12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -8911,25 +8976,25 @@ snapshots:
 
   '@xmldom/xmldom@0.8.15': {}
 
-  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
     dependencies:
-      '@xterm/xterm': 5.5.0
+      '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
-  '@xterm/addon-serialize@0.13.0(@xterm/xterm@5.5.0)':
+  '@xterm/addon-serialize@0.13.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
     dependencies:
-      '@xterm/xterm': 5.5.0
+      '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
-  '@xterm/addon-web-links@0.11.0(@xterm/xterm@5.5.0)':
+  '@xterm/addon-web-links@0.11.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
     dependencies:
-      '@xterm/xterm': 5.5.0
+      '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
-  '@xterm/addon-webgl@0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0)':
+  '@xterm/addon-webgl@0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
     dependencies:
-      '@xterm/xterm': 5.5.0
+      '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
   '@xterm/headless@5.5.0': {}
 
-  '@xterm/xterm@5.5.0': {}
+  '@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)': {}
 
   '@xyflow/react@12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:

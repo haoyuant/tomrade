@@ -42,6 +42,7 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/fields": "workspace:*",
     "@tomradex/hub": "workspace:*",
+    "@tomradex/dispatch": "workspace:*",
     "@tomradex/hub-cloud": "workspace:*",
     "@tomradex/notes": "workspace:*",
     "@tomradex/repos": "workspace:*",

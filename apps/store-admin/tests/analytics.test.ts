@@ -4,9 +4,10 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { endpoints, filters, loadDashboard, loadView, mergeReports, plan, type DashboardData, type View } from "../src/analytics-data.js";
-import { AnalystUnavailable, checked, claudeAnalyst, insightsInput, insightsService, type Insights, type InsightsService } from "../src/analytics-insights.js";
+import { AnalystUnavailable, checked, claudeAnalyst, insightsInput, insightsService, type Insights, type InsightsEntry, type InsightsService } from "../src/analytics-insights.js";
 import { renderDashboard } from "../src/analytics-page.js";
 import { dashboardServer } from "../src/analytics-server.js";
+import { ticketBody, ticketTitle, tomradeSender, TomradeUnavailable, type Exec } from "../src/analytics-ticket.js";
 
 const sample = (uses = 3): DashboardData => ({
   report: {
@@ -65,6 +66,26 @@ describe("internal analytics dashboard", () => {
     for (const query of ["days=400", "region=mars", "metric=aai", "lang=xx", "w_growth=12", "w_overview=400"]) expect(() => filters(new URLSearchParams(query))).toThrow();
     // A card's window is kept only where it differs from the page's; unknown cards are ignored.
     expect(filters(new URLSearchParams("days=30&w_growth=365&w_overview=30&w_nothing=7")).windows).toEqual({ growth: 365 });
+  });
+  it("leaves internal IDs out unless the URL includes them, and links the switch both ways", async () => {
+    expect(f.internal).toBe("exclude");
+    expect(filters(new URLSearchParams("internal=include")).internal).toBe("include");
+    expect(() => filters(new URLSearchParams("internal=only"))).toThrow();
+    const bodies = new Map<string, Record<string, unknown>>();
+    const request: typeof fetch = async (input, init) => {
+      const name = String(input).split("/rpc/")[1]!;
+      bodies.set(name, JSON.parse(String(init?.body)));
+      return Response.json(name.endsWith("feature_days") ? { days: [] } : name.endsWith("activation") ? sample().activation : name.endsWith("platforms") ? { platforms: [] } : name.startsWith("tomrade_analytics_report") ? sample().report : null);
+    };
+    await loadDashboard([{ url: "https://global.example", key: "secret" }], f, request);
+    for (const name of ["tomrade_analytics_report", "tomrade_analytics_feature_days", "tomrade_analytics_activation", "tomrade_analytics_platforms"]) expect(bodies.get(name)).toMatchObject({ p_exclude_internal: true });
+    expect(bodies.get("tomrade_accounts_report")).toEqual({ p_from: f.from, p_to: f.to });
+    await loadDashboard([{ url: "https://global.example", key: "secret" }], { ...f, internal: "include" }, request);
+    expect(bodies.get("tomrade_analytics_report")).toMatchObject({ p_exclude_internal: false });
+    const html = renderDashboard(f, one(sample()));
+    expect(html).toContain('href="/?days=30&amp;region=all&amp;metric=duration_ms&amp;lang=en&amp;internal=include"');
+    expect(html).not.toMatch(/internal=exclude/);
+    expect(renderDashboard({ ...f, internal: "include" }, one(sample()))).toContain("&amp;internal=include");
   });
   it("adds aggregate metrics across deployments, grouping feature days without exporting IDs", () => {
     const result = mergeReports([sample(), sample(4)]);
@@ -244,7 +265,8 @@ describe("internal analytics dashboard", () => {
     release(); await first;
     expect(loads).toEqual([{ from: "2026-09-24", to: "2026-10-23" }, { from: "2026-08-25", to: "2026-09-23" }]);
     const input = JSON.parse(prompt);
-    expect(input.period).toMatchObject({ from: "2026-09-24", to: "2026-10-23", days: 30, region: "all", last_day_incomplete: true });
+    expect(input.period).toMatchObject({ from: "2026-09-24", to: "2026-10-23", days: 30, region: "all", internal_ids: "excluded", last_day_incomplete: true });
+    expect(system).toContain("period.internal_ids");
     expect(input.previous_period).toEqual({ from: "2026-08-25", to: "2026-09-23" });
     expect(input.current.features[0]).toEqual({ feature: "backlog.board", active_minutes: 1, uses: 3, active_ids: 2 });
     expect(input.previous).not.toHaveProperty("daily");
@@ -252,8 +274,15 @@ describe("internal analytics dashboard", () => {
     const restarted = insightsService({ load: async () => sample(), analyst, file });
     const state = await restarted.read(f);
     expect(state.entry).toMatchObject({ region: "all", days: 30, from: "2026-09-24", cost_usd: 0.012, insights: answer });
+    // The aggregates the analyst read are stored with the analysis, so it can be sent on with its data.
+    expect(JSON.stringify(state.entry?.input)).toBe(prompt);
     // Another view shows the newest analysis, which the page labels as another view's.
     expect((await restarted.read({ ...f, region: "eu" })).entry?.region).toBe("all");
+    // An entry from before the switch read every id: it is the view that includes them.
+    await writeFile(file, JSON.stringify({ version: 1, entries: { "eu/7": { ...state.entry, region: "eu", days: 7, internal: undefined, generated_at: "2026-10-01T00:00:00Z" } } }));
+    expect((await restarted.read({ ...f, region: "eu", days: 7, internal: "include" })).entry?.generated_at).toBe("2026-10-01T00:00:00Z");
+    expect(renderDashboard({ ...f, region: "eu", days: 7 }, one(sample(), 7), undefined, await restarted.read({ ...f, region: "eu", days: 7 }))).toContain("Showing the analysis of another view");
+    await writeFile(file, JSON.stringify({ version: 1, entries: { "all/30/exclude": state.entry } }));
     expect(JSON.parse(await readFile(file, "utf8")).version).toBe(1);
     const failing = insightsService({ load: async () => sample(), analyst: async () => { throw new AnalystUnavailable("claude"); }, file, now: () => new Date("2026-10-24T10:00:00Z") });
     await failing.generate(f);
@@ -287,7 +316,7 @@ process.stdin.on("data", (c) => { input += c; }).on("end", () => {
   it("starts an analysis only from a form posted by this page, then returns to the card", async () => {
     const generated: string[] = [];
     const insights: InsightsService = {
-      read: async () => ({ entry: { region: "all", days: 7, lang: "en", from: "2026-10-17", to: "2026-10-23", generated_at: "2026-10-23T09:00:00Z", cost_usd: 0.02,
+      read: async () => ({ entry: { region: "all", days: 7, lang: "en", from: "2026-10-17", to: "2026-10-23", internal: "exclude", generated_at: "2026-10-23T09:00:00Z", cost_usd: 0.02,
         insights: { summary: "<b>All good</b>", highlights: [{ title: "Up", detail: "d", tone: "good" }], anomalies: [], suggestions: [{ title: "Do it", detail: "d", priority: "high" }] } }, error: null, running: false }),
       generate: async (g) => { generated.push(`${g.region}/${g.days}`); }
     };
@@ -303,6 +332,90 @@ process.stdin.on("data", (c) => { input += c; }).on("end", () => {
     expect(posted.headers.get("location")).toBe("/?days=7&region=eu&lang=en#card-insights");
     expect(generated).toEqual(["eu/7"]);
     expect((await fetch(`${url}/insights?days=7`)).status).toBe(404);
+  });
+
+  describe("sending the analysis to Tomrade", () => {
+    const entry = (over: Partial<InsightsEntry> = {}): InsightsEntry => ({ region: "eu", days: 7, lang: "en", from: "2026-10-17", to: "2026-10-23", generated_at: "2026-10-23T09:00:00Z", cost_usd: 0.02,
+      insights: { summary: "Installs fell.", highlights: [{ title: "Up", detail: "More uses", tone: "good" }], anomalies: [{ title: "Gap", detail: "No data on 10-20" }], suggestions: [{ title: "Fix sync", detail: "Check the cron", priority: "high" }] },
+      input: { period: { from: "2026-10-17" }, current: { totals: { uses: 3 }, daily: [{ day: "2026-10-22" }] } }, ...over });
+    const serve = async (read: InsightsEntry | null, send: (title: string, body: string) => Promise<{ key: string }>) => {
+      const insights: InsightsService = { read: async () => ({ entry: read, error: null, running: false }), generate: async () => undefined };
+      const server = dashboardServer(async () => one(sample(), 7), insights, send); servers.push(server);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    };
+
+    it("builds a ticket with the findings, the brief and the data the analyst read", () => {
+      expect(ticketTitle(entry(), "en")).toBe("Usage analysis 2026-10-17…2026-10-23 (Europe)");
+      expect(ticketTitle(entry(), "zh")).toBe("使用分析 2026-10-17…2026-10-23（欧洲）");
+      const body = ticketBody(entry(), "en");
+      for (const text of ["Installs fell.", "**Gap**: No data on 10-20", "**Fix sync** (High): Check the cron", "(good)", "Verify each anomaly", "cost $0.020", "```json", '"uses": 3']) expect(body).toContain(text);
+      // An entry from before the input was kept still sends.
+      expect(ticketBody(entry({ input: undefined }), "en")).not.toContain("```json");
+    });
+    it("drops the daily series, then the data, to stay under the size cap", () => {
+      const days = Array.from({ length: 4000 }, (_, i) => ({ day: `2026-01-${i}`, uses: i }));
+      const big = entry({ input: { current: { totals: { uses: 3 }, daily: days, site: { totals: { installs: 1 }, daily: days } } } });
+      const body = ticketBody(big, "en");
+      expect(Buffer.byteLength(body)).toBeLessThan(60_000);
+      expect(body).toContain('"installs": 1');
+      expect(body).not.toContain("2026-01-3999");
+      const huge = entry({ input: { current: { totals: { text: "x".repeat(70_000) } } } });
+      const none = ticketBody(huge, "en");
+      expect(Buffer.byteLength(none)).toBeLessThan(60_000);
+      expect(none).toContain("Too large to attach");
+    });
+    it("runs tomrade create without the dashboard's keys or an agent's token, then opens the ticket", async () => {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "secret"; process.env.TOMRADE_MCP_TOKEN = "token";
+      const calls: Parameters<Exec>[] = [];
+      const exec: Exec = async (...call) => { calls.push(call); return { stdout: call[0] === "tomrade" ? JSON.stringify({ key: "TOM-123", projectId: "p 1" }) : "" }; };
+      try {
+        expect(await tomradeSender({ exec, command: "tomrade", cwd: "/repo", platform: "linux" })("A title", "A body")).toEqual({ key: "TOM-123" });
+      } finally { delete process.env.SUPABASE_SERVICE_ROLE_KEY; delete process.env.TOMRADE_MCP_TOKEN; }
+      expect(calls[0]!.slice(0, 2)).toEqual(["tomrade", ["create", "A title", "--body", "A body", "--json"]]);
+      expect(calls[0]![2]).toMatchObject({ cwd: "/repo", timeout: 30000 });
+      for (const [, , options] of calls) {
+        expect(Object.keys(options.env).filter((k) => k.startsWith("SUPABASE_"))).toEqual([]);
+        expect(options.env.TOMRADE_MCP_TOKEN).toBeUndefined();
+      }
+      expect(calls[1]!.slice(0, 2)).toEqual(["xdg-open", ["tomrade://item/p%201/TOM-123"]]);
+    });
+    it("says so when the command is missing, and does not open anything on failure", async () => {
+      const missing: Exec = async () => { throw Object.assign(new Error("spawn tomrade ENOENT"), { code: "ENOENT" }); };
+      await expect(tomradeSender({ exec: missing })("t", "b")).rejects.toBeInstanceOf(TomradeUnavailable);
+      const calls: string[] = [];
+      const failing: Exec = async (file) => { calls.push(file); throw new Error("exit 1"); };
+      await expect(tomradeSender({ exec: failing })("t", "b")).rejects.not.toBeInstanceOf(TomradeUnavailable);
+      expect(calls).toEqual(["tomrade"]);
+    });
+    it("files the ticket only from a form posted by this page, then returns to the card with the outcome", async () => {
+      const sent: { title: string; body: string }[] = [];
+      const url = await serve(entry(), async (title, body) => { sent.push({ title, body }); return { key: "TOM-9" }; });
+      expect((await fetch(`${url}/insights/send?days=7`, { method: "POST" })).status).toBe(403);
+      expect((await fetch(`${url}/insights/send?days=7`, { method: "POST", headers: { Origin: "https://evil.example" } })).status).toBe(403);
+      expect(sent).toEqual([]);
+      const page = await (await fetch(`${url}/?days=7&lang=en`)).text();
+      expect(page).toContain('action="/insights/send?days=7&amp;region=all');
+      expect(page).toContain("Send to Tomrade");
+      const posted = await fetch(`${url}/insights/send?days=7&region=eu&lang=en&sent=TOM-1`, { method: "POST", headers: { Origin: url }, redirect: "manual" });
+      expect(posted.status).toBe(303);
+      expect(posted.headers.get("location")).toBe("/?days=7&region=eu&lang=en&sent=TOM-9#card-insights");
+      expect(sent[0]!.title).toBe("Usage analysis 2026-10-17…2026-10-23 (Europe)");
+      expect(sent[0]!.body).toContain("Fix sync");
+      expect(await (await fetch(`${url}/?days=7&lang=en&sent=TOM-9`)).text()).toContain("Sent as TOM-9");
+      expect(await (await fetch(`${url}/?days=7&lang=zh&sent=TOM-9`)).text()).toContain("已发送为 TOM-9");
+    });
+    it("reports a missing command or a failure on the card", async () => {
+      const missing = await serve(entry(), async () => { throw new TomradeUnavailable("tomrade"); });
+      const a = await fetch(`${missing}/insights/send?days=7&lang=en`, { method: "POST", headers: { Origin: missing }, redirect: "manual" });
+      expect(a.headers.get("location")).toBe("/?days=7&lang=en&senderror=unavailable#card-insights");
+      expect(await (await fetch(`${missing}/?days=7&lang=en&senderror=unavailable`)).text()).toContain("turn it on in Tomrade Settings");
+      const failing = await serve(entry(), async () => { throw new Error("exit 1"); });
+      const b = await fetch(`${failing}/insights/send?days=7&lang=en`, { method: "POST", headers: { Origin: failing }, redirect: "manual" });
+      expect(b.headers.get("location")).toBe("/?days=7&lang=en&senderror=failed#card-insights");
+      const none = await serve(null, async () => ({ key: "TOM-1" }));
+      expect((await fetch(`${none}/insights/send?days=7`, { method: "POST", headers: { Origin: none }, redirect: "manual" })).headers.get("location")).toContain("senderror=failed");
+    });
   });
 
   it("merges search and GitHub across deployments and shows them in their own cards", () => {

@@ -31,6 +31,8 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
+import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView } from "./changes.js";
+import { Changes } from "./changes-read.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -54,6 +56,7 @@ import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, termi
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
 import { ghRow, probeGh, type GhStatus } from "./gh.js";
+import { tellDeviceSessions } from "./device-activity.js";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch, type UnmergedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, rollupChecks, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult, type PrChecks } from "./landing.js";
@@ -255,6 +258,10 @@ declare module "@tomradex/ipc" {
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
     "codeLink.startLoose": (projectId: string, input: { engine?: string; prompt: string }) => StartResult;
     "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
+    /** What a ticket changed, for one of its code links and one scope; null when git has nothing of it here. */
+    "codeLink.changes": (projectId: string, itemId: string, opts?: ChangesOptions) => ChangesView | null;
+    /** One file of that answer with every hunk, for a file the answer left out or cut short. */
+    "codeLink.changeFile": (projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions) => ChangedFile | null;
     /** Merged pull requests of the last `days` days across open projects, by engine: first-pass rate and engine-reported spend. */
     "codeLink.scorecard": (days?: number) => Scorecard;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
@@ -423,6 +430,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
+  private changesReader!: Changes;
   private connections!: Connections;
   private repoConnect!: RepoConnect;
   /** Repositories whose files are being filled in right now, so two triggers do not write at once. */
@@ -467,7 +475,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   [Service.init]() {
     this.ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
-    this.store = new CodeLinkStore(this.ctx.db);
+    this.store = new CodeLinkStore(this.ctx.db, (step) => contract(this.home, "analytics")?.activate("code.link", step));
     for (const projectId of this.ctx.db.openIds()) this.store.repairLegacyDeliveries(projectId);
     this.ctx.on("db/opened", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.ctx.on("storage/imported", (projectId) => this.store.repairLegacyDeliveries(projectId));
@@ -491,6 +499,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     });
     for (const projectId of this.ctx.db.openIds()) this.foldTwinClaims(projectId);
     this.ctx.on("db/opened", (projectId) => this.foldTwinClaims(projectId));
+    tellDeviceSessions(this.ctx, (projectId) => this.store.sessions(projectId, { live: true }));
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.panel = new SessionPanel(this.ctx, this.store);
     this.review = new Review({ ctx: this.ctx, store: this.store, read: (projectId, sessionId, before) => this.conversation(projectId, sessionId, before), recorded: (projectId, sessionId) => this.herdr.rawOutputThere(projectId, sessionId) });
@@ -556,6 +565,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       scan: (projectId) => this.scan(projectId),
       worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId)
     });
+    this.changesReader = new Changes({ ctx: this.ctx, store: this.store, git: this.git, worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId) });
     this.repoConnect = new RepoConnect({
       ctx: this.ctx,
       store: this.store,
@@ -827,6 +837,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
+      ctx.ipc.handle("codeLink.changes", (projectId, itemId, opts) => ctx.codeLink.changes(projectId, itemId, opts));
+      ctx.ipc.handle("codeLink.changeFile", (projectId, itemId, opts) => ctx.codeLink.changeFile(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.scorecard", (days) => ctx.codeLink.scorecard(Date.now(), typeof days === "number" ? days : 30));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => {
@@ -1416,6 +1428,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
     if (result.ok) {
+      // Every starter (Start button, night shift, schedules, follow-ons, MCP) comes through here; a continued thread is not a new start.
+      if (!result.continued) contract(this.home, "analytics")?.activate("code.link", "start");
       this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
       // A start from a conversation, MCP or another window: every open Start button names the new choice at once.
       this.home.emit("codeLink/start-defaults");
@@ -1805,6 +1819,16 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** What the ticket's delivery changed, for a report on it. */
   deliveryDiff(projectId: string, itemId: string, maxBytes?: number): Promise<{ stat: string; patch: string; lines: number } | null> {
     return this.landing.deliveryDiff(projectId, itemId, maxBytes);
+  }
+
+  /** What a ticket changed, as files and hunks, for one of its code links and one scope. */
+  changes(projectId: string, itemId: string, opts?: ChangesOptions): Promise<ChangesView | null> {
+    return this.changesReader.changes(projectId, itemId, opts);
+  }
+
+  /** One file of `changes` with every hunk. */
+  changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
+    return this.changesReader.changeFile(projectId, itemId, opts);
   }
 
   /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */
