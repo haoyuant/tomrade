@@ -56,6 +56,8 @@ declare module "cordis" {
     "desktop/seen"(seen: boolean): void;
     /** The account's machines changed: one joined, left, was renamed or removed, or can do something else now. */
     "cloudHub/devices"(): void;
+    /** Another of the account's machines said something named `name` changed; see `CloudHub.signal`. */
+    "cloudHub/signal"(name: string, from: string): void;
   }
 }
 declare module "@tomradex/ipc" {
@@ -194,6 +196,7 @@ export class CloudHub extends Service implements CloudHubReader {
       appVersion: this.config.appVersion, offlineAfterMs: this.config.deviceOfflineMs, activityMs: this.config.deviceActivityMs,
       subscribeUrl: new URL(SUBSCRIBE_PATH, this.config.site).href,
       userId: () => this.user?.id ?? null, schedule: () => this.schedule(),
+      signalled: (name, from) => { this.home.emit("cloudHub/signal", name, from); },
       changed: () => { this.home.emit("cloudHub/devices"); this.home.get("ipc")?.send("devices.changed"); }
     });
     const disableCloud = this.ctx.hub.enableCloud();
@@ -480,6 +483,10 @@ export class CloudHub extends Service implements CloudHubReader {
   }
   refreshDevice(): void {
     this.schedule();
+  }
+  /** Tells the account's other machines that are on, within moments, that something named `name` changed. */
+  signal(name: string): void {
+    this.machines.signal(name);
   }
   async recheckDevices(): Promise<DevicesInfo> {
     this.machines.recheck();

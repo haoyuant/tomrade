@@ -47,7 +47,9 @@ async function fakeSupabase() {
       ["win-000001", { device_id: "win-000001", name: "DESKTOP-WIN", facts: { platform: "win32", arch: "x64", version: "0.29.0", git: true, agents: [{ id: "claude-code", title: "Claude Code", ready: true }, { id: "codex", title: "Codex", ready: false }], repos: ["https://github.com/acme/app"], accept: { on: true, projects: "all", ceiling: "edits", concurrent: 1 } }, last_seen_at: ago(2 * HOUR), updated_at: ago(2 * HOUR), activity: { sessions: [], nightShifts: [] }, activity_at: ago(2 * HOUR), removed: false }],
       ["old-000001", { device_id: "old-000001", name: "Old Mac", facts: { platform: "darwin", arch: "x64", version: "0.20.0", git: false, agents: [], repos: [] }, last_seen_at: ago(40 * 24 * HOUR), updated_at: ago(40 * 24 * HOUR), activity: {}, activity_at: null, removed: false }]
     ]),
-    registered: []
+    registered: [],
+    /** The account's queue of tickets sent between its machines. */
+    dispatches: []
   };
   const jwt = (claims) => [{ alg: "HS256", typ: "JWT" }, claims].map((p) => Buffer.from(JSON.stringify(p)).toString("base64url")).join(".") + ".e2e";
   const session = () => {
@@ -101,7 +103,20 @@ async function fakeSupabase() {
         Object.assign(device, { activity: input.p_activity, activity_at: new Date().toISOString() });
         return json(200, true);
       }
+      if (rpc === "tomrade_create_dispatch") {
+        const now = new Date().toISOString();
+        const row = { id: randomUUID(), from_device: input.p_from, to_device: input.p_to, to_platform: input.p_to ? null : input.p_platform, project_id: input.p_project, item_key: input.p_key, title: input.p_title, wish: input.p_wish, state: "queued", reason: null, claimed_by: null, created_at: now, updated_at: now, expires_at: new Date(Date.now() + 24 * HOUR).toISOString() };
+        state.dispatches.unshift(row);
+        return json(200, row);
+      }
+      if (rpc === "tomrade_cancel_dispatch") {
+        const row = state.dispatches.find((d) => d.id === input.p_id);
+        if (!row || !["queued", "accepted", "running"].includes(row.state)) return json(400, { code: "P0002", message: "This dispatch is no longer going" });
+        Object.assign(row, { state: "cancelled", reason: input.p_reason ?? null, updated_at: new Date().toISOString() });
+        return json(200, row);
+      }
       if (rpc) return json(200, null);
+      if (url.pathname === "/rest/v1/tomrade_dispatches") return json(200, state.dispatches);
       if (url.pathname === "/rest/v1/tomrade_devices") return json(200, held().map(({ removed: _removed, ...row }) => row));
       if (url.pathname.startsWith("/rest/v1/")) return json(200, []);
       json(404, { msg: "not here" });
@@ -258,6 +273,45 @@ const run = async () => {
   // Gone offline: the ticket says when it was last seen there.
   ctx.cloudHub.machines.seen({ [self]: [{ at: Date.now() }], "win-000001": [{ leaving: true }] });
   check("offline, the ticket says where it was last seen running", await until(`(document.querySelector('[data-testid="ticket-elsewhere"]')?.textContent ?? '').includes('Last seen running on Windows tower')`), await $(`document.querySelector('[data-testid="ticket-elsewhere"]')?.textContent`));
+
+  // ── sending a ticket to the other computer ───────────────────────────
+  const second = ctx.items.create({ projectId: project.id, boardId: ctx.boards.list(project.id)[0].id, title: "Port the installer", status: "todo", workType: "coding", by: "human" });
+  await $(`location.hash = '#/p/${project.id}/i/${second.key}'; true`);
+  await sleep(2500);
+  const choose = (selector, value) =>
+    $(`(() => { const s = document.querySelector(${JSON.stringify(selector)}); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  const openStart = async () => {
+    if (!(await press(`document.querySelector('[data-testid="start-ticket"]')`))) {
+      await press(`document.querySelector('[data-testid="start-ways"]')`);
+      await sleep(400);
+      await press(`[...document.querySelectorAll('[role="menuitem"]')].find(n => n.textContent.includes('Full settings'))`);
+    }
+    return until(`!!document.querySelector('[data-testid="run-on-select"]')`);
+  };
+  const sentLine = () => $(`document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? ''`);
+  check("Start offers where to run: this computer, the other one, or any of its platform", (await openStart()) && JSON.stringify(await $(`[...document.querySelector('[data-testid="run-on-select"]').options].map(o => o.textContent)`)) === JSON.stringify(["This computer", "Windows tower (offline)", "Any Windows computer"]), await $(`[...(document.querySelector('[data-testid="run-on-select"]')?.options ?? [])].map(o => o.textContent)`));
+  check("on this computer, Start is as it was", (await $(`getComputedStyle(document.querySelector('[data-testid="start-dialog"]')).display`)) !== "none" && (await $(`!!document.querySelector('[data-testid="start-confirm"]')`)));
+  await choose('[data-testid="run-on-select"]', "win-000001");
+  check("choosing the other computer says what that means, and puts this computer's own choices away", await until(`(document.querySelector('[data-testid="run-on-note"]')?.textContent ?? '').includes('That computer is off')`) && (await $(`getComputedStyle(document.querySelector('[data-testid="start-dialog"]')).display`)) === "none" && !(await $(`!!document.querySelector('[data-testid="start-confirm"]')`)), await $(`document.querySelector('[data-testid="run-on"]')?.textContent`));
+  await shot("devices-06b-run-on");
+  await press(`document.querySelector('[data-testid="run-on-send"]')`);
+  check("Send puts the ticket in the account's queue for that computer, and nothing else", await (async () => { for (let i = 0; i < 40 && !supabase.state.dispatches.length; i++) await sleep(250); const d = supabase.state.dispatches[0]; return !!d && d.from_device === self && d.to_device === "win-000001" && d.item_key === second.key && d.title === "Port the installer" && JSON.stringify(d.wish) === "{}"; })(), supabase.state.dispatches[0]);
+  check("the ticket says it is sent and waiting, with a way to take it back", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Sent to Windows tower, waiting for it to take it')`) && (await $(`!!document.querySelector('[data-testid="ticket-sent-cancel"]')`)), await sentLine());
+  check("this computer started nothing itself", ctx.codeLink.sessionsOf(project.id, second.id).length === 0);
+  await shot("devices-06c-sent");
+  // The other computer turns it away.
+  Object.assign(supabase.state.dispatches[0], { state: "refused", reason: "permission: bypassPermissions is above this machine's limit (edits)", claimed_by: "win-000001", updated_at: new Date().toISOString() });
+  await ctx.dispatch.queue.tick();
+  check("turned away, the ticket says by whom and why", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Windows tower turned it away: it asked for more access than this computer allows')`) && !(await $(`!!document.querySelector('[data-testid="ticket-sent-cancel"]')`)), await sentLine());
+  // Sent again, then taken back.
+  await openStart();
+  await choose('[data-testid="run-on-select"]', "platform:win32");
+  await sleep(300);
+  await press(`document.querySelector('[data-testid="run-on-send"]')`);
+  check("it can be sent to any computer of a platform", await (async () => { for (let i = 0; i < 40 && supabase.state.dispatches.length < 2; i++) await sleep(250); const d = supabase.state.dispatches[0]; return supabase.state.dispatches.length === 2 && d.to_device === null && d.to_platform === "win32"; })(), supabase.state.dispatches[0]);
+  await until(`!!document.querySelector('[data-testid="ticket-sent-cancel"]')`);
+  await press(`document.querySelector('[data-testid="ticket-sent-cancel"]')`);
+  check("taken back, it is cancelled in the queue and the ticket says so", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Taken back')`) && supabase.state.dispatches[0].state === "cancelled", await sentLine());
 
   // ── one computer only ────────────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}'; true`);

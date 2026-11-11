@@ -8,6 +8,7 @@ export default function dispatch(ctx: Context, config: { userData: string }) {
   ctx.plugin(Dispatch, {
     logFile: path.join(config.userData, "dispatch-log.json"),
     idleSeconds: () => powerMonitor.getSystemIdleTime(),
-    onBattery: () => powerMonitor.isOnBatteryPower()
+    onBattery: () => powerMonitor.isOnBatteryPower(),
+    tickMs: 30_000
   });
 }

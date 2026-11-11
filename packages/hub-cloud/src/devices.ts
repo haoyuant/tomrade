@@ -146,6 +146,8 @@ export interface DevicesHost {
   changed(): void;
   /** Ask for another pass soon. */
   schedule(): void;
+  /** Another machine gave a signal. */
+  signalled(name: string, from: string): void;
 }
 
 /**
@@ -175,6 +177,10 @@ export class Devices {
   /** What other services say of this machine, by part; and whether the account server takes such a part at all. */
   private said = new Map<"accept", () => unknown>();
   private bare = false;
+  /** What this machine's presence carries beside being here: when it last said what it works on, and each signal it gave. */
+  private marks: { act?: number; sig?: Record<string, number> } = {};
+  /** The signals already heard from each machine. */
+  private heard = new Map<string, number>();
   /** The last change each machine announced on the presence channel, and the read that follows a new one. */
   private announced = new Map<string, number>();
   private reading: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +214,19 @@ export class Devices {
       platform: process.platform, arch: process.arch, version: /^[0-9A-Za-z.+-]{1,40}$/.test(this.host.appVersion) ? this.host.appVersion : "dev",
       git: this.git.ready, agents: agents.sort((a, b) => a.id.localeCompare(b.id)).slice(0, 32), repos: repos.sort().slice(0, 500)
     };
+  }
+
+  private track(channel: RealtimeChannel): void {
+    void Promise.resolve(channel.track({ at: Date.now(), ...this.marks })).catch(() => undefined);
+  }
+
+  /**
+   * Tells the account's other machines, within moments, that something named `name` changed — a table they
+   * should read again. It carries no content, and reaches only the machines that are on.
+   */
+  signal(name: string): void {
+    this.marks.sig = { ...this.marks.sig, [name]: Date.now() };
+    if (this.channel) this.track(this.channel);
   }
 
   /** Another service's word about this machine, read each time its facts are. */
@@ -303,7 +322,8 @@ export class Devices {
     cache.save();
     // The others read the table again when they see this.
     const channel = this.channel;
-    if (channel) void Promise.resolve(channel.track({ at: Date.now(), act: this.toldAt })).catch(() => undefined);
+    this.marks.act = this.toldAt;
+    if (channel) this.track(channel);
     // Changed again while this one went.
     if (JSON.stringify(this.parts) !== print) this.tellSoon();
   }
@@ -459,11 +479,11 @@ export class Devices {
     try {
       const channel = this.host.client.channel(`tomrade-devices:${userId}`, { config: { private: true, presence: { key: this.host.deviceId } } });
       channel.on("presence", { event: "sync" }, () => {
-        if (this.channel === channel) this.seen(channel.presenceState<{ leaving?: boolean; act?: number }>());
+        if (this.channel === channel) this.seen(channel.presenceState<{ leaving?: boolean; act?: number; sig?: Record<string, number> }>());
       });
       channel.subscribe((status) => {
         if (status !== "SUBSCRIBED" || this.channel !== channel) return;
-        void Promise.resolve(channel.track({ at: Date.now() })).catch(() => undefined);
+        this.track(channel);
         if (Date.now() - this.seenAt > SEEN_MS) this.stamp();
       });
       this.channel = channel;
@@ -480,9 +500,18 @@ export class Devices {
   }
 
   /** Who the channel says is here. One that left keeps counting as online for a while, unless it said it was leaving. */
-  private seen(state: Record<string, { leaving?: boolean; act?: number }[]>): void {
+  private seen(state: Record<string, { leaving?: boolean; act?: number; sig?: Record<string, number> }[]>): void {
     // A machine that just said what it works on: read the table now rather than at the next pass.
     for (const [id, metas] of Object.entries(state)) {
+      if (id !== this.host.deviceId) {
+        for (const meta of metas) {
+          for (const [name, at] of Object.entries(meta.sig && typeof meta.sig === "object" ? meta.sig : {})) {
+            if (typeof at !== "number" || this.heard.get(`${id}:${name}`) === at) continue;
+            this.heard.set(`${id}:${name}`, at);
+            this.host.signalled(name, id);
+          }
+        }
+      }
       const act = Math.max(0, ...metas.map((m) => (typeof m.act === "number" ? m.act : 0)));
       if (id === this.host.deviceId || !act || this.announced.get(id) === act) continue;
       this.announced.set(id, act);

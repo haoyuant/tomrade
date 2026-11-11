@@ -670,3 +670,23 @@ it("an account server from before machines said whether they take work still reg
   expect(cloud.registered).toHaveLength(1);
   expect(cloud.registered[0]!.facts).not.toHaveProperty("accept");
 });
+
+it("a signal reaches the account's other machines that are on, once, and not the one that gave it", async () => {
+  const a = await machine("mac-0001");
+  await a.cloud.sync();
+  const b = await machine("win-0001");
+  await b.cloud.sync();
+  await settle();
+  const heard: Record<string, string[]> = { a: [], b: [] };
+  a.ctx.on("cloudHub/signal", (name, from) => { heard.a!.push(`${name} from ${from}`); });
+  b.ctx.on("cloudHub/signal", (name, from) => { heard.b!.push(`${name} from ${from}`); });
+  a.cloud.signal("dispatches");
+  await vi.waitFor(() => expect(heard.b).toEqual(["dispatches from mac-0001"]));
+  // Its presence is seen again for other reasons: the same signal is not heard twice.
+  a.cloud.reportActivity("sessions", [session("TOM-1")]);
+  await idle(60);
+  expect(heard.b).toEqual(["dispatches from mac-0001"]);
+  expect(heard.a).toEqual([]);
+  a.cloud.signal("dispatches");
+  await vi.waitFor(() => expect(heard.b).toHaveLength(2));
+});
