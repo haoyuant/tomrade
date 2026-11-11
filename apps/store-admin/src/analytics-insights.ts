@@ -14,6 +14,8 @@ export interface Insights {
 export interface InsightsEntry {
   region: Filters["region"]; days: number; lang: Filters["lang"]; from: string; to: string;
   generated_at: string; cost_usd: number | null; insights: Insights;
+  /** The aggregates the analyst read, kept so the analysis can be sent on with its data; absent in older files. */
+  input?: unknown;
 }
 /** What the page shows: the analysis for this view (or the newest one), the last failure, and whether one is running. */
 export interface InsightsState {
@@ -174,9 +176,10 @@ export function insightsService(deps: {
         deps.load(f, parts),
         deps.load({ region: f.region, from: windowStart(prevTo, f.days), to: prevTo }, parts)
       ]);
-      const { insights, cost_usd } = await deps.analyst(insightsSystem(f.lang), JSON.stringify(insightsInput(f, current, previous)));
+      const input = insightsInput(f, current, previous);
+      const { insights, cost_usd } = await deps.analyst(insightsSystem(f.lang), JSON.stringify(input));
       const entries = await readAll();
-      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, generated_at: now().toISOString(), cost_usd, insights };
+      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, generated_at: now().toISOString(), cost_usd, insights, input };
       await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
       const temp = `${file}.${process.pid}.tmp`;
       await writeFile(temp, JSON.stringify({ version: 1, entries }, null, 2), { mode: 0o600 });
