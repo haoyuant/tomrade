@@ -1694,6 +1694,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
   // An assistant conversation opens in the app window, as a notification's click does.
   await say({ type: "showThread", threadId: "t-asks" });
   expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);
+  // A row's menu opens its ticket in the app window too.
+  await say({ type: "openItem", itemId: "item-1" });
+  expect(events.at(-1)).toEqual(["desktop/open", { projectId, itemId: "item-1" }]);
   // The overview asks for the panes' last lines: every live session's pane and terminal, an ended one's never.
   await say({ type: "tails" });
   expect(win.posts.at(-1)).toEqual({ type: "tails", panes: { "w1:p1": "$ pnpm test\n12 passed\nAllow? [y/n]" } });

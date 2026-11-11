@@ -284,6 +284,8 @@ export type WindowMessage =
   | { type: "openThread"; sessionId: string }
   /** An assistant conversation, shown in the app window: it has no pane here. */
   | { type: "showThread"; threadId: string }
+  /** A ticket, opened in the app window. */
+  | { type: "openItem"; itemId: string }
   /** The app's main window brought forward, on this project. */
   | { type: "mainWindow" }
   /** The person's answer to a ticketless session's guess: take that ticket, or go on without one. */

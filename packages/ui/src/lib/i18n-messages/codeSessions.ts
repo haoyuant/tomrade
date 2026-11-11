@@ -243,7 +243,13 @@ export const codeSessions = {
     paletteIntoCell: "↵ into a cell",
     paletteInApp: "↵ open in the app window",
     paletteReadOnly: "read-only",
-    cellNumber: "Pane {{n}} · tomrade term --attach {{n}} attaches it to your own terminal"
+    cellNumber: "Pane {{n}} · tomrade term --attach {{n}} attaches it to your own terminal",
+    menuOpen: "Show in the selected pane",
+    menuOpenBeside: "Open in a new pane",
+    menuOpenTicket: "Open ticket",
+    menuCopyKey: "Copy ticket key",
+    menuCopyBranch: "Copy branch name",
+    menuCopyFolder: "Copy folder path"
   },
   zh: {
     here: "这个窗口里",
@@ -488,6 +494,12 @@ export const codeSessions = {
     paletteIntoCell: "↵ 放进格子",
     paletteInApp: "↵ 在主窗口打开",
     paletteReadOnly: "只读",
-    cellNumber: "格子 {{n}} · 在你自己的终端里运行 tomrade term --attach {{n}}，就能把它接过去"
+    cellNumber: "格子 {{n}} · 在你自己的终端里运行 tomrade term --attach {{n}}，就能把它接过去",
+    menuOpen: "在选中的格子里显示",
+    menuOpenBeside: "在新格子里打开",
+    menuOpenTicket: "打开工单",
+    menuCopyKey: "复制工单号",
+    menuCopyBranch: "复制分支名",
+    menuCopyFolder: "复制目录路径"
   }
 };

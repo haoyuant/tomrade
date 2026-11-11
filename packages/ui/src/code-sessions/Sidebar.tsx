@@ -15,6 +15,7 @@ import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
 import { bundles, isNewRow, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
+import { RowMenu } from "./rowMenu";
 import { useSay, useWords } from "./say";
 
 /** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
@@ -32,6 +33,8 @@ type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, nu
 type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, reply: SessionReply) => Promise<void> | void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => Promise<void> | void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
+/** A row shown as a click would show it; `beside`, as a ⌘-click. */
+const openRow = (picks: Picks, r: HereRow, beside: boolean) => (r.kind === "terminal" ? picks.onTerminal(r.terminal, beside) : r.kind === "session" ? picks.onSession(r.session, beside) : picks.onThread(r.thread));
 const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
 
 /** A session that runs elsewhere, as a card: where it is, and what it waits with. */
@@ -43,6 +46,7 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
   const said = rowSaid(row, status, say, words);
   const title = rowTitle(row, say);
   return (
+    <RowMenu row={row} label={sessionName(s)} onOpen={(beside) => onPick(s, beside)} trigger={
     <button type="button" className="cs-row" data-status={status} title={say("pickHint", { mod: MOD })} aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} onClick={(e) => onPick(s, besideClick(e))}>
       <span className="cs-row-head">
         <span className="cs-row-name mono">
@@ -57,6 +61,7 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
       <span className="cs-row-meta">{[rowAgent(row), rowWhen(row, status, say, words)].filter(Boolean).join(" · ")}</span>
       {said && <span className={saidClass(status)}>{said}</span>}
     </button>
+    } />
   );
 }
 
@@ -125,7 +130,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
       </>
     );
   };
-  const open = (r: HereRow, e: React.MouseEvent) => (r.kind === "terminal" ? picks.onTerminal(r.terminal, besideClick(e)) : r.kind === "session" ? picks.onSession(r.session, besideClick(e)) : picks.onThread(r.thread));
+  const open = (r: HereRow, e: React.MouseEvent) => openRow(picks, r, besideClick(e));
   /** `lead`: the row speaks for its pane (alone on it), so the pane's history folds from it. */
   const item = (r: HereRow, lead = true) => {
     const s = r.session;
@@ -169,11 +174,13 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
     );
     // Allow and Deny sit inside the card's lower edge: beside its button, since a button holds no other.
     const card = (
-      <div className="cs-card">
-        {button}
-        <RowActions row={r} onSee={() => (r.kind === "terminal" ? picks.onTerminal(r.terminal, false) : r.kind === "session" ? picks.onSession(r.session, false) : picks.onThread(r.thread))} onThread={picks.onThread} onAnswer={picks.onAnswer} onAnswerThread={picks.onAnswerThread} />
-        <Guess session={s} pane={paneOf(r)} place="card" />
-      </div>
+      <RowMenu row={r} label={name} onOpen={(beside) => openRow(picks, r, beside)} trigger={
+        <div className="cs-card">
+          {button}
+          <RowActions row={r} onSee={() => openRow(picks, r, false)} onThread={picks.onThread} onAnswer={picks.onAnswer} onAnswerThread={picks.onAnswerThread} />
+          <Guess session={s} pane={paneOf(r)} place="card" />
+        </div>
+      } />
     );
     return (
       <li key={r.id}>
@@ -367,8 +374,8 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
     const name = rowName(r, say);
     const current = has(marks.selected, r);
     return (
+      <RowMenu key={r.id} row={r} label={name} onOpen={(beside) => openRow(picks, r, beside)} trigger={
       <button
-        key={r.id}
         type="button"
         className="cs-dot"
         data-status={status}
@@ -380,9 +387,7 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         aria-describedby={peek?.id === r.id ? peekId : undefined}
         onClick={(e) => {
           setPeek(null);
-          if (r.kind === "terminal") picks.onTerminal(r.terminal, besideClick(e));
-          else if (r.kind === "session") picks.onSession(r.session, besideClick(e));
-          else picks.onThread(r.thread);
+          openRow(picks, r, besideClick(e));
         }}
         onMouseEnter={(e) => peekAt(r.id, e.currentTarget)}
         onMouseLeave={() => setPeek(null)}
@@ -396,6 +401,7 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         </span>
         <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, cellOf(marks.cells, r), say)}</span>
       </button>
+      } />
     );
   };
   const live = rows.filter((r) => statusOf(r) !== "done");
