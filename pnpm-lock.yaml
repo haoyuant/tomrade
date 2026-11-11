@@ -77,6 +77,9 @@ importers:
       '@tomradex/build-page':
         specifier: workspace:*
         version: link:../../packages/build-page
+      '@tomradex/change-review':
+        specifier: workspace:*
+        version: link:../../packages/change-review
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../../packages/code-link
@@ -665,6 +668,64 @@ importers:
       '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/change-review:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
+    devDependencies:
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
