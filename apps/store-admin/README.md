@@ -73,6 +73,14 @@ ranking, a per-feature daily trend, D+1 retention and the full feature table; it
 follows the system's light or dark theme. It uses the whole width of the window:
 on wide screens cards sit two to a row.
 
+The header's **Exclude internal / Include internal** switch (URL
+`internal=include`; excluded by default) leaves out the maintainer's own
+installs: every anonymous ID that ever sent an event from a non-release build
+(a `-`/`+` version such as `0.26.0-dev`, or `0.1.0` from an unpackaged
+checkout). A release build run with `TOMRADE_ANALYTICS_INTERNAL=1` reports
+`X.Y.Z+internal` and counts as internal too. The AI analysis reads the same view
+and is told which one it read.
+
 Each card except the headline has a window of its own: pick one in the card's
 header and only that card changes (the URL keeps it as `w_<card>=<days>`, so a
 view can be bookmarked). Picking the page's window again makes the card follow

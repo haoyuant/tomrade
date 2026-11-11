@@ -18,6 +18,8 @@ export interface Filters {
   metric: "duration_ms" | "uses";
   feature: string;
   lang: "en" | "zh";
+  /** The maintainer's own installs (any non-release build): left out unless the URL says `internal=include`. */
+  internal: "exclude" | "include";
   from: string;
   to: string;
   /** Cards whose window differs from `days`. */
@@ -31,7 +33,8 @@ export function filters(params: URLSearchParams, now = new Date()): Filters {
   const region = params.get("region") ?? "all";
   const metric = params.get("metric") ?? "duration_ms";
   const lang = params.get("lang") ?? "zh";
-  if (!isWindow(days) || !regions.some((r) => r === region) || !["duration_ms", "uses"].includes(metric) || !["en", "zh"].includes(lang)) throw new Error("filters");
+  const internal = params.get("internal") ?? "exclude";
+  if (!isWindow(days) || !regions.some((r) => r === region) || !["duration_ms", "uses"].includes(metric) || !["en", "zh"].includes(lang) || !["exclude", "include"].includes(internal)) throw new Error("filters");
   const windows: Filters["windows"] = {};
   for (const card of CARDS) {
     const raw = params.get(`w_${card}`);
@@ -41,7 +44,7 @@ export function filters(params: URLSearchParams, now = new Date()): Filters {
     if (w !== days) windows[card] = w;
   }
   const to = now.toISOString().slice(0, 10);
-  return { days, region, metric, lang, feature: params.get("feature") ?? "", from: windowStart(to, days), to, windows } as Filters;
+  return { days, region, metric, lang, internal, feature: params.get("feature") ?? "", from: windowStart(to, days), to, windows } as Filters;
 }
 export const windowOf = (f: Filters, card: Card): WindowDays => f.windows[card] ?? f.days;
 /** The windows a view needs and the parts each one loads: the page's own always has the report (headline and daily tables). */
@@ -133,12 +136,13 @@ export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
 export type View = Map<WindowDays, DashboardData>;
 export async function loadView(sources: Endpoint[], f: Filters, request: typeof fetch = fetch): Promise<View> {
   const windows = [...plan(f)];
-  const loaded = await Promise.all(windows.map(([days, parts]) => loadDashboard(sources, { region: f.region, from: windowStart(f.to, days), to: f.to }, request, parts)));
+  const loaded = await Promise.all(windows.map(([days, parts]) => loadDashboard(sources, { region: f.region, internal: f.internal, from: windowStart(f.to, days), to: f.to }, request, parts)));
   return new Map(windows.map(([days], i) => [days, loaded[i]!]));
 }
-export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from" | "to" | "region">, request: typeof fetch = fetch, parts: ReadonlySet<Part> = new Set(PARTS)): Promise<DashboardData> {
+export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from" | "to" | "region" | "internal">, request: typeof fetch = fetch, parts: ReadonlySet<Part> = new Set(PARTS)): Promise<DashboardData> {
   const range = { p_from: f.from, p_to: f.to };
-  const regional = { ...range, p_region: f.region === "all" ? null : f.region };
+  // Accounts, search and GitHub carry no anonymous ids, so only the regional RPCs take the internal switch.
+  const regional = { ...range, p_region: f.region === "all" ? null : f.region, p_exclude_internal: f.internal === "exclude" };
   const call = (source: Endpoint, name: string, body: object) => request(`${source.url}/rest/v1/rpc/${name}`, {
     method: "POST", headers: { apikey: source.key, Authorization: `Bearer ${source.key}`, "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: AbortSignal.timeout(15000)

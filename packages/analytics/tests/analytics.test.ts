@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { AnonIdentity, base32, deriveAnonId, newSecret } from "../src/anon.js";
-import { AnalyticsEvent, Batch, checkSemantics, parseEvent } from "../src/events.js";
+import { AnalyticsEvent, Batch, checkSemantics, parseEvent, reportedClient } from "../src/events.js";
 import { FEATURES, FEATURE_REGISTRY_VERSION, dimAllowed, featureById, isAction, isCounted, isOnce, featureIds, registrySnapshot } from "../src/features.js";
 import { EventQueue } from "../src/queue.js";
 import { Uploader, endpointFor, retryDelay } from "../src/upload.js";
@@ -173,6 +173,15 @@ describe("events", () => {
     expect(() => Batch.parse({ batch_id: envelope.event_id, sent_at: envelope.ts, events: [envelope], extra: 1 })).toThrow();
     expect(() => parseEvent({ ...envelope, anon_id: "not-an-id" })).toThrow();
     expect(() => parseEvent({ ...envelope, action: "delete" })).toThrow();
+  });
+
+  it("marks a release build internal only when TOMRADE_ANALYTICS_INTERNAL=1, as a version every server accepts", () => {
+    expect(reportedClient("0.29.0", {})).toBe("0.29.0");
+    expect(reportedClient("0.29.0", { TOMRADE_ANALYTICS_INTERNAL: "0" })).toBe("0.29.0");
+    expect(reportedClient("0.29.0", { TOMRADE_ANALYTICS_INTERNAL: "1" })).toBe("0.29.0+internal");
+    // Already internal by its version; a second suffix would fail the client check.
+    expect(reportedClient("0.29.0-dev", { TOMRADE_ANALYTICS_INTERNAL: "1" })).toBe("0.29.0-dev");
+    expect(parseEvent({ ...envelope, client: reportedClient("0.29.0", { TOMRADE_ANALYTICS_INTERNAL: "1" }) }).client).toBe("0.29.0+internal");
   });
 
   it("drops an unregistered dimension but keeps the event", () => {

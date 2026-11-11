@@ -1,6 +1,6 @@
 import { app, BrowserWindow, powerMonitor } from "electron";
 import type { Context } from "cordis";
-import { Analytics, type AnalyticsConfig, type HostSignals } from "@tomradex/analytics";
+import { Analytics, reportedClient, type AnalyticsConfig, type HostSignals } from "@tomradex/analytics";
 import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_PUBLISHABLE_KEY } from "./hub-cloud.js";
 
 /**
@@ -48,5 +48,5 @@ export default function analytics(ctx: Context, config: Omit<AnalyticsConfig, "h
     cnUrl: process.env.TOMRADE_ANALYTICS_URL_CN,
     globalUrl: process.env.TOMRADE_ANALYTICS_URL_GLOBAL
   };
-  ctx.plugin(Analytics, { ...config, host, upload });
+  ctx.plugin(Analytics, { ...config, client: reportedClient(config.client), host, upload });
 }

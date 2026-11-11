@@ -67,6 +67,26 @@ describe("internal analytics dashboard", () => {
     // A card's window is kept only where it differs from the page's; unknown cards are ignored.
     expect(filters(new URLSearchParams("days=30&w_growth=365&w_overview=30&w_nothing=7")).windows).toEqual({ growth: 365 });
   });
+  it("leaves internal IDs out unless the URL includes them, and links the switch both ways", async () => {
+    expect(f.internal).toBe("exclude");
+    expect(filters(new URLSearchParams("internal=include")).internal).toBe("include");
+    expect(() => filters(new URLSearchParams("internal=only"))).toThrow();
+    const bodies = new Map<string, Record<string, unknown>>();
+    const request: typeof fetch = async (input, init) => {
+      const name = String(input).split("/rpc/")[1]!;
+      bodies.set(name, JSON.parse(String(init?.body)));
+      return Response.json(name.endsWith("feature_days") ? { days: [] } : name.endsWith("activation") ? sample().activation : name.endsWith("platforms") ? { platforms: [] } : name.startsWith("tomrade_analytics_report") ? sample().report : null);
+    };
+    await loadDashboard([{ url: "https://global.example", key: "secret" }], f, request);
+    for (const name of ["tomrade_analytics_report", "tomrade_analytics_feature_days", "tomrade_analytics_activation", "tomrade_analytics_platforms"]) expect(bodies.get(name)).toMatchObject({ p_exclude_internal: true });
+    expect(bodies.get("tomrade_accounts_report")).toEqual({ p_from: f.from, p_to: f.to });
+    await loadDashboard([{ url: "https://global.example", key: "secret" }], { ...f, internal: "include" }, request);
+    expect(bodies.get("tomrade_analytics_report")).toMatchObject({ p_exclude_internal: false });
+    const html = renderDashboard(f, one(sample()));
+    expect(html).toContain('href="/?days=30&amp;region=all&amp;metric=duration_ms&amp;lang=en&amp;internal=include"');
+    expect(html).not.toMatch(/internal=exclude/);
+    expect(renderDashboard({ ...f, internal: "include" }, one(sample()))).toContain("&amp;internal=include");
+  });
   it("adds aggregate metrics across deployments, grouping feature days without exporting IDs", () => {
     const result = mergeReports([sample(), sample(4)]);
     expect(result.report.totals).toEqual({ duration_ms: 120000, uses: 7, aai: 4 });
@@ -245,7 +265,8 @@ describe("internal analytics dashboard", () => {
     release(); await first;
     expect(loads).toEqual([{ from: "2026-09-24", to: "2026-10-23" }, { from: "2026-08-25", to: "2026-09-23" }]);
     const input = JSON.parse(prompt);
-    expect(input.period).toMatchObject({ from: "2026-09-24", to: "2026-10-23", days: 30, region: "all", last_day_incomplete: true });
+    expect(input.period).toMatchObject({ from: "2026-09-24", to: "2026-10-23", days: 30, region: "all", internal_ids: "excluded", last_day_incomplete: true });
+    expect(system).toContain("period.internal_ids");
     expect(input.previous_period).toEqual({ from: "2026-08-25", to: "2026-09-23" });
     expect(input.current.features[0]).toEqual({ feature: "backlog.board", active_minutes: 1, uses: 3, active_ids: 2 });
     expect(input.previous).not.toHaveProperty("daily");
@@ -257,6 +278,11 @@ describe("internal analytics dashboard", () => {
     expect(JSON.stringify(state.entry?.input)).toBe(prompt);
     // Another view shows the newest analysis, which the page labels as another view's.
     expect((await restarted.read({ ...f, region: "eu" })).entry?.region).toBe("all");
+    // An entry from before the switch read every id: it is the view that includes them.
+    await writeFile(file, JSON.stringify({ version: 1, entries: { "eu/7": { ...state.entry, region: "eu", days: 7, internal: undefined, generated_at: "2026-10-01T00:00:00Z" } } }));
+    expect((await restarted.read({ ...f, region: "eu", days: 7, internal: "include" })).entry?.generated_at).toBe("2026-10-01T00:00:00Z");
+    expect(renderDashboard({ ...f, region: "eu", days: 7 }, one(sample(), 7), undefined, await restarted.read({ ...f, region: "eu", days: 7 }))).toContain("Showing the analysis of another view");
+    await writeFile(file, JSON.stringify({ version: 1, entries: { "all/30/exclude": state.entry } }));
     expect(JSON.parse(await readFile(file, "utf8")).version).toBe(1);
     const failing = insightsService({ load: async () => sample(), analyst: async () => { throw new AnalystUnavailable("claude"); }, file, now: () => new Date("2026-10-24T10:00:00Z") });
     await failing.generate(f);
@@ -290,7 +316,7 @@ process.stdin.on("data", (c) => { input += c; }).on("end", () => {
   it("starts an analysis only from a form posted by this page, then returns to the card", async () => {
     const generated: string[] = [];
     const insights: InsightsService = {
-      read: async () => ({ entry: { region: "all", days: 7, lang: "en", from: "2026-10-17", to: "2026-10-23", generated_at: "2026-10-23T09:00:00Z", cost_usd: 0.02,
+      read: async () => ({ entry: { region: "all", days: 7, lang: "en", from: "2026-10-17", to: "2026-10-23", internal: "exclude", generated_at: "2026-10-23T09:00:00Z", cost_usd: 0.02,
         insights: { summary: "<b>All good</b>", highlights: [{ title: "Up", detail: "d", tone: "good" }], anomalies: [], suggestions: [{ title: "Do it", detail: "d", priority: "high" }] } }, error: null, running: false }),
       generate: async (g) => { generated.push(`${g.region}/${g.days}`); }
     };

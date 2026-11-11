@@ -13,6 +13,8 @@ export interface Insights {
 }
 export interface InsightsEntry {
   region: Filters["region"]; days: number; lang: Filters["lang"]; from: string; to: string;
+  /** Absent in entries from before the switch, which read every id. */
+  internal?: Filters["internal"];
   generated_at: string; cost_usd: number | null; insights: Insights;
   /** The aggregates the analyst read, kept so the analysis can be sent on with its data; absent in older files. */
   input?: unknown;
@@ -78,7 +80,7 @@ export function insightsInput(f: Filters, current: DashboardData, previous: Dash
   });
   const prevTo = new Date(Date.parse(f.from) - 86400000).toISOString().slice(0, 10);
   return {
-    period: { from: f.from, to: f.to, days: f.days, region: f.region, last_day_incomplete: true },
+    period: { from: f.from, to: f.to, days: f.days, region: f.region, internal_ids: f.internal === "exclude" ? "excluded" : "included", last_day_incomplete: true },
     previous_period: { from: windowStart(prevTo, f.days), to: prevTo },
     current: summary(current, true),
     previous: summary(previous, false)
@@ -95,6 +97,7 @@ export function insightsSystem(lang: Filters["lang"]): string {
     "- next_day_retention: of IDs first seen on a day, how many came back the next day; the last day or two are not yet observable.",
     "- site: tomrade.com installer downloads (installs), updater downloads (updates), page views and visits, copied daily from Cloudflare up to yesterday. accounts: registered accounts (no region).",
     "- search: Google Search Console for tomrade.com (clicks, impressions, average position, lower is better; top queries and landing pages); the last few days are still revised. github: the app repository's views, clones and stars; GitHub keeps traffic for 14 days, so earlier days may be missing. Neither has a region, and either may be null when not set up.",
+    "- period.internal_ids: \"excluded\" means the maintainer's own installs (any ID that ever ran a development or test build) are left out of every number; \"included\" means they are counted too and can inflate small numbers.",
     "- The period's last day is still in progress. A day missing from a series is a gap, not a zero. Small numbers are noisy: say so instead of over-reading them.",
     "Write for the founder, who runs the product alone. Be concrete: cite the numbers and the change against the previous period. highlights: 3 to 6 key observations. anomalies: only real outliers, drops or data problems (empty when there are none). suggestions: 3 to 6 actions worth doing next, each tied to the numbers, most valuable first.",
     "Keep summary to two or three sentences. Do not invent data that is not in the input.",
@@ -148,14 +151,14 @@ export function checked(value: unknown): Insights {
 }
 
 export const insightsFile = () => path.join(process.env.TOMRADE_ANALYTICS_STATE_DIR ?? path.join(homedir(), ".tomrade-store"), "analytics-insights.json");
-const keyOf = (f: { region: string; days: number }) => `${f.region}/${f.days}`;
+const keyOf = (f: { region: string; days: number; internal?: Filters["internal"] }) => `${f.region}/${f.days}${f.internal === "exclude" ? "/exclude" : ""}`;
 
 /**
  * Analyses kept per region and window in one local file, so the last one shows on the next start.
  * Generation runs only when asked; a second request for a view already being analysed waits for that run.
  */
 export function insightsService(deps: {
-  load: (f: Pick<Filters, "from" | "to" | "region">, parts: ReadonlySet<Part>) => Promise<DashboardData>;
+  load: (f: Pick<Filters, "from" | "to" | "region" | "internal">, parts: ReadonlySet<Part>) => Promise<DashboardData>;
   analyst: Analyst; file?: string; now?: () => Date;
 }): InsightsService {
   const file = deps.file ?? insightsFile();
@@ -174,12 +177,12 @@ export function insightsService(deps: {
       const prevTo = new Date(Date.parse(f.from) - 86400000).toISOString().slice(0, 10);
       const [current, previous] = await Promise.all([
         deps.load(f, parts),
-        deps.load({ region: f.region, from: windowStart(prevTo, f.days), to: prevTo }, parts)
+        deps.load({ region: f.region, internal: f.internal, from: windowStart(prevTo, f.days), to: prevTo }, parts)
       ]);
       const input = insightsInput(f, current, previous);
       const { insights, cost_usd } = await deps.analyst(insightsSystem(f.lang), JSON.stringify(input));
       const entries = await readAll();
-      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, generated_at: now().toISOString(), cost_usd, insights, input };
+      entries[key] = { region: f.region, days: f.days, lang: f.lang, from: f.from, to: f.to, internal: f.internal, generated_at: now().toISOString(), cost_usd, insights, input };
       await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
       const temp = `${file}.${process.pid}.tmp`;
       await writeFile(temp, JSON.stringify({ version: 1, entries }, null, 2), { mode: 0o600 });
