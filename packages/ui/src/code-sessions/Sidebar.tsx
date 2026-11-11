@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewRow } from "@tomradex/code-link";
 import type { ClosedTerminalRow, LayoutPreset, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { Icon } from "~/components/icons";
-import { FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
+import { FoldChevron } from "~/components/ui/atoms";
 import { Collapse } from "~/components/ui/collapse";
 import { ReviewList, type ReviewSource, type ReviewWords } from "~/components/workspace/agent-panel/ReviewList";
 import { interpolate, message } from "~/lib/dicts";
@@ -99,28 +99,31 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
   const { active, selected, shownPanes, selectedPane, pane } = marks;
   const ended = rows.filter((r) => statusOf(r) === "done" && !has(active, r));
   const going = rows.filter((r) => !ended.includes(r));
-  // A pane that ran sessions before folds open to them; once one does, every row keeps the chevron's room, so they line up.
+  // A pane that ran sessions before folds open to them from a line under its card, as the assistant panel's bar folds what just ended: the cards keep their full width.
   const pastOf = (r: HereRow) => {
     const at = paneOf(r);
     return at ? (history[at] ?? []) : [];
   };
-  const folds = rows.some((r) => pastOf(r).length > 0);
   const toggle = (at: string) =>
     setUnfolded((now) => {
       const next = new Set(now);
       if (!next.delete(at)) next.add(at);
       return next;
     });
-  const chevron = (r: HereRow) => {
+  const earlier = (r: HereRow) => {
     const at = paneOf(r);
     const past = pastOf(r);
-    if (!folds) return null;
-    if (!at || !past.length) return <FoldChevronSpace />;
-    return <FoldChevron open={unfolded.has(at)} label={say("paneEarlierCount", { n: past.length })} testId="cs-pane-history" onToggle={() => toggle(at)} />;
-  };
-  const timeline = (r: HereRow) => {
-    const at = paneOf(r);
-    return at && pastOf(r).length ? <PaneTimeline open={unfolded.has(at)} past={pastOf(r)} locale={locale} selected={selected} onPick={picks.onSession} /> : null;
+    if (!at || !past.length) return null;
+    const label = say("paneEarlierCount", { n: past.length });
+    return (
+      <>
+        <span className="fold-row cs-fold-row">
+          <FoldChevron open={unfolded.has(at)} label={label} testId="cs-pane-history" onToggle={() => toggle(at)} />
+          <span className="cs-bundle-head">{label}</span>
+        </span>
+        <PaneTimeline open={unfolded.has(at)} past={past} locale={locale} selected={selected} onPick={picks.onSession} />
+      </>
+    );
   };
   const open = (r: HereRow, e: React.MouseEvent) => (r.kind === "terminal" ? picks.onTerminal(r.terminal, besideClick(e)) : r.kind === "session" ? picks.onSession(r.session, besideClick(e)) : picks.onThread(r.thread));
   /** `lead`: the row speaks for its pane (alone on it), so the pane's history folds from it. */
@@ -172,14 +175,10 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
         <Guess session={s} pane={paneOf(r)} place="card" />
       </div>
     );
-    if (!lead || !folds) return <li key={r.id}>{card}</li>;
     return (
       <li key={r.id}>
-        <div className="fold-row cs-fold-row">
-          {chevron(r)}
-          {card}
-        </div>
-        {timeline(r)}
+        {card}
+        {lead && earlier(r)}
       </li>
     );
   };
@@ -190,19 +189,10 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
         const at = pane(group[0]!.id);
         return (
           <li key={`bundle:${at}`} className="cs-bundle" data-testid="cs-bundle" data-shown={shownPanes.has(at) || undefined} data-selected={at === selectedPane || undefined}>
-            {folds ? (
-              <span className="fold-row cs-fold-row">
-                {chevron(group[0]!)}
-                <span className="cs-bundle-head" title={say("samePaneHint")}>
-                  {say("samePane", { n: group.length })}
-                </span>
-              </span>
-            ) : (
-              <span className="cs-bundle-head" title={say("samePaneHint")}>
-                {say("samePane", { n: group.length })}
-              </span>
-            )}
-            {timeline(group[0]!)}
+            <span className="cs-bundle-head" title={say("samePaneHint")}>
+              {say("samePane", { n: group.length })}
+            </span>
+            {earlier(group[0]!)}
             <ul className="cs-list">{group.map((r) => item(r, false))}</ul>
           </li>
         );
