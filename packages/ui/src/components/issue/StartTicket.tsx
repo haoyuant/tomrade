@@ -11,6 +11,8 @@ import { doingText } from "~/lib/terminalSession";
 import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, type StartWay, type WayKind } from "~/lib/startWays";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
+import { RunOn } from "./RunOn";
+import { targetOf, takers, useDevices } from "~/lib/devices";
 import { useI18n } from "~/lib/i18n";
 import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
@@ -214,6 +216,11 @@ function StartTicketDialog({
   const [shown, setShown] = useState(!quick);
   const reveal = () => setShown(true);
   const general = item.workType === "general";
+  // Where it runs: here unless the person picks another computer, or the ticket's labels name one that can take it.
+  const devices = useDevices();
+  const [chosenTarget, setChosenTarget] = useState<string | null>(null);
+  const target = chosenTarget ?? (quick ? null : targetOf(item, takers(devices.data?.devices, projectId))) ?? "here";
+  const elsewhere = target !== "here";
   const engines = useEngines();
   const settings = useSettings();
   const playbooks = usePlaybooks(projectId);
@@ -420,7 +427,8 @@ function StartTicketDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
       <DialogHead title={title} />
       <DialogBody>
-        <div className="stack-4" data-testid="start-dialog">
+        <RunOn projectId={projectId} item={item} target={target} onTarget={setChosenTarget} onSent={onClose} />
+        <div className="stack-4" data-testid="start-dialog" style={elsewhere ? { display: "none" } : undefined}>
           {apart && (
             <p className="meta-txt" role="note" data-testid="start-apart">
               {t("codeLink.apartNote")}
@@ -605,7 +613,7 @@ function StartTicketDialog({
         <DialogClose asChild>
           <button type="button" className="btn btn-secondary">{t("common.cancel")}</button>
         </DialogClose>
-        {asked && mode === "run" && threadId ? (
+        {elsewhere ? null : asked && mode === "run" && threadId ? (
           <button
             type="button"
             className="btn btn-primary"

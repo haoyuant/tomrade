@@ -69,8 +69,11 @@ export interface MachineState {
   modes?: readonly string[] | null;
 }
 
-/** Why a request was turned away. */
-export type Refusal = "off" | "project-not-allowed" | "project-missing" | "permission" | "busy" | "not-idle" | "on-battery";
+/**
+ * Why a request was turned away. The first seven are this machine's settings and state; `no-agent` and `start`
+ * are what the work itself lacked: no coding agent ready here, or a Start that would not go.
+ */
+export type Refusal = "off" | "project-not-allowed" | "project-missing" | "permission" | "busy" | "not-idle" | "on-battery" | "no-agent" | "start";
 
 export type Admission = { ok: true; permissionMode: string | null } | { ok: false; reason: Refusal; detail?: string };
 

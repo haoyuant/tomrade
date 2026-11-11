@@ -56,7 +56,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `build-page` | The public build page: the roadmap and changelog a person ticked and a feedback link, previewed, then published as one static page to their own repository's GitHub Pages. | `buildPage` | github, inbox-github, items, projects, repos |
 | `pr-feedback` | Failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket. | `prFeedback` | agent, code-link, github, hub, items, repos |
 | `watchdog` | Tells the person when a run seems stuck, repeats itself or goes nowhere; it never touches the run. | `watchdog` | agent, items, llm |
-| `dispatch` | Work from the account's other machines: whether this machine takes it and within which limits, decided here whatever the request says, with a record of every request taken or turned away. | `dispatch` | hub |
+| `dispatch` | Work from the account's other machines: whether this machine takes it and within which limits, decided here whatever the request says, with a record of every request taken or turned away; and the account's queue of tickets sent between its machines — sending one, taking one meant for this machine, starting it as Start does, and stopping it when it is taken back. | `dispatch` | code-link, hub, hub-cloud |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |
 | `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |
 

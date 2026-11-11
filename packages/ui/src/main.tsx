@@ -48,6 +48,8 @@ if (window.tomrade) {
   });
   // One of the account's machines came or went, was renamed or removed, or is working on something else.
   subscribe("devices.changed", () => void queryClient.invalidateQueries({ queryKey: keys.devices }));
+  // A ticket sent to another machine was taken, turned away, finished or taken back.
+  subscribe("dispatch.changed", () => void queryClient.invalidateQueries({ queryKey: keys.dispatches }));
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: keys.contributions }));
   // An agent, or another machine, changed a setting: the theme and language follow at once.
   subscribe("settings.changed", (next) => {

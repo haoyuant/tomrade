@@ -4,7 +4,8 @@ import { contract, readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
-import { AcceptPolicy, POLICY_DEFAULTS, admit, published, type Admission, type DispatchRequest, type Refusal } from "./policy.js";
+import { AcceptPolicy, POLICY_DEFAULTS, admit, published, type Admission, type DispatchRequest, type MachineState, type Refusal } from "./policy.js";
+import { Queue, type DispatchInput, type DispatchView } from "./queue.js";
 import { DISPATCH_WORDS } from "./words.js";
 
 /** One request from another machine, and what this machine said to it. */
@@ -35,6 +36,12 @@ declare module "@tomradex/ipc" {
   interface Channels {
     /** The requests this machine took or turned away, newest first. */
     "dispatch.decisions": (limit?: number) => DispatchDecision[];
+    /** The account's recent tickets sent between its machines, newest first. */
+    "dispatch.list": () => DispatchView[];
+    /** Asks another machine to work a ticket. */
+    "dispatch.send": (input: DispatchInput) => DispatchView;
+    /** Takes a sent ticket back; the machine that runs it stops. */
+    "dispatch.cancel": (id: string) => DispatchView[];
   }
   interface Broadcasts {
     "dispatch.changed": () => void;
@@ -48,7 +55,9 @@ export const DispatchConfig = z.preprocess(
     logFile: z.string().optional(),
     /** From the desktop shell: how long nobody has used the machine, and whether it runs on battery. */
     idleSeconds: z.custom<() => number>((v) => typeof v === "function").optional(),
-    onBattery: z.custom<() => boolean>((v) => typeof v === "function").optional()
+    onBattery: z.custom<() => boolean>((v) => typeof v === "function").optional(),
+    /** How often the account's queue is looked at when nothing says it changed. */
+    tickMs: z.number().int().min(50).default(30_000)
   })
 );
 export type DispatchConfig = z.infer<typeof DispatchConfig>;
@@ -56,6 +65,11 @@ export type DispatchConfig = z.infer<typeof DispatchConfig>;
 const Decision = z.object({
   at: z.number(), from: z.string(), projectId: z.string(), key: z.string(), accepted: z.boolean(),
   permissionMode: z.string().nullable().optional(), reason: z.string().optional(), detail: z.string().optional()
+});
+const SendInput = z.object({
+  projectId: z.string().min(1).max(64), itemId: z.string().min(1).max(64),
+  to: z.string().min(1).max(64).optional(), platform: z.string().regex(/^[a-z0-9]{1,16}$/).optional(),
+  engine: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional(), permissionMode: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/).optional()
 });
 /** How many requests the record keeps. */
 const KEPT = 200;
@@ -89,6 +103,8 @@ export class Dispatch extends Service {
   private decisions: DispatchDecision[] = [];
   /** Sessions this machine runs for other machines right now, by whatever names them. */
   private readonly running = new Set<string>();
+  /** The account's queue of tickets sent between its machines, as this machine takes part in it. */
+  queue!: Queue;
 
   constructor(ctx: Context, public readonly config: DispatchConfig) {
     super(ctx, "dispatch");
@@ -101,8 +117,21 @@ export class Dispatch extends Service {
       const kept = z.array(Decision).safeParse(readJsonOr<unknown>(this.config.logFile, []));
       if (kept.success) this.decisions = kept.data as DispatchDecision[];
     }
+    this.queue = new Queue(this.home, {
+      peek: (request, modes) => this.peek(request, modes),
+      admit: (request, modes) => this.admit(request, modes),
+      refuse: (request, reason, detail) => this.keep({ at: Date.now(), from: request.from, projectId: request.projectId, key: request.key, accepted: false, reason, ...(detail ? { detail } : {}) }),
+      began: (id) => this.began(id),
+      ended: (id) => this.ended(id),
+      changed: () => this.home.get("ipc")?.send("dispatch.changed")
+    }, this.config.tickMs);
+    this.queue.start();
+    this.home.effect(() => () => this.queue.stop(), "dispatch queue");
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("dispatch.decisions", (limit) => this.recent(limit));
+      ctx.ipc.handle("dispatch.list", () => this.queue.list());
+      ctx.ipc.handle("dispatch.send", (input) => this.queue.send(SendInput.parse(input)));
+      ctx.ipc.handle("dispatch.cancel", (id) => this.queue.cancel(z.uuid().parse(id)));
     });
     // The account's other machines read whether this one takes work, and within what, before they ask.
     this.home.inject(["cloudHub"], () => contract(this.home, "cloudHub")?.describeDevice?.("accept", () => published(this.policy())));
@@ -122,19 +151,28 @@ export class Dispatch extends Service {
    * work here, once the caller knows it. Nothing the request says loosens a limit.
    */
   admit(request: DispatchRequest, modes?: readonly string[] | null): Admission {
-    const admission = admit(this.policy(), request, {
+    const admission = this.peek(request, modes);
+    this.keep({
+      at: Date.now(), from: request.from, projectId: request.projectId, key: request.key, accepted: admission.ok,
+      ...(admission.ok ? { permissionMode: admission.permissionMode } : { reason: admission.reason, ...(admission.detail ? { detail: admission.detail } : {}) })
+    });
+    return admission;
+  }
+
+  /** What `admit` would say, with nothing kept: for looking before a request is taken. */
+  peek(request: DispatchRequest, modes?: readonly string[] | null): Admission {
+    return admit(this.policy(), request, this.state(modes));
+  }
+
+  private state(modes?: readonly string[] | null): MachineState {
+    return {
       projects: this.home.hub.catalog.projects().map((p) => p.id),
       running: this.running.size,
       // A shell that cannot say counts as idle and plugged in: the two conditions are then the person's to leave off.
       idleSeconds: this.config.idleSeconds?.() ?? Number.MAX_SAFE_INTEGER,
       onBattery: this.config.onBattery?.() ?? false,
       modes
-    });
-    this.keep({
-      at: Date.now(), from: request.from, projectId: request.projectId, key: request.key, accepted: admission.ok,
-      ...(admission.ok ? { permissionMode: admission.permissionMode } : { reason: admission.reason, ...(admission.detail ? { detail: admission.detail } : {}) })
-    });
-    return admission;
+    };
   }
 
   /** A session taken for another machine began, or is over: what counts against "sessions at once". */

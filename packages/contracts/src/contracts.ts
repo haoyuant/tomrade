@@ -48,6 +48,8 @@ export interface CloudHubReader {
   describeDevice(part: "accept", read: () => unknown): void;
   /** What `describeDevice` reads has changed: register again soon. */
   refreshDevice(): void;
+  /** Tells the account's other machines that are on that something named `name` changed; they hear `cloudHub/signal`. */
+  signal(name: string): void;
 }
 
 export interface DbReader {

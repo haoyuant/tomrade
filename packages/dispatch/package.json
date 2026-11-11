@@ -18,16 +18,24 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/code-link": "workspace:*",
     "@tomradex/contracts": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/hub": "workspace:*",
+    "@tomradex/hub-cloud": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/storage": "workspace:*",
     "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }

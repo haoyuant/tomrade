@@ -943,6 +943,9 @@ importers:
 
   packages/dispatch:
     dependencies:
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -952,6 +955,9 @@ importers:
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
+      '@tomradex/hub-cloud':
+        specifier: workspace:*
+        version: link:../hub-cloud
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -965,9 +971,27 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0

@@ -45,6 +45,7 @@ export const keys = {
   about: ["about"] as const,
   account: ["account"] as const,
   devices: ["devices"] as const,
+  dispatches: ["dispatches"] as const,
   announcements: ["announcements"] as const,
   attention: ["attention"] as const,
   pushStatus: ["attention", "pushStatus"] as const,
