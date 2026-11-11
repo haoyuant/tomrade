@@ -1,0 +1,104 @@
+/* ─── diff · a ticket's changes, read-only ───────────────────────────────
+ * Tints come from --success and --danger, so every theme, light or dark,
+ * colours added and deleted lines from its own tokens. */
+.diff {
+  --diff-add: color-mix(in srgb, var(--success) 14%, transparent);
+  --diff-add-word: color-mix(in srgb, var(--success) 32%, transparent);
+  --diff-del: color-mix(in srgb, var(--danger) 12%, transparent);
+  --diff-del-word: color-mix(in srgb, var(--danger) 30%, transparent);
+  --diff-gutter: 5ch;
+  display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--fg-2);
+}
+.diff:focus-visible { outline: 2px solid var(--accent-active); outline-offset: -2px; }
+.diff:focus:not(:focus-visible) { outline: none; }
+.diff--blank, .diff__blank { height: auto; padding: var(--space-6); text-align: center; }
+
+.diff__bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); font-size: var(--text-sm); }
+.diff__summary { color: var(--fg); }
+.diff__option, .diff__viewed { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--text-sm); white-space: nowrap; cursor: pointer; }
+.diff__steps { display: inline-flex; }
+
+.diff__panes { display: flex; flex: 1; min-height: 0; }
+.diff--stacked .diff__panes { flex-direction: column; }
+
+.diff__list { display: flex; flex-direction: column; flex-shrink: 0; gap: 1px; width: 260px; padding: var(--space-2);
+  overflow-y: auto; border-right: 1px solid var(--border-soft); }
+.diff--stacked .diff__list { width: auto; max-height: 40vh; border-right: 0; }
+.diff__list-fold { flex-shrink: 0; border-bottom: 1px solid var(--border-soft); }
+.diff__list-head { display: flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2); color: var(--muted); font-size: var(--text-sm); cursor: pointer; }
+.diff__item { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: 4px 6px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--fg-2); font-size: var(--text-sm); text-align: left; cursor: pointer; }
+.diff__item:hover { background: var(--surface-warm); color: var(--fg); }
+.diff__item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.diff__item.is-viewed, .diff__item.is-viewed .diff__name { color: var(--meta); }
+.diff__item-check { flex-shrink: 0; color: var(--success); }
+/* In the list the name reads first and the folders give way. */
+.diff__item .diff__path { display: flex; gap: 6px; }
+.diff__item .diff__name { order: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.diff__item .diff__dir { order: 1; flex-shrink: 9999; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-xs); }
+
+.diff__status { flex-shrink: 0; width: 14px; font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; text-align: center; }
+.diff__status--added { color: var(--success); }
+.diff__status--modified { color: var(--warn); }
+.diff__status--deleted { color: var(--danger); }
+.diff__status--renamed { color: var(--accent-light); }
+.diff__path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff__dir { color: var(--meta); }
+.diff__name { color: var(--fg); font-weight: var(--font-weight-medium); }
+.diff__arrow { margin: 0 6px; color: var(--meta); }
+.diff__counts { flex-shrink: 0; font-size: var(--text-xs); white-space: nowrap; }
+.diff__count--add { color: var(--success); }
+.diff__count--del { color: var(--danger); }
+
+/* No padding above: a sticky head stops at the content edge, and lines would show over it. */
+.diff__files { display: flex; flex: 1; flex-direction: column; gap: var(--space-3); min-width: 0; padding: 0 var(--space-3) var(--space-3); overflow-y: auto; }
+.diff__file:first-child { margin-top: var(--space-3); }
+/* No overflow clipping on a file: its head sticks to the top of the scrolling box. */
+.diff__file { flex-shrink: 0; border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--elev-ring); }
+.diff__file-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 34px;
+  padding: 2px var(--space-3) 2px var(--space-1); border-radius: var(--radius-md); background: var(--surface-warm); font-size: var(--text-sm); cursor: pointer; }
+.diff__file[data-open] .diff__file-head { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.diff__note { flex-shrink: 0; white-space: nowrap; }
+.diff__file-tools { display: inline-flex; flex-shrink: 0; align-items: center; gap: var(--space-3); margin-left: auto; cursor: default; }
+
+.diff__body { overflow: hidden; border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-family: var(--font-mono); font-size: var(--text-xs); line-height: 20px; tab-size: 4; }
+.diff__row { display: grid; grid-template-columns: var(--diff-gutter) var(--diff-gutter) minmax(0, 1fr); }
+.diff__row--split { grid-template-columns: var(--diff-gutter) minmax(0, 1fr) var(--diff-gutter) minmax(0, 1fr); }
+.diff__num { padding: 0 6px; color: var(--meta); font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
+/* The sign hangs in the padding, so a wrapped line continues under the code, not under the sign. */
+.diff__code { min-width: 0; padding: 0 var(--space-2) 0 2ch; color: var(--fg); text-indent: -2ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff__row--split .diff__code:nth-child(2) { border-right: 1px solid var(--border-soft); }
+.diff__sign { display: inline-block; width: 2ch; color: var(--meta); text-align: center; text-indent: 0; user-select: none; }
+.diff__num--add, .diff__code--add { background: var(--diff-add); }
+.diff__num--del, .diff__code--del { background: var(--diff-del); }
+.diff__num--none, .diff__code--none { background: color-mix(in srgb, var(--surface-warm) 55%, transparent); }
+.diff__word { border-radius: var(--radius-xs); }
+.diff__code--add .diff__word { background: var(--diff-add-word); }
+.diff__code--del .diff__word { background: var(--diff-del-word); }
+.diff__noeol { margin-left: 6px; color: var(--meta); user-select: none; }
+
+.diff__hunk-head, .diff__fold { display: flex; align-items: center; gap: var(--space-3); min-height: 22px;
+  padding: 0 var(--space-2) 0 calc(var(--diff-gutter) * 2 + 2ch); background: var(--tag-bg-faint); color: var(--meta); }
+.diff__hunk-head--bare { min-height: 0; border-top: 1px solid var(--border-soft); }
+.diff__hunk:first-child > .diff__hunk-head--bare { border-top: 0; }
+.diff__hunk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff__gap, .diff__fold { border: 0; font: inherit; color: var(--meta); }
+.diff__gap { flex-shrink: 0; padding: 0; background: transparent; }
+.diff__fold { width: 100%; text-align: left; }
+button.diff__gap, .diff__fold { cursor: pointer; }
+button.diff__gap:hover:not(:disabled), .diff__fold:hover { color: var(--accent); text-decoration: underline; }
+:is(button.diff__gap, .diff__fold):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.diff__more { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); font-family: var(--font-body); font-size: var(--text-sm); }
+
+.diff__tok--keyword { color: var(--chart-4); }
+.diff__tok--string { color: var(--chart-5); }
+.diff__tok--comment { color: var(--meta); font-style: italic; }
+.diff__tok--literal { color: var(--chart-3); }
+.diff__tok--type { color: var(--chart-7); }
+.diff__tok--function { color: var(--chart-1); }
+.diff__tok--property { color: var(--chart-8); }
+.diff__tok--strong { color: var(--fg); font-weight: 600; }
+.diff__tok--emphasis { font-style: italic; }
+.diff__tok--link { color: var(--accent-light); }

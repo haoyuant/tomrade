@@ -37,6 +37,7 @@ import { mcpLink } from "./mcpLink";
 import { newIssueDialog } from "./newIssueDialog";
 import { newProjectDialog } from "./newProjectDialog";
 import { playbooks } from "./playbooks";
+import { diff } from "./diff";
 import { plugins } from "./plugins";
 import { mcpServers } from "./mcpServers";
 import { imSettings } from "./imSettings";
@@ -100,6 +101,7 @@ export const en = {
   projectBrief: projectBrief.en,
   templates: templates.en,
   playbooks: playbooks.en,
+  diff: diff.en,
   pluginsPanel: pluginsPanel.en,
   plugins: plugins.en,
   mcpServers: mcpServers.en,
@@ -191,6 +193,7 @@ export const zh: typeof en = {
   projectBrief: projectBrief.zh,
   templates: templates.zh,
   playbooks: playbooks.zh,
+  diff: diff.zh,
   pluginsPanel: pluginsPanel.zh,
   plugins: plugins.zh,
   mcpServers: mcpServers.zh,
