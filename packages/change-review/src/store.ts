@@ -91,7 +91,7 @@ export class ReviewStore {
 
   /** A ticket's comments, oldest first. */
   of(projectId: string, itemId: string): ReviewComment[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_comments WHERE item_id = ? ORDER BY created_at ASC, id ASC").all(itemId) as Row[]).map(toComment);
+    return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_comments WHERE item_id = ? ORDER BY created_at ASC, rowid ASC").all(itemId) as Row[]).map(toComment);
   }
 
   get(projectId: string, id: string): ReviewComment | null {
