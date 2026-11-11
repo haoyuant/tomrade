@@ -1,9 +1,9 @@
 import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement } from "react";
 import type { EngineView, PendingView } from "@tomradex/agent";
-import { Icon } from "~/components/icons";
+import { Icon, type IconId } from "~/components/icons";
 import { FoldChevron } from "~/components/ui/atoms";
 import { Collapse } from "~/components/ui/collapse";
-import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
+import { ContextMenu, ContextMenuActionItem, ContextMenuSeparator } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
 import { clockLabel, timeAgo } from "~/lib/domain";
@@ -36,6 +36,18 @@ const actionable = (r: BarRow) => !!r.threadId && r.status !== "run" && r.wait?.
 /** A terminal session not yet ended can be ended here: its pane closes; one in another terminal app only leaves the bar. */
 const endable = (r: BarRow) => r.where !== "panel" && !!r.sessionId && r.status !== "done";
 
+export type BarAction = "open" | "openTicket" | "showInTerminal" | "copyTicket" | "copyTitle" | "archive" | "delete" | "end";
+
+/** What right-clicking a dot or a card offers, in groups: going to it, copying what names it, then putting it away. */
+export function barRowActions(r: BarRow): BarAction[][] {
+  const groups: BarAction[][] = [
+    ["open", ...(r.itemIds[0] ? ["openTicket" as const] : []), ...(r.sessionId && r.where === "pane" && r.status !== "done" ? ["showInTerminal" as const] : [])],
+    [...(r.ticket ? ["copyTicket" as const] : []), ...(r.title.trim() ? ["copyTitle" as const] : [])],
+    [...(actionable(r) ? (["archive", "delete"] as const) : []), ...(endable(r) ? ["end" as const] : [])]
+  ];
+  return groups.filter((g) => g.length);
+}
+
 /** The buttons a card and a peek carry: put away or delete a conversation, end a terminal session. */
 function RowActions({ row, onArchive, onDelete, onEnd }: { row: BarRow; onArchive: (threadId: string) => void; onDelete: (threadId: string) => void; onEnd: (row: BarRow) => void }) {
   const { t } = useI18n();
@@ -64,7 +76,7 @@ function RowActions({ row, onArchive, onDelete, onEnd }: { row: BarRow; onArchiv
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete, onEnd }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete, onEnd, onOpenTicket, onShowInTerminal, onCopy }: {
   rows: BarRow[];
   /** Starts under way, before their sessions are there: on top, a dashed ring. */
   starting: readonly Starting[];
@@ -87,6 +99,10 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   onDelete: (threadId: string) => void;
   /** Ends a terminal session; asks first, the panel confirms. */
   onEnd: (row: BarRow) => void;
+  onOpenTicket: (itemId: string) => void;
+  /** A terminal session's cell or pane, brought forward in the Terminal window. */
+  onShowInTerminal: (row: BarRow) => void;
+  onCopy: (text: string) => void;
 }) {
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
@@ -164,17 +180,28 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     );
   };
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
-  // right-click on a dot or a card: the same things its buttons do
-  const withMenu = (r: BarRow, node: ReactElement) =>
-    actionable(r) || endable(r) ? (
-      <ContextMenu key={r.key} label={title(r)} trigger={node}>
-        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-archive" size={13} />} name={t("agentPanel.archiveThread")} onSelect={() => onArchive(r.threadId!)} />}
-        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("agentPanel.deleteThread")} onSelect={() => onDelete(r.threadId!)} />}
-        {endable(r) && <ContextMenuActionItem icon={<Icon name="i-stop" size={13} />} name={t("sessionBar.endSession")} onSelect={() => onEnd(r)} />}
-      </ContextMenu>
-    ) : (
-      <Fragment key={r.key}>{node}</Fragment>
-    );
+  // right-click on a dot or a card: going to it and what names it, then the same things its buttons do
+  const menuItem = (r: BarRow, a: BarAction) => {
+    const item = (icon: IconId | null, name: string, run: () => void) => <ContextMenuActionItem key={a} icon={icon ? <Icon name={icon} size={13} /> : null} name={name} onSelect={run} />;
+    if (a === "open") return item(null, t("sessionBar.menuOpen"), () => onPick(r));
+    if (a === "openTicket") return item(null, t("sessionBar.menuOpenTicket"), () => onOpenTicket(r.itemIds[0]!));
+    if (a === "showInTerminal") return item(null, t("sessionBar.menuShowInTerminal"), () => onShowInTerminal(r));
+    if (a === "copyTicket") return item(null, t("sessionBar.menuCopyTicket"), () => onCopy(r.ticket!));
+    if (a === "copyTitle") return item(null, t("sessionBar.menuCopyTitle"), () => onCopy(r.title));
+    if (a === "archive") return item("i-archive", t("agentPanel.archiveThread"), () => onArchive(r.threadId!));
+    if (a === "delete") return item("i-trash", t("agentPanel.deleteThread"), () => onDelete(r.threadId!));
+    return item("i-stop", t("sessionBar.endSession"), () => onEnd(r));
+  };
+  const withMenu = (r: BarRow, node: ReactElement) => (
+    <ContextMenu key={r.key} label={title(r)} trigger={node}>
+      {barRowActions(r).map((group, i) => (
+        <Fragment key={i}>
+          {i > 0 && <ContextMenuSeparator />}
+          {group.map((a) => menuItem(r, a))}
+        </Fragment>
+      ))}
+    </ContextMenu>
+  );
 
   if (mode === "rail") {
     const live = rows.filter((r) => r.status !== "done");

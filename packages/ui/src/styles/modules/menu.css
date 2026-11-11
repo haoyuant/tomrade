@@ -36,6 +36,7 @@
   display: flex; align-items: center; gap: var(--space-2);
   margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border-soft);
 }
+.menu-sep { height: 1px; margin: 4px var(--space-2); background: var(--border-soft); }
 .menu-empty { padding: var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
 .menu.right { left: auto; right: 0; }
 .menu.wide { min-width: 300px; }

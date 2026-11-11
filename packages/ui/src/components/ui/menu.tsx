@@ -203,6 +203,9 @@ export function ContextMenu({ trigger, label, children }: { trigger: ReactNode; 
   );
 }
 
+/** A thin rule between groups of a context menu's rows. */
+export const ContextMenuSeparator = () => <RadixContextMenu.Separator className="menu-sep" />;
+
 /** A row that opens a second list beside the context menu. */
 export function ContextMenuSub({ icon, name, children }: { icon: ReactNode; name: string; children: ReactNode }) {
   return (
