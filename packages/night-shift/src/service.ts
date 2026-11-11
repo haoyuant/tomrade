@@ -18,9 +18,10 @@ import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Judgement, judgeSystem, judgeUser, renderBrief, type BriefSpend, type Delivery, type SpendLine } from "./brief.js";
 import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
 import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
-import { PlanReply, planCandidates, planSystem, planUser, readPlan, type ShiftPlan } from "./plan.js";
+import { match, type MatchDevice } from "@tomradex/dispatch";
+import { PlanReply, placed, planCandidates, planSystem, planUser, readPlan, type Placer, type PlannerDevice, type ShiftPlan } from "./plan.js";
 import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
-import { WorkRules, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
+import { WorkRules, keptFrom, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
 /** "Until it is done" still ends: a run nothing can finish must not stay open for good. */
@@ -428,15 +429,45 @@ export class NightShifts extends Service {
       })
     });
     const notCoding = w("notCoding");
+    // The account's computers, when there are others: where each ticket would run is the rules' to say first.
+    const devices = this.devices();
+    const place: Placer | undefined = devices.some((d) => !d.self)
+      ? (item, picked) =>
+          placed(match({ projectId, labels: item.labels, remote: this.remoteOf(projectId, item) }, devices, { excluded: keptFrom(rules, item), model: picked?.device ?? null }), picked, {
+            label: w("placeLabel"),
+            offline: (name) => w("placeOffline", { name }),
+            busy: (name) => w("placeBusy", { name }),
+            none: (found) =>
+              found.why === "nobody" ? w("placeNobody", { wanted: found.wanted })
+              : w(found.why === "excluded" ? "placeExcluded" : found.why === "no-agent" ? "placeNoAgent" : found.why === "project" ? "placeProject" : "placeNotAccepting", { name: found.name ?? found.wanted })
+          })
+      : undefined;
+    // What the planner is told of them leaves out what changes by the minute, so the same plan is not asked for twice.
+    const told: PlannerDevice[] = devices
+      .filter((d) => !d.self && d.accept?.on)
+      .map((d) => ({ name: d.name, platform: d.platform, agents: d.agents.filter((a) => a.ready).map((a) => a.id), repos: d.repos.length }))
+      .sort((a, b) => a.name.localeCompare(b.name));
     const llm = this.home.get("llm");
     const worker = llm ? await llm.worker().catch(() => null) : null;
-    if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding, w("planNoEngine")));
-    const system = planSystem(languageName(this.locale()));
-    const user = planUser(items, this.home.agent.brief(projectId));
+    if (!llm || !worker?.ok) return ruled(readPlan(items, null, notCoding, w("planNoEngine"), place));
+    const system = planSystem(languageName(this.locale()), told.length > 0);
+    const user = planUser(items, this.home.agent.brief(projectId), told);
     const asked = `${system}\n${user}`;
     const kept = this.plans.get(projectId);
     const { reply, failed } = await (!fresh && kept?.asked === asked ? kept.answer : this.askPlan(llm, projectId, asked, system, user));
-    return ruled(readPlan(items, reply, notCoding, w("planFailed", { detail: failed })));
+    return ruled(readPlan(items, reply, notCoding, w("planFailed", { detail: failed }), place));
+  }
+
+  /** The account's computers as its service last read them; none where there is no account. */
+  private devices(): MatchDevice[] {
+    return (this.home.get("cloudHub") as { devices?(): MatchDevice[] } | undefined)?.devices?.() ?? [];
+  }
+
+  /** The repository a ticket's workstream stands for, by its address. */
+  private remoteOf(projectId: string, item: Item): string | null {
+    const board = (this.home.get("boards") as { get(projectId: string, id: string): { repoId?: string | null } | null } | undefined)?.get(projectId, item.boardId);
+    const repos = this.home.get("repos") as { get(projectId: string, id: string): { remote: string } | null } | undefined;
+    return board?.repoId ? (repos?.get(projectId, board.repoId)?.remote ?? null) : null;
   }
 
   private askPlan(llm: LlmService, projectId: string, asked: string, system: string, user: string): Promise<PlanAnswer> {

@@ -12,6 +12,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { DEFAULT_MAX_CONCURRENCY, canLeave, editImpact, factsChosen, nodeConfig, runConcurrency, shiftCandidates, shiftNote, shiftOrder, stopsAnAgent, UNTIL_DONE_HOURS, useLastNightShift, useNightShift, useNightShiftActions, useOnBattery, useRuleMatches, useShiftPlan, useShiftProposal, useWorkRules, withTaken, type EditImpact, type NodeOverride } from "~/lib/nightShift";
 import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { invoke } from "~/lib/api";
 import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
 import { PlanGraph, type PlanDraft } from "./PlanGraph";
 
@@ -360,6 +361,12 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [askedSuggested, setAskedSuggested] = useState(false);
   const isSuggestion = chosen.size === suggested.size && [...suggested].every((id) => chosen.has(id));
   const whyLeft = useMemo(() => new Map((plan.data?.nodes ?? []).flatMap((n) => (n.why ? [[n.itemId, n.why] as [string, string]] : []))), [plan.data]);
+  // Tickets that would run on another of the account's computers. A label's word is ticked; the planner's idea waits for the person.
+  const elsewhere = useMemo(() => (plan.data?.nodes ?? []).flatMap((n) => (n.device ? [{ ...n, device: n.device }] : [])), [plan.data]);
+  const stays = useMemo(() => (plan.data?.nodes ?? []).filter((n) => n.deviceNote), [plan.data]);
+  const [sendPicked, setSendPicked] = useState<Record<string, boolean>>({});
+  const sends = (id: string) => sendPicked[id] ?? elsewhere.find((n) => n.itemId === id)?.device.source === "rule";
+  const [sending, setSending] = useState(false);
   const [view, setView] = useState<"graph" | "list">("graph");
   const workRules = useWorkRules(projectId);
   const ruleMatches = useRuleMatches(projectId);
@@ -427,17 +434,35 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
     const note = chosen.has(item.id) ? shiftNote(item, chosen, open, merging) : null;
     return note ? t(note.kind === "outside" ? "nightShift.outside" : note.kind === "elsewhere" ? "nightShift.elsewhere" : note.kind === "after" ? "nightShift.after" : "nightShift.afterNeedsMerge", { keys: note.keys.join(", ") }) : null;
   };
-  const subOf = (item: Item) => [noteOf(item) ?? whyLeft.get(item.id), sourceOf(item)].filter(Boolean).join(" · ") || null;
+  // A ticket ticked to go to another computer says so on its card.
+  const goesTo = (item: Item) => {
+    const node = chosen.has(item.id) && sends(item.id) ? elsewhere.find((n) => n.itemId === item.id) : undefined;
+    return node ? t("nightShift.goesTo", { name: node.device.name }) : null;
+  };
+  const subOf = (item: Item) => [noteOf(item) ?? whyLeft.get(item.id), goesTo(item), sourceOf(item)].filter(Boolean).join(" · ") || null;
   const focusItem = focus ? candidates.find((i) => i.id === focus) : undefined;
   const shownIds = new Set(candidates.map((i) => i.id));
   const links = [
     ...candidates.flatMap((i) => i.blocks.filter((to) => shownIds.has(to) && !taken.some((e) => e.from === i.id && e.to === to)).map((to) => ({ from: i.id, to, firm: true }))),
     ...proposed.filter((e) => shownIds.has(e.from) && shownIds.has(e.to)).map((e) => ({ from: e.from, to: e.to, firm: takenKeys.has(`${e.from}>${e.to}`) }))
   ];
-  const go = () =>
+  // What is ticked to go elsewhere is sent first and leaves this computer's run; the rest starts here as before.
+  const away = elsewhere.filter((n) => chosen.has(n.itemId) && sends(n.itemId));
+  const awayIds = new Set(away.map((n) => n.itemId));
+  const here = candidates.filter((i) => chosen.has(i.id) && !awayIds.has(i.id));
+  const go = async () => {
+    if (away.length) {
+      setSending(true);
+      const failed: string[] = [];
+      for (const node of away) await invoke("dispatch.send", { projectId, itemId: node.itemId, to: node.device.id }).catch((err: unknown) => { failed.push(node.key); toast(errorSpec(err)); });
+      setSending(false);
+      const sent = away.filter((n) => !failed.includes(n.key));
+      if (sent.length) toast({ body: t("nightShift.sentAway", { keys: sent.map((n) => n.key).join(", ") }) });
+      if (!here.length) return failed.length ? undefined : onClose();
+    }
     start.mutate(
       {
-        itemIds: shiftOrder(candidates.filter((i) => chosen.has(i.id))).map((i) => i.id),
+        itemIds: shiftOrder(here).map((i) => i.id),
         mode,
         ...(engine ? { engine: engine.id } : {}),
         ...(permissionMode ? { permissionMode } : {}),
@@ -451,10 +476,11 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
         maxInserts,
         whenLimited,
         dependencies: taken.map(({ from, to }) => ({ from, to })),
-        nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id)))
+        nodes: Object.fromEntries(Object.entries(overrides).filter(([id]) => chosen.has(id) && !awayIds.has(id)))
       },
       { onError: (err) => toast(errorSpec(err)) }
     );
+  };
   const openBrief = (file: string) => {
     onClose();
     void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: file } });
@@ -550,6 +576,26 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
                   </label>
                 );
               })}
+            </div>
+          </Field>
+        )}
+        {(elsewhere.length > 0 || stays.length > 0) && (
+          <Field label={t("nightShift.elsewhereTitle")}>
+            <p className="meta-txt">{t("nightShift.elsewhereHint")}</p>
+            <div className="inbox-list" data-testid="plan-elsewhere">
+              {elsewhere.map((node) => (
+                <label className="cfg-row" key={node.itemId} style={{ cursor: "pointer" }} data-testid="plan-elsewhere-row" data-source={node.device.source} data-kind={node.device.kind}>
+                  <input type="checkbox" checked={!!sends(node.itemId)} disabled={!chosen.has(node.itemId)} onChange={() => setSendPicked((all) => ({ ...all, [node.itemId]: !sends(node.itemId) }))} />
+                  <span className="cfg-name"><span className="num">{node.key}</span> → {node.device.name}</span>
+                  <span className="meta-txt">{[node.device.source === "model" ? t("nightShift.elsewhereModel") : null, node.device.why].filter(Boolean).join(" ")}</span>
+                </label>
+              ))}
+              {stays.map((node) => (
+                <div className="cfg-row" key={node.itemId} data-testid="plan-elsewhere-stays">
+                  <span className="cfg-name"><span className="num">{node.key}</span></span>
+                  <span className="meta-txt">{node.deviceNote}</span>
+                </div>
+              ))}
             </div>
           </Field>
         )}
@@ -649,7 +695,7 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
       </DialogBody>
       <DialogFoot>
         <DialogClose asChild><button type="button" className="btn btn-secondary" onClick={onClose}>{t("common.cancel")}</button></DialogClose>
-        <button type="button" className="btn btn-primary" data-testid="night-shift-start" disabled={!chosen.size || !engine || start.isPending} onClick={go}>
+        <button type="button" className="btn btn-primary" data-testid="night-shift-start" disabled={!chosen.size || (here.length > 0 && !engine) || start.isPending || sending} onClick={() => void go()}>
           {start.isPending ? t("nightShift.starting") : t("nightShift.start")}
         </button>
       </DialogFoot>

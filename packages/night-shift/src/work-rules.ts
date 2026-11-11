@@ -16,7 +16,9 @@ export const RuleThen = z.object({
   mode: z.enum(["terminal", "run"]).optional(),
   engine: z.string().min(1).optional(),
   permissionMode: z.string().min(1).optional(),
-  autoMerge: z.boolean().optional()
+  autoMerge: z.boolean().optional(),
+  /** Computers, by name, this work is never sent to. */
+  notOn: z.array(z.string().min(1).max(80)).max(20).optional()
 });
 
 export const WorkRule = z.object({ id: z.string().min(1), name: z.string().min(1), when: RuleWhen, then: RuleThen });
@@ -38,6 +40,9 @@ function holds(when: WorkRule["when"], item: Item): boolean {
 
 /** Rules run top to bottom and the first that matches is the one: their order is how the person ranks them. */
 export const ruleFor = (rules: readonly WorkRule[], item: Item): WorkRule | null => rules.find((rule) => holds(rule.when, item)) ?? null;
+
+/** The computers a ticket is never sent to: every rule that matches it adds its own, whichever rule sets how it runs. */
+export const keptFrom = (rules: readonly WorkRule[], item: Item): string[] => [...new Set(rules.filter((rule) => holds(rule.when, item)).flatMap((rule) => rule.then.notOn ?? []))];
 
 export function ruleConfig(rule: WorkRule): NodeConfig {
   const { mode, engine, permissionMode, autoMerge } = rule.then;

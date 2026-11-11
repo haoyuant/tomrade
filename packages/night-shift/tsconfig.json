@@ -17,6 +17,7 @@
     { "path": "../code-link" },
     { "path": "../contributions" },
     { "path": "../db" },
+    { "path": "../dispatch" },
     { "path": "../domain" },
     { "path": "../ipc" },
     { "path": "../items" },

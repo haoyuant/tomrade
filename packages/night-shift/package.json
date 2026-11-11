@@ -24,6 +24,7 @@
     "@tomradex/contracts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
+    "@tomradex/dispatch": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/files": "workspace:*",
     "@tomradex/ipc": "workspace:*",
