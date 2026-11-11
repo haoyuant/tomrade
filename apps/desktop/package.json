@@ -50,7 +50,7 @@
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "test:plugin-layout": "electron scripts/plugin-layout-check.mjs",
     "test:tomrade-command": "electron scripts/tomrade-command-check.mjs",
-    "test:code-sessions": "electron scripts/terminal-scroll-check.mjs && electron scripts/terminal-ime-check.mjs && electron scripts/terminal-selection-check.mjs && electron scripts/terminal-links-check.mjs && electron scripts/terminal-clear-check.mjs && electron scripts/code-sessions-check.mjs",
+    "test:code-sessions": "electron scripts/terminal-scroll-check.mjs && electron scripts/terminal-ime-check.mjs && electron scripts/terminal-selection-check.mjs && electron scripts/terminal-atlas-check.mjs && electron scripts/terminal-links-check.mjs && electron scripts/terminal-clear-check.mjs && electron scripts/code-sessions-check.mjs",
     "test:language-pack": "electron scripts/language-pack-check.mjs",
     "test:local-cli": "electron scripts/local-cli-check.mjs",
     "test:perf": "electron scripts/perf-check.mjs && electron scripts/perf-sessions-check.mjs",

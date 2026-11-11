@@ -11,7 +11,7 @@ overrides:
   '@lezer/markdown': 1.7.2
 
 patchedDependencies:
-  '@xterm/addon-webgl@0.18.0': f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9
+  '@xterm/addon-webgl@0.18.0': 53e684002c1669178d5f476b7dbe0759208288508c3d526437265b53167573fd
   '@xterm/xterm@5.5.0': 3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9
   app-builder-lib@26.15.3: 0e73b0551fb400b907eaeb4f7dcf7bea44f09e727d70dc7965338f187c16cf09
   cordis@4.0.0-rc.8: 5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d
@@ -3117,7 +3117,7 @@ importers:
         version: 0.11.0(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/addon-webgl':
         specifier: 0.18.0
-        version: 0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
+        version: 0.18.0(patch_hash=53e684002c1669178d5f476b7dbe0759208288508c3d526437265b53167573fd)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))
       '@xterm/xterm':
         specifier: 5.5.0
         version: 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
@@ -8991,7 +8991,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
-  '@xterm/addon-webgl@0.18.0(patch_hash=f032f91ded194d36cb728eb5f35a7c825431964590abaa8bb75461f68042b4f9)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
+  '@xterm/addon-webgl@0.18.0(patch_hash=53e684002c1669178d5f476b7dbe0759208288508c3d526437265b53167573fd)(@xterm/xterm@5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9))':
     dependencies:
       '@xterm/xterm': 5.5.0(patch_hash=3efc813910d73e3c3d27544e4f02d88c2c84d208d6ef7ad6656ba18dff873fb9)
 
