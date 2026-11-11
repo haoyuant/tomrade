@@ -141,6 +141,24 @@ app.whenReady().then(async () => {
     await select(0, 0, 20, 5);
     const joined = ["- 特写：" + dir + "sub/shot.png", "see /tmp/dir/", "  sub/shot.png", full, "Next line"].join("\n");
     await check("copy: a path broken at the edge is one line; one short of the edge, or with its extension, keeps the break", `copy() === ${JSON.stringify(joined)}`);
+    // Blank rows in the body and one above the footer: the moving region's last row wobbles between paints.
+    await js(`(() => {
+      window.doc = Array.from({ length: 60 }, (_, i) => i % 3 === 2 ? '' : 'Doc ' + Math.floor(i / 3) + (i % 3 ? ' ran' : ' step'));
+      window.paint = (o) => (window.offset = Math.max(0, Math.min(doc.length - 8, o)), paintRows(['Header', ...doc.slice(offset, offset + 8), '', 'Input', 'Status']));
+      return paint(doc.length);
+    })()`);
+    const pressedText = await js("term.buffer.active.getLine(7).translateToString(true)");
+    mouse("mouseDown", 3, 7);
+    mouse("mouseMove", 3, 5);
+    mouse("mouseMove", 3, -2);
+    await wait(1500);
+    mouse("mouseUp", 3, -2);
+    await wait(150);
+    await js("paint(doc.length)");
+    const anchored = (await js("copy()")).split("\n");
+    const expected = await js(`doc.slice(doc.lastIndexOf(${JSON.stringify(pressedText)}) - ${anchored.length - 1}, doc.lastIndexOf(${JSON.stringify(pressedText)}) + 1)`);
+    if (anchored.length < 8 || anchored.at(-1) !== pressedText.slice(0, 3) || anchored.slice(1, -1).some((line, i) => line !== expected[i + 1])) throw new Error(`Dragged past the top, the selection drifted: ${JSON.stringify(anchored)}`);
+    await check("dragged past the top over blank rows: released, the start stays where it was pressed", `term.getSelectionPosition()?.end.y === 7 && term.getSelectionPosition()?.end.x === 3`);
     await js("follower.dispose()");
   } catch (error) {
     console.error(error);
