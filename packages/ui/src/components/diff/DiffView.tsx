@@ -3,9 +3,14 @@ import type { ChangedFile, ChangeScope, ChangesView } from "@tomradex/code-link"
 import { Icon } from "~/components/icons";
 import { FoldChevron } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
+import { pickAnchor, placeAnchor, type Anchor, type DiffComment, type DiffCommentDraft } from "./anchors";
+import { CommentsList, type ListedComment } from "./CommentsList";
+import { NEW_SLOT, type FileNotes, type NoteActions } from "./DiffComments";
 import { DiffFile, fileCounts, FilePath, FileStatus, type DiffLayout, type FileLoad } from "./DiffFile";
 import { quietReason } from "./rows";
 import { fileVersion, isViewed, markViewed, readViewed, writeViewed, type ViewedMarks } from "./viewed";
+
+export type { DiffComment, DiffCommentDraft } from "./anchors";
 
 export interface DiffViewProps {
   /** What to draw; null or undefined while there is nothing (yet). */
@@ -25,6 +30,14 @@ export interface DiffViewProps {
   fileActions?: (file: ChangedFile) => ReactNode;
   /** The surface's own controls (scope, commit, code link), ahead of the view's. */
   toolbar?: ReactNode;
+  /** The comments on these changes. The view pins each to its lines; it keeps none itself. */
+  comments?: DiffComment[];
+  /** Lets a line, or a range of lines, be commented on. A rejection keeps what was typed. */
+  onAddComment?: (comment: DiffCommentDraft) => Promise<void> | void;
+  onEditComment?: (id: string, patch: { body?: string; state?: DiffComment["state"] }) => Promise<void> | void;
+  onRemoveComment?: (id: string) => Promise<void> | void;
+  /** The surface's control for the comments as a whole (sending them, say), beside their count. */
+  commentsAction?: ReactNode;
 }
 
 const LAYOUT_KEY = "tomrade.diff.layout";
@@ -36,6 +49,9 @@ const LIST_MIN = 720;
 const FILE_MARGIN = 12;
 const STOP_LEAD = 44;
 const NO_LINES: readonly number[] = [];
+/** How long a chosen comment is looked for while its file opens and draws: this many tries, this far apart. */
+const SEEK_TRIES = 20;
+const SEEK_MS = 50;
 
 function storedLayout(): DiffLayout {
   try {
@@ -54,7 +70,7 @@ interface Fetched {
 }
 
 /** A ticket's changes, read-only: the files beside their diffs, unified or side by side. It reads nothing itself. */
-export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespace, onLoadFile, viewedKey, fileActions, toolbar }: DiffViewProps) {
+export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespace, onLoadFile, viewedKey, fileActions, toolbar, comments, onAddComment, onEditComment, onRemoveComment, commentsAction }: DiffViewProps) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -66,6 +82,13 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
   const [opens, setOpens] = useState<Record<string, boolean>>({});
   const [unfolded, setUnfolded] = useState<Record<string, number[]>>({});
   const [fetched, setFetched] = useState<Fetched>({ of: "", files: {} });
+  /** The comment being written: where, not what. What is typed is kept in `typed`, so typing redraws no file. */
+  const [draft, setDraft] = useState<(Anchor & { path: string }) | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const typed = useRef<Record<string, string>>({});
+  const seeking = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(seeking.current), []);
 
   const shown = !!changes;
 
@@ -113,11 +136,107 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
     [listed, read, keyOf]
   );
 
+  /** Each file's comments pinned to its lines as they are now. A file with none has no entry, so its body is left alone. */
+  const notes = useMemo(() => {
+    const out = new Map<string, FileNotes>();
+    if (!comments?.length && !draft) return out;
+    const byAge = [...(comments ?? [])].sort((a, b) => a.createdAt - b.createdAt);
+    for (const { file } of drawn) {
+      const mine = byAge.filter((comment) => comment.path === file.path);
+      const writing = draft?.path === file.path ? draft : null;
+      const hunks = file.hunks;
+      if (!hunks || (!mine.length && !writing)) continue;
+      const pinned = mine.map((comment) => ({ comment, place: placeAnchor(comment, hunks) }));
+      out.set(file.path, {
+        placed: pinned.flatMap(({ comment, place }) => (place ? [{ comment, place }] : [])),
+        outdated: pinned.flatMap(({ comment, place }) => (place ? [] : [comment])),
+        draft: writing ? { anchor: writing, place: placeAnchor(writing, hunks) } : null,
+        editing
+      });
+    }
+    return out;
+  }, [comments, draft, editing, drawn]);
+
+  const listedComments = useMemo<ListedComment[]>(() => {
+    const rows = (comments ?? []).map((comment) => {
+      const at = drawn.findIndex((d) => d.listed.path === comment.path);
+      const place = notes.get(comment.path)?.placed.find((p) => p.comment.id === comment.id)?.place ?? null;
+      return { comment, place, drawn: !!drawn[at]?.file.hunks, reachable: at >= 0, at: at < 0 ? Infinity : at };
+    });
+    const resolved = (row: ListedComment) => Number(row.comment.state === "resolved");
+    return rows.sort((a, b) => resolved(a) - resolved(b) || a.at - b.at || a.comment.path.localeCompare(b.comment.path) || (a.place?.line ?? a.comment.line) - (b.place?.line ?? b.comment.line));
+  }, [comments, drawn, notes]);
+
+  const openNotes = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments ?? []) if (comment.state === "open") counts.set(comment.path, (counts.get(comment.path) ?? 0) + 1);
+    return counts;
+  }, [comments]);
+
   // The handlers below are handed to memoized file bodies, so they read what is current from here instead of changing with it.
-  const live = useRef({ identity, listed, onLoadFile, read });
+  const live = useRef({ identity, listed, onLoadFile, read, drawn, draft, editing, onAddComment, onEditComment, onRemoveComment });
   useEffect(() => {
-    live.current = { identity, listed, onLoadFile, read };
+    live.current = { identity, listed, onLoadFile, read, drawn, draft, editing, onAddComment, onEditComment, onRemoveComment };
   });
+
+  const canAdd = !!onAddComment;
+  const canEdit = !!onEditComment;
+  const canRemove = !!onRemoveComment;
+  const noteActions = useMemo<NoteActions>(
+    () => ({
+      canAdd,
+      canEdit,
+      canRemove,
+      pick(path, h, index, extend) {
+        const now = live.current;
+        const hunks = now.drawn.find((d) => d.listed.path === path)?.file.hunks;
+        const anchor = hunks ? pickAnchor(hunks, h, index, extend && now.draft?.path === path ? now.draft : null) : null;
+        if (anchor) setDraft({ path, ...anchor });
+      },
+      typed: (slot) => typed.current[slot] ?? "",
+      type(slot, text) {
+        typed.current[slot] = text;
+      },
+      async saveDraft() {
+        const now = live.current;
+        const body = (typed.current[NEW_SLOT] ?? "").trim();
+        if (!now.draft || !body || !now.onAddComment) return;
+        const { path, ...anchor } = now.draft;
+        const hunks = now.drawn.find((d) => d.listed.path === path)?.file.hunks;
+        // Saved where its lines are now, which is where the person sees it.
+        const place = hunks ? placeAnchor(anchor, hunks) : null;
+        await now.onAddComment({ path, side: anchor.side, line: place?.line ?? anchor.line, endLine: place?.endLine ?? anchor.endLine, quote: anchor.quote, body });
+        delete typed.current[NEW_SLOT];
+        setDraft(null);
+      },
+      cancelDraft() {
+        delete typed.current[NEW_SLOT];
+        setDraft(null);
+      },
+      startEdit(comment) {
+        typed.current[comment.id] = comment.body;
+        setEditing(comment.id);
+      },
+      async saveEdit(id) {
+        const body = (typed.current[id] ?? "").trim();
+        if (!body) return;
+        await live.current.onEditComment?.(id, { body });
+        delete typed.current[id];
+        setEditing(null);
+      },
+      cancelEdit() {
+        const id = live.current.editing;
+        if (id) delete typed.current[id];
+        setEditing(null);
+      },
+      // The surface says what went wrong; here a refusal only leaves the comment as it was.
+      setState: (id, state) => void Promise.resolve(live.current.onEditComment?.(id, { state })).catch(() => {}),
+      remove: (id) => void Promise.resolve(live.current.onRemoveComment?.(id)).catch(() => {})
+    }),
+    [canAdd, canEdit, canRemove]
+  );
+  /** Without comments or a way to make one, the files are drawn as if there were no such thing. */
+  const taking = comments !== undefined || canAdd;
 
   const load = useCallback(
     (path: string, full: boolean) => {
@@ -172,6 +291,28 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
     if (box && el) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - FILE_MARGIN;
   };
 
+  /** Goes to a comment: its file is opened, and drawn by being scrolled to, before the comment itself can be found. */
+  const jump = (comment: DiffComment) => {
+    const index = drawn.findIndex((d) => d.listed.path === comment.path);
+    if (index < 0) return;
+    setOpens((prev) => ({ ...prev, [comment.path]: true }));
+    clearTimeout(seeking.current);
+    let tries = 0;
+    const seek = () => {
+      const box = scroller.current;
+      if (!box) return;
+      const note = [...box.querySelectorAll<HTMLElement>("[data-comment-id]")].find((el) => el.dataset.commentId === comment.id);
+      if (note) {
+        const head = box.querySelector<HTMLElement>(".diff__file-head")?.offsetHeight ?? 0;
+        box.scrollTop += note.getBoundingClientRect().top - box.getBoundingClientRect().top - head - STOP_LEAD;
+        return;
+      }
+      if (tries === 0) showFile(index);
+      if (++tries < SEEK_TRIES) seeking.current = setTimeout(seek, SEEK_MS);
+    };
+    seeking.current = setTimeout(seek, 0);
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
     const moves: Record<string, () => void> = { n: () => stepChange(1), p: () => stepChange(-1), "]": () => stepFile(1), "[": () => stepFile(-1) };
@@ -186,6 +327,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
   const viewedCount = drawn.filter((d) => isViewed(marks, d.listed)).length;
   const additions = drawn.reduce((sum, d) => sum + (d.listed.additions ?? 0), 0);
   const deletions = drawn.reduce((sum, d) => sum + (d.listed.deletions ?? 0), 0);
+  const openTotal = (comments ?? []).filter((comment) => comment.state === "open").length;
 
   const list = (
     <nav className="diff__list" aria-label={t("diff.filesTitle", { count: drawn.length })}>
@@ -195,6 +337,11 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
           <span className="diff__path">
             <FilePath path={file.path} />
           </span>
+          {openNotes.has(file.path) && (
+            <span className="diff__item-notes num" title={t("diff.commentsOnFile", { count: openNotes.get(file.path)! })} aria-label={t("diff.commentsOnFile", { count: openNotes.get(file.path)! })}>
+              {openNotes.get(file.path)}
+            </span>
+          )}
           {isViewed(marks, file) ? <Icon name="i-check" size={12} className="diff__item-check" aria-label={t("diff.viewed")} /> : fileCounts(file)}
         </button>
       ))}
@@ -207,6 +354,13 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
         {toolbar}
         <span className="diff__summary num">{t("diff.summary", { count: drawn.length, additions, deletions })}</span>
         {drawn.length > 0 && <span className="meta-txt num">{t("diff.viewedCount", { viewed: viewedCount, count: drawn.length })}</span>}
+        {taking && (
+          <span className="diff__comments-head" data-testid="diff-comments-toggle" onClick={() => setNotesOpen((o) => !o)}>
+            <FoldChevron open={notesOpen} label={t("diff.commentsToggle")} onToggle={() => setNotesOpen((o) => !o)} />
+            <span className="num">{t("diff.commentsCount", { count: openTotal })}</span>
+          </span>
+        )}
+        {taking && commentsAction}
         <span className="spacer" />
         <label className="diff__option">
           <input type="checkbox" checked={ignoreWhitespace} onChange={(e) => onIgnoreWhitespace(e.target.checked)} />
@@ -229,6 +383,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
           </button>
         </div>
       </div>
+      {taking && notesOpen && <CommentsList rows={listedComments} onJump={jump} />}
       {drawn.length === 0 ? (
         <div className="diff__blank meta-txt">{t(ignoreWhitespace ? "diff.emptyWhitespace" : "diff.empty")}</div>
       ) : (
@@ -266,6 +421,8 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
                   onViewed={(_shown, next) => setViewed(file, next)}
                   onLoad={load}
                   onUnfold={unfold}
+                  notes={notes.get(file.path)}
+                  noteActions={taking ? noteActions : undefined}
                 />
               );
             })}
