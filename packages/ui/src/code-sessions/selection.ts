@@ -13,6 +13,20 @@ export const wordSeparator = " ()[]{}',\"`\u3000，。、；：！？（）［�
 /** Asks the pane to scroll, as the wheel does. */
 type Scroll = (direction: "up" | "down", lines: number) => void;
 
+/*
+ * A program that lays its own text out (Claude Code) breaks a long file path at the right edge and indents the rest
+ * on the next row. The copy puts such a path back on one line; fileLinks.ts reads the same break for a click.
+ * Nothing says a path at the edge is not simply over, so one that already has its extension is left alone.
+ */
+const OPEN_PATH = /(?:^|[\s(["'：，。；、（【「『《“‘])(?:file:\/\/|\/|~\/|[A-Za-z]:[\\/])[^\s<>"'`\])}]*$/;
+const REST = /^\s*[^\s<>"'`\])}]+/;
+const EXTENSION = /\.[A-Za-z][A-Za-z0-9]{0,4}$/;
+/** How near the right edge a row must end to count as broken there. */
+const EDGE = 4;
+const WIDE = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+/** A row's text in cells, near enough to tell whether it reaches the edge. */
+const width = (text: string) => [...text].reduce((cells, ch) => cells + (ch.length > 1 || WIDE.test(ch) ? 2 : 1), 0);
+
 /**
  * How far up the rows moved between two paints of the screen, and the rows that take part: all of them through
  * the scrollback, or a TUI's body between its fixed header and footer. Null when nothing moved or it cannot be told.
@@ -222,9 +236,19 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
   // the selection is outside the viewport. Never copy whatever replaced it at the old screen rows.
   const text = (): string | null => {
     if (!picked) return null;
-    const out: string[] = [];
-    for (let line = picked.start[1]; line <= picked.end[1]; line++) out.push((lines.get(line) ?? "").replace(/ /g, " "));
-    return out.join("\n");
+    let out = "";
+    // Whether the row before ended inside a path the program broke at the edge: this row then goes on with it.
+    let open = false;
+    for (let line = picked.start[1]; line <= picked.end[1]; line++) {
+      const row = context.get(line) ?? "";
+      const part = (lines.get(line) ?? "").replace(/ /g, " ");
+      const rest: RegExpExecArray | null = open ? REST.exec(row) : null;
+      if (line > picked.start[1] && !rest) out += "\n";
+      out += rest ? part.trimStart() : part;
+      const path: boolean = rest ? rest[0].length === row.length : OPEN_PATH.test(row);
+      open = path && width(row) >= terminal.cols - EDGE && !EXTENSION.test(row);
+    }
+    return out;
   };
   const copy = (e: ClipboardEvent) => {
     const snapshot = text();
