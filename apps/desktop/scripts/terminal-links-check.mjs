@@ -51,16 +51,33 @@ app.whenReady().then(async () => {
       ["path with line", "/tmp/report.ts:12:3", "/tmp/report.ts:12:3"],
       ["Chinese filename", "/tmp/中文报告.pdf", "/tmp/中文报告.pdf"],
       ["wide prefix", "中文 /tmp/report.pdf", "/tmp/report.pdf"],
+      ["after a full-width mark", "说明：/tmp/report.pdf。", "/tmp/report.pdf"],
       ["wrapped file URL", "file:///tmp/" + "a".repeat(box.cols) + ".pdf", "file:///tmp/" + "a".repeat(box.cols) + ".pdf"],
       ["wrapped URL", "https://example.com/" + "a".repeat(box.cols), "https://example.com/" + "a".repeat(box.cols)]
     ];
     for (const [label, text, url] of fixtures) {
       await paint("\x1b[2J\x1b[H" + text);
       await js("sent.length = 0");
-      await click(label === "wide prefix" ? 8 : 3, label.startsWith("wrapped") ? 1 : 0);
+      await click(label === "wide prefix" || label === "after a full-width mark" ? 8 : 3, label.startsWith("wrapped") ? 1 : 0);
       assert.deepEqual(await js("sent.filter(m => m.type === 'openLink')"), [{type:"openLink", url}], label);
       console.log("PASS", label);
     }
+    const opened = async (label, rows, col, row, expected) => {
+      await paint("\x1b[2J" + rows.map((text, y) => `\x1b[${y + 1};1H${text}`).join(""));
+      await js("sent.length = 0");
+      await click(col, row);
+      assert.deepEqual(await js("sent.filter(m => m.type === 'openLink')"), expected, label);
+      console.log("PASS", label);
+    };
+    // As Claude Code lays a long path out: broken at the right edge, the rest indented on the next row.
+    const dir = "/tmp/" + "d".repeat(box.cols - 12 - 6) + "/";
+    const broken = ["- 侧栏特写：" + dir, "  sub/shot.png"];
+    const whole = [{type:"openLink", url: dir + "sub/shot.png", or: dir}];
+    await opened("broken at the edge: the first row opens the whole path", broken, 20, 0, whole);
+    await opened("broken at the edge: so does the rest on the next row", broken, 5, 1, whole);
+    await opened("a path ending short of the edge is whole", ["see /tmp/dir/", "  sub/shot.png"], 6, 0, [{type:"openLink", url:"/tmp/dir/"}]);
+    await opened("the row under it is no link", ["see /tmp/dir/", "  sub/shot.png"], 5, 1, []);
+    await opened("a slash between Chinese words is no path", ["文件/目录"], 5, 0, []);
     await paint("\x1b[2J\x1b[Hhttps://example.com/select");
     await js("sent.length = 0");
     mouse("mouseMove", 0, 0); await wait(); mouse("mouseDown", 0, 0); mouse("mouseMove", 15, 0); await wait(); mouse("mouseUp", 15, 0); await wait();

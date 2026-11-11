@@ -15,7 +15,7 @@ export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_g7evHCehq8PNxWiq
 export const DEFAULT_SITE = "https://tomrade.com";
 
 /** Secrets stay in the main process; only account summaries cross IPC. */
-export default function hubCloud(ctx: Context, config: { userData: string; url?: string; publishableKey?: string; site?: string }) {
+export default function hubCloud(ctx: Context, config: { userData: string; url?: string; publishableKey?: string; site?: string; appVersion?: string }) {
   // Accept the Vite names as well so one deployment can share its Supabase
   // public configuration with the desktop shell. Explicit plugin config and
   // TOMRADE_* still take precedence over the production defaults.
@@ -24,7 +24,7 @@ export default function hubCloud(ctx: Context, config: { userData: string; url?:
   if (!url || !publishableKey) throw new Error("Configure both TOMRADE_SUPABASE_URL and TOMRADE_SUPABASE_PUBLISHABLE_KEY.");
   const cipher: Cipher = safeCipher;
   const sessionStorage = new EncryptedSessionStorage(path.join(config.userData, "account.enc"), cipher);
-  ctx.plugin(CloudHub, { url, publishableKey, sessionStorage, cacheFile: path.join(config.userData, "hub-cloud.json"), syncMs: 30_000, hiddenSyncMs: 300_000, site: config.site ?? DEFAULT_SITE, accounts: accountsAt(config.userData, cipher) });
+  ctx.plugin(CloudHub, { url, publishableKey, sessionStorage, cacheFile: path.join(config.userData, "hub-cloud.json"), syncMs: 30_000, hiddenSyncMs: 300_000, site: config.site ?? DEFAULT_SITE, accounts: accountsAt(config.userData, cipher), appVersion: config.appVersion ?? "dev", deviceOfflineMs: 45_000, deviceActivityMs: 3_000 });
 }
 
 /** Another account signs in here by restarting into its own folders. A directory outside them keeps one account. */

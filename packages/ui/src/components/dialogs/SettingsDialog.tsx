@@ -15,6 +15,7 @@ import { PluginsPanel } from "./PluginsPanel";
 import { AgentAccessSection } from "./settings/AgentAccessSection";
 import { AssistantPane } from "./settings/AssistantPane";
 import { PlaybooksPane } from "./settings/PlaybooksPane";
+import { DevicesPane } from "./settings/DevicesPane";
 import { PANE_EXTRAS, PluginPane } from "./settings/PluginPane";
 import { ScopeTag } from "./settings/ScopeTag";
 import { AppIconSection } from "./settings/AppIconSection";
@@ -31,7 +32,7 @@ import { reportError } from "~/lib/toast";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 // closedWindow is per project, drawn in each project's settings.
-const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow"]);
+const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow", "dispatch"]);
 
 /** A row in the side menu and the pane it reveals are one and the same thing. */
 interface Pane {
@@ -209,6 +210,7 @@ export function SettingsDialog({
       group: "app",
       render: () => <HubPane />
     },
+    { id: "devices", label: t("devices.label"), icon: "i-monitor", group: "app", render: () => <DevicesPane onLeave={() => onOpenChange(false)} /> },
     { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(
       (section): Pane => ({

@@ -55,7 +55,8 @@ async function ask(ctx: Context): Promise<boolean> {
   // The flush can wait on a remote; the person shouldn't. From here the app looks closed.
   putAway();
   // What analytics collected goes with this quit; a few seconds is all it gets.
-  await within(ctx.get("analytics")?.shutdown() ?? Promise.resolve(), 3_000);
+  // The account's other machines hear this one go, in the same few seconds; a quit called off later comes back online by itself.
+  await within(Promise.all([ctx.get("analytics")?.shutdown(), ctx.get("cloudHub")?.goOffline()]), 3_000);
   const storage = ctx.get("storage");
   if (!storage) return true;
   await within(storage.flushAll("quit").catch(() => undefined), FLUSH_MS);
@@ -115,7 +116,7 @@ async function settleUnsynced(ctx: Context): Promise<boolean> {
  * ask through: the writes still get their one chance to leave, then it goes.
  */
 export async function leaveOnSignal(ctx: Context): Promise<void> {
-  await within(ctx.get("analytics")?.shutdown() ?? Promise.resolve(), 3_000);
+  await within(Promise.all([ctx.get("analytics")?.shutdown(), ctx.get("cloudHub")?.goOffline()]), 3_000);
   const storage = ctx.get("storage");
   if (storage) await within(storage.flushAll("signal").catch(() => undefined), FLUSH_MS);
 }

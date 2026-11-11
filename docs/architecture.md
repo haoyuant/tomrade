@@ -36,7 +36,7 @@ packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Ev
 packages/contracts    —                what packages read of each other through ctx.get, named once; errorMessage, bestEffort, atomic JSON files
 packages/db           ctx.db           a pool of SQLite caches — hub.db plus one project.db per project; core schema, plugin table registry
 packages/hub          ctx.hub          this machine: device id, and the catalog of projects and repository checkouts it knows
-packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts (the account is optional)
+packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts; the account's machines and their presence (the account is optional)
 packages/oplog        ctx.oplog        append, read, undo — per project, each row stamped with the machine that wrote it
 packages/fields       ctx.fields       the field registry: built-in fields plus user-defined ones and their options
 packages/write        —                write/pre-commit waterfall + the default policy plugins

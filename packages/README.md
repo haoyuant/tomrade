@@ -28,7 +28,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `ipc` | The typed channel contract between the main process and the renderer. | `ipc` | — |
 | `db` | A pool of SQLite caches (`hub.db` plus one file per project), the core schema, plugin migrations. | `db` | — |
 | `hub` | This machine: its id, its Hub folder, the projects and checkouts it knows. | `hub` | — |
-| `hub-cloud` | The optional account: Hub metadata in Supabase, encrypted sessions, an offline outbox. | `cloudHub` | hub, projects, storage |
+| `hub-cloud` | The optional account: Hub metadata in Supabase, encrypted sessions, an offline outbox, and the account's machines — what each can do, which are online, and which tickets each is working on. | `cloudHub` | hub, projects, storage |
 | `machine-setup` | What this machine still lacks: finds git, and installs it with the system's own mechanism on a click where there is one (macOS Command Line Tools, winget). | `machineSetup` | — |
 | `settings` | File-backed settings; plugins register sections by zod schema. | `settings` | hub, oplog, tools |
 | `write` | The write protocol: the `write/pre-commit` waterfall and the default policies. | — | — |
@@ -56,6 +56,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `build-page` | The public build page: the roadmap and changelog a person ticked and a feedback link, previewed, then published as one static page to their own repository's GitHub Pages. | `buildPage` | github, inbox-github, items, projects, repos |
 | `pr-feedback` | Failed CI, reviews and people's comments on a ticket's pull request reach the agent working that ticket. | `prFeedback` | agent, code-link, github, hub, items, repos |
 | `watchdog` | Tells the person when a run seems stuck, repeats itself or goes nowhere; it never touches the run. | `watchdog` | agent, items, llm |
+| `dispatch` | Work from the account's other machines: whether this machine takes it and within which limits, decided here whatever the request says, with a record of every request taken or turned away; and the account's queue of tickets sent between its machines — sending one, taking one meant for this machine, starting it as Start does, and stopping it when it is taken back. | `dispatch` | code-link, hub, hub-cloud |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |
 | `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |
 

@@ -14,6 +14,7 @@ import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import { TicketChangesSection } from "./TicketChangesSection";
 import { TicketSessions } from "./TicketSessions";
+import { TicketElsewhere } from "./TicketElsewhere";
 import { TicketSpend } from "./TicketSpend";
 import {
   BoardField,
@@ -278,6 +279,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             </div>
 
             <PluginSections projectId={projectId} itemId={item.id} variant="sheet" />
+            {item.kind === "ticket" && <TicketElsewhere projectId={projectId} itemKey={item.key} />}
             <TicketChangesSection item={item} variant="sheet" />
             {item.kind === "ticket" && <TicketSessions projectId={projectId} itemId={item.id} variant="sheet" />}
             {item.kind === "ticket" && <TicketSpend projectId={projectId} itemId={item.id} variant="sheet" />}

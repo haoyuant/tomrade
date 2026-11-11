@@ -267,3 +267,28 @@ describe("a scan that only looks again", () => {
     await ctx.fiber.dispose();
   });
 });
+
+describe("pull requests this machine sees open and merged", () => {
+  it("reports a pull request newly open and a link merged after it was seen unmerged, each once", async () => {
+    const { ctx, items, project, board } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const steps: string[] = [];
+    const store = new CodeLinkStore(ctx.db, (step) => steps.push(step));
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Funnel", by: "human" });
+    const claimed = store.upsertLink(project.id, { itemId: item.id, repoId: "repo-1", branch: "tom-1/funnel" }, { source: "mcp" });
+    store.patchLink(project.id, claimed.id, { headSha: "a1", ahead: 1 });
+    store.patchLink(project.id, claimed.id, { prUrl: "https://example.test/pull/1", prNumber: 1, prState: "open" });
+    store.patchLink(project.id, claimed.id, { prState: "open" });
+    expect(steps).toEqual(["open_pr"]);
+    store.patchLink(project.id, claimed.id, { mergedSha: "m1", prState: "merged" });
+    store.patchLink(project.id, claimed.id, { mergedSha: "m1", prState: "merged" });
+    expect(steps).toEqual(["open_pr", "merge"]);
+
+    // An old branch first scanned already merged, and an old merged pull request linked, are not merges seen here.
+    const old = store.upsertLink(project.id, { itemId: item.id, repoId: "repo-1", branch: "tom-1/old" }, { source: "mcp" });
+    store.patchLink(project.id, old.id, { headSha: "b1", mergedSha: "m0" });
+    store.upsertLink(project.id, { itemId: item.id, repoId: "repo-1", branch: "tom-1/older" }, { prUrl: "https://example.test/pull/0", prState: "merged", mergedSha: "m-1" });
+    expect(steps).toEqual(["open_pr", "merge"]);
+    await ctx.fiber.dispose();
+  });
+});

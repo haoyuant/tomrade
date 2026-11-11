@@ -318,8 +318,8 @@ export type WindowMessage =
   | { type: "switchTo"; sessionId: string }
   | { type: "install" }
   | { type: "openGuide" }
-  /** A link clicked in a terminal: opened in the system browser. */
-  | { type: "openLink"; url: string }
+  /** A link clicked in a terminal: opened in the system browser. `or` comes with a path read over two rows: the first row's part, opened when the whole is no file. */
+  | { type: "openLink"; url: string; or?: string }
   | { type: "switchTerminal"; switch: boolean }
   /** Start herdr's server again after it would not come up. */
   | { type: "startHerdr" }

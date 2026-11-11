@@ -23,6 +23,13 @@ const envelope = {
   platform: z.enum(["macos", "windows", "linux"])
 };
 
+/**
+ * The version a build reports. TOMRADE_ANALYTICS_INTERNAL=1 marks the maintainer's own release builds with
+ * `+internal` build metadata, which every server already accepts; a prerelease or checkout version reads as internal anyway.
+ */
+export const reportedClient = (version: string, env: NodeJS.ProcessEnv = process.env): string =>
+  env.TOMRADE_ANALYTICS_INTERNAL === "1" && /^\d+\.\d+\.\d+$/.test(version) ? `${version}+internal` : version;
+
 export const AppStartEvent = z
   .object({
     ...envelope,

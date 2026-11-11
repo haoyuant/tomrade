@@ -71,7 +71,7 @@
    the desktop and the windows behind to show through, tinted by the panes; sheets frost what is under them. */
 .glass[data-frosted] body { background: transparent; }
 .glass[data-frosted] body::before { content: none; }
-.glass[data-frosted] :is(.lane-cols-head, .tbl-head .tbl-cell, .tbl-title-cell) { background: var(--glass-sticky); }
+.glass[data-frosted] :is(.lane-cols-head, .tbl-head .tbl-cell, .tbl-title-cell, .files-mode-bar) { background: var(--glass-sticky); }
 .glass[data-frosted] .dlg-nav { background: transparent; }
 .glass[data-frosted] .detail.expanded { background: var(--glass-float); backdrop-filter: blur(22px) saturate(1.25); }
 
