@@ -30,7 +30,7 @@ export interface ChangedFile {
   /** Where a renamed file was. */
   oldPath: string | null;
   status: ChangeStatus;
-  /** Null for a binary file. */
+  /** Null for a binary file, and for an untracked file too large to read with the rest. */
   additions: number | null;
   deletions: number | null;
   binary: boolean;
