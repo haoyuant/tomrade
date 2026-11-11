@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Git } from "@tomradex/git";
-import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesView } from "./changes.js";
+import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { addedFileHunks, parseFileList, parsePatch, type ListedFile, type PatchFile } from "./changes-parse.js";
 import { currentLinks, primaryOf } from "./scan/absorb.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
@@ -111,6 +111,19 @@ export class Changes {
       .map((row) => row.trim().split("\x1f"))
       .filter((row) => row.length === 4)
       .map(([sha, subject, author, at]) => ({ sha, subject, author, at: Number(at) * 1000 }));
+  }
+
+  /** How much the ticket's branch changes, counted without reading a line of it; null as `changes` is. */
+  async summary(projectId: string, itemId: string): Promise<ChangesSummary | null> {
+    const target = await this.target(projectId, itemId, {});
+    if (!target) return null;
+    const listed = await this.listed(target, false);
+    return { files: listed.length, additions: listed.reduce((n, f) => n + (f.additions ?? 0), 0), deletions: listed.reduce((n, f) => n + (f.deletions ?? 0), 0) };
+  }
+
+  /** The folder a code link's files are in on this machine; null when its branch is checked out nowhere here. */
+  async rootOf(projectId: string, itemId: string, linkId?: string): Promise<string | null> {
+    return (await this.target(projectId, itemId, { linkId }))?.view.root ?? null;
   }
 
   private async target(projectId: string, itemId: string, opts: ChangesOptions): Promise<Target | null> {

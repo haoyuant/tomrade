@@ -31,7 +31,8 @@ import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
-import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesView } from "./changes.js";
+import type { ChangedFile, ChangeFileOptions, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
+import { fileInside, findEditor, openInEditor, type EditorOpened } from "./editor.js";
 import { Changes } from "./changes-read.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
@@ -262,6 +263,10 @@ declare module "@tomradex/ipc" {
     "codeLink.changes": (projectId: string, itemId: string, opts?: ChangesOptions) => ChangesView | null;
     /** One file of that answer with every hunk, for a file the answer left out or cut short. */
     "codeLink.changeFile": (projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions) => ChangedFile | null;
+    /** How much the ticket's branch changes: files and lines, for the ticket to say before its diff is opened. */
+    "codeLink.changesSummary": (projectId: string, itemId: string) => ChangesSummary | null;
+    /** Opens one changed file in Cursor or VS Code; with neither on PATH the file's path comes back for the system to open. Null when it is not on this machine. */
+    "codeLink.openInEditor": (projectId: string, itemId: string, opts: { linkId?: string; path: string }) => EditorOpened | null;
     /** Merged pull requests of the last `days` days across open projects, by engine: first-pass rate and engine-reported spend. */
     "codeLink.scorecard": (days?: number) => Scorecard;
     "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
@@ -839,6 +844,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
       ctx.ipc.handle("codeLink.changes", (projectId, itemId, opts) => ctx.codeLink.changes(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.changeFile", (projectId, itemId, opts) => ctx.codeLink.changeFile(projectId, itemId, opts));
+      ctx.ipc.handle("codeLink.changesSummary", (projectId, itemId) => ctx.codeLink.changesSummary(projectId, itemId));
+      ctx.ipc.handle("codeLink.openInEditor", (projectId, itemId, opts) => ctx.codeLink.openInEditor(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.scorecard", (days) => ctx.codeLink.scorecard(Date.now(), typeof days === "number" ? days : 30));
       ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before, after) => {
@@ -1829,6 +1836,24 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** One file of `changes` with every hunk. */
   changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     return this.changesReader.changeFile(projectId, itemId, opts);
+  }
+
+  /** Which editor's command is on PATH; a seam for tests, which must not start a real editor. */
+  findEditor: typeof findEditor = findEditor;
+
+  /** How much the ticket's branch changes against its base. */
+  changesSummary(projectId: string, itemId: string): Promise<ChangesSummary | null> {
+    return this.changesReader.summary(projectId, itemId);
+  }
+
+  /** One changed file opened in Cursor or VS Code, whichever is on PATH first; with neither, its path for the system's own opener. */
+  async openInEditor(projectId: string, itemId: string, opts: { linkId?: string; path: string }): Promise<EditorOpened | null> {
+    const root = await this.changesReader.rootOf(projectId, itemId, opts.linkId);
+    const file = root ? fileInside(root, opts.path) : null;
+    if (!root || !file) return null;
+    const found = this.findEditor();
+    if (found && (await openInEditor(found.file, root, file))) return { editor: found.editor };
+    return { editor: null, file };
   }
 
   /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */

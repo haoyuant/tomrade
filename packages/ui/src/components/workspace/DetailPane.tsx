@@ -28,6 +28,7 @@ import { askPanel } from "~/lib/panelRequests";
 import { openExternal } from "~/lib/shell";
 import { TicketSessions } from "~/components/issue/TicketSessions";
 import { TicketElsewhere } from "~/components/issue/TicketElsewhere";
+import { TicketChangesSection } from "~/components/issue/TicketChangesSection";
 import { TicketSpend } from "~/components/issue/TicketSpend";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
@@ -372,6 +373,7 @@ function DetailBody({
             <DeliveryPanel key={item.id} item={item} />
             <PluginSections projectId={item.projectId} itemId={item.id} />
             {item.kind === "ticket" && <TicketElsewhere projectId={item.projectId} itemKey={item.key} />}
+            <TicketChangesSection item={item} />
             {item.kind === "ticket" && <TicketSessions projectId={item.projectId} itemId={item.id} />}
             {item.kind === "ticket" && <TicketSpend projectId={item.projectId} itemId={item.id} />}
           </div>

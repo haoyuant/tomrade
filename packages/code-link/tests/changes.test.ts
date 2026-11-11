@@ -16,6 +16,7 @@ import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 import { addedFileHunks, parseFileList, parsePatch, unquotePath } from "../src/changes-parse.js";
 import { looksGenerated } from "../src/changes-read.js";
+import { findEditor } from "../src/editor.js";
 
 const kinds = (file: { hunks: { lines: { kind: string; old: number | null; new: number | null; text: string }[] }[] }) =>
   file.hunks.flatMap((h) => h.lines.map((l) => `${l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}${l.old ?? ""}:${l.new ?? ""} ${l.text}`));
@@ -242,6 +243,17 @@ async function machine() {
 
 const byPath = (files: ChangedFile[]) => new Map(files.map((f) => [f.path, f]));
 
+describe("the editor a changed file opens in", () => {
+  it("is Cursor before VS Code, by the first command on PATH, with Windows' own extensions", () => {
+    const on = (...files: string[]) => (file: string) => files.includes(file);
+    expect(findEditor({ PATH: "/a:/b" }, "linux", on("/b/code"))).toEqual({ editor: "code", file: "/b/code" });
+    expect(findEditor({ PATH: "/a:/b" }, "darwin", on("/b/code", "/b/cursor"))).toEqual({ editor: "cursor", file: "/b/cursor" });
+    expect(findEditor({ Path: "C:\\bin;D:\\x", PATHEXT: ".EXE;.CMD" }, "win32", on("D:\\x\\code.cmd"))).toEqual({ editor: "code", file: "D:\\x\\code.cmd" });
+    expect(findEditor({ PATH: "/a" }, "linux", on())).toBeNull();
+    expect(findEditor({}, "linux", on("/a/code"))).toBeNull();
+  });
+});
+
 describe("a ticket's changes, read from git", () => {
   it("answers for the branch, one commit and the working tree, and falls back when a scope is gone", async () => {
     const { codeLink, ctx, project, checkout, ticket } = await machine();
@@ -269,6 +281,16 @@ describe("a ticket's changes, read from git", () => {
 
       const view = (await codeLink.changes(project.id, item.id))!;
       expect(view.scope).toEqual({ kind: "branch" });
+      // The ticket says how much before the diff is opened, without reading it.
+      const count = (side: "additions" | "deletions") => view.files.reduce((n, f) => n + (f[side] ?? 0), 0);
+      expect(await codeLink.changesSummary(project.id, item.id)).toEqual({ files: view.files.length, additions: count("additions"), deletions: count("deletions") });
+      expect(await codeLink.changesSummary(project.id, quiet.id)).toBeNull();
+      // A changed file opens from the folder its branch is in: by the system when no editor's command is found, never one outside it or gone.
+      codeLink.findEditor = () => null;
+      expect(await codeLink.openInEditor(project.id, item.id, { path: "new-name.ts" })).toEqual({ editor: null, file: path.join(checkout, "new-name.ts") });
+      expect(await codeLink.openInEditor(project.id, item.id, { path: "../outside.ts" })).toBeNull();
+      expect(await codeLink.openInEditor(project.id, item.id, { path: "package.json" })).toBeNull();
+      expect(await codeLink.openInEditor(project.id, quiet.id, { path: "README.md" })).toBeNull();
       expect(view.links).toEqual([{ id: view.linkId, branch, repoName: expect.any(String) }]);
       expect(view.scopes).toEqual(["branch", "uncommitted", "commit"]);
       expect(view.commits.map((c) => [c.sha, c.subject, c.author])).toEqual([

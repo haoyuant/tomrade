@@ -9,6 +9,7 @@ import { useFrosted } from "~/lib/frost";
 import { announceKeymap, formatChord, hits, primeKeymap, resolveKeymap } from "~/lib/keybindings";
 import { backdropFills } from "@tomradex/theme-image/colors";
 import { answerSession, answerThreadAsk, chooseSession, onLook, onShownIn, onState, onTails, onToast, send, terminalPicture, trustSession, type Look } from "./bridge";
+import { SessionChanges } from "./changes";
 import type { SessionReply } from "./cards";
 import { Cell } from "./Cell";
 import { clipboardOf } from "./clipboard";
@@ -684,6 +685,7 @@ export function App() {
           onAway={(s) => send({ type: "openThread", sessionId: s.id })}
           onStartTicket={(ticket) => send({ type: "startTicket", itemId: ticket.id })}
         />
+        <SessionChanges locale={locale} onNotice={(text) => setToast({ text })} />
         {toast && (
           <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
             {toast.text}

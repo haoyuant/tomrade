@@ -1,0 +1,11 @@
+/* ─── changes · where a ticket's diff opens ──────────────────────────────
+ * A sheet as wide as the window allows: side by side needs the room. */
+.palette.modal.sheet-changes {
+  width: min(1480px, calc(100vw - 48px)); height: var(--overlay-max-h);
+  min-width: min(640px, calc(100vw - 48px)); max-width: calc(100vw - 48px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
+}
+.changes-sheet { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.changes-sheet > .diff { flex: 1; }
+.diff__pick { width: auto; max-width: 320px; height: 28px; padding-block: 0; font-size: var(--text-sm); }
+.ticket-changes { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
