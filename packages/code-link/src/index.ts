@@ -62,3 +62,4 @@ export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type Ses
 export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
 export { askLine, askLineIn, doingLine, permissionAsk, questionAsk, sameAsk } from "./ask.js";
+export type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeHunk, ChangeLine, ChangeLinkChoice, ChangeScope, ChangeScopeKind, ChangesOptions, ChangeStatus, ChangesView } from "./changes.js";
