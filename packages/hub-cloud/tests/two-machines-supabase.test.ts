@@ -126,3 +126,26 @@ it.skipIf(!enabled)("two machines signed in to one account agree through Supabas
   for (const spy of told) expect(spy).not.toHaveBeenCalled();
   for (const m of both) expect(m.cloud.info()).toMatchObject({ pending: 0, conflicts: [] });
 }, 120_000);
+
+it.skipIf(!enabled)("each machine sees the other among the account's machines, online over the real presence channel", async () => {
+  const a = await machine("supabase-c");
+  const b = await machine("supabase-d");
+  await a.cloud.sync();
+  const other = () => a.cloud.devices().find((d) => d.id === "supabase-d");
+  // B registered after A last read: its presence is what makes A read again.
+  await vi.waitFor(() => expect(other()).toMatchObject({ self: false, online: true, platform: process.platform }), { timeout: 30_000, interval: 250 });
+  expect(b.cloud.devices().find((d) => d.id === "supabase-c")).toMatchObject({ self: false, online: true });
+  expect(a.cloud.devices().find((d) => d.self)).toMatchObject({ id: "supabase-c", online: true });
+
+  await a.cloud.renameDevice("supabase-d", "The other one");
+  await b.cloud.sync();
+  expect(b.cloud.devices().find((d) => d.self)).toMatchObject({ name: "The other one" });
+
+  await b.cloud.goOffline();
+  await vi.waitFor(() => expect(other()).toMatchObject({ online: false }), { timeout: 30_000, interval: 250 });
+
+  await a.cloud.removeDevice("supabase-d");
+  await b.cloud.sync();
+  expect(b.cloud.devicesInfo()).toEqual({ state: "removed", devices: [] });
+  expect(a.cloud.devices().map((d) => d.id)).not.toContain("supabase-d");
+}, 120_000);

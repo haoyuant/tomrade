@@ -8,6 +8,7 @@ import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from 
 import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord, type Mutation } from "./cache.js";
 import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
+import { Devices, type DeviceView, type DevicesInfo } from "./devices.js";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -50,7 +51,11 @@ export interface LocalAccounts {
 declare module "cordis" {
   interface Context { cloudHub: CloudHub }
   /** From the desktop shell: whether any of the app's windows can be seen. */
-  interface Events { "desktop/seen"(seen: boolean): void }
+  interface Events {
+    "desktop/seen"(seen: boolean): void;
+    /** The account's machines changed: one joined, left, was renamed or removed, or can do something else now. */
+    "cloudHub/devices"(): void;
+  }
 }
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -65,8 +70,12 @@ declare module "@tomradex/ipc" {
     "account.deleteAccount": (password: string) => AccountInfo;
     "account.sync": () => AccountInfo;
     "account.resolve": (id: string, choice: "local" | "cloud") => AccountInfo;
+    "devices.info": () => DevicesInfo;
+    "devices.rename": (id: string, name: string) => DevicesInfo;
+    /** Takes a machine out of the account's machines until someone signs in on it again. */
+    "devices.remove": (id: string) => DevicesInfo;
   }
-  interface Broadcasts { "account.changed": () => void }
+  interface Broadcasts { "account.changed": () => void; "devices.changed": () => void }
 }
 
 export const CloudConfig = z.object({
@@ -77,7 +86,11 @@ export const CloudConfig = z.object({
   hiddenSyncMs: z.number().int().min(1000).default(300_000),
   accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional(),
   /** Where email links land: `/auth/confirmed/` and `/auth/reset/` on this site, under `/zh/` in Chinese. */
-  site: z.url().default("https://tomrade.com")
+  site: z.url().default("https://tomrade.com"),
+  /** This build, as the account's other machines read it. */
+  appVersion: z.string().default("dev"),
+  /** How long after its presence ends another machine still counts as online. */
+  deviceOfflineMs: z.number().int().min(0).default(45_000)
 });
 type Config = z.infer<typeof CloudConfig>;
 const Credentials = z.object({ email: z.email(), password: z.string().min(1).max(1024) });
@@ -146,6 +159,7 @@ export class CloudHub extends Service implements CloudHubReader {
   private readonly sessionKey: string;
   private readonly origin: string;
   private readonly fetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) });
+  private machines!: Devices;
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, "cloudHub");
@@ -170,6 +184,12 @@ export class CloudHub extends Service implements CloudHubReader {
 
   [Service.init]() {
     const settings = this.ctx.settings;
+    this.machines = new Devices({
+      home: this.home, client: this.client, cache: this.cache, deviceId: this.ctx.hub.deviceId,
+      appVersion: this.config.appVersion, offlineAfterMs: this.config.deviceOfflineMs,
+      userId: () => this.user?.id ?? null, schedule: () => this.schedule(),
+      changed: () => { this.home.emit("cloudHub/devices"); this.home.get("ipc")?.send("devices.changed"); }
+    });
     const disableCloud = this.ctx.hub.enableCloud();
     const offStorage = this.ctx.storage.useHubBackend({
       read: () => this.manifest(), observe: m => this.observe(m),
@@ -216,6 +236,9 @@ export class CloudHub extends Service implements CloudHubReader {
         await this.sync();
         return this.info();
       });
+      ctx.ipc.handle("devices.info", () => this.devicesInfo());
+      ctx.ipc.handle("devices.rename", async (id, name) => { await this.renameDevice(id, name); return this.devicesInfo(); });
+      ctx.ipc.handle("devices.remove", async (id) => { await this.removeDevice(id); return this.devicesInfo(); });
     });
     const { data: { subscription } } = this.client.auth.onAuthStateChange((event, session) => {
       // Do not await another Supabase operation while its auth callback holds the session lock.
@@ -257,6 +280,7 @@ export class CloudHub extends Service implements CloudHubReader {
       this.closed = true;
       if (this.timer) clearTimeout(this.timer);
       clearInterval(interval);
+      this.machines.close();
       subscription.unsubscribe();
       this.client.auth.stopAutoRefresh();
       offStorage(); offSettings();
@@ -423,6 +447,25 @@ export class CloudHub extends Service implements CloudHubReader {
     this.readHub = hubId;
     this.cursor = newest;
     this.cache.data.lastSyncAt = Date.now(); this.cache.save(); this.error = refused;
+    // The Hub is in step either way: what the machines' own table refuses or lacks is retried on the next pass.
+    await this.machines.pass(() => !this.closed && this.user?.id === userId).catch(e => this.home.logger.warn(`devices: ${errorMessage(e)}`));
+  }
+  /** The account's machines, this one first. Empty without an account, and on a machine that was removed from it. */
+  devices(): DeviceView[] {
+    return this.machines.info().devices;
+  }
+  devicesInfo(): DevicesInfo {
+    return this.machines.info();
+  }
+  async renameDevice(id: string, name: string): Promise<void> {
+    await this.machines.rename(z.string().min(1).max(64).parse(id), z.string().trim().min(1).max(80).parse(name));
+  }
+  async removeDevice(id: string): Promise<void> {
+    await this.machines.remove(z.string().min(1).max(64).parse(id));
+  }
+  /** This machine leaves the account's presence, as on quit: the others see it offline at once. */
+  goOffline(): Promise<void> {
+    return this.machines.leave();
   }
   /**
    * A client that keeps no session. Until the user is known, nobody knows whose
@@ -463,6 +506,7 @@ export class CloudHub extends Service implements CloudHubReader {
     if (adopted) throw failure(adopted);
     this.user = data.user;
     if (agreed) this.agree();
+    this.machines.signedIn();
     await this.sync(); this.notify();
     return this.info();
   }
@@ -484,6 +528,7 @@ export class CloudHub extends Service implements CloudHubReader {
     }
     if (await this.handOff(data.session.user, data.session)) return { confirmationRequired: false };
     this.user = data.session.user;
+    this.machines.signedIn();
     await this.sync();
     this.notify();
     return { confirmationRequired: false };
@@ -532,6 +577,8 @@ export class CloudHub extends Service implements CloudHubReader {
     this.signingOut = true;
     try {
       if (this.active) await this.active;
+      // While the session still stands: the other machines hear this one leave.
+      await Promise.race([this.machines.leave(), new Promise(resolve => setTimeout(resolve, 3_000))]);
       // Revoking the refresh token is best effort: an unreachable server must not keep this device signed in.
       const { error } = await this.client.auth.signOut({ scope: "local" });
       if (error) await this.config.sessionStorage.removeItem(this.sessionKey);
@@ -556,6 +603,7 @@ export class CloudHub extends Service implements CloudHubReader {
     this.signingOut = true;
     try {
       if (this.active) await this.active;
+      this.machines.close();
       const { error } = await this.client.rpc("tomrade_delete_account");
       if (error) throw new Error(/fetch failed|failed to fetch|network|aborted|timed? ?out/i.test(error.message) ? `[network] ${error.message}` : error.message);
       // The server has already ended the session; only this machine's copy is left to drop.
@@ -573,6 +621,7 @@ export class CloudHub extends Service implements CloudHubReader {
   }
   private notify(): void {
     this.home.get("ipc")?.send("account.changed");
+    this.home.get("ipc")?.send("devices.changed");
     this.home.get("ipc")?.send("hub.changed");
   }
 }

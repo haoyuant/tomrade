@@ -1,6 +1,6 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { contract } from "@tomradex/contracts";
+import { contract, type MachineSetupReader } from "@tomradex/contracts";
 import type {} from "@tomradex/ipc";
 import { machineHost, probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost } from "./git.js";
 import { probeNpm } from "./npm.js";
@@ -41,7 +41,7 @@ interface InstallRun {
  * where there is one (macOS Command Line Tools, winget). Setup screens show
  * the result; the troubleshooter gets the same probe as a checklist row.
  */
-export class MachineSetup extends Service {
+export class MachineSetup extends Service implements MachineSetupReader {
   static provide = "machineSetup";
   static Config = MachineSetupConfig;
 

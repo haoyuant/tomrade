@@ -31,7 +31,9 @@ const remote = vi.hoisted(() => ({
   /** Records the database refuses with a code of its own, by kind:key. */
   refuse: new Set<string>(),
   /** How many passes asked for the Hub, reachable or not. */
-  passes: 0
+  passes: 0,
+  /** The account's machines, by id. */
+  devices: new Map<string, { device_id: string; name: string; facts: unknown; last_seen_at: string; updated_at: string }>()
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -66,7 +68,19 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         return { data: { user: user() }, error: null };
       }
     },
-    rpc: async (name: string, args?: { p_mutation: Mutation }) => {
+    channel: () => {
+      const channel = { on: () => channel, subscribe: () => channel, presenceState: () => ({}), track: async () => "ok", untrack: async () => "ok" };
+      return channel;
+    },
+    removeChannel: async () => "ok",
+    rpc: async (name: string, args?: { p_mutation: Mutation; p_device?: string; p_name?: string; p_facts?: unknown }) => {
+      if (name === "tomrade_register_device" || name === "tomrade_device_seen") {
+        if (remote.offline) return { data: null, error: { message: "offline" } };
+        if (name === "tomrade_device_seen") return { data: null, error: null };
+        const at = "2026-11-11T00:00:00.000Z";
+        remote.devices.set(args!.p_device!, { device_id: args!.p_device!, name: remote.devices.get(args!.p_device!)?.name ?? args!.p_name!, facts: args!.p_facts, last_seen_at: at, updated_at: at });
+        return { data: { state: "registered" }, error: null };
+      }
       if (name === "tomrade_delete_account") {
         if (remote.offline) return { data: null, error: { message: "TypeError: fetch failed" } };
         remote.deleted.push((remote.as ?? user()).id);
@@ -89,10 +103,11 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       if (remote.loseReply) { remote.loseReply = false; return { data: null, error: { message: "response lost" } }; }
       return { data: result, error: null };
     },
-    from: () => {
+    from: (table: string) => {
       // A row without its own change time reads as changed just now, as a newly written one would.
       let since: string | null = null;
-      const query = { select: () => query, eq: () => query, order: () => query,
+      const query = { select: () => query, eq: () => query, order: () => query, is: () => query,
+        limit: async () => (remote.offline ? { data: null, error: { message: "offline" } } : { data: table === "tomrade_devices" ? [...remote.devices.values()] : [], error: null }),
         gt: (_column: string, at: string) => { since = at; return query; },
         range: async (a: number, b: number) => {
           if (a === 0) remote.reads.push(since);
@@ -110,7 +125,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0;
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0; remote.devices.clear();
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();

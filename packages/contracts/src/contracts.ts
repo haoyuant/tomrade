@@ -105,11 +105,18 @@ export interface CommunityReader {
 }
 
 export interface AgentReader {
+  /** The engines that may take a code turn on this machine, with whether each is ready to. */
+  codeEngines(): { id: string; title: string; available(): Promise<{ ok: boolean; need?: string; capabilities?: readonly string[] }> }[];
   recommendPlaybook(
     projectId: string,
     input: { title: string; body?: string | null; workType?: "coding" | "general" },
     opts?: { withinMs?: number; signal?: AbortSignal; keywordsOnly?: boolean }
   ): Promise<{ playbookId: string | null; workType: "coding" | "general"; source?: "llm" | "fallback" }>;
+}
+
+/** What this machine has of the tools Tomrade runs, `@tomradex/machine-setup`. */
+export interface MachineSetupReader {
+  git(): Promise<{ state: "ready" | "missing" | "broken" }>;
 }
 
 /** What one check found. `Action` is what the troubleshooter can offer about it. */
@@ -152,6 +159,7 @@ export interface Contracts {
   files: FilesReader;
   hub: HubReader;
   items: ItemsReader & ItemsWriter;
+  machineSetup: MachineSetupReader;
   mcp: McpReader;
   projects: ProjectsReader;
   repos: ReposReader;

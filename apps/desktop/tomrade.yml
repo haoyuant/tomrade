@@ -208,6 +208,7 @@ plugins:
     name: ./dist/hub-cloud.js
     config:
       userData: "${userData}"
+      appVersion: "${appVersion}"
   # The one GitHub account this machine uses — for the backlog's repository,
   # Files, code checkouts and publishing — and the git credential helper that
   # hands its token to git, so no remote URL carries it.
