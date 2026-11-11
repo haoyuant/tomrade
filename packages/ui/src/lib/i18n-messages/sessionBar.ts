@@ -105,7 +105,13 @@ export const sessionBar = {
     endSessionYes: "End it",
     endSessionOutsideConfirm: "Take “{{name}}” off the bar? It runs in {{app}}, which Tomrade can't close: it keeps running there.",
     endSessionOutsideYes: "Take it off",
-    endedToast: "Ended “{{name}}”"
+    endedToast: "Ended “{{name}}”",
+    menuOpen: "Open",
+    menuOpenTicket: "Open ticket",
+    menuShowInTerminal: "Show in the Terminal window",
+    menuCopyTicket: "Copy ticket key",
+    menuCopyTitle: "Copy title",
+    copied: "Copied “{{text}}”"
   },
   zh: {
     label: "会话",
@@ -213,6 +219,12 @@ export const sessionBar = {
     endSessionYes: "结束",
     endSessionOutsideConfirm: "把「{{name}}」从会话栏移除？它在 {{app}} 里运行，Tomrade 关不了那边，它会照旧运行。",
     endSessionOutsideYes: "移除",
-    endedToast: "已结束「{{name}}」"
+    endedToast: "已结束「{{name}}」",
+    menuOpen: "打开",
+    menuOpenTicket: "打开工单",
+    menuShowInTerminal: "在终端窗口中显示",
+    menuCopyTicket: "复制工单号",
+    menuCopyTitle: "复制标题",
+    copied: "已复制「{{text}}」"
   }
 };

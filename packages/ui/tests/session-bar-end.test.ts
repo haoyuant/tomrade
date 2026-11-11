@@ -3,13 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { SessionBar, type BarMode } from "../src/components/workspace/agent-panel/SessionBar";
+import { barRowActions, SessionBar, type BarMode } from "../src/components/workspace/agent-panel/SessionBar";
 import { sessionBarRows, type BarRow } from "../src/lib/sessionBar";
 
 vi.mock("~/components/icons", () => ({ Icon: () => null }));
 vi.mock("~/components/ui/atoms", () => ({ FoldChevron: () => null }));
 vi.mock("~/components/ui/collapse", () => ({ Collapse: ({ open, children }: { open: boolean; children: unknown }) => (open ? children : null) }));
-vi.mock("~/components/ui/menu", () => ({ ContextMenu: ({ trigger }: { trigger: unknown }) => trigger, ContextMenuActionItem: () => null }));
+vi.mock("~/components/ui/menu", () => ({ ContextMenu: ({ trigger }: { trigger: unknown }) => trigger, ContextMenuActionItem: () => null, ContextMenuSeparator: () => null }));
 vi.mock("~/lib/attention", () => ({ ATTENTION_KEY: {} }));
 vi.mock("~/lib/agent", () => ({ findEngine: () => undefined }));
 vi.mock("~/lib/domain", () => ({ clockLabel: () => "", timeAgo: () => "" }));
@@ -32,7 +32,7 @@ const noop = () => {};
 const bar = (rows: BarRow[], mode: BarMode) =>
   renderToStaticMarkup(createElement(SessionBar, {
     rows, starting: [], openKey: null, mode, engines: [], pendings: new Map(),
-    onMode: noop, onPick: noop, onAnswer: noop, onNew: noop, onHistory: noop, onArchive: noop, onDelete: noop, onEnd: noop
+    onMode: noop, onPick: noop, onAnswer: noop, onNew: noop, onHistory: noop, onArchive: noop, onDelete: noop, onEnd: noop, onOpenTicket: noop, onShowInTerminal: noop, onCopy: noop
   }));
 /** The rows' cards, each cut out of the markup by its key. */
 const cards = (html: string) => Object.fromEntries(html.split('class="sbar-card"').slice(1).map((card) => [/data-key="([^"]+)"/.exec(card)![1], card]));
@@ -57,4 +57,24 @@ it("lets a terminal session the bar shows be ended from its card, while it waits
   expect(shown["session:ended"] ?? "").not.toContain('data-testid="sbar-end"');
   // an assistant conversation is archived or deleted, not ended
   expect(shown["thread:t"]).not.toContain('data-testid="sbar-end"');
+});
+
+it("offers on each row's right-click only what fits it: its ticket, its pane, what to copy, and putting it away", () => {
+  const rows = sessionBarRows({
+    threads: [thread("t")],
+    sessions: [
+      session("pane", { itemIds: ["i1"] }),
+      session("outside", { herdrPane: null, terminal: "iTerm.app" }),
+      session("ended", { state: "ended", endedAt: 8 })
+    ],
+    attention: [], itemTitle: () => "A ticket", itemKey: () => "TOM-1", openThreadId: null
+  });
+  const of = (key: string) => barRowActions(rows.find((r) => r.key === key)!);
+  expect(of("session:pane")[0]).toEqual(["open", "openTicket", "showInTerminal"]);
+  expect(of("session:pane").flat()).toContain("end");
+  // one in another terminal app has no pane here to bring forward
+  expect(of("session:outside").flat()).not.toContain("showInTerminal");
+  expect(of("session:ended").flat()).not.toContain("end");
+  expect(of("thread:t").flat()).toEqual(expect.arrayContaining(["open", "copyTitle", "archive", "delete"]));
+  expect(of("thread:t").flat()).not.toContain("openTicket");
 });

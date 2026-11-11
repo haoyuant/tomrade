@@ -141,22 +141,24 @@ export async function loadView(sources: Endpoint[], f: Filters, request: typeof 
 }
 export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from" | "to" | "region" | "internal">, request: typeof fetch = fetch, parts: ReadonlySet<Part> = new Set(PARTS)): Promise<DashboardData> {
   const range = { p_from: f.from, p_to: f.to };
-  // Accounts, search and GitHub carry no anonymous ids, so only the regional RPCs take the internal switch.
-  const regional = { ...range, p_region: f.region === "all" ? null : f.region, p_exclude_internal: f.internal === "exclude" };
+  // Only the install RPCs take the internal switch: the site has regions but no anonymous ids, and accounts, search
+  // and GitHub have neither.
+  const region = { ...range, p_region: f.region === "all" ? null : f.region };
+  const regional = { ...region, p_exclude_internal: f.internal === "exclude" };
   const call = (source: Endpoint, name: string, body: object) => request(`${source.url}/rest/v1/rpc/${name}`, {
     method: "POST", headers: { apikey: source.key, Authorization: `Bearer ${source.key}`, "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
   });
   const rpc = async <T>(source: Endpoint, name: string, body: object = regional): Promise<T> => {
     const response = await call(source, name, body);
-    if (!response.ok) throw new Error("analytics query failed");
+    if (!response.ok) throw new Error(`analytics query failed: ${name} ${response.status}`);
     return response.json() as Promise<T>;
   };
   // A function this deployment does not have yet (404) leaves its section empty instead of the whole view.
   const optional = async <T>(source: Endpoint, name: string, body: object = regional): Promise<T | null> => {
     const response = await call(source, name, body);
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error("analytics query failed");
+    if (!response.ok) throw new Error(`analytics query failed: ${name} ${response.status}`);
     return response.json() as Promise<T>;
   };
   const rows = await Promise.all(sources.map(async (source) => {
@@ -166,7 +168,7 @@ export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from"
       when("report", () => rpc<Report>(source, "tomrade_analytics_report"), emptyReport()),
       when("days", () => rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"), { days: [] }),
       when("activation", () => rpc<Activation>(source, "tomrade_analytics_activation"), emptyActivation()),
-      when("site", () => optional<SiteReport>(source, "tomrade_site_report"), null),
+      when("site", () => optional<SiteReport>(source, "tomrade_site_report", region), null),
       when("accounts", () => optional<Accounts>(source, "tomrade_accounts_report", range), null),
       when("platforms", () => optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms"), null),
       when("search", () => optional<SearchReport>(source, "tomrade_search_report", range), null),

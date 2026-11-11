@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { request as httpRequest, type Server } from "node:http";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -80,6 +80,8 @@ describe("internal analytics dashboard", () => {
     await loadDashboard([{ url: "https://global.example", key: "secret" }], f, request);
     for (const name of ["tomrade_analytics_report", "tomrade_analytics_feature_days", "tomrade_analytics_activation", "tomrade_analytics_platforms"]) expect(bodies.get(name)).toMatchObject({ p_exclude_internal: true });
     expect(bodies.get("tomrade_accounts_report")).toEqual({ p_from: f.from, p_to: f.to });
+    // The site function has no such parameter: PostgREST would answer 404 and the section would stay empty.
+    expect(bodies.get("tomrade_site_report")).toEqual({ p_from: f.from, p_to: f.to, p_region: null });
     await loadDashboard([{ url: "https://global.example", key: "secret" }], { ...f, internal: "include" }, request);
     expect(bodies.get("tomrade_analytics_report")).toMatchObject({ p_exclude_internal: false });
     const html = renderDashboard(f, one(sample()));
@@ -141,7 +143,7 @@ describe("internal analytics dashboard", () => {
     const accounts = calls.filter((c) => /\/rpc\/tomrade_(accounts|search|github)_report$/.test(c.url));
     expect(accounts.every((c) => !("p_region" in (c.body as object)))).toBe(true);
     expect(calls.filter((c) => !accounts.includes(c)).every((c) => /\/rest\/v1\/rpc\/tomrade_(analytics|site)_/.test(c.url) && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
-    await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow("analytics query failed");
+    await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow(/^analytics query failed: tomrade_\w+ 403$/);
     expect(() => endpoints({ SUPABASE_URL: "https://example.org" })).toThrow();
     expect(() => endpoints({ SUPABASE_URL: "https://example.org", SUPABASE_SERVICE_ROLE_KEY: "s", SUPABASE_URL_CN: "https://example.org/", SUPABASE_SERVICE_ROLE_KEY_CN: "s" })).toThrow();
   });
@@ -200,10 +202,16 @@ describe("internal analytics dashboard", () => {
     expect((await fetch(`${url}/assets/other.js`)).status).toBe(404);
     expect((await fetch(`${url}/?days=400`)).status).toBe(400);
     expect(calls).toBe(1);
-    const failed = await start(async () => { throw new Error("upstream secret key"); });
-    const error = await fetch(`${failed}/?lang=en`);
-    expect(error.status).toBe(502);
-    expect(await error.text()).not.toContain("upstream secret key");
+    const failed = await start(async () => { throw new Error("analytics query failed: tomrade_analytics_report 503"); });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const error = await fetch(`${failed}/?lang=en`);
+      expect(error.status).toBe(502);
+      expect(await error.text()).not.toContain("tomrade_analytics_report");
+      expect(logged).toHaveBeenCalledWith("analytics load failed: analytics query failed: tomrade_analytics_report 503");
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("plans each window once, with only the parts its cards draw", async () => {

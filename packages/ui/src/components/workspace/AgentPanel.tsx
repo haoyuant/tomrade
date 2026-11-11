@@ -845,8 +845,9 @@ export function AgentPanel({
     toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "trust" in reply ? (reply.trust === "trust" ? "sessionBar.trustedStay" : "sessionBar.leftStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
   };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard };
+  const copyText = (text: string) => void navigator.clipboard.writeText(text).then(() => toast({ body: t("sessionBar.copied", { text }) }), reportError);
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard, openTicket: onOpenIssue, show: showInTerminal, copy: copyText });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard, openTicket: onOpenIssue, show: showInTerminal, copy: copyText };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
   const newBarThread = useCallback(() => {
@@ -856,6 +857,9 @@ export function AgentPanel({
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
   const endBarSession = useCallback((row: BarRow) => void latestBar.current.end(row.sessionId!), []);
   const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => latestBar.current.answer(row, reply), []);
+  const openBarTicket = useCallback((itemId: string) => latestBar.current.openTicket(itemId), []);
+  const showBarRow = useCallback((row: BarRow) => latestBar.current.show(row.sessionId!, row.terminalApp), []);
+  const copyBarText = useCallback((text: string) => latestBar.current.copy(text), []);
   // What the waiting conversations ask, read only while their cards show and again for each new wait.
   const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
   const pendingsQ = useQuery({ queryKey: keys.agent.pendings(projectId, threadWaits), queryFn: () => invoke("agent.pendings", projectId), enabled: open && barMode === "cards" && !!threadWaits });
@@ -1354,6 +1358,9 @@ export function AgentPanel({
         onArchive={archiveBarThread}
         onDelete={deleteBarThread}
         onEnd={endBarSession}
+        onOpenTicket={openBarTicket}
+        onShowInTerminal={showBarRow}
+        onCopy={copyBarText}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>

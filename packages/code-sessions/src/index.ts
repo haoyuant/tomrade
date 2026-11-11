@@ -1770,6 +1770,8 @@ function apply(ctx: Context, config: Config) {
         return command(projectId, win, "code-link.open-thread", m.sessionId);
       }
       // The app window comes forward on it, the way a notification's click or a tomrade:// link brings it up.
+      case "openItem":
+        return void ctx.emit("desktop/open", { projectId, itemId: m.itemId });
       case "showThread":
         return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
       case "mainWindow":

@@ -19,7 +19,7 @@ They only read the repository:
 
 ## Screens
 
-`screens/screens.html` is the list of screens. Each `<!--@screen ID|area|name|state|theme|about-->` block is one artboard: `W01-Board.dc.html`, titled "W-01 · Board", placed on its area's page in ID order and listed in the index. IDs: `W` workspace, `H` home, `S` settings; add an area in `AREAS` in `build-screens.mjs`.
+`screens/screens.html` is the list of screens. Each `<!--@screen ID|area|name|state|about-->` block is one artboard: `W01-Board.dc.html`, titled "W-01 · Board", placed on its area's page in ID order and listed in the index. Every screen is drawn in Sunrise, the app's default theme (`THEME` in `build-screens.mjs`); the Theme tweak on an artboard shows the other seven. IDs: `W` workspace, `H` home, `S` settings; add an area in `AREAS` in `build-screens.mjs`.
 
 What several screens share (titlebar, sidebar, view head and query bar, board columns, status bar, assistant) is written once in `screens/parts.html` and pulled in with `<!--@include name-->`. Cards are `[[card KEY|title|status|priority|workstream|age|provenance|epic:hue|labels]]`, icons `[[i-plus 14]]` (`meta` or `accent` colours one, `rot180` or `rot-90` turns it). Markup uses the app's class names only, so the design system styles it.
 
