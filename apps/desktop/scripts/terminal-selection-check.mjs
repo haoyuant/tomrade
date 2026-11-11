@@ -134,6 +134,13 @@ app.whenReady().then(async () => {
       if (got !== expected) throw new Error(`Double-click selected ${JSON.stringify(got)}, not ${JSON.stringify(expected)}`);
       console.log("PASS", "double-click selects", expected);
     }
+    // As Claude Code lays a long path out: broken at the right edge, the rest indented on the next row.
+    const dir = "/tmp/" + "d".repeat(60 - 8 - 6) + "/";
+    const full = "x".repeat(60 - 14) + " /tmp/shot.png";
+    await js(`paintRows(${JSON.stringify(["- 特写：" + dir, "  sub/shot.png", "see /tmp/dir/", "  sub/shot.png", full, "Next line", "", "", "", "", "", ""])})`);
+    await select(0, 0, 20, 5);
+    const joined = ["- 特写：" + dir + "sub/shot.png", "see /tmp/dir/", "  sub/shot.png", full, "Next line"].join("\n");
+    await check("copy: a path broken at the edge is one line; one short of the edge, or with its extension, keeps the break", `copy() === ${JSON.stringify(joined)}`);
     await js("follower.dispose()");
   } catch (error) {
     console.error(error);
