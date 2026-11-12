@@ -308,8 +308,10 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       const box = (el.querySelector(".xterm-screen") ?? el).getBoundingClientRect();
       return { column: Math.min(terminal.cols - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * terminal.cols))), row: Math.min(terminal.rows - 1, Math.max(0, Math.floor(((e.clientY - box.top) / box.height) * terminal.rows))) };
     };
-    // The right button opens the cell's menu here, not the program's.
-    const mouse = (action: "down" | "up") => (e: MouseEvent) => e.button !== 2 && send({ type: "mouse", cell, action, button: BUTTONS[e.button] ?? "left", ...at(e) });
+    // The right button opens the cell's menu here, not the program's. A double- or triple-click is xterm's, which
+    // selects a word or a line: a program reading the mouse would select on its own too, and its highlight (Claude
+    // Code draws one) would sit under the selection's.
+    const mouse = (action: "down" | "up") => (e: MouseEvent) => e.button !== 2 && e.detail <= 1 && send({ type: "mouse", cell, action, button: BUTTONS[e.button] ?? "left", ...at(e) });
     const down = mouse("down");
     const up = mouse("up");
     el.addEventListener("mousedown", down);
