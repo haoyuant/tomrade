@@ -37,7 +37,9 @@ export interface ToolHost {
    * On a ticket's new delivery the branch is replaced; `replace` swaps the finished tickets out.
    */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts?: { replace?: boolean }): void;
-  /** The hooks session a tokenless claim of `key` comes from: the one whose hooks announced it, else a guess (live on that repository, holding no ticket and no client's connection). */
+  /** The hooks announcement for this ticket, without falling back to a guess. */
+  announcedSession(projectId: string, repoId: string, key: string, preferred?: readonly string[]): SessionView | null;
+  /** A hooks session, or an unclaimed live session on this repository. */
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null;
   /** The hooks session whose hooks just announced a work_without_ticket call, if one did. */
   excusing(projectId: string): SessionView | null;
@@ -552,16 +554,21 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const tokened = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
         if (tokened && args.parallel) throw new Error(`claim_ticket: a session Tomrade started works one ticket in its own worktree, so it cannot claim ${item.key} in parallel — start_ticket ${item.key} to start it in a session of its own`);
         const worktree = !tokened && args.worktree?.trim() ? path.resolve(args.worktree.trim()) : null;
-        // Without a token the claim belongs to the client's connection: the session it claimed before, else a hooks session nobody holds.
+        // Hooks identify the conversation; without an announcement the connection keeps its previous identity.
         // One it already works this ticket in, alongside others, is that one again.
-        const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
-        const again = !tokened && inv.connection ? (host.connectedSessions(projectId, inv.connection).find((s) => s.itemIds.includes(item.id)) ?? null) : null;
+        let connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
+        const boundSessions = !tokened && inv.connection ? host.connectedSessions(projectId, inv.connection) : [];
+        const preferred = connected ? [connected.id, ...sameConversation(projectId, connected).map(s => s.id)] : [];
+        const announced = !tokened && !connected?.threadId && repoId ? host.announcedSession(projectId, repoId, item.key, preferred) : null;
+        // Hooks identify the caller; an old connection guess cannot overrule a different conversation.
+        if (announced && connected && !isSameConversation(announced, connected)) connected = null;
+        const again = boundSessions.find(s => s.itemIds.includes(item.id) && (!announced || isSameConversation(s, announced))) ?? null;
         // An agent that reaches Tomrade without its session's token (agy) claims as its first act: that joins the terminal session Start made for this ticket.
         const started = !tokened && !again && !connected && inv.connection ? host.awaitingClaim(projectId, item.id) : null;
         // A connection outlives the agent's restarts. When the same conversation has since opened a newer row that holds
         // nothing — Start made one for this very ticket — that row is where the agent works, not the one bound before.
         const moved = connected && !connected.itemIds.includes(item.id) ? host.freeSibling(projectId, connected) : null;
-        let session = tokened ?? again ?? moved ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId, item.key) : null);
+        let session = tokened ?? again ?? moved ?? connected ?? started ?? announced ?? (repoId ? host.externalSession(projectId, repoId) : null);
         // The same conversation may already hold this ticket in a row of its own: claimed before Tomrade restarted, whose
         // connection went with it. That row is this claim's, not a new one beside it.
         const kin = !tokened && !again && session ? sameConversation(projectId, session).find((s) => s.itemIds.includes(item.id)) : undefined;
@@ -621,6 +628,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (session && !tokened && worktree && session.worktree !== worktree) session = host.store.patchSession(projectId, session.id, { worktree });
         // The client's MCP headers name the pane it runs in: the sidebar's terminal row is this session's from now on, hooks or none.
         if (session && !tokened && inv.pane && !session.herdrPane) session = host.store.patchSession(projectId, session.id, { herdrPane: inv.pane, ...(inv.terminal && !session.terminal ? { terminal: inv.terminal } : {}) });
+        if (session && announced && inv.connection) {
+          for (const previous of boundSessions) {
+            if (previous.itemIds.includes(item.id) && !isSameConversation(previous, announced)) host.letGo(projectId, inv.connection, previous.id, item.id);
+          }
+        }
         if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id, leaving);
         // Another live session in the same folder changes the same files: say so, and point at a worktree.
         const here = session ? [session.worktree, session.cwd].filter((folder): folder is string => !!folder).map((folder) => path.resolve(folder)) : [];

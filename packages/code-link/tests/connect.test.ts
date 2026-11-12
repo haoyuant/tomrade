@@ -1805,6 +1805,54 @@ describe("one outside session working tickets in parallel", () => {
     return { ...world, post, ticket, inv, worktree };
   };
 
+  it("keeps each parallel announced claim on its announcing conversation", async () => {
+    const { codeLink, ctx, project, checkout, post, ticket, inv } = await setup();
+    const tickets = [ticket("Alpha"), ticket("Beta"), ticket("Gamma")];
+    await post({ hook_event_name: "SessionStart", session_id: "other-terminal", cwd: checkout });
+    for (const item of tickets) await post({ hook_event_name: "PreToolUse", session_id: "cli-par", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: item.key } });
+    for (const [i, item] of tickets.entries()) {
+      const result = await ctx.tools.execute("claim_ticket", { key: item.key, parallel: i > 0 }, inv) as Claimed;
+      expect(codeLink.store.session(project.id, result.tracking.sessionId)).toMatchObject({ externalId: "cli-par", itemIds: [item.id] });
+    }
+    expect(codeLink.sessionsOf(project.id).filter(s => s.externalId === "other-terminal").every(s => !s.itemIds.length)).toBe(true);
+  });
+
+  it("heals a connection's wrong claim when another conversation announces the same ticket", async () => {
+    const { codeLink, ctx, project, checkout, post, ticket, inv } = await setup();
+    const item = ticket("Healing");
+    const claimed = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as Claimed;
+    await post({ hook_event_name: "SessionStart", session_id: "actual-terminal", cwd: checkout });
+    await post({ hook_event_name: "PreToolUse", session_id: "actual-terminal", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: item.key } });
+    const healed = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as Claimed;
+    expect(codeLink.store.session(project.id, healed.tracking.sessionId)).toMatchObject({ externalId: "actual-terminal", itemIds: [item.id] });
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)).toMatchObject({ itemIds: [], state: "running" });
+    await ctx.tools.execute("note_progress", { text: "on the right conversation" }, inv);
+    expect(codeLink.store.session(project.id, healed.tracking.sessionId)?.summary).toBe("on the right conversation");
+  });
+
+  it("prefers an announcement from its bound conversation when two announce the same key", async () => {
+    const { codeLink, ctx, project, checkout, post, ticket, inv } = await setup();
+    const item = ticket("Contested announcement");
+    const first = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as Claimed;
+    await post({ hook_event_name: "SessionStart", session_id: "second-terminal", cwd: checkout });
+    for (const id of ["cli-par", "second-terminal"]) await post({ hook_event_name: "PreToolUse", session_id: id, cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: item.key } });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, inv)).toMatchObject({ tracking: { sessionId: first.tracking.sessionId } });
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)?.externalId).toBe("cli-par");
+  });
+
+  it("ends a connection-only wrong claim after hooks identify the actual caller", async () => {
+    const { codeLink, ctx, project, checkout, post, ticket, inv } = await setup();
+    await post({ hook_event_name: "SessionEnd", session_id: "cli-par", cwd: checkout });
+    const item = ticket("Connection only");
+    const first = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as Claimed;
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)?.agent).toBe("mcp");
+    await post({ hook_event_name: "SessionStart", session_id: "now-known", cwd: checkout });
+    await post({ hook_event_name: "PreToolUse", session_id: "now-known", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: item.key } });
+    const healed = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as Claimed;
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)).toMatchObject({ itemIds: [], state: "ended" });
+    expect(codeLink.store.session(project.id, healed.tracking.sessionId)).toMatchObject({ externalId: "now-known", itemIds: [item.id] });
+  });
+
   it("claims, links and notes each ticket on its own session, and each is done once its own pull request merges", async () => {
     const { codeLink, ctx, items, project, ticket, inv } = await setup();
     const a = ticket("Alpha");

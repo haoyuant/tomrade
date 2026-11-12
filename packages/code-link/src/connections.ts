@@ -106,6 +106,13 @@ export class Connections {
     this.notify(projectId);
   }
 
+  /** An unexpired hooks announcement, preferring the connection's own conversation when several name this ticket. */
+  announcedSession(projectId: string, repoId: string, key: string, preferred: readonly string[] = []): SessionView | null {
+    const asked = this.sessions.claimer(projectId, key, preferred);
+    const s = asked ? this.store.session(projectId, asked) : null;
+    return s && s.repoId === repoId && s.threadId === null && s.endedAt === null && s.state !== "ended" && s.state !== "lost" ? s : null;
+  }
+
   /**
    * The hooks session a tokenless claim comes from: the one whose PreToolUse just
    * announced this claim; failing that, a guess — the live one on that repository
@@ -114,10 +121,8 @@ export class Connections {
    * The guess never takes one that already holds a ticket — that is another terminal's.
    */
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
-    const live = (s: SessionView | null | undefined): s is SessionView => !!s && s.repoId === repoId && s.threadId === null && s.endedAt === null && s.state !== "ended" && s.state !== "lost";
-    const asked = key ? this.sessions.claimer(projectId, key) : null;
-    const asking = asked ? this.store.session(projectId, asked) : null;
-    if (live(asking)) return asking;
+    const asking = key ? this.announcedSession(projectId, repoId, key) : null;
+    if (asking) return asking;
     const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
     const free = this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id));
     return free ?? null;
