@@ -327,8 +327,8 @@ export class Sessions {
   private readonly live = new Map<string, { token: string; unbind: () => void }>();
   /** When each session's own hooks last spoke, which herdr's reading of the screen defers to. */
   private readonly heardAt = new Map<string, number>();
-  /** A claim_ticket each session's hooks announced, waiting for the call itself. */
-  private readonly claiming = new Map<string, { projectId: string; key: string; at: number }>();
+  /** Each claim_ticket a session's hooks announced, waiting for the call itself. */
+  private readonly claiming = new Map<string, { sessionId: string; projectId: string; key: string; at: number }>();
   /** A work_without_ticket each session's hooks announced, the same way. */
   private readonly excusing = new Map<string, { projectId: string; at: number }>();
   /** A create_item each session's hooks announced, by the title it files. */
@@ -527,14 +527,16 @@ export class Sessions {
   }
 
   /** The session whose hooks just announced a claim of this ticket, if one did; the announcement is used up. */
-  claimer(projectId: string, key: string): string | null {
+  claimer(projectId: string, key: string, preferred: readonly string[] = []): string | null {
     const wanted = key.trim().toUpperCase();
-    let best: { sessionId: string; at: number } | null = null;
-    for (const [sessionId, c] of this.claiming) {
-      if (Date.now() - c.at > CLAIM_HEARD_MS) this.claiming.delete(sessionId);
-      else if (c.projectId === projectId && c.key === wanted && (!best || c.at > best.at)) best = { sessionId, at: c.at };
+    let best: { slot: string; sessionId: string; at: number } | null = null;
+    for (const [slot, c] of this.claiming) {
+      if (Date.now() - c.at > CLAIM_HEARD_MS) this.claiming.delete(slot);
+      else if (c.projectId === projectId && c.key === wanted && (!best
+        || Number(preferred.includes(c.sessionId)) > Number(preferred.includes(best.sessionId))
+        || (preferred.includes(c.sessionId) === preferred.includes(best.sessionId) && c.at > best.at))) best = { slot, sessionId: c.sessionId, at: c.at };
     }
-    if (best) this.claiming.delete(best.sessionId);
+    if (best) this.claiming.delete(best.slot);
     return best?.sessionId ?? null;
   }
 
@@ -680,10 +682,10 @@ export class Sessions {
       case "PreToolUse":
         Object.assign(patch, { state: "running", activity: p.tool_name ? describeTool(p.tool_name, p.tool_input) : null });
         if (p.tool_name && CLAIM_TOOL.test(p.tool_name) && typeof p.tool_input?.key === "string") {
-          this.claiming.set(sessionId, { projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
+          this.claiming.set(`${sessionId}\0${p.tool_input.key.trim().toUpperCase()}`, { sessionId, projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
         }
         const claimed = CLAIM_COMMAND.exec(shellCommand(p))?.[1];
-        if (claimed) this.claiming.set(sessionId, { projectId, key: claimed.toUpperCase(), at: Date.now() });
+        if (claimed) this.claiming.set(`${sessionId}\0${claimed.toUpperCase()}`, { sessionId, projectId, key: claimed.toUpperCase(), at: Date.now() });
         if (p.tool_name && NO_TICKET_TOOL.test(p.tool_name)) this.excusing.set(sessionId, { projectId, at: Date.now() });
         if (p.tool_name && FILE_TOOL.test(p.tool_name) && typeof p.tool_input?.title === "string") {
           this.filing.set(sessionId, { projectId, title: p.tool_input.title.trim(), at: Date.now() });

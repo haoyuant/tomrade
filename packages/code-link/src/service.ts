@@ -644,6 +644,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
+        announcedSession: (projectId, repoId, key, preferred) => this.connections.announcedSession(projectId, repoId, key, preferred),
         externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
         excusing: (projectId) => {
           const id = this.sessions.excuser(projectId);
