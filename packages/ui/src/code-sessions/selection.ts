@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 
 /** Only the public xterm surface used by the selection follower. */
-type SelectionTerminal = Pick<Terminal, "rows" | "cols" | "buffer" | "onSelectionChange" | "onWriteParsed" | "getSelectionPosition" | "select" | "clearSelection" | "refresh">;
+type SelectionTerminal = Pick<Terminal, "rows" | "cols" | "buffer" | "onSelectionChange" | "onWriteParsed" | "getSelectionPosition" | "select" | "clearSelection">;
 type Point = [col: number, line: number];
 type Range = { start: Point; end: Point };
 
@@ -345,12 +345,7 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
       if (first === undefined || last === undefined || clicked < first || clicked > last) continue;
       const start = cells[first].col;
       const end = cells[last].col + cells[last].width;
-      if (start !== at.start.x || end !== at.end.x) {
-        terminal.select(start, at.start.y, end - start);
-        // xterm queues the repaint of a selection change for its next frame; a TUI repainting on its own can leave
-        // the whole run it selected on the press drawn where the word no longer is. Draw the viewport from the model.
-        terminal.refresh(0, terminal.rows - 1);
-      }
+      if (start !== at.start.x || end !== at.end.x) terminal.select(start, at.start.y, end - start);
       return;
     }
   };
