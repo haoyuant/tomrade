@@ -12,6 +12,10 @@ type Range = { start: Point; end: Point };
 export const wordSeparator = " ()[]{}',\"`\u3000，。、；：！？（）［］｛｝【】《》〈〉「」『』〔〕“”‘’…—·～";
 /** Asks the pane to scroll, as the wheel does. */
 type Scroll = (direction: "up" | "down", lines: number) => void;
+/** A dictionary's word breaks for Chinese, which has no spaces between words: null until it has loaded. */
+export type Words = { cut(text: string): string[] | null; load(): Promise<unknown> };
+const HAN = /\p{Script=Han}/u;
+const WORD_RUN = /^[\p{L}\p{N}\p{M}]+$/u;
 
 /*
  * A program that lays its own text out (Claude Code) breaks a long file path at the right edge and indents the rest
@@ -69,7 +73,7 @@ function moved(before: string[], after: string[]): { by: number; first: number; 
  * (the wheel, output, or `scroll` asked for here with the pointer past the top or bottom edge) the drag is
  * carried on here instead: from the text it began on to the cell under the pointer.
  */
-export function followSelection(terminal: SelectionTerminal, el: HTMLElement, scroll?: Scroll) {
+export function followSelection(terminal: SelectionTerminal, el: HTMLElement, scroll?: Scroll, words?: Words) {
   let top = 0;
   let picked: { start: Point; end: Point } | null = null;
   let shown: { start: Point; end: Point; cutStart: boolean; cutEnd: boolean } | null = null;
@@ -295,9 +299,64 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
     window.addEventListener("mousemove", move, true);
     if (scroll) edge = setInterval(scrollPast, 50);
   };
+  /**
+   * A double-clicked run of Chinese, which xterm takes up to the next space or punctuation: only the dictionary word
+   * under the pointer. The first one waits for the dictionary to load, then narrows if the selection is still that run.
+   */
+  const narrow = (clientX: number): void => {
+    const at = terminal.getSelectionPosition();
+    const line = at && at.start.y === at.end.y ? terminal.buffer.active.getLine(at.start.y) : undefined;
+    if (!at || !line || !words) return;
+    const cells: { col: number; width: number }[] = [];
+    const cellOf: number[] = [];
+    let run = "";
+    for (let x = at.start.x; x < at.end.x; x++) {
+      const cell = line.getCell(x);
+      const width = cell?.getWidth() ?? 0;
+      if (!cell || !width) continue;
+      const chars = cell.getChars() || " ";
+      for (let i = [...chars].length; i > 0; i--) cellOf.push(cells.length);
+      run += chars;
+      cells.push({ col: x, width });
+    }
+    if (!HAN.test(run) || !WORD_RUN.test(run)) return;
+    const parts = words.cut(run);
+    if (!parts) {
+      const was = `${at.start.x},${at.start.y},${at.end.x}`;
+      void words.load().then(() => {
+        const now = terminal.getSelectionPosition();
+        if (!now || `${now.start.x},${now.start.y},${now.end.x}` !== was) return;
+        narrow(clientX);
+        const after = terminal.getSelectionPosition();
+        if (held && origin && !origin.whole && after) origin = originOf(lifted(after), false);
+      }, () => undefined);
+      return;
+    }
+    const rect = box();
+    const col = Math.floor(((clientX - rect.left) / rect.width) * terminal.cols);
+    const clicked = cells.findIndex((c) => col >= c.col && col < c.col + c.width);
+    if (clicked < 0) return;
+    let from = 0;
+    for (const part of parts) {
+      const length = [...part].length;
+      const first = cellOf[from];
+      const last = cellOf[from + length - 1];
+      from += length;
+      if (first === undefined || last === undefined || clicked < first || clicked > last) continue;
+      const start = cells[first].col;
+      const end = cells[last].col + cells[last].width;
+      if (start !== at.start.x || end !== at.end.x) terminal.select(start, at.start.y, end - start);
+      return;
+    }
+  };
+  const originOf = (range: Range, whole: boolean) => {
+    const text = (p: Point, from: number, to?: number) => (p[1] - top >= 0 && p[1] - top < terminal.rows ? rowText(p[1] - top, from, to) : lines.get(p[1]) ?? "");
+    return { ...range, tail: text(range.start, range.start[0]), head: text(range.end, 0, range.end[0]), whole };
+  };
   /** After xterm took the press: the cell, word or line it selected, or with Shift the end it kept. */
   const pressed = (e: MouseEvent) => {
     if (e.button !== 0 || !held) return;
+    if (e.detail === 2 && !e.shiftKey) narrow(e.clientX);
     const here = under(0, terminal.rows - 1);
     const at = terminal.getSelectionPosition();
     let range: Range | null = here && { start: [here[0], here[1] + top], end: [here[0], here[1] + top] };
@@ -307,8 +366,7 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
       if (e.shiftKey) range = { start: kept, end: kept };
     }
     if (!range) return;
-    const text = (p: Point, from: number, to?: number) => (p[1] - top >= 0 && p[1] - top < terminal.rows ? rowText(p[1] - top, from, to) : lines.get(p[1]) ?? "");
-    origin = { ...range, tail: text(range.start, range.start[0]), head: text(range.end, 0, range.end[0]), whole: !e.shiftKey && e.detail === 3 };
+    origin = originOf(range, !e.shiftKey && e.detail === 3);
   };
   el.addEventListener("copy", copy, true);
   el.addEventListener("mousedown", press, true);

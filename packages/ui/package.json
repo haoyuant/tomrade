@@ -59,6 +59,7 @@
     "cmdk": "^1.1.1",
     "dompurify": "3.4.15",
     "html-to-image": "1.11.11",
+    "jieba-wasm": "2.4.0",
     "marked": "18.0.13",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
