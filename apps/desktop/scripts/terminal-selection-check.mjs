@@ -8,6 +8,9 @@ import ts from "typescript";
 const require = createRequire(new URL("../../../packages/ui/package.json", import.meta.url));
 const xterm = fs.readFileSync(require.resolve("@xterm/xterm"), "utf8");
 const source = fs.readFileSync(new URL("../../../packages/ui/src/code-sessions/selection.ts", import.meta.url), "utf8");
+// jieba as the app loads it; the page gets its cuts of the fixture's runs through a stand-in that loads on first use.
+const jieba = require("jieba-wasm");
+const cuts = Object.fromEntries(["编辑和保存", "可以直接改文件", "多光标", "用MCP读取", "读取或解决评论"].map((run) => [run, jieba.cut(run, true)]));
 const follower = ts.transpile(source.replace(/export (function|const)/g, "$1"), { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }).replace(/export \{\};?/, "");
 
 app.whenReady().then(async () => {
@@ -20,7 +23,9 @@ app.whenReady().then(async () => {
       window.term = new Terminal({cols: 60, rows: 12, scrollback: 0, wordSeparator});
       term.open(document.getElementById('term'));
       window.offset = 0;
-      window.follower = followSelection(term, document.getElementById('term'), (direction, lines) => paint(offset + (direction === 'up' ? -lines : lines)));
+      window.loaded = false;
+      window.words = { cut: (text) => loaded ? (${JSON.stringify(cuts)}[text] ?? [text]) : null, load: async () => { loaded = true; } };
+      window.follower = followSelection(term, document.getElementById('term'), (direction, lines) => paint(offset + (direction === 'up' ? -lines : lines)), words);
       window.paintRows = async (rows) => {
         await new Promise(resolve => term.write(rows.map((text, y) => '\\x1b[' + (y + 1) + ';1H\\x1b[2K' + text).join(''), resolve));
         await new Promise(resolve => setTimeout(resolve, 60));
@@ -128,8 +133,8 @@ app.whenReady().then(async () => {
       await wait(100);
       return js("term.getSelection()");
     };
-    await js("paintRows(['- 编辑和保存：可以直接改文件、多光标（Cmd-D）。离开', 'Monaco 之外，还加了 Solidity、Typst、Nim 等。', 'see packages/ui/src/a.ts:12 and https://tomrade.com/a?b=1 now', '', '', '', '', '', '', '', '', ''])");
-    for (const [col, row, expected] of [[5.5, 0, "编辑和保存"], [20.5, 0, "可以直接改文件"], [40.5, 0, "Cmd-D"], [32.5, 1, "Typst"], [10, 2, "packages/ui/src/a.ts:12"], [40, 2, "https://tomrade.com/a?b=1"]]) {
+    await js("paintRows(['- 编辑和保存：可以直接改文件、多光标（Cmd-D）。离开', 'Monaco 之外，还加了 Solidity、Typst、Nim 等。', 'see packages/ui/src/a.ts:12 and https://tomrade.com/a?b=1 now', '用MCP读取 /tmp/中文目录/a.png 读取或解决评论', '', '', '', '', '', '', '', ''])");
+    for (const [col, row, expected] of [[5.5, 0, "编辑"], [20.5, 0, "直接"], [32.5, 0, "光标"], [40.5, 0, "Cmd-D"], [3.5, 3, "MCP"], [7, 3, "读取"], [40.5, 3, "评论"], [16, 3, "/tmp/中文目录/a.png"], [32.5, 1, "Typst"], [10, 2, "packages/ui/src/a.ts:12"], [40, 2, "https://tomrade.com/a?b=1"]]) {
       const got = await word(col, row);
       if (got !== expected) throw new Error(`Double-click selected ${JSON.stringify(got)}, not ${JSON.stringify(expected)}`);
       console.log("PASS", "double-click selects", expected);

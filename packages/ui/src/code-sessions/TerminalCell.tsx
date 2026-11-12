@@ -9,6 +9,7 @@ import type { WindowPost } from "@tomradex/code-sessions";
 import { terminalTheme } from "~/lib/xtermTheme";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection, wordSeparator } from "./selection";
+import { chineseWords } from "./words";
 import { fileLinks } from "./fileLinks";
 import { clipboardKey, isInterrupt, modifiedEnter } from "./keys";
 import { offerClipboard } from "./clipboard";
@@ -232,7 +233,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     }
     setClosed(undefined);
     setScroll(null);
-    const selection = followSelection(terminal, el, (direction, lines) => send({ type: "scroll", cell, direction, lines, column: Math.floor(terminal.cols / 2), row: Math.floor(terminal.rows / 2) }));
+    const selection = followSelection(terminal, el, (direction, lines) => send({ type: "scroll", cell, direction, lines, column: Math.floor(terminal.cols / 2), row: Math.floor(terminal.rows / 2) }), chineseWords);
     // Copy takes the selection's snapshot, also once the pane has scrolled it away; paste goes in as xterm pastes.
     const canCopy = () => selection.text() !== null || terminal.hasSelection();
     const copy = () => {

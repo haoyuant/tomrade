@@ -3200,6 +3200,9 @@ importers:
       html-to-image:
         specifier: 1.11.11
         version: 1.11.11
+      jieba-wasm:
+        specifier: 2.4.0
+        version: 2.4.0
       marked:
         specifier: 18.0.13
         version: 18.0.13
@@ -6202,6 +6205,9 @@ packages:
     resolution: {integrity: sha512-wpHYzhxiVQL+IV05BLE2Xn34zW1S223hvjtqk0+gsPrwd/8JNLXJgZZM/iPFsYc1xyphF+6M6EvdE5E9MBGkDA==}
     engines: {node: '>=10'}
     hasBin: true
+
+  jieba-wasm@2.4.0:
+    resolution: {integrity: sha512-ZvQdS+FGifrFXZIXSgOyOgEz+1wdy1P4vSvwe37FVtku9ycSdHTZbHqF5i9tMN1JucoAmeiLBeI6/YaqcGD+KA==}
 
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
@@ -10244,6 +10250,8 @@ snapshots:
       async: 3.2.6
       filelist: 1.0.6
       picocolors: 1.1.1
+
+  jieba-wasm@2.4.0: {}
 
   jiti@2.7.0: {}
 

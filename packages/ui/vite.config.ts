@@ -8,5 +8,6 @@ export default defineConfig({
   resolve: { alias: { "~": new URL("./src", import.meta.url).pathname } },
   server: { host: "127.0.0.1", port: 5173, strictPort: true },
   // The app window, and the pages built-ins open as windows of their own; the plugin layout frame has vite.shell.config.ts.
-  build: { outDir: "dist", rollupOptions: { input: { main: "index.html", "code-sessions": "code-sessions.html" } } }
+  // jieba's wasm comes inlined in its lazy chunk: the packaged app is served from file://, where fetch cannot reach it.
+  build: { assetsInlineLimit: (file) => (file.endsWith(".wasm") ? true : undefined), outDir: "dist", rollupOptions: { input: { main: "index.html", "code-sessions": "code-sessions.html" } } }
 });
