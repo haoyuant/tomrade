@@ -49,7 +49,10 @@ async function fakeSupabase() {
     ]),
     registered: [],
     /** The account's queue of tickets sent between its machines. */
-    dispatches: []
+    dispatches: [],
+    /** The people this machine is shared with, and the machines other people share with this account. */
+    shares: [],
+    shared: []
   };
   const jwt = (claims) => [{ alg: "HS256", typ: "JWT" }, claims].map((p) => Buffer.from(JSON.stringify(p)).toString("base64url")).join(".") + ".e2e";
   const session = () => {
@@ -107,6 +110,33 @@ async function fakeSupabase() {
         const now = new Date().toISOString();
         const row = { id: randomUUID(), from_device: input.p_from, to_device: input.p_to, to_platform: input.p_to ? null : input.p_platform, project_id: input.p_project, item_key: input.p_key, title: input.p_title, wish: input.p_wish, state: "queued", reason: null, claimed_by: null, created_at: now, updated_at: now, expires_at: new Date(Date.now() + 24 * HOUR).toISOString() };
         state.dispatches.unshift(row);
+        return json(200, row);
+      }
+      if (rpc === "tomrade_device_shares") return json(200, state.shares);
+      if (rpc === "tomrade_share_device") {
+        const email = String(input.p_email).trim().toLowerCase();
+        const share = { email, ceiling: input.p_ceiling, auto: input.p_auto, created_at: new Date().toISOString() };
+        state.shares = [...state.shares.filter((s) => s.email !== email), share];
+        return json(200, share);
+      }
+      if (rpc === "tomrade_unshare_device") {
+        const before = state.shares.length;
+        state.shares = state.shares.filter((s) => s.email !== String(input.p_email).trim().toLowerCase());
+        return json(200, before - state.shares.length);
+      }
+      if (rpc === "tomrade_shared_devices") return json(200, state.shared);
+      if (rpc === "tomrade_create_shared_dispatch") {
+        const device = state.shared.find((d) => d.share === input.p_share);
+        if (!device) return json(400, { code: "P0002", message: "No such shared device" });
+        const now = new Date().toISOString();
+        const row = { id: randomUUID(), from_device: input.p_from, to_device: device.device_id, to_platform: null, project_id: input.p_project, item_key: input.p_key, title: input.p_title, wish: input.p_wish, state: "queued", reason: null, claimed_by: null, created_at: now, updated_at: now, expires_at: new Date(Date.now() + input.p_ttl_seconds * 1000).toISOString(), from_email: state.user.email, needs_yes: !device.auto, approved: device.auto, ceiling: device.ceiling };
+        state.dispatches.unshift(row);
+        return json(200, row);
+      }
+      if (rpc === "tomrade_approve_dispatch" || rpc === "tomrade_update_dispatch") {
+        const row = state.dispatches.find((d) => d.id === input.p_id);
+        if (!row) return json(400, { code: "P0002", message: "No such dispatch" });
+        Object.assign(row, rpc === "tomrade_approve_dispatch" ? { approved: true } : { state: input.p_state, reason: input.p_reason ?? null, claimed_by: row.claimed_by ?? input.p_device }, { updated_at: new Date().toISOString() });
         return json(200, row);
       }
       if (rpc === "tomrade_cancel_dispatch") {
@@ -359,6 +389,56 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await sleep(400);
   for (const role of [careful, codexOnly, trusted]) ctx.roles.remove(project.id, role.id);
+
+  // ── a computer another person shares ─────────────────────────────────
+  supabase.state.shared = [{ share: randomUUID(), owner: "bob@example.test", device_id: "bob-000001", name: "Bob's Mac", platform: "darwin", agents: [{ id: "claude-code", title: "Claude Code", ready: true }], accept: null, ceiling: "edits", auto: false, last_seen_at: new Date().toISOString() }];
+  await $(`location.reload(); true`);
+  await sleep(2500);
+  await $(`location.hash = '#/p/${project.id}/i/${second.key}'; true`);
+  await sleep(1500);
+  await openStart();
+  check("Start lists a computer another person shares, under its own heading and with whose it is", await until(`[...document.querySelectorAll('[data-testid="run-on-select"] optgroup')].some(g => g.label === 'Shared with you' && [...g.querySelectorAll('option')].map(o => o.textContent).join() === "Bob's Mac · bob@example.test")`), await runOptions());
+  const lentId = supabase.state.shared[0].share;
+  await choose('[data-testid="run-on-select"]', `share:${lentId}`);
+  check("choosing it says the ticket waits for its owner's yes", await until(`(document.querySelector('[data-testid="run-on-note"]')?.textContent ?? '').startsWith('It waits for bob@example.test to say yes on that computer')`) && (await $(`document.querySelector('[data-testid="run-on-send"]')?.textContent.trim()`)) === "Send to Bob's Mac · bob@example.test", await $(`document.querySelector('[data-testid="run-on-note"]')?.textContent`));
+  await shot("devices-06e-run-on-shared");
+  const sentBefore = supabase.state.dispatches.length;
+  await press(`document.querySelector('[data-testid="run-on-send"]')`);
+  check("sent, it joins that person's queue for that computer and waits for a yes", await (async () => { for (let i = 0; i < 40 && supabase.state.dispatches.length === sentBefore; i++) await sleep(250); const d = supabase.state.dispatches[0]; return supabase.state.dispatches.length === sentBefore + 1 && d.to_device === "bob-000001" && d.needs_yes === true && d.approved === false; })(), supabase.state.dispatches[0]);
+  check("the ticket says whose yes it waits for", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes("Sent to Bob's Mac · bob@example.test, waiting for its owner to say yes")`), await sentLine());
+  Object.assign(supabase.state.dispatches[0], { state: "refused", reason: "declined", claimed_by: "bob-000001", updated_at: new Date().toISOString() });
+  await ctx.dispatch.queue.tick();
+  check("declined, the ticket says so", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes("turned it away: its owner said no")`), await sentLine());
+  supabase.state.shared = [];
+
+  // ── sharing this computer, and a request for it ──────────────────────
+  // By the status bar's own way in: the ticket page is open, and a toast may hold the keyboard.
+  await press(`document.querySelector('[data-testid="status-devices"]')`);
+  await until(`!!document.querySelector('[data-testid="accept-work"]')`);
+  const sharePanel = `document.querySelector('[data-testid="share-computer"]')`;
+  check("Devices offers to share this computer, with nobody yet", await until(`!!${sharePanel}`) && !(await $(`!!document.querySelector('[data-testid="share-person"]')`)) && (await $(`${sharePanel}.textContent`)).includes("Each ticket waits for your yes on this computer"), await $(`(${sharePanel}?.textContent ?? 'NO PANEL: ' + (document.querySelector('.dlg-body')?.textContent ?? 'no dialog').slice(0, 400))`));
+  await typeInto('[data-testid="share-email"]', "Carol@Example.test");
+  await press(`document.querySelector('[data-testid="share-add"]')`);
+  check("a person is added by the email of their account, with a yes needed for each ticket", await until(`document.querySelector('[data-testid="share-person"]')?.textContent.includes('carol@example.test')`) && supabase.state.shares[0]?.auto === false && supabase.state.shares[0]?.ceiling === "edits" && (await $(`document.querySelector('[data-testid="share-auto"]').checked`)) === false, supabase.state.shares);
+  await $(`document.querySelector('[data-testid="share-auto"]').click(); true`);
+  check("starting theirs unasked says what that means for the owner's agent account", await until(`(document.querySelector('[data-testid="share-auto-warning"]')?.textContent ?? '').includes("make your account available to someone else")`) && supabase.state.shares[0]?.auto === true, supabase.state.shares);
+  await $(`document.querySelector('[data-testid="share-auto"]').click(); true`);
+  await until(`!document.querySelector('[data-testid="share-auto-warning"]')`);
+  await $(`${sharePanel}.scrollIntoView({ block: 'center' }); true`);
+  await sleep(300);
+  await shot("devices-06f-share");
+  // Carol asks this computer to work a ticket.
+  const asked = { id: randomUUID(), from_device: "car-000001", to_device: self, to_platform: null, project_id: project.id, item_key: second.key, title: second.title, wish: {}, state: "queued", reason: null, claimed_by: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600_000).toISOString(), from_email: "carol@example.test", needs_yes: true, approved: false, ceiling: "edits" };
+  supabase.state.dispatches.unshift(asked);
+  await ctx.dispatch.queue.tick();
+  check("her request shows where the owner answers it, and is said once wherever they are", await until(`(document.querySelector('[data-testid="share-ask"]')?.textContent ?? '').includes('carol@example.test asks to run ${second.key}')`) && (await until(`[...document.querySelectorAll('.toast')].some(n => n.textContent.includes('carol@example.test asks to run ${second.key}') && n.textContent.includes('It runs with your agent and your sign-in.'))`)), await $(`[...document.querySelectorAll('.toast')].map(n => n.textContent)`));
+  check("nothing is started here before the owner answers", ctx.codeLink.sessionsOf(project.id, second.id).length === 0 && asked.state === "queued" && asked.approved === false);
+  await press(`document.querySelector('[data-testid="share-ask-no"]')`);
+  check("declined, it is turned away and no longer waits", await (async () => { for (let i = 0; i < 40 && asked.state !== "refused"; i++) await sleep(250); return asked.state === "refused" && asked.reason === "declined"; })() && (await until(`!document.querySelector('[data-testid="share-ask"]')`)), asked);
+  await press(`document.querySelector('[data-testid="share-remove"]')`);
+  check("the share is taken back on a click", await until(`!document.querySelector('[data-testid="share-person"]')`) && supabase.state.shares.length === 0, supabase.state.shares);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await sleep(400);
 
   // ── one computer only ────────────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}'; true`);

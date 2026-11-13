@@ -3,7 +3,7 @@ import type { DispatchView } from "@tomradex/dispatch";
 import type { DeviceView } from "@tomradex/hub-cloud";
 import { LiveDot } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
-import { dispatchOf, elsewhereOn, useDevices, useDispatches } from "~/lib/devices";
+import { dispatchOf, elsewhereOn, useDevices, useDispatches, useSharedDevices } from "~/lib/devices";
 import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRoles } from "~/lib/roles";
@@ -12,7 +12,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 
 const PLATFORM_WORDS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 /** The reasons a machine gives for turning a ticket away, as it names them. */
-const REFUSALS = new Set(["off", "project-not-allowed", "project-missing", "permission", "busy", "not-idle", "on-battery", "no-agent", "start"]);
+const REFUSALS = new Set(["off", "project-not-allowed", "project-missing", "permission", "busy", "not-idle", "on-battery", "no-agent", "start", "declined"]);
 /** A request that is over stays on the ticket this long. */
 const SHOWN_MS = 24 * 3_600_000;
 
@@ -24,7 +24,7 @@ export function TicketElsewhere({ projectId, itemKey }: { projectId: string; ite
   const { t } = useI18n();
   const devices = useDevices();
   const dispatches = useDispatches();
-  const sent = dispatchOf(dispatches.data, projectId, itemKey);
+  const sent = dispatchOf(dispatches.data, projectId, itemKey, devices.data?.devices.find((d) => d.self)?.id);
   const going = sent && (sent.state === "queued" || sent.state === "accepted" || sent.state === "running");
   const found = elsewhereOn(devices.data?.devices, projectId, itemKey);
   // While it runs there, the session's own line says more than the request's.
@@ -50,7 +50,9 @@ export function TicketElsewhere({ projectId, itemKey }: { projectId: string; ite
 function SentLine({ sent, devices }: { sent: DispatchView; devices: DeviceView[] }) {
   const { t } = useI18n();
   const id = sent.claimedBy ?? sent.toDevice;
-  const name = devices.find((d) => d.id === id)?.name ?? (id ? id : t("devices.anyOf", { platform: sent.toPlatform && PLATFORM_WORDS[sent.toPlatform] ? t(PLATFORM_WORDS[sent.toPlatform]!) : (sent.toPlatform ?? "") }));
+  // A computer of another person's is named with whose it is.
+  const lent = useSharedDevices(!!sent.fromEmail).data?.find((d) => d.deviceId === id);
+  const name = devices.find((d) => d.id === id)?.name ?? (lent ? t("devices.sharedName", { name: lent.name, owner: lent.owner }) : id ? id : t("devices.anyOf", { platform: sent.toPlatform && PLATFORM_WORDS[sent.toPlatform] ? t(PLATFORM_WORDS[sent.toPlatform]!) : (sent.toPlatform ?? "") }));
   // A refusal reads `code` or `code: what more there is to say`.
   const [code, ...rest] = (sent.reason ?? "").split(": ");
   const why = () => {
@@ -60,7 +62,8 @@ function SentLine({ sent, devices }: { sent: DispatchView; devices: DeviceView[]
   };
   const text =
     sent.state === "refused" ? t("devices.sentRefused", { name, reason: why() })
-    : sent.state === "cancelled" ? t(sent.reason === "expired" ? "devices.sentExpired" : "devices.sentCancelled")
+    : sent.state === "cancelled" ? (sent.reason === "unshared" ? t("devices.sentUnshared", { name }) : t(sent.reason === "expired" ? "devices.sentExpired" : "devices.sentCancelled"))
+    : sent.state === "queued" && sent.needsYes && !sent.approved ? t("devices.sentAwaitsYes", { name })
     : sent.state === "done" ? (sent.reason ? t("devices.sentStopped", { name, reason: sent.reason }) : t("devices.sentDone", { name }))
     : t(`devices.sent_${sent.state}` as MessageKey, { name });
   const going = sent.state === "queued" || sent.state === "accepted" || sent.state === "running";

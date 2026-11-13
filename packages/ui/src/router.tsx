@@ -15,6 +15,7 @@ import { PendingBuildWatcher } from "~/components/dialogs/plugins/ConfirmBuildDi
 import { UpdateNotice } from "~/components/dialogs/UpdateNotice";
 import { AnnouncementNotice } from "~/components/dialogs/AnnouncementNotice";
 import { AcceptAsk } from "~/components/dialogs/AcceptAsk";
+import { ShareAsks } from "~/components/dialogs/ShareAsks";
 import { TermsPrompt } from "~/components/dialogs/TermsPrompt";
 import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
@@ -45,6 +46,7 @@ const rootRoute = createRootRoute({
               <UpdateNotice />
               <AnnouncementNotice />
               <AcceptAsk />
+              <ShareAsks />
             </LeadOnly>
             <AttentionOpener />
             <CapabilitiesHost />

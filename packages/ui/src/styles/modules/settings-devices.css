@@ -47,3 +47,5 @@ button.device-ticket:hover { color: var(--accent); text-decoration: underline; t
 .ticket-elsewhere { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); margin: var(--space-2) 0; }
 .ticket-elsewhere.last { color: var(--meta); }
 }
+.share-person { padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+.share-person .accept-row .btn { flex-shrink: 0; }
