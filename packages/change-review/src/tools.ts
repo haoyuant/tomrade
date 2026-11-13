@@ -45,6 +45,10 @@ export function registerReviewTools(ctx: Context): void {
       name: "submit_review_findings",
       kit: "code",
       title: "Put review findings on a ticket's diff",
+      // It writes this machine's notes on a diff and nothing of the project or its code, and a reviewer works in its
+      // agent's read-only mode: without the hint Claude Code's plan mode and Codex's read-only sandbox stop to ask a
+      // person before each report, and a review nobody watches never ends.
+      readOnly: true,
       description:
         "Put the findings of a code review the person asked for on the lines of the ticket's diff, where they read them beside their own comments. Each names its code link, file, side and lines as read_review_changes numbered them, quotes those lines, and says what is wrong. They are shown as yours and reach nobody until the person sends them. One finding without a place refuses them all. This changes no code; report only what you found.",
       input: z.object({
