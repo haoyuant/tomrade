@@ -427,7 +427,7 @@ function StartTicketDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
       <DialogHead title={title} />
       <DialogBody>
-        <RunOn projectId={projectId} item={item} target={target} onTarget={setChosenTarget} onSent={onClose} />
+        <RunOn projectId={projectId} item={item} target={target} onTarget={setChosenTarget} onClose={onClose} />
         <div className="stack-4" data-testid="start-dialog" style={elsewhere ? { display: "none" } : undefined}>
           {apart && (
             <p className="meta-txt" role="note" data-testid="start-apart">
