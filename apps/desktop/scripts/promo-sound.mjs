@@ -81,8 +81,8 @@ export function soundtrack(cues, seconds) {
       turn = cue.at;
       moods.push({ at: cue.at, major: false });
     }
-    if (cue.kind === "dusk") moods.push({ at: cue.at, major: false });
-    if (cue.kind === "day" || cue.kind === "dawn") moods.push({ at: cue.at, major: true });
+    if (cue.kind === "night") moods.push({ at: cue.at, major: false });
+    if (cue.kind === "dawn") moods.push({ at: cue.at, major: true });
   }
   // A low hum under an opening that has no chord yet.
   if (turn !== null) voice(0, turn + 0.6, 0.11, 0, 0.3, (t) => Math.min(attack(t, 0.5), attack(turn + 0.6 - t, 0.5)) * (Math.sin(TAU * 55 * t) + 0.5 * Math.sin(TAU * 82.4 * t)));
@@ -137,9 +137,6 @@ export function soundtrack(cues, seconds) {
       voice(at, 0.14, 0.05, n ? 0.5 : -0.5, 0.2, (t) => attack(t, 0.002) * Math.exp(-t / 0.03) * Math.sin(TAU * note(88 + n * 3) * t));
     } else if (cue.kind === "swap") {
       whoosh(at - 0.15, 0.9, 0.26, 19);
-    } else if (cue.kind === "dusk") {
-      whoosh(at, 2.4, 0.3, 23);
-      bell(at + 0.3, note(57), 0.1, 0);
     } else if (cue.kind === "morning") {
       [72, 76, 79].forEach((midi, k) => bell(at + k * 0.11, note(midi), 0.12, k - 1));
     } else if (cue.kind === "end") {

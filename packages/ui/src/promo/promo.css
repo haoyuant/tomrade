@@ -152,6 +152,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
   background: var(--film-ink);
   mask: url("/logo.png") center / contain no-repeat;
 }
+.film-preload { left: 0; top: 0; width: 4px; height: 4px; opacity: 0.01; }
 .film-name {
   position: absolute; left: 0; right: 0; z-index: 3; text-align: center; white-space: nowrap;
   font-family: var(--font-display); font-weight: 800; letter-spacing: 0.16em; line-height: 1.15; padding-left: 0.16em; color: var(--accent);
@@ -204,3 +205,36 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
   border-color: color-mix(in srgb, var(--accent) calc(70% * var(--lit)), var(--border));
   box-shadow: var(--elev-raised), 0 0 0 calc(2px * var(--lit)) var(--accent), 0 12px 30px -12px var(--sun-glow);
 }
+
+/* ─── films that leave the app's window: panes, walls of them, one card ─ */
+.film-free { position: absolute; inset: 0; z-index: 2; transform-origin: 50% 60%; }
+.film-pane-dot.is-quiet { background: var(--meta); }
+.film-mono { font-family: var(--font-mono); }
+.film-cell-spot { position: absolute; transform-origin: 50% 50%; }
+/* The app closed: a pane's frame and bar all but gone, what its terminal writes still there. */
+.film-cell {
+  border-color: color-mix(in srgb, var(--border-soft) calc(100% - 70% * var(--ghost, 0)), transparent);
+  box-shadow: 0 0 0 calc(3px * var(--flash, 0)) color-mix(in srgb, var(--warn) 70%, transparent), 0 18px 44px -22px var(--film-window-shade);
+}
+.film-cell > .cs-cell-bar { opacity: calc(1 - 0.85 * var(--ghost, 0)); }
+.film-cell-term { padding: 7px 6px; font-family: var(--font-mono); font-size: 11.5px; overflow: hidden; }
+.film-cell-term .film-term-line { padding: 0 0.42em; }
+.film-termwin {
+  position: absolute; transform-origin: 50% 50%; border: 1px solid var(--border); border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  box-shadow: 0 0 0 0.5px var(--border), 0 34px 90px -34px var(--film-window-shade);
+}
+.film-termwin-bar { position: relative; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); }
+.film-termwin-bar .film-lights { left: 20px; gap: 11px; }
+.film-termwin-bar .film-lights > i { width: 17px; height: 17px; }
+.film-termwin-bar .cs-project { flex: none; font-size: 20px; color: var(--muted); }
+/* The wall runs on above the frame's caption band: it fades out under it. */
+.film-wall-fade { position: absolute; inset: 0 0 auto 0; height: 330px; z-index: 3; pointer-events: none; background: linear-gradient(180deg, var(--bg) 62%, transparent); }
+.film-ask-big { position: absolute; left: 1100px; top: 470px; z-index: 9; transform: scale(1.9); transform-origin: 0 0; }
+.film-ask-big .film-ask { position: relative; }
+.film-one { width: 330px; }
+.film-one.is-lit .card {
+  border-color: color-mix(in srgb, var(--accent) calc(70% * var(--lit)), var(--border));
+  box-shadow: var(--elev-raised), 0 0 0 calc(1px * var(--lit)) var(--accent), 0 10px 34px -10px color-mix(in srgb, var(--sun-glow) calc(100% * var(--lit)), transparent);
+}
+.film-one-term .film-term-lines { padding: 0.5em 0.6em; }

@@ -29,3 +29,8 @@ export function noise(a: number, b = 0): number {
   const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
   return x - Math.floor(x);
 }
+
+/** How long the end card needs to say everything it has. */
+export const END_SECONDS = 3.9;
+/** When each of the facts before an end card comes up, shown one after the other from `from` until `until`. */
+export const proofAt = (from: number, until: number, count: number): number[] => Array.from({ length: count }, (_, i) => from + 0.3 + (i * (until - from - 0.3)) / count);

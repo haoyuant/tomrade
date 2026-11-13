@@ -1,14 +1,8 @@
 import type { Format } from "../stage";
 import { clamp, ease, span } from "../time";
 import { CODE_WORDS, type Lang } from "../words";
-import { D, LAY } from "./story";
+import { D, LAY, LINES } from "./story";
 import { TERMINAL } from "./words";
-
-/** When each line of each agent's terminal is written. The lines that reach Tomrade or git are the board's moves. */
-export const LINES = {
-  claude: [14.9, 15.5, 16.3, 17.4, 18.6, 19.7],
-  codex: [15.9, 16.5, 17.7, 19.2, D.ask, D.answered + 0.3]
-} as const;
 
 const PANES = [{ id: "claude", title: "claude", mark: "⏺" }, { id: "codex", title: "codex", mark: "•" }] as const;
 

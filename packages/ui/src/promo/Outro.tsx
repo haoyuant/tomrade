@@ -3,9 +3,6 @@ import type { Format } from "./stage";
 import { clamp, ease, span } from "./time";
 import { OUTRO, type Lang } from "./words";
 
-/** How long the end card needs to say everything it has. */
-export const END_SECONDS = 3.9;
-
 /** Short facts, one after the other, each alone on the sky. */
 export function Proof({ t, from, until, texts, f, lang }: { t: number; from: number; until: number; texts: readonly string[]; f: Format; lang: Lang }) {
   if (t < from || t >= until) return null;
@@ -25,9 +22,6 @@ export function Proof({ t, from, until, texts, f, lang }: { t: number; from: num
     </>
   );
 }
-
-/** When each of a Proof's facts comes up. */
-export const proofAt = (from: number, until: number, count: number): number[] => Array.from({ length: count }, (_, i) => from + 0.3 + (i * (until - from - 0.3)) / count);
 
 /** The end: the cat on the rising sun, the name, the line, and where to get it. `d` is how long it has been up. */
 export function End({ d, f, lang }: { d: number; f: Format; lang: Lang }) {

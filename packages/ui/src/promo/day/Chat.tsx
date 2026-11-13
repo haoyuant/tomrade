@@ -2,16 +2,8 @@ import { Icon } from "~/components/icons";
 import { say } from "~/lib/dicts";
 import { clamp, span } from "../time";
 import type { Lang } from "../words";
-import { D } from "./story";
+import { D, KEY, TYPED, rate } from "./story";
 import { CHAT } from "./words";
-
-/** When the person starts typing each message; a letter takes this long. */
-const TYPED = { idea: 0.3, tidy: D.tidy - 0.75 };
-const KEY = 0.07;
-/** When each letter of the person's messages is typed: what the soundtrack's keys are written from. */
-export const keysAt = (lang: Lang): number[] => [...[...CHAT[lang].idea].map((_, i) => TYPED.idea + i * KEY * rate(lang)), ...[...CHAT[lang].tidy].map((_, i) => TYPED.tidy + i * KEY * rate(lang))];
-/** Chinese is typed in fewer, slower strokes. */
-const rate = (lang: Lang): number => (lang === "zh" ? 2.4 : 1);
 
 /** A reply that arrives a few words at a time. */
 function streamed(text: string, t: number, from: number): string {

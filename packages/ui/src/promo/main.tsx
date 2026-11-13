@@ -11,12 +11,13 @@ import { FPS, clamp } from "./time";
 import type { Lang } from "./words";
 import "~/styles/app.css";
 import "~/styles/sunrise.css";
+import "~/code-sessions/code-sessions.css";
 import "./promo.css";
 
 declare global {
   interface Window {
     /** What the renderer drives: draw frame n, resolved once it is on screen. */
-    __film?: { films: string[]; poster: number; frames: number; fps: number; width: number; height: number; cues: Cue[]; ready: () => boolean; seek: (frame: number) => Promise<void> };
+    __film?: { films: string[]; formats: string[]; poster: number; frames: number; fps: number; width: number; height: number; cues: Cue[]; ready: () => boolean; seek: (frame: number) => Promise<void> };
   }
 }
 
@@ -29,6 +30,10 @@ const lang: Lang = params.get("lang") === "zh" ? "zh" : "en";
 const capture = params.has("capture");
 setDomainLocale(lang);
 document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+
+/** The end card's cat: a film is ready to be drawn once it has loaded. */
+const logo = new Image();
+logo.src = `${import.meta.env.BASE_URL}logo.png`;
 
 /** The frame's number as a colour the renderer reads back: four bits a channel, so no rounding along the way can blur it. */
 const mark = (frame: number): string => `rgb(${((frame >> 8) & 15) * 16 + 8}, ${((frame >> 4) & 15) * 16 + 8}, ${(frame & 15) * 16 + 8})`;
@@ -49,8 +54,8 @@ function Player() {
   useEffect(() => {
     if (!capture) return;
     window.__film = {
-      films: FILMS.map((one) => one.id), poster: Math.round(film.poster * FPS), frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: film.cues(lang),
-      ready: () => document.querySelector(".film[data-ready]") !== null,
+      films: FILMS.map((one) => one.id), formats: film.formats ?? ["wide", "tall"], poster: Math.round(film.poster * FPS), frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: film.cues(lang),
+      ready: () => document.querySelector(".film[data-ready]") !== null && logo.complete,
       seek: (n) => new Promise((resolve) => {
         flushSync(() => setFrame(n));
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));

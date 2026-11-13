@@ -2,6 +2,8 @@ import type { Pointer } from "../parts";
 import { run, type Plan } from "../sim";
 import { WIN_W, type Format } from "../stage";
 import { ease, span, track } from "../time";
+import type { Lang } from "../words";
+import { CHAT } from "./words";
 
 /** Where each part of the day starts, in seconds. */
 export const D = {
@@ -15,7 +17,7 @@ export const D = {
   build: 14.0, ask: 21.2, picked: 23.2, answered: 24.0,
   /** The board gives way to the dependency graph, and the auto run starts. */
   merge: 25.6, run: 28.2,
-  dusk: 28.5, dawn: 35.5, morning: 37.6,
+  dawn: 35.5, morning: 37.6,
   /** The window leaves. */
   out: 41.0
 };
@@ -53,9 +55,9 @@ export const DEPS: [number, number][] = [[1, 2], [2, 4], [1, 5], [3, 5], [6, 7],
 /** Where each of the run's tickets sits in the graph: its level from the left and its row. */
 export const NODE: Record<number, [number, number]> = { 1: [0, 0], 3: [0, 2], 6: [0, 3], 2: [1, 0], 5: [1, 1], 7: [1, 3], 4: [2, 0], 8: [2, 3] };
 
-/** Daylight: 1 is Sunrise, 0 is Daybreak. Evening falls as the auto run starts and morning comes when it is done. */
-export const day = (t: number): number => 1 - ease.inOut(span(t, D.dusk, D.dusk + 1.9)) + ease.inOut(span(t, D.dawn, D.dawn + 1.9));
-export const rise = (t: number): number => track(t, [[D.dusk, 1], [D.dusk + 2, 0.12], [D.dawn - 0.3, 0.12], [D.dawn + 2.2, 1]]);
+/** Daylight: 0 is Daybreak, 1 is Sunrise. The story is an evening and its night; morning comes when the auto run is done. */
+export const day = (t: number): number => ease.inOut(span(t, D.dawn, D.dawn + 1.9));
+export const rise = (t: number): number => track(t, [[D.dawn - 0.3, 0.12], [D.dawn + 2.2, 1]]);
 /** Minutes since midnight on the wall clock; the night runs in a few seconds. */
 export const clock = (t: number): number => 21 * 60 + 10 + Math.min(t, D.run) * 1.7 + ease.inOut(span(t, D.run + 0.5, D.dawn + 1.6)) * 520;
 export const skyTime = (t: number): number => t + 26 * ease.inOut(span(t, D.run + 0.5, D.dawn + 1.6));
@@ -124,3 +126,16 @@ export const POINTER: Pointer = {
   ],
   clicks: [D.send, D.revert, ...REDO, D.picked, D.answered, D.merge + 0.35, D.run]
 };
+
+/** When the person starts typing each message; a letter takes KEY seconds, and Chinese is typed in fewer, slower strokes. */
+export const TYPED = { idea: 0.3, tidy: D.tidy - 0.75 };
+export const KEY = 0.07;
+export const rate = (lang: Lang): number => (lang === "zh" ? 2.4 : 1);
+/** When each letter of the person's messages is typed: what the soundtrack's keys are written from. */
+export const keysAt = (lang: Lang): number[] => [...[...CHAT[lang].idea].map((_, i) => TYPED.idea + i * KEY * rate(lang)), ...[...CHAT[lang].tidy].map((_, i) => TYPED.tidy + i * KEY * rate(lang))];
+
+/** When each line of each agent's terminal is written. The lines that reach Tomrade or git are the board's moves. */
+export const LINES = {
+  claude: [14.9, 15.5, 16.3, 17.4, 18.6, 19.7],
+  codex: [15.9, 16.5, 17.7, 19.2, D.ask, D.answered + 0.3]
+} as const;

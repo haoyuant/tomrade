@@ -9,7 +9,7 @@ import type { Lang } from "./words";
 /** A moment in a film something is heard at: what the renderer's soundtrack is written from. */
 export interface Cue {
   at: number;
-  kind: "pane" | "you" | "turn" | "hop" | "ask" | "click" | "run" | "dawn" | "fact" | "end" | "day" | "dusk" | "key" | "send" | "card" | "back" | "line" | "swap" | "morning";
+  kind: "pane" | "you" | "turn" | "hop" | "ask" | "click" | "run" | "dawn" | "fact" | "end" | "night" | "key" | "send" | "card" | "back" | "line" | "swap" | "morning";
   n: number;
 }
 
@@ -31,6 +31,8 @@ export interface FilmDef {
   pointer: Pointer;
   /** What is heard, and when; a language types its letters at its own pace. */
   cues: (lang: Lang) => Cue[];
+  /** The cuts it is laid out for, if not both. */
+  formats?: Format["id"][];
 }
 
 /** A film whose picture reads what its own Prepare measured. */
@@ -70,6 +72,8 @@ export function Film({ film: def, frame, f, lang }: { film: FilmDef; frame: numb
   return (
     <div className="film" data-ready={prepared === null ? undefined : ""} style={{ width: f.w, height: f.h }}>
       <IconSprite />
+      {/* the end card's cat, asked for from the first frame so it is there when the end comes */}
+      <i className="film-sun-cat film-preload" aria-hidden="true" />
       <def.Prepare lang={lang} f={f} onDone={setPrepared} />
       {prepared !== null && (
         <>

@@ -3,8 +3,10 @@ import { cues } from "../src/promo/babysitter/cues";
 import { PLAN, RUN, RUN_FROM, hop } from "../src/promo/babysitter/plan";
 import { T } from "../src/promo/babysitter/stage";
 import { D, DEPS, NODE, PLAN as DAY, RUN as RUN_DAY } from "../src/promo/day/story";
-import { FILMS } from "../src/promo/films";
+import { POINTER } from "../src/promo/babysitter/cues";
+import { CUTS, cuesOf, pointerOf, spanOf } from "../src/promo/day/cuts";
 import { COLUMNS, columnsAt, liveAt, paths, place, statusAt, variantAt } from "../src/promo/sim";
+import { C, CARD_SECONDS, K, PANE_MOVES, TERMINAL_POINTER, TERMINAL_SECONDS, W, WALL_POINTER, WALL_SECONDS, cardCues, terminalCues, wallCues } from "../src/promo/free/scripts";
 import { FPS } from "../src/promo/time";
 
 const HEIGHT = 70;
@@ -67,17 +69,33 @@ it("runs the day's auto run down the dependency graph, three at once, and ends w
   expect([live(D.ticket + 1), live(D.split + 1), live(D.revert + 1), live(D.redo + 1.5)]).toEqual([[0], [1, 2, 3, 4, 5], [0], [1, 2, 3, 4, 5]]);
 });
 
-it("keeps every film's cues in order and inside it, and its pointer's clicks on its route", () => {
-  expect(FILMS.map((film) => film.id)).toEqual([...new Set(FILMS.map((film) => film.id))]);
-  for (const film of FILMS) {
+it("keeps every cut's cues in order and inside it, and its pointer's clicks on its route", () => {
+  expect(CUTS.map((cut) => cut.id)).toEqual([...new Set(CUTS.map((cut) => cut.id))]);
+  for (const cut of CUTS) {
+    const { seconds } = spanOf(cut);
     for (const lang of ["en", "zh"] as const) {
-      const all = film.cues(lang);
-      expect(all.every((cue, i) => cue.at >= 0 && cue.at < film.seconds && (i === 0 || cue.at >= all[i - 1].at))).toBe(true);
+      const all = cuesOf(cut, lang);
+      expect(all.every((cue, i) => cue.at >= 0 && cue.at < seconds && (i === 0 || cue.at >= all[i - 1].at))).toBe(true);
       expect(all.filter((cue) => cue.kind === "end")).toHaveLength(1);
     }
-    expect(film.poster).toBeGreaterThanOrEqual(0);
-    expect(film.poster).toBeLessThan(film.seconds);
-    const { route, clicks } = film.pointer;
+    expect(cut.poster).toBeGreaterThanOrEqual(cut.from);
+    expect(cut.poster).toBeLessThan(cut.to);
+  }
+  for (const { route, clicks } of [POINTER, ...CUTS.map(pointerOf)]) {
+    expect(clicks.every((at) => at >= route[0].at && at <= route[route.length - 1].at)).toBe(true);
+    expect(route.every((stop, i) => i === 0 || stop.at > route[i - 1].at)).toBe(true);
+  }
+});
+
+it("keeps the free films' cues in order and inside them, and their beats in the order they are told", () => {
+  for (const [cues, seconds] of [[terminalCues(), TERMINAL_SECONDS], [wallCues(), WALL_SECONDS], [cardCues(), CARD_SECONDS]] as const) {
+    expect(cues.every((cue, i) => cue.at >= 0 && cue.at < seconds && (i === 0 || cue.at >= cues[i - 1].at))).toBe(true);
+    expect(cues.filter((cue) => cue.kind === "end")).toHaveLength(1);
+  }
+  for (const beats of [Object.values(K), Object.values(W), [...C.steps, C.own, C.end]]) expect(beats).toEqual([...beats].sort((a, b) => a - b));
+  // a pane's ticket is in review before it is done, and only after its ticket has come out beside it
+  expect(PANE_MOVES.every(([pr, done]) => pr > K.ticket && (done > pr || done === Infinity))).toBe(true);
+  for (const { route, clicks } of [TERMINAL_POINTER, WALL_POINTER]) {
     expect(clicks.every((at) => at >= route[0].at && at <= route[route.length - 1].at)).toBe(true);
     expect(route.every((stop, i) => i === 0 || stop.at > route[i - 1].at)).toBe(true);
   }

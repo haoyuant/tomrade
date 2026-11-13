@@ -65,7 +65,12 @@ async function film(id, format) {
     wake();
   });
   await win.loadFile(page, { query: { capture: "1", film: id, format, lang: locale } });
-  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues }) : setTimeout(wait, 30)); wait(); })");
+  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ formats: window.__film.formats, poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues }) : setTimeout(wait, 30)); wait(); })");
+  if (!info.formats.includes(format)) {
+    console.log(`${id} has no ${format} cut yet`);
+    win.destroy();
+    return;
+  }
   win.setContentSize(info.width, info.height + MARK_ROWS);
   await wc.executeJavaScript("document.fonts.ready.then(() => new Promise((resolve) => { const wait = () => (window.__film.ready() ? resolve(true) : setTimeout(wait, 30)); wait(); }))");
   await sleep(300);
