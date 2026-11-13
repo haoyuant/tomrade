@@ -16,6 +16,11 @@ type Scroll = (direction: "up" | "down", lines: number) => void;
 export type Words = { cut(text: string): string[] | null; load(): Promise<unknown> };
 const HAN = /\p{Script=Han}/u;
 const WORD_RUN = /^[\p{L}\p{N}\p{M}]+$/u;
+/**
+ * The half-width forms of ：；！？. Chinese is often written with these, and a word ends at one that touches a Chinese
+ * character as it does at the full-width mark. Anywhere else they stay inside the word: `a.ts:12`, `https://a?b=1`.
+ */
+const HALF_MARK = /^[:;!?]$/;
 
 /*
  * A program that lays its own text out (Claude Code) breaks a long file path at the right edge and indents the rest
@@ -300,29 +305,53 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
     if (scroll) edge = setInterval(scrollPast, 50);
   };
   /**
-   * A double-clicked run of Chinese, which xterm takes up to the next space or punctuation: only the dictionary word
-   * under the pointer. The first one waits for the dictionary to load, then narrows if the selection is still that run.
+   * A double-clicked run with Chinese in it, which xterm takes up to the next space or punctuation: only the part
+   * under the pointer between half-width marks that touch Chinese, and of a part that is all words, only the
+   * dictionary word. The first one waits for the dictionary to load, then narrows if the selection is still that part.
    */
   const narrow = (clientX: number): void => {
     const at = terminal.getSelectionPosition();
     const line = at && at.start.y === at.end.y ? terminal.buffer.active.getLine(at.start.y) : undefined;
-    if (!at || !line || !words) return;
+    if (!at || !line) return;
     const cells: { col: number; width: number }[] = [];
     const cellOf: number[] = [];
-    let run = "";
+    const points: string[] = [];
     for (let x = at.start.x; x < at.end.x; x++) {
       const cell = line.getCell(x);
       const width = cell?.getWidth() ?? 0;
       if (!cell || !width) continue;
-      const chars = cell.getChars() || " ";
-      for (let i = [...chars].length; i > 0; i--) cellOf.push(cells.length);
-      run += chars;
+      for (const point of cell.getChars() || " ") {
+        cellOf.push(cells.length);
+        points.push(point);
+      }
       cells.push({ col: x, width });
     }
-    if (!HAN.test(run) || !WORD_RUN.test(run)) return;
+    if (!points.some((point) => HAN.test(point))) return;
+    const rect = box();
+    const col = Math.floor(((clientX - rect.left) / rect.width) * terminal.cols);
+    const clicked = cellOf.indexOf(cells.findIndex((c) => col >= c.col && col < c.col + c.width));
+    if (clicked < 0) return;
+    const ends = (i: number) => HALF_MARK.test(points[i] ?? "") && (HAN.test(points[i - 1] ?? "") || HAN.test(points[i + 1] ?? ""));
+    // A mark that ends words is selected alone, as xterm selects its own.
+    let from = clicked;
+    let to = clicked;
+    if (!ends(clicked)) {
+      while (from > 0 && !ends(from - 1)) from--;
+      while (to < points.length - 1 && !ends(to + 1)) to++;
+    }
+    let range = { start: at.start.x, end: at.end.x };
+    const select = (first: number, last: number) => {
+      const start = cells[first].col;
+      const end = cells[last].col + cells[last].width;
+      if (start !== range.start || end !== range.end) terminal.select(start, at.start.y, end - start);
+      range = { start, end };
+    };
+    select(cellOf[from], cellOf[to]);
+    const run = points.slice(from, to + 1).join("");
+    if (!words || !HAN.test(run) || !WORD_RUN.test(run)) return;
     const parts = words.cut(run);
     if (!parts) {
-      const was = `${at.start.x},${at.start.y},${at.end.x}`;
+      const was = `${range.start},${at.start.y},${range.end}`;
       void words.load().then(() => {
         const now = terminal.getSelectionPosition();
         if (!now || `${now.start.x},${now.start.y},${now.end.x}` !== was) return;
@@ -332,21 +361,10 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement, sc
       }, () => undefined);
       return;
     }
-    const rect = box();
-    const col = Math.floor(((clientX - rect.left) / rect.width) * terminal.cols);
-    const clicked = cells.findIndex((c) => col >= c.col && col < c.col + c.width);
-    if (clicked < 0) return;
-    let from = 0;
     for (const part of parts) {
-      const length = [...part].length;
-      const first = cellOf[from];
-      const last = cellOf[from + length - 1];
-      from += length;
-      if (first === undefined || last === undefined || clicked < first || clicked > last) continue;
-      const start = cells[first].col;
-      const end = cells[last].col + cells[last].width;
-      if (start !== at.start.x || end !== at.end.x) terminal.select(start, at.start.y, end - start);
-      return;
+      const last = from + [...part].length - 1;
+      if (clicked >= from && clicked <= last && last <= to) return select(cellOf[from], cellOf[last]);
+      from = last + 1;
     }
   };
   const originOf = (range: Range, whole: boolean) => {
