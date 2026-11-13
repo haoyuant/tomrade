@@ -10,7 +10,7 @@ const xterm = fs.readFileSync(require.resolve("@xterm/xterm"), "utf8");
 const source = fs.readFileSync(new URL("../../../packages/ui/src/code-sessions/selection.ts", import.meta.url), "utf8");
 // jieba as the app loads it; the page gets its cuts of the fixture's runs through a stand-in that loads on first use.
 const jieba = require("jieba-wasm");
-const cuts = Object.fromEntries(["编辑和保存", "可以直接改文件", "多光标", "用MCP读取", "读取或解决评论"].map((run) => [run, jieba.cut(run, true)]));
+const cuts = Object.fromEntries(["编辑和保存", "可以直接改文件", "多光标", "用MCP读取", "读取或解决评论", "加速域名", "然后重启"].map((run) => [run, jieba.cut(run, true)]));
 const follower = ts.transpile(source.replace(/export (function|const)/g, "$1"), { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }).replace(/export \{\};?/, "");
 
 app.whenReady().then(async () => {
@@ -133,8 +133,9 @@ app.whenReady().then(async () => {
       await wait(100);
       return js("term.getSelection()");
     };
-    await js("paintRows(['- 编辑和保存：可以直接改文件、多光标（Cmd-D）。离开', 'Monaco 之外，还加了 Solidity、Typst、Nim 等。', 'see packages/ui/src/a.ts:12 and https://tomrade.com/a?b=1 now', '用MCP读取 /tmp/中文目录/a.png 读取或解决评论', '', '', '', '', '', '', '', ''])");
-    for (const [col, row, expected] of [[5.5, 0, "编辑"], [20.5, 0, "直接"], [32.5, 0, "光标"], [40.5, 0, "Cmd-D"], [3.5, 3, "MCP"], [7, 3, "读取"], [40.5, 3, "评论"], [16, 3, "/tmp/中文目录/a.png"], [32.5, 1, "Typst"], [10, 2, "packages/ui/src/a.ts:12"], [40, 2, "https://tomrade.com/a?b=1"]]) {
+    await js("paintRows(['- 编辑和保存：可以直接改文件、多光标（Cmd-D）。离开', 'Monaco 之外，还加了 Solidity、Typst、Nim 等。', 'see packages/ui/src/a.ts:12 and https://tomrade.com/a?b=1 now', '用MCP读取 /tmp/中文目录/a.png 读取或解决评论', '- AliyunCDNFullAccess:建 CDN 加速域名;然后重启!', '详见:https://tomrade.com/a?b=1 端口:8080', '', '', '', '', '', ''])");
+    // A half-width mark that touches Chinese ends the word, the first time before the dictionary has loaded; in a path or a URL it does not.
+    for (const [col, row, expected] of [[30.5, 4, "加速"], [10, 4, "AliyunCDNFullAccess"], [21.5, 4, ":"], [23, 4, "建"], [44.5, 4, "重启"], [2, 5, "详见"], [15, 5, "https://tomrade.com/a?b=1"], [33, 5, "端口"], [37.5, 5, "8080"], [5.5, 0, "编辑"], [20.5, 0, "直接"], [32.5, 0, "光标"], [40.5, 0, "Cmd-D"], [3.5, 3, "MCP"], [7, 3, "读取"], [40.5, 3, "评论"], [16, 3, "/tmp/中文目录/a.png"], [32.5, 1, "Typst"], [10, 2, "packages/ui/src/a.ts:12"], [40, 2, "https://tomrade.com/a?b=1"]]) {
       const got = await word(col, row);
       if (got !== expected) throw new Error(`Double-click selected ${JSON.stringify(got)}, not ${JSON.stringify(expected)}`);
       console.log("PASS", "double-click selects", expected);
