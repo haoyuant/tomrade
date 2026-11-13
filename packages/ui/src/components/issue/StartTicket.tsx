@@ -12,13 +12,13 @@ import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, t
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
 import { RunOn } from "./RunOn";
-import { labelMiss, targetOf, takers, useDevices } from "~/lib/devices";
+import { asksElsewhere, labelMiss, runOnState, targetOf, takers, useDevices } from "~/lib/devices";
 import { useI18n } from "~/lib/i18n";
 import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
-import { invalidateWorkspace, keys, useItems, useSettings } from "~/lib/queries";
+import { invalidateWorkspace, keys, useHubInfo, useItems, useSettings } from "~/lib/queries";
 import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
@@ -80,6 +80,8 @@ export function StartTicket(props: StartTicketProps) {
   const settings = useSettings();
   const terminalWindow = useTerminalWindow(projectId).data === true;
   const starting = useStartingFor(item.id);
+  const hub = useHubInfo();
+  const devices = useDevices();
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
   // Pointed out the first time it could actually run: a local agent is ready to take the ticket.
   useHintToast("hint.start", startable && !!engines.data?.some((e) => e.ok && e.capabilities.some((c) => c === "code" || c === "general")), "onboarding.startHint");
@@ -94,6 +96,8 @@ export function StartTicket(props: StartTicketProps) {
   const lastAgent = latestSession?.agent ?? defaults.data?.engine ?? null;
   const quickEngine = lastAgent ? findEngine(engines.data, lastAgent) : undefined;
   const general = item.workType === "general";
+  // The one-click Start opens no dialog, so the way to another computer is said here too, wherever the dialog would say it.
+  const elsewhereOffered = !general && runOnState(hub.data?.cloudEnabled, devices.data, projectId).kind !== "hidden";
   const quickWay = quickEngine
     ? wayOf({
         mode: defaultStartMode({ latest: latestSession?.mode ?? null, remembered: defaults.data?.mode ?? null, terminalWindow, coding: !general, agentInTerminal: quickEngine.terminal !== false }),
@@ -165,6 +169,7 @@ export function StartTicket(props: StartTicketProps) {
             >
               <MenuHead title={t("codeLink.waysLabel")} />
               {ways.map((w) => <MenuStackItem key={wayKey(w)} name={wayName(w)} sub={wayNote(w)} onSelect={() => openDialog(true, w)} />)}
+              {elsewhereOffered && <MenuActionItem icon={<Icon name="i-monitor" size={13} />} name={t("devices.runElsewhere")} onSelect={() => openDialog(false)} />}
               <MenuActionItem icon={<Icon name="i-sliders" size={13} />} name={t("codeLink.fullSettings")} onSelect={() => openDialog(false)} />
             </Menu>
           </>
@@ -219,8 +224,9 @@ function StartTicketDialog({
   // Where it runs: here unless the person picks another computer, or the ticket's labels name one that can take it.
   const devices = useDevices();
   const [chosenTarget, setChosenTarget] = useState<string | null>(null);
-  // A label no computer can answer now leaves the ticket here, where Start says why.
-  const target = chosenTarget ?? (quick || labelMiss(item, projectId, devices.data) ? null : targetOf(item, takers(devices.data?.devices, projectId))) ?? "here";
+  // A label that asks for another computer chooses it; one no computer can answer now leaves the ticket here, where Start says why.
+  const labelled = asksElsewhere(item, projectId, devices.data);
+  const target = chosenTarget ?? (labelled && !labelMiss(item, projectId, devices.data) ? targetOf(item, takers(devices.data?.devices, projectId)) : null) ?? "here";
   const elsewhere = target !== "here";
   const engines = useEngines();
   const settings = useSettings();
@@ -406,12 +412,13 @@ function StartTicketDialog({
 
   // One click: once everything the choices rest on is known, start with them — unless something needs the person first.
   const quickTried = useRef(false);
-  const known = !!engines.data && !!settings.data && defaults.isSuccess && sessions.isSuccess && deliveries.isSuccess && threads.isSuccess && terminalWindowQuery.isSuccess && (!threadId || !!threadDetail) && !recommending;
+  const known = !!engines.data && !!settings.data && defaults.isSuccess && sessions.isSuccess && deliveries.isSuccess && threads.isSuccess && terminalWindowQuery.isSuccess && (!threadId || !!threadDetail) && !recommending && !devices.isLoading;
   useEffect(() => {
     if (!quick || quickTried.current || !known) return;
     quickTried.current = true;
     // a way from ▾ whose agent cannot take it here is not started with another one behind the person's back
-    if (ready && !waitsOn.length && !asked && (!way || engineId === way.engine)) submit();
+    // nor is a ticket whose label asks for another computer started here unasked
+    if (ready && !waitsOn.length && !asked && !labelled && (!way || engineId === way.engine)) submit();
     else reveal();
   });
 
