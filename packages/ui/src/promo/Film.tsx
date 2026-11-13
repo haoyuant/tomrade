@@ -9,7 +9,7 @@ import type { Lang } from "./words";
 /** A moment in a film something is heard at: what the renderer's soundtrack is written from. */
 export interface Cue {
   at: number;
-  kind: "pane" | "you" | "turn" | "hop" | "ask" | "click" | "run" | "dawn" | "fact" | "end" | "night" | "key" | "send" | "card" | "back" | "line" | "swap" | "morning";
+  kind: "pane" | "you" | "turn" | "hop" | "ask" | "click" | "run" | "dawn" | "fact" | "end" | "night" | "key" | "tick" | "send" | "card" | "back" | "line" | "swap" | "morning";
   n: number;
 }
 
@@ -33,7 +33,14 @@ export interface FilmDef {
   cues: (lang: Lang) => Cue[];
   /** The cuts it is laid out for, if not both. */
   formats?: Format["id"][];
+  /** A film that paints its whole frame itself: no sky behind it, no theme's lights. */
+  bare?: boolean;
+  /** Its music, when it has a beat the picture is cut to; the soundtrack's composer reads it. */
+  song?: Song;
 }
+
+/** A piece of music by its style: its tempo, how many beats it runs, and the beats its parts turn at. */
+export interface Song { style: "pulse" | "nocturne" | "chip"; bpm: number; beats: number; marks: Record<string, number> }
 
 /** A film whose picture reads what its own Prepare measured. */
 export function film<P>(def: Omit<FilmDef, "Prepare" | "Picture"> & { Prepare: FC<{ lang: Lang; f: Format; onDone: (prepared: P) => void }>; Picture: FC<{ t: number; f: Format; lang: Lang; prepared: P }> }): FilmDef {
@@ -56,10 +63,10 @@ function light(day: number, f: Format): CSSProperties | undefined {
 function Layer({ film: def, theme, day, t, f, lang, prepared }: { film: FilmDef; theme: "daybreak" | "sunrise"; day?: number; t: number; f: Format; lang: Lang; prepared: unknown }) {
   return (
     <div className={`film-layer ${theme}`} data-unified-sky="" style={day === undefined ? undefined : light(day, f)}>
-      <Sky rise={def.rise(t)} />
-      <Motes sky={theme} />
+      {!def.bare && <Sky rise={def.rise(t)} />}
+      {!def.bare && <Motes sky={theme} />}
       <def.Picture t={t} f={f} lang={lang} prepared={prepared} />
-      <i className="film-grain" aria-hidden="true" />
+      {!def.bare && <i className="film-grain" aria-hidden="true" />}
     </div>
   );
 }

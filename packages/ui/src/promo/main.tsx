@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { setDomainLocale } from "~/lib/domain";
 import { LocaleWords } from "~/lib/i18n";
-import { Film, type Cue } from "./Film";
+import { Film, type Cue, type Song } from "./Film";
 import { FILMS } from "./films";
 import { TALL, WIDE } from "./stage";
 import { FPS, clamp } from "./time";
@@ -17,7 +17,7 @@ import "./promo.css";
 declare global {
   interface Window {
     /** What the renderer drives: draw frame n, resolved once it is on screen. */
-    __film?: { films: string[]; formats: string[]; poster: number; frames: number; fps: number; width: number; height: number; cues: Cue[]; ready: () => boolean; seek: (frame: number) => Promise<void> };
+    __film?: { films: string[]; formats: string[]; poster: number; frames: number; fps: number; width: number; height: number; cues: Cue[]; song: Song | null; ready: () => boolean; seek: (frame: number) => Promise<void> };
   }
 }
 
@@ -54,7 +54,7 @@ function Player() {
   useEffect(() => {
     if (!capture) return;
     window.__film = {
-      films: FILMS.map((one) => one.id), formats: film.formats ?? ["wide", "tall"], poster: Math.round(film.poster * FPS), frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: film.cues(lang),
+      films: FILMS.map((one) => one.id), formats: film.formats ?? ["wide", "tall"], poster: Math.round(film.poster * FPS), frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: film.cues(lang), song: film.song ?? null,
       ready: () => document.querySelector(".film[data-ready]") !== null && logo.complete,
       seek: (n) => new Promise((resolve) => {
         flushSync(() => setFrame(n));

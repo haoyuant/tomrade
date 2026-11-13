@@ -6,6 +6,7 @@ import { D, DEPS, NODE, PLAN as DAY, RUN as RUN_DAY } from "../src/promo/day/sto
 import { POINTER } from "../src/promo/babysitter/cues";
 import { CUTS, cuesOf, pointerOf, spanOf } from "../src/promo/day/cuts";
 import { COLUMNS, columnsAt, liveAt, paths, place, statusAt, variantAt } from "../src/promo/sim";
+import { BOARD, LANTERN, LANTERN_SECONDS, POSTER, POSTER_SECONDS, RIVER, TTY, TTY_SECONDS, lanternCues, posterCues, ttyCues } from "../src/promo/beat/scripts";
 import { C, CARD_SECONDS, K, PANE_MOVES, TERMINAL_POINTER, TERMINAL_SECONDS, W, WALL_POINTER, WALL_SECONDS, cardCues, terminalCues, wallCues } from "../src/promo/free/scripts";
 import { FPS } from "../src/promo/time";
 
@@ -99,4 +100,19 @@ it("keeps the free films' cues in order and inside them, and their beats in the 
     expect(clicks.every((at) => at >= route[0].at && at <= route[route.length - 1].at)).toBe(true);
     expect(route.every((stop, i) => i === 0 || stop.at > route[i - 1].at)).toBe(true);
   }
+});
+
+it("cuts the films with a song to its beats: every part inside the music, every cue inside the film", () => {
+  for (const [song, seconds, cues] of [[POSTER, POSTER_SECONDS, posterCues()], [LANTERN, LANTERN_SECONDS, lanternCues()], [TTY, TTY_SECONDS, ttyCues()]] as const) {
+    const beats = Object.values(song.marks);
+    expect(beats).toEqual([...beats].sort((a, b) => a - b));
+    expect(beats.every((mark) => mark > 0 && mark < song.beats)).toBe(true);
+    expect(seconds).toBeGreaterThan((song.beats * 60) / song.bpm);
+    expect(cues.every((cue) => cue.at >= 0 && cue.at < seconds)).toBe(true);
+  }
+  // the terminal's board: claimed, then a pull request, then merged, and all eight merged before the song's fanfare
+  expect(BOARD.every((ticket) => ticket.claim < ticket.pr && ticket.pr < ticket.merge && ticket.merge <= TTY.marks.win)).toBe(true);
+  // the river: seven lanterns through the bridge before dawn, the last only once the person has answered
+  expect(RIVER.bridge + 6).toBeLessThan(RIVER.dawn);
+  expect(RIVER.last).toBeGreaterThan(RIVER.answer);
 });

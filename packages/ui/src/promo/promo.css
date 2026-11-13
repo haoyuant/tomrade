@@ -252,3 +252,94 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
   box-shadow: var(--elev-raised), 0 0 0 calc(1px * var(--lit)) var(--accent), 0 10px 34px -10px color-mix(in srgb, var(--sun-glow) calc(100% * var(--lit)), transparent);
 }
 .film-one-term .film-term-lines { padding: 0.5em 0.6em; }
+
+/* ─── poster: a film in ink, paper and one red, cut to the beat ───────── */
+.poster {
+  --poster-ink: #15121b; --poster-paper: #f4ecdd; --poster-red: #e0452b;
+  position: absolute; inset: 0; overflow: hidden; background: var(--poster-ink); color: var(--poster-paper);
+  font-family: var(--font-display); font-weight: 800; letter-spacing: -0.045em; line-height: 1;
+}
+.poster:lang(zh) { letter-spacing: -0.01em; -webkit-text-stroke: 0.018em currentColor; }
+.poster.is-paper { background: var(--poster-paper); color: var(--poster-ink); }
+.poster.is-red { background: var(--poster-red); color: var(--poster-ink); }
+.poster-sheet { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.poster-word { position: absolute; white-space: nowrap; }
+.poster-name { letter-spacing: 0.08em; padding-left: 0.08em; }
+.poster-line { font-family: Charter, Georgia, "Songti SC", serif; font-weight: 400; letter-spacing: 0; -webkit-text-stroke: 0; }
+.poster-get { display: inline-block; padding: 0.4em 1.2em; border-radius: 999px; background: var(--poster-ink); color: var(--poster-paper); font-weight: 700; letter-spacing: 0.01em; -webkit-text-stroke: 0; }
+.poster-sun { position: absolute; border-radius: 50%; background: var(--poster-red); overflow: hidden; }
+.poster-sun > .film-sun-cat { background: var(--poster-ink); }
+.poster-moon { position: absolute; width: 190px; height: 190px; border-radius: 50%; box-shadow: inset -52px 15px 0 0 var(--poster-paper); }
+.poster-grid { position: absolute; left: 300px; top: 210px; width: 1320px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 60px 0; justify-items: center; align-items: center; }
+.poster-grid > i { width: 110px; height: 110px; border-radius: 50%; background: currentColor; }
+.poster-ask { position: absolute; font-family: var(--font-mono); font-weight: 700; letter-spacing: 0; color: var(--poster-paper); -webkit-text-stroke: 0; white-space: nowrap; }
+.poster-block { position: absolute; background: var(--poster-ink); }
+.poster-block.is-red { background: var(--poster-red); }
+.poster-tick { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 230px; color: var(--poster-paper); }
+.poster-row { position: absolute; display: flex; align-items: center; height: 96px; font-family: var(--font-mono); font-size: 54px; font-weight: 600; letter-spacing: 0; -webkit-text-stroke: 0; }
+.poster-marks { position: absolute; display: flex; gap: 26px; }
+.poster-marks > i { width: 76px; height: 76px; border-radius: 50%; border: 7px solid currentColor; opacity: 0.28; }
+.poster-marks > i.is-on { opacity: 1; background: conic-gradient(var(--poster-red) calc(360deg * var(--fill)), transparent 0); border-color: var(--poster-red); }
+.poster-marks > i.is-on:first-child { border-color: currentColor; }
+.poster-dots { position: absolute; left: 130px; top: 660px; width: 1660px; display: grid; grid-template-columns: repeat(15, 1fr); gap: 46px 0; justify-items: center; }
+.poster-dots > i { width: 64px; height: 64px; border-radius: 50%; background: currentColor; }
+.poster-dots > i.is-asking { background: var(--poster-red); }
+.poster-log { position: absolute; left: 130px; top: 250px; font-family: var(--font-mono); font-size: 62px; font-weight: 600; letter-spacing: 0; line-height: 1.5; -webkit-text-stroke: 0; }
+
+/* ─── lantern: a night in thin lines, each ticket a lantern on a river ─ */
+.river {
+  --river-night: #0c0e2b; --river-deep: #1c2052; --river-line: #f1e3c4; --river-warm: #ffc56e; --river-ink: #2b1c33;
+  position: absolute; inset: 0; overflow: hidden; color: var(--river-line);
+  background: linear-gradient(180deg, var(--river-night), var(--river-deep) 68%, #2a2560);
+  font-family: Charter, Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+}
+.river-dawn { position: absolute; inset: 0; opacity: var(--day); background: linear-gradient(180deg, #f6dcc4, #f7c9a0 52%, #f3a57c 70%, #e9bfa6); }
+.river-star { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--river-line); }
+.river-moon { position: absolute; width: 140px; height: 140px; border-radius: 50%; box-shadow: inset -38px 12px 0 0 var(--river-line), 0 0 60px 6px color-mix(in srgb, var(--river-line) 14%, transparent); }
+.river-moon > span { position: absolute; left: 168px; top: 48px; font-size: 38px; letter-spacing: 0.06em; opacity: 0.7; }
+.river-sun { position: absolute; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 35%, #ffd9a0, #f59a4a 55%, #e2573a); box-shadow: 0 0 120px 30px rgb(245 154 74 / 0.45); }
+.river-sun > .film-sun-cat { background: var(--river-ink); }
+.river-lines { position: absolute; inset: 0; }
+.river-lines :is(path, circle, rect) { fill: none; stroke: color-mix(in srgb, var(--river-line) calc(100% - 100% * var(--day)), var(--river-ink)); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.river-lines .is-water { stroke-width: 2; opacity: 0.4; }
+.river-lantern {
+  position: absolute; width: 54px; height: 74px; border-radius: 12px 12px 18px 18px; transform-origin: 50% 100%;
+  border: 4px solid color-mix(in srgb, var(--river-line) calc(100% - 100% * var(--day)), var(--river-ink));
+}
+.river-lantern > i { position: absolute; left: 50%; bottom: 12px; width: 14px; height: 20px; margin-left: -7px; border-radius: 50% 50% 45% 45%; background: var(--river-warm); }
+.river-lantern.is-lit { border-color: var(--river-warm); background: linear-gradient(180deg, rgb(255 214 140 / 0.9), rgb(255 150 70 / 0.85)); box-shadow: 0 0 34px 8px rgb(255 180 90 / 0.55), 0 58px 22px -18px rgb(255 180 90 / 0.3); }
+.river-lantern.is-waiting { border-color: #f0703a; background: rgb(255 140 70 / 0.3); box-shadow: 0 0 26px 6px rgb(255 140 70 / 0.55); }
+.river-line { position: absolute; left: 0; right: 0; top: 916px; margin: 0; text-align: center; font-size: 56px; line-height: 1.2; letter-spacing: 0.02em; color: color-mix(in srgb, var(--river-line) calc(100% - 100% * var(--day)), var(--river-ink)); }
+.river-name { position: absolute; left: 560px; top: 250px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; color: var(--river-ink); }
+.river-name > b { font-size: 150px; font-weight: 400; letter-spacing: -0.01em; line-height: 1; }
+.river-name > span { font-size: 54px; }
+.river-name > em { margin-top: 14px; padding: 0.35em 1.1em; border-radius: 999px; border: 3px solid var(--river-ink); font-style: normal; font-size: 40px; font-family: var(--font-display); font-weight: 600; }
+
+/* ─── tty: the whole frame is a terminal ──────────────────────────────── */
+.tty {
+  --tty-fg: #c9f7d6; --tty-green: #7df59b; --tty-amber: #ffc66b; --tty-red: #ff6f6f; --tty-dim: #5f7a6b; --tty-brand: #ff8a4c;
+  position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, #0f1614, #06090a 78%); color: var(--tty-fg);
+  font-family: var(--font-mono); font-size: 56px; line-height: 76px; font-weight: 500; text-shadow: 0 0 18px color-mix(in srgb, currentColor 55%, transparent);
+}
+.tty-screen { position: absolute; inset: 56px 90px; transform-origin: 50% 50%; white-space: pre; }
+.tty-screen b { font-weight: 500; }
+.tty pre { margin: 0; font: inherit; }
+.tty-lines { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(180deg, transparent 0 3px, rgb(0 0 0 / 0.22) 3px 4px); box-shadow: inset 0 0 220px 40px rgb(0 0 0 / 0.75); }
+.tty-dim { color: var(--tty-dim); }
+.tty-green { color: var(--tty-green); }
+.tty-amber { color: var(--tty-amber); }
+.tty-red { color: var(--tty-red); }
+.tty-big { font-size: 88px; line-height: 130px; font-weight: 700; }
+.tty-cursor { display: inline-block; width: 0.56em; height: 1.02em; margin-left: 0.08em; vertical-align: -0.16em; background: currentColor; box-shadow: 0 0 18px currentColor; }
+.tty-count { position: absolute; right: 0; top: 0; display: flex; flex-direction: column; align-items: flex-end; transform-origin: 100% 0; color: var(--tty-red); line-height: 1; }
+.tty-count > b { font-size: 300px; font-weight: 700; }
+.tty-count > span { font-size: 48px; }
+.tty-banner { display: flex; align-items: flex-end; gap: 50px; margin: 30px 0 34px; color: var(--tty-brand); line-height: 52px; font-size: 50px; }
+.tty-cat { color: var(--tty-amber); line-height: 60px; }
+.tty-board { display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px 0 26px; border: 3px solid var(--tty-dim); height: 410px; }
+.tty-board > div { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 26px; padding: 0 26px; border-left: 3px solid var(--tty-dim); }
+.tty-board > div:first-child { border-left: 0; }
+.tty-board > div > b { flex: 0 0 100%; margin: 6px -26px 12px; padding: 0 26px; border-bottom: 3px solid var(--tty-dim); color: var(--tty-fg); }
+.tty-board > div > span { display: inline-block; transform-origin: 50% 50%; }
+.tty-end { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 20px; }
+.tty-end .tty-banner { margin: 0 0 40px; }

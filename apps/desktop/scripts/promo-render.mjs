@@ -65,7 +65,7 @@ async function film(id, format) {
     wake();
   });
   await win.loadFile(page, { query: { capture: "1", film: id, format, lang: locale } });
-  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ formats: window.__film.formats, poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues }) : setTimeout(wait, 30)); wait(); })");
+  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ formats: window.__film.formats, poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues, song: window.__film.song }) : setTimeout(wait, 30)); wait(); })");
   if (!info.formats.includes(format)) {
     console.log(`${id} has no ${format} cut yet`);
     win.destroy();
@@ -134,7 +134,7 @@ async function film(id, format) {
   win.destroy();
   if (sound) {
     const wav = path.join(out, `${name}.wav`);
-    fs.writeFileSync(wav, soundtrack(info.cues, info.frames / info.fps));
+    fs.writeFileSync(wav, soundtrack(info.cues, info.frames / info.fps, info.song));
     const mux = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", picture, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file], { stdio: "inherit" });
     if (mux.status !== 0) throw new Error("ffmpeg could not add the soundtrack");
     fs.rmSync(wav);
