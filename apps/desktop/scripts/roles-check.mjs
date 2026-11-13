@@ -106,7 +106,7 @@ const run = async () => {
   await until(`!!document.querySelector('[data-testid="start-ticket"]')`);
   await $(`document.querySelector('[data-testid="start-ticket"]').click(); true`);
   check("Start offers the project's roles that work tickets, the implementer first", await until(`[...document.querySelectorAll('#stRole option')].map((o) => o.textContent).join() === 'Implementer,Careful' && document.querySelector('#stRole').value === 'implementer'`), await $(`[...document.querySelectorAll('#stRole option')].map((o) => o.textContent)`));
-  check("as the implementer it starts as it always did", (await $(`document.querySelector('#stEngine')?.value`)) === "alpha" && (await $(`document.querySelector('[data-testid="start-role-hint"]')?.textContent`)) === "Roles are made and changed under Project settings → Roles.", await $(`document.querySelector('#stEngine')?.value`));
+  check("as the implementer it starts as it always did", (await $(`document.querySelector('#stEngine')?.value`)) === "alpha" && !(await $(`!!document.querySelector('[data-testid="start-role-hint"]')`)) && (await $(`document.querySelector('#stRole')?.title`)) === "Roles are made and changed under Project settings → Roles.", await $(`document.querySelector('#stEngine')?.value`));
   // in the panel, where a run has a permission mode
   await press(`document.querySelector('[data-testid="start-mode"] [data-mode="run"]')`);
   await pick("#stRole", made.id);

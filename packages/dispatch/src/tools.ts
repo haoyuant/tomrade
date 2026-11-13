@@ -2,6 +2,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import { languageTag } from "@tomradex/domain";
 import type { DeviceView, DevicesInfo } from "@tomradex/hub-cloud";
+import type { Role } from "@tomradex/roles";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { PLATFORM_LABELS, unfit, type Unfit } from "./match.js";
 import type { Queue } from "./queue.js";
@@ -9,6 +10,7 @@ import { DISPATCH_WORDS } from "./words.js";
 
 interface ItemsHost { getByKey(projectId: string, key: string): { id: string; key: string; title: string } | null }
 interface CloudHost { devicesInfo?(): DevicesInfo }
+interface RolesHost { list(projectId: string): Role[] }
 
 const PLATFORM_NAMES: Record<string, string> = { win32: "Windows", darwin: "macOS", linux: "Linux" };
 /** A platform as the system names it, from the label a ticket carries for it (`windows` → `win32`). */
@@ -20,6 +22,8 @@ const WHY: Record<Unfit, string> = {
   "not-accepting": "it does not accept work; that is turned on at that computer, under Settings → Devices, by the person",
   project: "it accepts work, but not for this project",
   "no-agent": "no coding agent is installed and signed in there",
+  "role-agent": "none of the agents the role names is installed and signed in there",
+  "role-limit": "it lets a ticket sent to it do less than the role allows; that limit is set at that computer, under Settings → Devices",
   offline: "it is off: a ticket sent now waits for it, up to a day",
   busy: "it already runs as many sessions as it accepts: a ticket sent now waits"
 };
@@ -53,6 +57,14 @@ export function registerTools(ctx: Context, queue: () => Queue): void {
     return item;
   };
   const nameOf = (devices: DeviceView[], id: string | null) => (id ? (devices.find((d) => d.id === id)?.name ?? id) : null);
+  /** A role of the project that works tickets, by its id or its name. */
+  const roleOf = (projectId: string, asked: string): Role => {
+    const wanted = asked.trim().toLowerCase();
+    const all = ((ctx.get("roles") as RolesHost | undefined)?.list(projectId) ?? []).filter((role) => role.stage === "implement");
+    const role = all.find((r) => r.id.toLowerCase() === wanted) ?? all.find((r) => r.title.trim().toLowerCase() === wanted);
+    if (!role) throw new Error(`dispatch_ticket: this project has no role "${asked}" that works tickets${all.length ? ` (it has: ${all.map((r) => r.title).join(", ")})` : ""}`);
+    return role;
+  };
 
   tools.kit("devices", "the account's other computers: which are on and take work, and sending a ticket to one");
   tools.register(
@@ -105,12 +117,17 @@ export function registerTools(ctx: Context, queue: () => Queue): void {
         key: z.string().min(1).describe("The ticket key, e.g. TOM-42"),
         to: z.string().min(1).optional().describe("One computer, by its name or id as list_devices gives them"),
         platform: z.enum(["windows", "macos", "linux"]).optional().describe("Instead of `to`: any of the account's computers of this platform"),
+        role: z.string().trim().min(1).optional().describe("The project's role to work the ticket as, by its name or id: the other computer uses that role's agents, limit and instructions. A role that names a computer or a platform needs neither `to` nor `platform`"),
         userSaid: z.string().trim().min(1).optional().describe("Only where Tomrade cannot ask the person itself: their own words agreeing to send this ticket there, quoted"),
         projectId: z.string().optional()
       }),
       execute: async (args, inv) => {
         const projectId = requireProjectId("dispatch_ticket", args.projectId, inv);
-        if (!args.to === !args.platform) throw new Error("dispatch_ticket: name one computer (to) or a platform, not both");
+        const role = args.role ? roleOf(projectId, args.role) : null;
+        // What the role asks of a computer stands in where the call names none.
+        const to = args.to ?? (!args.platform ? role?.needs.device : undefined);
+        const platformLabel = args.platform ?? (!to && role?.needs.platform ? PLATFORM_LABELS[role.needs.platform] : undefined);
+        if (!to === !platformLabel) throw new Error("dispatch_ticket: name one computer (to) or a platform, not both");
         const item = ticket("dispatch_ticket", projectId, args.key);
         const read = info();
         const down = unavailable(read);
@@ -119,20 +136,20 @@ export function registerTools(ctx: Context, queue: () => Queue): void {
         let target: { to: string } | { platform: string };
         let where: string;
         let wait: string | null = null;
-        if (args.to) {
-          const wanted = args.to.trim().toLowerCase();
+        if (to) {
+          const wanted = to.trim().toLowerCase();
           const device = others.find((d) => d.id.toLowerCase() === wanted || d.name.trim().toLowerCase() === wanted);
-          if (!device) return { sent: false, why: `No other computer of the account is called "${args.to}".`, computers: others.map((d) => d.name) };
-          const fit = unfit(device, projectId);
+          if (!device) return { sent: false, why: `No other computer of the account is called "${to}".`, computers: others.map((d) => d.name) };
+          const fit = unfit(device, projectId, [], role);
           if (fit && !waits(fit)) return { sent: false, why: `${device.name} cannot take it: ${WHY[fit]}.` };
           if (fit) wait = `${device.name}: ${WHY[fit]}.`;
           target = { to: device.id };
           where = device.name;
         } else {
-          const platform = platformOf(args.platform!)!;
+          const platform = platformOf(platformLabel!)!;
           const pool = others.filter((d) => d.platform === platform);
           if (!pool.length) return { sent: false, why: `The account has no other ${PLATFORM_NAMES[platform]} computer.` };
-          const fits = pool.map((d) => unfit(d, projectId));
+          const fits = pool.map((d) => unfit(d, projectId, [], role));
           if (fits.every((fit) => fit && !waits(fit))) return { sent: false, why: `No ${PLATFORM_NAMES[platform]} computer can take it: ${pool.map((d, i) => `${d.name} — ${WHY[fits[i]!]}`).join("; ")}.` };
           if (!fits.includes(null)) wait = `No ${PLATFORM_NAMES[platform]} computer is free right now; the first that is takes it, within a day.`;
           target = { platform };
@@ -146,9 +163,9 @@ export function registerTools(ctx: Context, queue: () => Queue): void {
             "Tomrade cannot ask the person from here. Sending starts a coding agent on another computer: tell them which ticket goes to which computer and ask; once they agree, call dispatch_ticket again with their words in userSaid. They can also send it themselves from the ticket's Start, under Run on."
           );
         }
-        const sent = await queue().send({ projectId, itemId: item.id, ...target });
+        const sent = await queue().send({ projectId, itemId: item.id, ...target, ...(role ? { role: role.id } : {}) });
         return {
-          sent: true, id: sent.id, key: sent.key, to: where, state: sent.state, expiresAt: new Date(sent.expiresAt).toISOString(),
+          sent: true, id: sent.id, key: sent.key, to: where, ...(role ? { role: role.title } : {}), state: sent.state, expiresAt: new Date(sent.expiresAt).toISOString(),
           ...(wait ? { waits: wait } : {}),
           note: "Nothing starts on this computer. The ticket's status follows git as usual. list_devices shows how the request stands; cancel_dispatch takes it back."
         };

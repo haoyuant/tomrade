@@ -6,6 +6,7 @@ import type {} from "@tomradex/code-link";
 import { errorMessage } from "@tomradex/contracts";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/hub-cloud";
+import type { Role } from "@tomradex/roles";
 import type { Admission, DispatchRequest, Refusal } from "./policy.js";
 
 /** How a request stands. `done`: the session it started is over, however it went; `reason` says when it went badly. */
@@ -21,8 +22,8 @@ export interface DispatchView {
   projectId: string;
   key: string;
   title: string;
-  /** What the asking machine would like; the taking machine decides. */
-  wish: { engine?: string; permissionMode?: string };
+  /** What the asking machine would like; the taking machine decides. `role`: the project's role to work the ticket as, by its id. */
+  wish: { engine?: string; permissionMode?: string; role?: string };
   state: DispatchState;
   /** Refused: a reason code, then what more there is to say (`permission: …`). Done: why it stopped, when it did not finish. */
   reason: string | null;
@@ -42,12 +43,14 @@ export interface DispatchInput {
   platform?: string;
   engine?: string;
   permissionMode?: string;
+  /** The project's role to work the ticket as (a role's id). With no machine or platform named, the role's own requirement names one. */
+  role?: string;
 }
 
 const Row = z.object({
   id: z.string(), from_device: z.string(), to_device: z.string().nullable(), to_platform: z.string().nullable(),
   project_id: z.string(), item_key: z.string(), title: z.string(),
-  wish: z.object({ engine: z.string().optional(), permissionMode: z.string().optional() }).catch({}),
+  wish: z.object({ engine: z.string().optional(), permissionMode: z.string().optional(), role: z.string().optional() }).catch({}),
   state: z.enum(["queued", "accepted", "running", "done", "refused", "cancelled"]), reason: z.string().nullable(),
   claimed_by: z.string().nullable(), created_at: z.string(), updated_at: z.string(), expires_at: z.string()
 });
@@ -61,14 +64,14 @@ const view = (r: z.infer<typeof Row>): DispatchView => ({
 interface Cloud {
   client: { rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>; from(table: string): any };
   info(): { user: { id: string } | null };
-  devicesInfo?(): { state: string };
+  devicesInfo?(): { state: string; devices?: { id: string; name: string; self: boolean }[] };
   signal?(name: string): void;
 }
 type Started =
   | { ok: true; sessionId: string }
   | { ok: false; gate: string; message: string; remote?: string; repo?: { id: string; name: string }; placed?: unknown };
 interface CodeHost {
-  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; permissionMode?: string; source?: Record<string, string> }): Promise<Started>;
+  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; permissionMode?: string; role?: string; source?: Record<string, string> }): Promise<Started>;
   stopSession(projectId: string, sessionId: string): Promise<boolean>;
   sessionsOf(projectId: string, itemId?: string, filter?: { ids?: string[]; live?: boolean }): { id: string; state: string; summary: string | null }[];
 }
@@ -89,8 +92,14 @@ export interface Gate {
   changed(): void;
 }
 
+interface RolesHost { get(projectId: string, id: string): Role | null }
+
 /** How long a request stays on offer when the asking machine says nothing else. */
 const TTL_SECONDS = 24 * 3600;
+/** How often a machine getting a taken request going says it is still at it; the account lets a claim lapse after five minutes of silence. */
+const KEEP_MS = 60_000;
+/** A claim this old with no word from its machine is taken to have lapsed. A little past the account's own five minutes: the clocks need not agree. */
+const LAPSED_MS = 5.5 * 60_000;
 /** The signal's name: the account's machines read the queue again when they hear it. */
 const SIGNAL = "dispatches";
 /** How long a request this machine stepped aside from waits before this machine looks at it again. */
@@ -189,7 +198,7 @@ export class Queue {
     }
     let acted = false;
     const now = Date.now();
-    for (const id of this.passed.keys()) if (!rows.some((row) => row.id === id && row.state === "queued")) this.passed.delete(id);
+    for (const id of this.passed.keys()) if (!rows.some((row) => row.id === id && (row.state === "queued" || row.state === "accepted"))) this.passed.delete(id);
     for (const row of rows) {
       // False: looked and left as it was, so the other machines have nothing new to read.
       const act = async (work: () => Promise<unknown>) => { await work().then((did) => { if (did !== false) acted = true; }, (e) => this.home.logger.warn(`dispatch ${row.key}: ${errorMessage(e)}`)); };
@@ -198,8 +207,8 @@ export class Queue {
       // Taken here.
       else if (row.claimedBy === this.me && (row.state === "running" || row.state === "accepted")) await act(() => this.follow(cloud, row));
       else if (row.claimedBy === this.me && row.state === "cancelled" && this.live.has(row.id)) await act(() => this.halt(row));
-      // On offer to this machine.
-      else if (row.state === "queued" && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && (this.passed.get(row.id) ?? 0) <= now - AGAIN_MS))) await act(() => this.consider(cloud, row));
+      // On offer to this machine: waiting, or taken by a machine that went quiet before the work started.
+      else if ((row.state === "queued" || (row.state === "accepted" && row.claimedBy !== this.me && row.updatedAt < now - LAPSED_MS)) && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && (this.passed.get(row.id) ?? 0) <= now - AGAIN_MS))) await act(() => this.consider(cloud, row));
     }
     if (acted) {
       cloud.signal?.(SIGNAL);
@@ -211,7 +220,11 @@ export class Queue {
   /** A request on offer: taken if this machine's limits allow it and it has what the work needs; otherwise told why, or left for another. */
   private async consider(cloud: Cloud, row: DispatchView): Promise<false | void> {
     const addressed = row.toDevice === this.me;
-    const request: DispatchRequest = { from: row.fromDevice, projectId: row.projectId, key: row.key, permissionMode: row.wish.permissionMode ?? null };
+    // The role as this machine's own copy of the project has it. One that has not arrived with the project yet is
+    // waited for like the ticket itself, until the request runs out; one that works no ticket is none.
+    const roles = this.home.get("roles") as RolesHost | undefined;
+    const role = row.wish.role ? (roles?.get(row.projectId, row.wish.role) ?? null) : null;
+    const request: DispatchRequest = { from: row.fromDevice, projectId: row.projectId, key: row.key, permissionMode: row.wish.permissionMode ?? null, limit: role?.permission ?? null };
     const refuse = async (reason: Refusal, detail?: string) => {
       // One meant for any machine of this platform is another's to take: this one only steps aside.
       if (!addressed) { this.passed.set(row.id, Date.now()); return false; }
@@ -225,8 +238,11 @@ export class Queue {
     // The ticket travels with its project: one that has not arrived yet is waited for, until the request runs out.
     const item = items.getByKey(row.projectId, row.key);
     if (!item) return false;
-    const engine = await this.engine(agent, row.wish.engine);
-    if (!engine) return refuse("no-agent", row.wish.engine ? `${row.wish.engine} is not ready here, and no other coding agent is` : "no coding agent is installed and signed in here");
+    if (row.wish.role && !roles) return refuse("start", "this build knows no roles");
+    if (row.wish.role && !role) return false;
+    if (role && role.stage !== "implement") return refuse("start", `the role ${role.title} reviews changes, it works no ticket`);
+    const engine = await this.engine(agent, row.wish.engine, role?.engines);
+    if (!engine) return refuse("no-agent", role?.engines.length ? `none of the agents of the role ${role.title} is ready here (${role.engines.join(", ")})` : row.wish.engine ? `${row.wish.engine} is not ready here, and no other coding agent is` : "no coding agent is installed and signed in here");
     const modes = engine.permissionModes?.choices.map((c) => c.value) ?? null;
     const second = this.gate.peek(request, modes);
     if (!second.ok) return refuse(second.reason, second.detail);
@@ -243,8 +259,11 @@ export class Queue {
       await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "refused", p_reason: admission.detail ? `${admission.reason}: ${admission.detail}` : admission.reason });
       return;
     }
-    const opts = { mode: "run" as const, engine: engine.id, ...(admission.permissionMode ? { permissionMode: admission.permissionMode } : {}), source: { dispatch: row.id, device: row.fromDevice } };
+    const opts = { mode: "run" as const, engine: engine.id, ...(admission.permissionMode ? { permissionMode: admission.permissionMode } : {}), ...(role ? { role: role.id } : {}), source: { dispatch: row.id, device: row.fromDevice } };
     let started: Started;
+    // Getting the work going can take a while (a repository to clone): the claim is kept alive meanwhile.
+    const keep = setInterval(() => void this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "accepted" }).catch(() => {}), KEEP_MS);
+    keep.unref?.();
     try {
       started = await code.start(row.projectId, item.id, opts);
       if (!started.ok && started.gate === "checkout" && started.remote && started.repo && !started.placed) {
@@ -253,6 +272,8 @@ export class Queue {
       }
     } catch (e) {
       return failed("start", errorMessage(e));
+    } finally {
+      clearInterval(keep);
     }
     if (!started.ok) return failed("start", `${started.gate} — ${started.message}`);
     this.live.set(row.id, { projectId: row.projectId, sessionId: started.sessionId });
@@ -260,8 +281,11 @@ export class Queue {
     await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "running" });
   }
 
-  /** The agent the asking machine named when it is ready here; otherwise the first that is. */
-  private async engine(agent: AgentHost, wanted?: string) {
+  /**
+   * The agent the asking machine named when it is ready here; otherwise the first of the role's agents that is, in the
+   * role's order and no other; with no role naming any, the first that is ready.
+   */
+  private async engine(agent: AgentHost, wanted?: string, ofRole: readonly string[] = []) {
     const engines = agent.codeEngines();
     const ready = async (engine: (typeof engines)[number]) => {
       const state = await engine.available().catch(() => null);
@@ -269,7 +293,8 @@ export class Queue {
     };
     const named = wanted ? engines.find((e) => e.id === wanted) : undefined;
     if (named && (await ready(named))) return named;
-    for (const engine of engines) if (engine !== named && (await ready(engine))) return engine;
+    const order = ofRole.length ? ofRole.flatMap((id) => engines.find((e) => e.id === id) ?? []) : engines;
+    for (const engine of order) if (engine !== named && (await ready(engine))) return engine;
     return null;
   }
 
@@ -294,8 +319,13 @@ export class Queue {
       // The project is not open here yet: nothing can be said of its sessions.
       if (!item) return false;
       const session = code.sessionsOf(row.projectId, item.id, { live: true })[0];
-      if (row.state === "accepted" || !session) {
-        await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: row.state === "accepted" ? "refused" : "done", p_reason: row.state === "accepted" ? "start: Tomrade stopped before the ticket was started" : "the session is no longer there" });
+      // Tomrade stopped before the ticket was started: the request goes back on offer, to this machine or the next it is for.
+      if (row.state === "accepted") {
+        await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "queued" });
+        return;
+      }
+      if (!session) {
+        await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "done", p_reason: "the session is no longer there" });
         return;
       }
       running = { projectId: row.projectId, sessionId: session.id };
@@ -330,10 +360,20 @@ export class Queue {
     if (!cloud) throw new Error("[not_signed_in] Sign in to send a ticket to another device.");
     const item = this.items()?.get(input.projectId, input.itemId);
     if (!item) throw new Error(`unknown item ${input.itemId}`);
-    if (!input.to && !input.platform) throw new Error("Name the device, or the platform, to send the ticket to.");
+    const role = input.role ? ((this.home.get("roles") as RolesHost | undefined)?.get(input.projectId, input.role) ?? null) : null;
+    if (input.role && role?.stage !== "implement") throw new Error(`This project has no role ${input.role} that works tickets.`);
+    // Where the caller names nothing, the role's own requirement does: one machine by its name, or any of a platform.
+    let to = input.to, platform = input.platform;
+    if (!to && !platform && role?.needs.device) {
+      const wanted = role.needs.device.trim().toLowerCase();
+      to = cloud.devicesInfo?.().devices?.find((device) => !device.self && device.name.trim().toLowerCase() === wanted)?.id;
+      if (!to) throw new Error(`The role ${role.title} asks for the device ${role.needs.device}, and the account has no other device of that name.`);
+    }
+    if (!to && !platform && role?.needs.platform) platform = role.needs.platform;
+    if (!to && !platform) throw new Error("Name the device, or the platform, to send the ticket to.");
     const sent = await this.call(cloud, "tomrade_create_dispatch", {
-      p_from: this.me, p_to: input.to ?? null, p_platform: input.to ? null : input.platform ?? null, p_project: input.projectId, p_key: item.key, p_title: item.title,
-      p_wish: { ...(input.engine ? { engine: input.engine } : {}), ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}) }, p_ttl_seconds: TTL_SECONDS
+      p_from: this.me, p_to: to ?? null, p_platform: to ? null : platform ?? null, p_project: input.projectId, p_key: item.key, p_title: item.title,
+      p_wish: { ...(input.engine ? { engine: input.engine } : {}), ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}), ...(role ? { role: role.id } : {}) }, p_ttl_seconds: TTL_SECONDS
     });
     cloud.signal?.(SIGNAL);
     this.take([sent!, ...this.rows.filter((r) => r.id !== sent!.id)]);

@@ -225,10 +225,6 @@ function StartTicketDialog({
   // Where it runs: here unless the person picks another computer, or the ticket's labels name one that can take it.
   const devices = useDevices();
   const [chosenTarget, setChosenTarget] = useState<string | null>(null);
-  // A label that asks for another computer chooses it; one no computer can answer now leaves the ticket here, where Start says why.
-  const labelled = asksElsewhere(item, projectId, devices.data);
-  const target = chosenTarget ?? (labelled && !labelMiss(item, projectId, devices.data) ? targetOf(item, takers(devices.data?.devices, projectId)) : null) ?? "here";
-  const elsewhere = target !== "here";
   const engines = useEngines();
   const settings = useSettings();
   const playbooks = usePlaybooks(projectId);
@@ -334,6 +330,10 @@ function StartTicketDialog({
   const sentPermission = byRoleLimit ? undefined : permissionMode;
   // The built-in implementer nobody changed says nothing: a Start by it is a Start as it always was.
   const roleArg = role && (!role.builtin || role.changed) ? role.id : undefined;
+  // What the role asks of a computer, or a label that asks for another one, chooses it; one no computer can answer now leaves the ticket here, where Start says why.
+  const labelled = asksElsewhere(item, projectId, devices.data, role);
+  const target = chosenTarget ?? (labelled && !labelMiss(item, projectId, devices.data, role) ? targetOf(item, takers(devices.data?.devices, projectId, role), role) : null) ?? "here";
+  const elsewhere = target !== "here";
 
   // General work: the method, recommended by the assistant unless the delivery already has one; the user's pick always wins.
   const methods = useMemo(() => ticketMethods(playbooks.data, "general"), [playbooks.data]);
@@ -449,12 +449,27 @@ function StartTicketDialog({
     submit();
   });
 
+  // "As [role], on [computer]": the two choices that hold wherever the ticket runs, one row each.
+  const roleRow = !general && workRoles.length > 0 && (
+    <>
+      <label className="run-on-row">
+        <span className="run-on-name">{t("roles.startRole")}</span>
+        <select id="stRole" className="input" data-testid="start-role" title={t("roles.startRoleHint")} value={role?.id ?? ""} disabled={busy} onChange={(event) => { setChosenRole(event.target.value); setChosenEngine(null); setChosenPicks(null); setChosenPermission(null); setChosenTarget(null); }}>
+          {workRoles.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
+        </select>
+      </label>
+      {!!role?.engines.length && (
+        <p className="meta-txt" data-testid="start-role-hint">{t("roles.startRoleEngines", { role: role.title, agents: role.engines.map((id) => findEngine(engines.data, id)?.title ?? id).join(" → ") })}</p>
+      )}
+    </>
+  );
+
   if (!shown) return null;
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
       <DialogHead title={title} />
       <DialogBody>
-        <RunOn projectId={projectId} item={item} target={target} onTarget={setChosenTarget} onClose={onClose} />
+        <RunOn projectId={projectId} item={item} target={target} role={role} sendRole={!!roleArg} lead={roleRow} onTarget={setChosenTarget} onClose={onClose} />
         <div className="stack-4" data-testid="start-dialog" style={elsewhere ? { display: "none" } : undefined}>
           {apart && (
             <p className="meta-txt" role="note" data-testid="start-apart">
@@ -492,17 +507,6 @@ function StartTicketDialog({
               <p className="meta-txt" data-testid="start-remembered">{t("codeLink.rememberedHint")}</p>
             )}
           </Field>
-
-          {!general && workRoles.length > 0 && (
-            <Field label={t("roles.startRole")} htmlFor="stRole">
-              <select id="stRole" className="select" data-testid="start-role" value={role?.id ?? ""} disabled={busy} onChange={(event) => { setChosenRole(event.target.value); setChosenEngine(null); setChosenPicks(null); setChosenPermission(null); }}>
-                {workRoles.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
-              </select>
-              <p className="meta-txt" data-testid="start-role-hint">
-                {role?.engines.length ? t("roles.startRoleEngines", { role: role.title, agents: role.engines.map((id) => findEngine(engines.data, id)?.title ?? id).join(" → ") }) : t("roles.startRoleHint")}
-              </p>
-            </Field>
-          )}
 
           <Field label={t("codeLink.agentHead")} htmlFor="stEngine">
             <select id="stEngine" className="select" value={engineId} disabled={busy} onChange={(event) => { setChosenEngine(event.target.value); setChosenPicks(null); setChosenPermission(null); }}>

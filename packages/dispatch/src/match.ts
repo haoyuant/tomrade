@@ -1,3 +1,13 @@
+// The scale alone, from its own file: this module is read in the renderer too, where a service has no place.
+import { rankOf, type Ceiling } from "@tomradex/roles/permission";
+
+/** A role, as much as matching reads of it: the agents it names, the most it lets them do, and what it asks of a machine. */
+export interface MatchRole {
+  engines: readonly string[];
+  permission: Ceiling | null;
+  needs: { platform?: string; device?: string };
+}
+
 /** A machine of the account, as much as matching reads of it. */
 export interface MatchDevice {
   id: string;
@@ -7,7 +17,7 @@ export interface MatchDevice {
   platform: string;
   agents: { id: string; ready: boolean }[];
   repos: string[];
-  accept?: { on: boolean; projects: "all" | string[]; concurrent: number };
+  accept?: { on: boolean; projects: "all" | string[]; concurrent: number; ceiling?: Ceiling };
   /** What it works on now, as it last said. */
   sessions: unknown[];
 }
@@ -18,10 +28,15 @@ export interface MatchTicket {
   labels: string[];
   /** The repository its workstream stands for, when it has one. */
   remote?: string | null;
+  /** The role it is to be worked as, when one is named: a machine must have one of its agents and allow what it allows. */
+  role?: MatchRole | null;
 }
 
-/** Why a machine cannot be sent a ticket at all, or not right now. */
-export type Unfit = "excluded" | "not-accepting" | "project" | "no-agent" | "offline" | "busy";
+/**
+ * Why a machine cannot be sent a ticket at all, or not right now. `role-agent`: none of the role's agents is ready
+ * there. `role-limit`: it lets a session from another machine do less than the role allows.
+ */
+export type Unfit = "excluded" | "not-accepting" | "project" | "no-agent" | "role-agent" | "role-limit" | "offline" | "busy";
 
 /**
  * Where a ticket should run.
@@ -48,12 +63,14 @@ const repoKey = (remote: string): string =>
 const hasRepo = (device: MatchDevice, remote?: string | null): boolean => !!remote && device.repos.some((r) => repoKey(r) === repoKey(remote));
 
 /** Why a machine cannot take a ticket of this project, hard reasons first; null when it can, now. */
-export function unfit(device: MatchDevice, projectId: string, excluded: readonly string[] = []): Unfit | null {
+export function unfit(device: MatchDevice, projectId: string, excluded: readonly string[] = [], role?: MatchRole | null): Unfit | null {
   const out = excluded.map((name) => name.trim().toLowerCase());
   if (out.includes(device.name.trim().toLowerCase()) || out.includes(device.id.toLowerCase())) return "excluded";
   if (!device.accept?.on) return "not-accepting";
   if (device.accept.projects !== "all" && !device.accept.projects.includes(projectId)) return "project";
   if (!device.agents.some((a) => a.ready)) return "no-agent";
+  if (role?.engines.length && !role.engines.some((id) => device.agents.some((a) => a.id === id && a.ready))) return "role-agent";
+  if (role?.permission && device.accept.ceiling && rankOf(device.accept.ceiling) < rankOf(role.permission)) return "role-limit";
   if (!device.online) return "offline";
   if (device.sessions.length >= device.accept.concurrent) return "busy";
   return null;
@@ -71,10 +88,12 @@ const best = (devices: MatchDevice[], remote?: string | null): MatchDevice | und
  * and only for a machine the rules allow.
  */
 export function match(ticket: MatchTicket, devices: readonly MatchDevice[], opts: { excluded?: readonly string[]; model?: string | null } = {}): Match {
-  const labels = ticket.labels.map((l) => l.trim().toLowerCase());
+  // What the role asks of a machine goes before the ticket's own labels: the role is how the ticket is worked.
+  const needs = ticket.role?.needs;
+  const labels = needs?.device ? [deviceLabel(needs.device)] : needs?.platform && PLATFORM_LABELS[needs.platform] ? [PLATFORM_LABELS[needs.platform]!] : ticket.labels.map((l) => l.trim().toLowerCase());
   const self = devices.find((d) => d.self);
   const others = devices.filter((d) => !d.self);
-  const fit = (d: MatchDevice) => unfit(d, ticket.projectId, opts.excluded);
+  const fit = (d: MatchDevice) => unfit(d, ticket.projectId, opts.excluded, ticket.role);
 
   const named = labels.find((l) => l.startsWith("device:"));
   if (named) {

@@ -327,6 +327,39 @@ const run = async () => {
   await press(`document.querySelector('[data-testid="ticket-sent-cancel"]')`);
   check("taken back, it is cancelled in the queue and the ticket says so", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Taken back')`) && supabase.state.dispatches[0].state === "cancelled", await sentLine());
 
+  // ── sent as a role ───────────────────────────────────────────────────
+  const careful = ctx.roles.save(project.id, { title: "Careful", engines: ["claude-code"], permission: "edits" });
+  const codexOnly = ctx.roles.save(project.id, { title: "Codex only", engines: ["codex"] });
+  const trusted = ctx.roles.save(project.id, { title: "Trusted", permission: "full" });
+  const runOptions = () => $(`[...document.querySelector('[data-testid="run-on-select"]').options].map(o => o.textContent + (o.disabled ? ' [off]' : ''))`);
+  await openStart();
+  check("Start offers the project's roles above where it runs", await until(`[...document.querySelectorAll('#stRole option')].map(o => o.textContent).join() === 'Implementer,Careful,Codex only,Trusted'`), await $(`[...document.querySelectorAll('#stRole option')].map(o => o.textContent)`));
+  await choose("#stRole", codexOnly.id);
+  check("a computer with none of the role's agents ready cannot be picked, and says so", await until(`[...document.querySelector('[data-testid="run-on-select"]').options].some(o => o.disabled && o.textContent === 'Windows tower (none of the agents of Codex only)')`) && JSON.stringify(await runOptions()) === JSON.stringify(["This computer", "Windows tower (none of the agents of Codex only) [off]"]), await runOptions());
+  await choose("#stRole", trusted.id);
+  check("nor can one that lets a sent ticket do less than the role allows", await until(`[...document.querySelector('[data-testid="run-on-select"]').options].some(o => o.disabled && o.textContent === 'Windows tower (allows less than Trusted does)')`), await runOptions());
+  await choose("#stRole", careful.id);
+  check("a role it can work as leaves it on offer", await until(`[...document.querySelector('[data-testid="run-on-select"]').options].some(o => !o.disabled && o.value === 'win-000001')`), await runOptions());
+  await choose('[data-testid="run-on-select"]', "win-000001");
+  check("sent elsewhere, the role stays in view and the note says the ticket is worked as it there", await until(`(document.querySelector('[data-testid="run-on-note"]')?.textContent ?? '').includes('It is worked there as Careful.')`) && (await $(`document.querySelector('#stRole')?.value`)) === careful.id && (await $(`getComputedStyle(document.querySelector('[data-testid="start-dialog"]')).display`)) === "none", await $(`document.querySelector('[data-testid="run-on-note"]')?.textContent`));
+  await shot("devices-06d-run-on-role");
+  const before = supabase.state.dispatches.length;
+  await press(`document.querySelector('[data-testid="run-on-send"]')`);
+  check("the role goes with the ticket as its id, and nothing the role says", await (async () => { for (let i = 0; i < 40 && supabase.state.dispatches.length === before; i++) await sleep(250); const d = supabase.state.dispatches[0]; return supabase.state.dispatches.length === before + 1 && JSON.stringify(d.wish) === JSON.stringify({ role: careful.id }) && d.to_device === "win-000001"; })(), supabase.state.dispatches[0]);
+  check("the ticket says which role it was sent as", await until(`(document.querySelector('[data-testid="ticket-sent-role"]')?.textContent ?? '').includes('as Careful')`), await sentLine());
+  await press(`document.querySelector('[data-testid="ticket-sent-cancel"]')`);
+  await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Taken back')`);
+  // What a role asks of a computer chooses where the ticket runs, as a label would.
+  ctx.roles.save(project.id, { id: careful.id, title: "Careful", needs: { platform: "win32" } });
+  await openStart();
+  await choose("#stRole", careful.id);
+  check("a role that asks for a platform has Start pick it", await until(`document.querySelector('[data-testid="run-on-select"]')?.value === 'platform:win32'`), await $(`document.querySelector('[data-testid="run-on-select"]')?.value`));
+  await choose("#stRole", "implementer");
+  check("and another role gives the choice back to this computer", await until(`document.querySelector('[data-testid="run-on-select"]')?.value === 'here'`), await $(`document.querySelector('[data-testid="run-on-select"]')?.value`));
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await sleep(400);
+  for (const role of [careful, codexOnly, trusted]) ctx.roles.remove(project.id, role.id);
+
   // ── one computer only ────────────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}'; true`);
   await sleep(1500);

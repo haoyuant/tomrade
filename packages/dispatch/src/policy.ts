@@ -31,6 +31,8 @@ export interface DispatchRequest {
   key: string;
   /** The permission mode it would like; absent leaves the choice to this machine. */
   permissionMode?: string | null;
+  /** The most the ticket's role lets a session do, as this machine's own copy of the role says; the lower of it and this machine's limit holds. */
+  limit?: Ceiling | null;
 }
 
 /** How this machine stands right now. */
@@ -62,10 +64,12 @@ export function admit(policy: AcceptPolicy, request: DispatchRequest, state: Mac
   if (!policy.allProjects && !policy.projects.includes(request.projectId)) return { ok: false, reason: "project-not-allowed" };
   if (!state.projects.includes(request.projectId)) return { ok: false, reason: "project-missing" };
   const asked = request.permissionMode ?? null;
-  if (asked && rank(levelOf(asked)) > rank(policy.ceiling)) return { ok: false, reason: "permission", detail: `${asked} is above this machine's limit (${policy.ceiling})` };
+  const byRole = !!request.limit && rank(request.limit) < rank(policy.ceiling);
+  const ceiling = byRole ? request.limit! : policy.ceiling;
+  if (asked && rank(levelOf(asked)) > rank(ceiling)) return { ok: false, reason: "permission", detail: byRole ? `${asked} is above the role's limit (${ceiling})` : `${asked} is above this machine's limit (${ceiling})` };
   if (state.modes && asked && !state.modes.includes(asked)) return { ok: false, reason: "permission", detail: `${asked} is not a mode of the agent here` };
-  const permissionMode = asked ?? (state.modes ? modeWithin(policy.ceiling, state.modes) : null);
-  if (state.modes && !permissionMode) return { ok: false, reason: "permission", detail: `the agent here has no mode within this machine's limit (${policy.ceiling})` };
+  const permissionMode = asked ?? (state.modes ? modeWithin(ceiling, state.modes) : null);
+  if (state.modes && !permissionMode) return { ok: false, reason: "permission", detail: byRole ? `the agent here has no mode within the role's limit (${ceiling})` : `the agent here has no mode within this machine's limit (${ceiling})` };
   if (state.running >= policy.maxConcurrent) return { ok: false, reason: "busy", detail: `${state.running} of ${policy.maxConcurrent} running` };
   if (policy.onlyWhenIdle && state.idleSeconds < IDLE_SECONDS) return { ok: false, reason: "not-idle" };
   if (policy.onlyOnPower && state.onBattery) return { ok: false, reason: "on-battery" };

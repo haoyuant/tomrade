@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./permission": {
+      "types": "./dist/permission.d.ts",
+      "default": "./dist/permission.js"
     }
   },
   "scripts": {

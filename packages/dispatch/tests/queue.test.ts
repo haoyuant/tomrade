@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { account, cleanup, machine, share, until, type Account, type Machine } from "./world.js";
+import { Roles } from "@tomradex/roles";
+import { account, cleanup, machine, share, until, type Account, type FakeEngine, type Machine } from "./world.js";
 
 let acct: Account;
 beforeAll(async () => { acct = await account(); }, 60_000);
@@ -12,12 +13,12 @@ afterEach(async () => {
 afterAll(async () => { await acct.close(); });
 
 /** The asking machine with a ticket, and the machines that hold the same project. */
-async function pair(others: string[] = ["win-b"]) {
-  const a = await machine(acct, "mac-a");
+async function pair(others: string[] = ["win-b"], opts: { plugins?: unknown[] } = {}) {
+  const a = await machine(acct, "mac-a", opts);
   const ticket = a.items.create({ projectId: a.project.id, boardId: a.board.id, title: "Faster on Windows", status: "todo", workType: "coding", by: "human" });
   const rest: Machine[] = [];
   for (const device of others) {
-    const m = await machine(acct, device);
+    const m = await machine(acct, device, opts);
     await share(a, m, a.project.id);
     rest.push(m);
   }
@@ -256,7 +257,7 @@ it("waits for a ticket that has not reached the machine yet, and clones a reposi
   expect(states(b)).toEqual([`${fresh.key}:running`]);
 }, 60_000);
 
-it("finds what it runs again after a restart, and gives back one it took but never started", async () => {
+it("finds what it runs again after a restart, and puts back on offer one it took but never started", async () => {
   const { a, b, ticket, projectId } = await pair();
   b.accept();
   const running = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b" });
@@ -281,8 +282,118 @@ it("finds what it runs again after a restart, and gives back one it took but nev
   const taken = await a.queue.send({ projectId, itemId: other.id, to: "win-b" });
   await acct.client().rpc("tomrade_claim_dispatch", { p_id: taken.id, p_device: "win-b" });
   await again.queue.tick();
-  expect(again.queue.list().find((d) => d.id === taken.id)).toMatchObject({ state: "refused", reason: "start: Tomrade stopped before the ticket was started" });
+  // Not refused: nobody decided against it. It waits again, for this machine or the next it is for.
+  expect(again.queue.list().find((d) => d.id === taken.id)).toMatchObject({ state: "queued", claimedBy: null, reason: null });
   expect(again.code.starts).toEqual([]);
+  await again.queue.tick();
+  expect(again.queue.list().find((d) => d.id === taken.id)).toMatchObject({ state: "running", claimedBy: "win-b" });
+  expect(again.code.starts).toHaveLength(1);
+}, 60_000);
+
+it("is taken by the next machine it is for when the one that took it goes quiet before starting, and never once it runs", async () => {
+  const { a, rest: [b, c], ticket, projectId } = await pair(["win-b", "win-c"]);
+  b!.accept();
+  c!.accept();
+  const sent = await a.queue.send({ projectId, itemId: ticket.id, platform: process.platform });
+  // win-b takes it and is never heard of again.
+  await acct.client().rpc("tomrade_claim_dispatch", { p_id: sent.id, p_device: "win-b" });
+  await c!.queue.tick();
+  expect(c!.code.starts).toEqual([]);
+  await acct.admin("update public.tomrade_dispatches set updated_at = now() - interval '4 minutes' where id = $1", [sent.id]);
+  await c!.queue.tick();
+  expect(c!.code.starts).toEqual([]);
+  await acct.admin("update public.tomrade_dispatches set updated_at = now() - interval '7 minutes' where id = $1", [sent.id]);
+  await c!.queue.tick();
+  expect(c!.code.starts).toHaveLength(1);
+  expect(c!.queue.list().find((d) => d.id === sent.id)).toMatchObject({ state: "running", claimedBy: "win-c" });
+  // Running, however long ago it last said so: losing touch with a machine is no proof its work stopped.
+  await acct.admin("update public.tomrade_dispatches set updated_at = now() - interval '3 hours' where id = $1", [sent.id]);
+  await b!.queue.tick();
+  expect(b!.code.starts).toEqual([]);
+  expect(b!.queue.list().find((d) => d.id === sent.id)).toMatchObject({ state: "running", claimedBy: "win-c" });
+}, 60_000);
+
+const CODEX: FakeEngine = { id: "codex", title: "Codex", ok: true, modes: ["read-only", "workspace", "full-access"] };
+
+it("sent with a role, it is worked the way the role says on the machine that takes it", async () => {
+  const { a, b, ticket, projectId } = await pair(["win-b"], { plugins: [Roles] });
+  b.accept();
+  b.engines.push(CODEX);
+  const role = a.ctx.roles.save(projectId, { title: "Careful", engines: ["codex", "claude-code"], permission: "ask", instructions: "Measure before and after." });
+  // The role reaches the other machine with the project's folder, never through the account.
+  await share(a, b, projectId);
+  expect(b.ctx.roles.get(projectId, role.id)).toMatchObject({ title: "Careful", engines: ["codex", "claude-code"], permission: "ask", instructions: "Measure before and after." });
+
+  const sent = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: role.id });
+  expect(sent.wish).toEqual({ role: role.id });
+  await b.queue.tick();
+  // The role's first agent that is ready there, and the lower of the role's limit and that machine's own.
+  expect(b.code.starts).toEqual([{ projectId, itemId: ticket.id, opts: { mode: "run", engine: "codex", permissionMode: "read-only", role: role.id, source: { dispatch: sent.id, device: "mac-a" } } }]);
+  expect(b.s.recent()).toMatchObject([{ accepted: true, permissionMode: "read-only" }]);
+  [...b.code.sessions.values()][0]!.state = "idle";
+  await b.queue.tick();
+
+  // The role's first agent is not ready: its next one, and still no other.
+  b.engines[1] = { ...CODEX, ok: false };
+  const second = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: role.id });
+  await b.queue.tick();
+  expect(b.code.starts[1]!.opts).toEqual({ mode: "run", engine: "claude-code", permissionMode: "default", role: role.id, source: { dispatch: second.id, device: "mac-a" } });
+  [...b.code.sessions.values()][1]!.state = "idle";
+  await b.queue.tick();
+
+  // More than the role allows is turned away, by the role's limit.
+  const over = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: role.id, permissionMode: "acceptEdits" });
+  await b.queue.tick();
+  expect(b.queue.list().find((d) => d.id === over.id)).toMatchObject({ state: "refused", reason: "permission: acceptEdits is above the role's limit (ask)" });
+  // A role that reviews works no ticket, and one the project lacks is not sent at all.
+  await expect(a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: "reviewer" })).rejects.toThrow("This project has no role reviewer that works tickets.");
+  await expect(a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: "absent" })).rejects.toThrow("This project has no role absent that works tickets.");
+}, 60_000);
+
+it("waits for a role that has not reached the machine yet, and starts once it has", async () => {
+  const { a, b, ticket, projectId } = await pair(["win-b"], { plugins: [Roles] });
+  b.accept();
+  const role = a.ctx.roles.save(projectId, { title: "New here", instructions: "Small commits." });
+  const sent = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: role.id });
+  await b.queue.tick();
+  await b.queue.tick();
+  // Neither taken nor refused: the project has not brought the role yet.
+  expect(b.code.starts).toEqual([]);
+  expect(states(b)).toEqual([`${ticket.key}:queued`]);
+  expect(b.s.recent()).toEqual([]);
+  await share(a, b, projectId);
+  await b.queue.tick();
+  expect(b.code.starts).toMatchObject([{ opts: { role: role.id, engine: "claude-code" } }]);
+  expect(b.queue.list().find((d) => d.id === sent.id)).toMatchObject({ state: "running" });
+}, 60_000);
+
+it("a machine with none of the role's agents says so when the ticket was sent to it, and leaves one made for its platform to another", async () => {
+  const { a, rest: [b, c], ticket, projectId } = await pair(["win-b", "win-c"], { plugins: [Roles] });
+  b!.accept();
+  c!.accept();
+  c!.engines.push(CODEX);
+  const role = a.ctx.roles.save(projectId, { title: "Codex only", engines: ["codex"] });
+  await share(a, b!, projectId);
+  await share(a, c!, projectId);
+  const named = await a.queue.send({ projectId, itemId: ticket.id, to: "win-b", role: role.id });
+  await b!.queue.tick();
+  expect(b!.queue.list().find((d) => d.id === named.id)).toMatchObject({ state: "refused", reason: "no-agent: none of the agents of the role Codex only is ready here (codex)" });
+  expect(b!.code.starts).toEqual([]);
+
+  // What the role asks of a machine names where it goes when the sender names nothing.
+  a.ctx.roles.save(projectId, { id: role.id, title: "Codex only", needs: { platform: process.platform } });
+  await share(a, b!, projectId);
+  await share(a, c!, projectId);
+  const any = await a.queue.send({ projectId, itemId: ticket.id, role: role.id });
+  expect(any).toMatchObject({ toDevice: null, toPlatform: process.platform });
+  await b!.queue.tick();
+  expect(b!.code.starts).toEqual([]);
+  expect(b!.queue.list().find((d) => d.id === any.id)).toMatchObject({ state: "queued" });
+  await c!.queue.tick();
+  expect(c!.code.starts).toMatchObject([{ opts: { engine: "codex", role: role.id } }]);
+  // With neither a machine, a platform nor a role that names one, there is nowhere to send it.
+  const plain = a.ctx.roles.save(projectId, { title: "Anywhere" });
+  await expect(a.queue.send({ projectId, itemId: ticket.id, role: plain.id })).rejects.toThrow("Name the device, or the platform, to send the ticket to.");
 }, 60_000);
 
 it("sends only what a request may carry, between machines of the account", async () => {

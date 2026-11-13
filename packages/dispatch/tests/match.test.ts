@@ -87,3 +87,34 @@ it("says the first thing that keeps a machine from taking a ticket", () => {
   expect(unfit({ ...win, online: false, sessions: [{}] }, "p1")).toBe("offline");
   expect(unfit({ ...win, accept: { ...accept, concurrent: 2 }, sessions: [{}] }, "p1")).toBeNull();
 });
+
+it("a role is worked only where one of its agents is ready and the machine allows what the role allows", () => {
+  const role = { engines: ["codex", "gemini"], permission: "edits" as const, needs: {} };
+  const codex = device("codex-box", { agents: [{ id: "claude-code", ready: true }, { id: "codex", ready: true }], accept: { ...accept, ceiling: "edits" } });
+  expect(unfit(codex, "p1", [], role)).toBeNull();
+  // none of the role's agents, or one that is not ready
+  expect(unfit(win, "p1", [], role)).toBe("role-agent");
+  expect(unfit(device("x", { agents: [{ id: "codex", ready: false }, { id: "claude-code", ready: true }] }), "p1", [], role)).toBe("role-agent");
+  // it lets a ticket from another machine do less than the role allows
+  expect(unfit({ ...codex, accept: { ...accept, ceiling: "ask" } }, "p1", [], role)).toBe("role-limit");
+  expect(unfit({ ...codex, accept: { ...accept, ceiling: "full" } }, "p1", [], role)).toBeNull();
+  // a role that names no agent and sets no limit asks nothing more of a machine
+  expect(unfit(win, "p1", [], { engines: [], permission: null, needs: {} })).toBeNull();
+  // what was wrong before a role is still what is said first
+  expect(unfit({ ...codex, accept: { ...accept, on: false } }, "p1", [], role)).toBe("not-accepting");
+  // and what only waits comes after what cannot be
+  expect(unfit({ ...win, online: false }, "p1", [], role)).toBe("role-agent");
+  expect(unfit({ ...codex, online: false }, "p1", [], role)).toBe("offline");
+});
+
+it("what a role asks of a machine goes before the ticket's labels", () => {
+  const linux = device("linux", { platform: "linux", name: "Build box" });
+  const onLinux = { engines: [], permission: null, needs: { platform: "linux" } };
+  expect(match({ ...ticket(["windows"]), role: onLinux }, [mac, win, linux])).toEqual({ kind: "send", device: "linux", name: "Build box", by: "label", clone: true });
+  expect(match({ ...ticket(), role: { ...onLinux, needs: { device: "Windows Tower" } } }, [mac, win, linux])).toEqual({ kind: "send", device: "win", name: "Windows tower", by: "label", clone: true });
+  expect(match({ ...ticket(), role: { ...onLinux, needs: { device: "Studio" } } }, [mac, win])).toEqual({ kind: "here", by: "label" });
+  // a role that asks nothing leaves the labels their say
+  expect(match({ ...ticket(["windows"]), role: { engines: [], permission: null, needs: {} } }, [mac, win])).toMatchObject({ kind: "send", device: "win" });
+  // the machine the role asks for has none of its agents: it stays here, with why
+  expect(match({ ...ticket(), role: { engines: ["codex"], permission: null, needs: { platform: "win32" } } }, [mac, win])).toEqual({ kind: "none", by: "label", wanted: "windows", why: "role-agent", name: "Windows tower" });
+});
