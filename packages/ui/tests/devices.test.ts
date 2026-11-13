@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { DeviceSession, DeviceView } from "@tomradex/hub-cloud";
-import { elsewhereOn } from "../src/lib/devices";
+import { devicesStatus, elsewhereOn } from "../src/lib/devices";
 
 const session = (key: string, state: DeviceSession["state"] = "working"): DeviceSession => ({ projectId: "p1", key, title: key, agent: "claude-code", state, startedAt: 1, branch: null });
 const device = (id: string, over: Partial<DeviceView>): DeviceView => ({
@@ -18,6 +18,20 @@ it("finds the other machine that holds a ticket, never this one", () => {
   expect(elsewhereOn(devices, "p2", "TOM-1")).toBeNull();
   expect(elsewhereOn(undefined, "p1", "TOM-1")).toBeNull();
   expect(elsewhereOn([device("self", { self: true, sessions: [session("TOM-1")] })], "p1", "TOM-1")).toBeNull();
+});
+
+it("tells the status bar how many of the account's computers are on, once there is a second one", () => {
+  const info = (state: NonNullable<Parameters<typeof devicesStatus>[0]>["state"], devices: DeviceView[]) => ({ state, devices, plan: { id: "free", limit: 2, subscribeUrl: "" } });
+  const self = device("self", { self: true, name: "Studio" });
+  expect(devicesStatus(info("ready", [self, device("win", { name: "Tower" })]))).toEqual({ online: 2, total: 2, names: ["Studio", "Tower"] });
+  expect(devicesStatus(info("ready", [self, device("win", { name: "Tower", online: false })]))).toEqual({ online: 1, total: 2, names: ["Studio"] });
+  // One computer, no account, no place among the account's, or nothing read yet: nothing in the bar.
+  expect(devicesStatus(info("ready", [self]))).toBeNull();
+  expect(devicesStatus(info("signed-out", []))).toBeNull();
+  expect(devicesStatus(info("pending", [self, device("win", {})]))).toBeNull();
+  expect(devicesStatus(info("over-limit", [device("a", {}), device("b", {})]))).toBeNull();
+  expect(devicesStatus(info("removed", []))).toBeNull();
+  expect(devicesStatus(undefined)).toBeNull();
 });
 
 it("prefers a machine that is on, then the one that said so last", () => {
