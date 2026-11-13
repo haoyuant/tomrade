@@ -40,25 +40,32 @@ export function terminalCues(): Cue[] {
 }
 export const TERMINAL_POINTER: Pointer = { route: [{ at: K.quit - 0.9, to: [0.3, 1.08] }, { at: K.quit - 0.05, to: "close" }, { at: K.quit + 0.3, to: "close" }, { at: K.quit + 1, to: [-0.06, 0.4] }], clicks: [K.quit] };
 
-/** "All of them running": the wall, the one pane that needs the person, the answer. */
-export const W = { need: 2.5, zoom: 3.5, ask: 4.5, picked: 6.0, answered: 6.8, back: 7.2, end: 9.6 };
+/**
+ * "An agent asked. You didn't see it.": a terminal waits behind other windows while the minutes run; then the same
+ * question in Tomrade, where the pane and the status bar say so at once and one click answers it.
+ */
+export const W = { covered: 1.1, turn: 4.3, told: 5.3, open: 6.5, picked: 7.6, answered: 8.3, saved: 10.3, end: 12.5 };
+/** How long the agent waits unseen, and with Tomrade, in seconds of its own time. */
+export const WAITED = { unseen: 47 * 60 + 12, seen: 3 };
 export const WALL_SECONDS = W.end + END_SECONDS;
 export function wallCues(): Cue[] {
   return [
     { at: 0, kind: "night" as const, n: 0 },
-    ...[0.2, 0.55, 0.9, 1.3, 1.65, 2.0].map((at, n) => ({ at, kind: "line" as const, n: n % 2 })),
-    { at: W.need, kind: "you" as const, n: 0 },
-    { at: W.need + 0.05, kind: "pane" as const, n: 4 },
-    { at: W.zoom, kind: "swap" as const, n: 0 },
-    { at: W.ask, kind: "ask" as const, n: 0 },
+    { at: 0.1, kind: "pane" as const, n: 2 },
+    { at: W.covered, kind: "swap" as const, n: 0 },
+    { at: 2.6, kind: "you" as const, n: 0 },
+    { at: W.turn, kind: "turn" as const, n: 0 },
+    { at: W.told, kind: "ask" as const, n: 0 },
+    { at: W.open, kind: "click" as const, n: 0 },
     { at: W.picked, kind: "click" as const, n: 0 },
     { at: W.answered, kind: "click" as const, n: 1 },
-    { at: W.back, kind: "swap" as const, n: 0 },
-    ...[7.9, 8.2, 8.5, 8.8, 9.1].map((at, n) => ({ at, kind: "hop" as const, n: 6 + n })),
+    ...[0.5, 0.95, 1.4].map((after, n) => ({ at: W.answered + after, kind: "line" as const, n: n % 2 })),
+    { at: W.answered + 1.4, kind: "hop" as const, n: 7 },
+    { at: W.saved, kind: "fact" as const, n: 2 },
     { at: W.end, kind: "end" as const, n: 0 }
   ].sort((a, b) => a.at - b.at);
 }
-export const WALL_POINTER: Pointer = { route: [{ at: W.ask + 0.5, to: [0.7, 1.08] }, { at: W.picked - 0.08, to: "chip" }, { at: W.picked + 0.2, to: "chip" }, { at: W.answered - 0.06, to: "confirm" }, { at: W.answered + 0.3, to: "confirm" }, { at: W.answered + 1, to: [1.06, 0.7] }], clicks: [W.picked, W.answered] };
+export const WALL_POINTER: Pointer = { route: [{ at: W.told + 0.3, to: [0.75, 1.08] }, { at: W.open - 0.06, to: "needs" }, { at: W.open + 0.3, to: "needs" }, { at: W.picked - 0.08, to: "chip" }, { at: W.picked + 0.2, to: "chip" }, { at: W.answered - 0.06, to: "confirm" }, { at: W.answered + 0.3, to: "confirm" }, { at: W.answered + 1.1, to: [1.06, 0.75] }], clicks: [W.open, W.picked, W.answered] };
 
 /** "Nobody touched this card": when each of its agent's lines is written, and when the last words come. */
 export const C = { steps: [2.3, 3.5, 4.7, 5.9, 7.2], own: 8.6, end: 10.4 };

@@ -228,10 +228,24 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .film-termwin-bar .film-lights { left: 20px; gap: 11px; }
 .film-termwin-bar .film-lights > i { width: 17px; height: 17px; }
 .film-termwin-bar .cs-project { flex: none; font-size: 20px; color: var(--muted); }
-/* The wall runs on above the frame's caption band: it fades out under it. */
-.film-wall-fade { position: absolute; inset: 0 0 auto 0; height: 330px; z-index: 3; pointer-events: none; background: linear-gradient(180deg, var(--bg) 62%, transparent); }
-.film-ask-big { position: absolute; left: 1100px; top: 470px; z-index: 9; transform: scale(1.9); transform-origin: 0 0; }
+.film-ask-big { position: absolute; z-index: 9; transform: scale(2.1); }
 .film-ask-big .film-ask { position: relative; }
+/* The windows the person was in instead of the terminal: no words, only their shapes. */
+.film-other {
+  position: absolute; display: flex; flex-direction: column; gap: 22px; padding: 0 30px 30px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+  box-shadow: var(--elev-raised), 0 30px 70px -30px var(--film-window-shade);
+}
+.film-other-bar { position: relative; height: 46px; margin: 0 -30px 6px; border-bottom: 1px solid var(--border-soft); }
+.film-other-bar .film-lights > i { background: var(--border); }
+.film-other-row { height: 16px; border-radius: 8px; background: var(--tag-bg-faint); }
+/* How long an agent has waited: the number that runs away while nobody looks. */
+.film-waited { position: absolute; z-index: 7; display: flex; align-items: baseline; gap: 22px; white-space: nowrap; font-family: var(--font-display); color: var(--muted); font-size: 34px; }
+.film-waited > b { font-size: 132px; line-height: 1; font-weight: 600; letter-spacing: -0.04em; color: var(--warn); }
+.film-waited > s { font-size: 64px; font-weight: 600; letter-spacing: -0.04em; color: var(--meta); text-decoration-thickness: 4px; }
+.film-waited.is-side > b { font-size: 150px; }
+.film-waited.is-done > b { color: var(--success); }
+.film-strip { position: absolute; z-index: 6; width: max-content; padding: 6px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--elev-raised); }
 .film-one { width: 330px; }
 .film-one.is-lit .card {
   border-color: color-mix(in srgb, var(--accent) calc(70% * var(--lit)), var(--border));

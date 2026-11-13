@@ -10,10 +10,12 @@ export const CAPTIONS = {
     status: "Who's running. Who *needs you.*",
     ticket: "Every pane knows *its ticket.*",
     quit: "Quit the app. *They keep working.*",
-    wall1: "All of them running.",
-    wall2: "*One* needs you.",
-    wall3: "*One answer.*",
-    wall4: "And they *carry on.*",
+    wait1: "An agent asked.",
+    wait2: "You didn't see it.",
+    wait3: "*47 minutes,* wasted.",
+    told: "*Tomrade* tells you at once.",
+    click: "*One click.* It carries on.",
+    saved: "*3 seconds.* Not 47 minutes.",
     card1: "Nobody touched",
     card2: "*this card.*",
     claim: "Claimed.",
@@ -32,10 +34,12 @@ export const CAPTIONS = {
     status: "谁在跑，谁*在等你*，一眼看清。",
     ticket: "每一格，都连着*它的工单*。",
     quit: "关掉应用，它们*照样干活*。",
-    wall1: "全都在跑。",
-    wall2: "只有*一个*在等你。",
-    wall3: "*答一句*就行。",
-    wall4: "然后，*接着跑*。",
+    wait1: "Agent 问了一句。",
+    wait2: "你没看见。",
+    wait3: "*47 分钟，*白等。",
+    told: "*Tomrade* 马上告诉你。",
+    click: "*点一下，*它接着跑。",
+    saved: "*3 秒。*不是 47 分钟。",
     card1: "这张卡，",
     card2: "*没人碰过。*",
     claim: "认领。",
@@ -88,11 +92,17 @@ export const LOG: Record<Lang, { work: string[]; shell: string[]; ask: string; a
   }
 };
 
-/** The one question the wall's waiting pane brings. */
-export const QUESTION = {
-  en: { text: "Invoices carry two dates. Which one goes on the PDF?", options: ["Issue date", "Paid date"] },
-  zh: { text: "发票上有两个日期，PDF 上印哪一个？", options: ["开票日期", "付款日期"] }
-} as const satisfies Record<Lang, { text: string; options: readonly [string, string] }>;
+/** The agent that stops to ask: what its terminal shows before, the question, and what follows the answer. */
+export const WAIT = {
+  en: {
+    before: ["read src/billing/transfer.ts", "wrote 4 files"], prompt: "Run `pnpm test`? (y/n)", waited: "waiting", after: ["allowed", "pnpm test", "18 tests pass", "git push origin HEAD", "gh pr create  →  #232"],
+    question: { text: "Codex wants to run `pnpm test`. Allow it?", options: ["Allow", "Deny"] }
+  },
+  zh: {
+    before: ["读取 src/billing/transfer.ts", "写入 4 个文件"], prompt: "运行 `pnpm test`？(y/n)", waited: "已等待", after: ["已允许", "pnpm test", "18 个测试通过", "git push origin HEAD", "gh pr create  →  #232"],
+    question: { text: "Codex 要运行 `pnpm test`，允许吗？", options: ["允许", "拒绝"] }
+  }
+} as const satisfies Record<Lang, { before: readonly string[]; prompt: string; waited: string; after: readonly string[]; question: { text: string; options: readonly [string, string] } }>;
 
 /** The lines under the one card, as its agent writes them. */
 export const STEPS: Record<Lang, string[]> = {
