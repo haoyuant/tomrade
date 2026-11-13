@@ -15,7 +15,8 @@ export function reviewPrompt(key: string, comments: ReviewComment[], branchOf?: 
   const blocks = comments.map((c, i) => {
     const branch = several ? branchOf?.(c.linkId) : null;
     const quoted = c.quote ? c.quote.split("\n").map((line) => `> ${line}`) : [];
-    return [`${i + 1}. ${branch ? `[${branch}] ` : ""}${where(c)}`, ...quoted, c.body].join("\n");
+    const found = c.finding ? ` — found by a reviewing agent (${c.finding.severity}), passed on by the person` : "";
+    return [`${i + 1}. ${branch ? `[${branch}] ` : ""}${where(c)}${found}`, ...quoted, c.body].join("\n");
   });
   const count = comments.length === 1 ? "1 comment" : `${comments.length} comments`;
   return [

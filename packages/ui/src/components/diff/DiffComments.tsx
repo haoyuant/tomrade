@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 // By path, not alias: the diff's tests load these as they are, and only stand in for what is aliased.
 import { agoLabel } from "../../lib/domain";
 import { isCancelKey, isCommitKey } from "../../lib/keys";
@@ -132,6 +132,20 @@ export function Composer({ anchor, place, actions }: { anchor: Anchor; place: Pl
   );
 }
 
+const SEVERITY: Record<NonNullable<DiffComment["finding"]>["severity"], MessageKey> = { info: "diff.findingInfo", warning: "diff.findingWarning", error: "diff.findingError" };
+
+/** What tells an agent's finding from a person's comment: that it is one, and how much it matters. */
+export function FindingTag({ comment }: { comment: DiffComment }) {
+  const { t } = useI18n();
+  const finding = comment.finding;
+  if (!finding) return null;
+  return (
+    <span className={`tag diff__finding diff__finding--${finding.severity}`} title={finding.reviewer} data-testid="diff-finding">
+      {t("diff.finding")} · {t(SEVERITY[finding.severity])}
+    </span>
+  );
+}
+
 /** One comment: under its lines, or with its quote at the top of the file when those lines are gone. Resolved, it folds to a line. */
 export function CommentNote({ comment, place, editing, actions }: { comment: DiffComment; place: Place | null; editing: boolean; actions: NoteActions }) {
   const { t } = useI18n();
@@ -152,6 +166,7 @@ export function CommentNote({ comment, place, editing, actions }: { comment: Dif
           ) : (
             <>
               <span className="meta-txt">{agoLabel(comment.createdAt)}</span>
+              <FindingTag comment={comment} />
               {comment.sent && <span className="tag faint">{t("diff.commentSent")}</span>}
             </>
           )}

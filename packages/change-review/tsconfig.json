@@ -16,6 +16,7 @@
     { "path": "../domain" },
     { "path": "../hub" },
     { "path": "../ipc" },
-    { "path": "../items" }
+    { "path": "../items" },
+    { "path": "../tools" }
   ]
 }

@@ -255,6 +255,166 @@ describe("the editor a changed file opens in", () => {
 });
 
 describe("a ticket's changes, read from git", () => {
+  /** A ticket on its branch in the checkout, and an outside session on it whose hooks are posted by name. */
+  async function turns(m: Awaited<ReturnType<typeof machine>>, title: string) {
+    const item = m.ticket(title);
+    git(["checkout", "-q", "-b", `tom-${item.keyNum}/work`, "main"], m.checkout);
+    write(m.checkout, "README.md", "# app\n\nbranch\n");
+    commit(m.checkout, `${item.key}: branch`);
+    await m.codeLink.scan(m.project.id);
+    const link = m.codeLink.links(m.project.id, item.id)[0];
+    const session = m.codeLink.store.createSession(m.project.id, { repoId: link.repoId, branch: link.branch, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: m.ctx.hub.deviceId });
+    const hook = (hook_event_name: string, cwd = m.checkout) => m.codeLink.sessions.hook(m.project.id, session.id, { hook_event_name, cwd }, false);
+    const read = (id?: string) => m.codeLink.changes(m.project.id, item.id, id ? { scope: { kind: "run", id } } : {});
+    const runs = async () => (await read())!.runs;
+    const refs = () => git(["for-each-ref", "--format=%(refname)", "refs/tomrade/runs"], m.checkout).split("\n").filter(Boolean);
+    return { item, link, hook, read, runs, refs };
+  }
+
+  it("keeps what one turn of an outside session changed, staged or not, and touches neither the index nor HEAD", async () => {
+    const m = await machine();
+    try {
+      const { item, hook, read, runs, refs } = await turns(m, "A turn");
+      write(m.checkout, "README.md", "before the turn\n");
+      git(["add", "README.md"], m.checkout);
+      write(m.checkout, "notes.txt", "written before\n");
+      const index = fs.readFileSync(path.join(m.checkout, ".git/index"));
+      const head = git(["rev-parse", "HEAD"], m.checkout);
+
+      await hook("UserPromptSubmit");
+      const [running] = await runs();
+      expect(running).toMatchObject({ source: "claude-code", endedAt: null, after: null });
+      expect(running.before).toBeTruthy();
+      // Still running: it has no diff yet, and says so instead of showing the branch's.
+      expect(await read(running.id)).toMatchObject({ scope: { kind: "run", id: running.id }, unavailable: true, files: [] });
+      expect((await read())!.scopes).toContain("run");
+
+      write(m.checkout, "README.md", "after the turn\n");
+      write(m.checkout, "notes.txt", "written during\n");
+      write(m.checkout, "src/new.ts", "export {};\n");
+      await hook("PreToolUse");
+      await hook("Stop");
+      expect(fs.readFileSync(path.join(m.checkout, ".git/index"))).toEqual(index);
+      expect(git(["rev-parse", "HEAD"], m.checkout)).toBe(head);
+      expect(await runs()).toHaveLength(1);
+      expect(refs()).toHaveLength(2);
+      const done = (await read(running.id))!;
+      expect(done.unavailable).toBe(false);
+      expect(done.files.map((f) => f.path).sort()).toEqual(["README.md", "notes.txt", "src/new.ts"]);
+      expect(kinds(byPath(done.files).get("README.md")!)).toEqual(["-1: before the turn", "+:1 after the turn"]);
+      expect((await m.codeLink.changeFile(m.project.id, item.id, { scope: { kind: "run", id: running.id }, path: "src/new.ts" }))?.status).toBe("added");
+
+      // What comes after the turn is not the turn's.
+      write(m.checkout, "README.md", "edited later\n");
+      await hook("Stop");
+      expect((await read(running.id))!.files).toEqual(done.files);
+      expect(await read("no-such-run")).toMatchObject({ unavailable: true, files: [] });
+    } finally {
+      await m.ctx.fiber.dispose();
+    }
+  }, 30_000);
+
+  it("forgets a turn that changed nothing, ends one that never stopped when the next begins, and begins only where the session works", async () => {
+    const m = await machine();
+    try {
+      const { hook, read, runs, refs } = await turns(m, "Turns");
+      await hook("UserPromptSubmit");
+      await hook("Stop");
+      expect(await runs()).toEqual([]);
+      expect(refs()).toEqual([]);
+      expect((await read())!.scopes).not.toContain("run");
+
+      // Interrupted: no Stop is heard. The next prompt, from a folder inside the checkout, ends it and begins another.
+      await hook("UserPromptSubmit");
+      write(m.checkout, "one.txt", "one\n");
+      fs.mkdirSync(path.join(m.checkout, "src"), { recursive: true });
+      await hook("UserPromptSubmit", path.join(m.checkout, "src"));
+      write(m.checkout, "two.txt", "two\n");
+      await hook("Stop");
+      const [second, first] = await runs();
+      expect((await read(first.id))!.files.map((f) => f.path)).toEqual(["one.txt"]);
+      expect((await read(second.id))!.files.map((f) => f.path)).toEqual(["two.txt"]);
+
+      // A session working somewhere else changes nothing of this folder that a run could show.
+      await hook("UserPromptSubmit", os.tmpdir());
+      write(m.checkout, "three.txt", "three\n");
+      await hook("Stop", os.tmpdir());
+      expect(await runs()).toHaveLength(2);
+
+      // A turn begun at its first tool, when no prompt was heard.
+      await hook("PreToolUse");
+      write(m.checkout, "four.txt", "four\n");
+      await hook("SessionEnd");
+      expect((await read((await runs())[0].id))!.files.map((f) => f.path)).toEqual(["four.txt"]);
+    } finally {
+      await m.ctx.fiber.dispose();
+    }
+  }, 30_000);
+
+  it("says a turn has no diff when it wrote a file too large to keep, and not when such a file only lay there", async () => {
+    const m = await machine();
+    try {
+      const { hook, read, runs } = await turns(m, "Too large");
+      write(m.checkout, "dump.bin", Buffer.alloc(1024 * 1024 + 1));
+      await hook("UserPromptSubmit");
+      write(m.checkout, "small.txt", "small\n");
+      await hook("Stop");
+      const [beside] = await runs();
+      expect((await read(beside.id))!.files.map((f) => f.path)).toEqual(["small.txt"]);
+
+      await hook("UserPromptSubmit");
+      write(m.checkout, "small.txt", "smaller\n");
+      write(m.checkout, "dump.bin", Buffer.alloc(1024 * 1024 + 2));
+      await hook("Stop");
+      const [wrote] = await runs();
+      expect(wrote.id).not.toBe(beside.id);
+      expect(wrote.before).toBeTruthy();
+      expect(wrote).toMatchObject({ after: null });
+      expect(wrote.endedAt).not.toBeNull();
+      expect(await read(wrote.id)).toMatchObject({ unavailable: true, files: [] });
+    } finally {
+      await m.ctx.fiber.dispose();
+    }
+  }, 30_000);
+
+  it("reads a picture's two versions from the scope's own sides, and no other binary file as one", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine();
+    try {
+      const item = ticket("Pictures");
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+      const url = (bytes: Buffer) => `data:image/png;base64,${bytes.toString("base64")}`;
+      git(["checkout", "-q", "-b", `tom-${item.keyNum}/pictures`, "main"], checkout);
+      write(checkout, "pixel.png", png);
+      write(checkout, "blob.bin", Buffer.from([0, 1, 2, 3]));
+      // Named like a picture, and not one.
+      write(checkout, "fake.png", Buffer.from([0, 1, 2, 3]));
+      commit(checkout, `${item.key}: a picture`);
+      const edited = Buffer.concat([png, Buffer.from([0])]);
+      write(checkout, "pixel.png", edited);
+      git(["mv", "blob.bin", "moved.bin"], checkout);
+      const second = commit(checkout, `${item.key}: the picture again`);
+      await codeLink.scan(project.id);
+      const file = (path_: string, scope?: { kind: "commit"; sha: string } | { kind: "uncommitted" }) => codeLink.changeFile(project.id, item.id, { path: path_, ...(scope ? { scope } : {}) });
+
+      expect((await file("pixel.png"))?.image).toEqual({ before: null, after: url(edited) });
+      expect((await file("pixel.png", { kind: "commit", sha: second }))?.image).toEqual({ before: url(png), after: url(edited) });
+      expect(await file("moved.bin")).toMatchObject({ binary: true, image: null });
+      expect(await file("fake.png")).toMatchObject({ binary: true, image: null });
+      // The list itself carries no picture: one is read when its file is asked for.
+      expect(byPath((await codeLink.changes(project.id, item.id))!.files).get("pixel.png")).not.toHaveProperty("image");
+
+      // The branch's picture is the commit's, whatever the folder holds now; the folder's own is read for the working tree.
+      fs.rmSync(path.join(checkout, "pixel.png"));
+      write(checkout, "fresh.png", png);
+      expect((await file("pixel.png"))?.image).toEqual({ before: null, after: url(edited) });
+      expect((await file("pixel.png", { kind: "uncommitted" }))?.image).toEqual({ before: url(edited), after: null });
+      expect((await file("fresh.png", { kind: "uncommitted" }))?.image).toEqual({ before: null, after: url(png) });
+      expect(await file("../pixel.png")).toBeNull();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  }, 30_000);
+
   it("answers for the branch, one commit and the working tree, and falls back when a scope is gone", async () => {
     const { codeLink, ctx, project, checkout, ticket } = await machine();
     try {

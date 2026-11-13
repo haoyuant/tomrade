@@ -3,7 +3,9 @@
  * diff opens from it with the files and their lines, switches to side by side and to one commit, shows the working
  * tree, and offers each file to an editor. Then the review: a comment on a line is kept and stays on its line, goes to
  * the clipboard with no session to take it and to a background session's conversation with one, and what came since the
- * review is all the diff then shows. A general ticket and one with no branch say nothing.
+ * review is all the diff then shows. Then one turn of an outside session as a scope of its own, with a picture drawn
+ * beside its absence, a migration flagged, a reviewing agent's finding under its line and the delivery's report above
+ * the diff. A general ticket and one with no branch say nothing.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:changes
@@ -311,6 +313,54 @@ const run = async () => {
   if (process.env.TOMRADE_SHOT) fs.writeFileSync(process.env.TOMRADE_SHOT.replace(/\.png$/, "-terminal.png"), (await term.webContents.capturePage()).toPNG());
   clearInterval(relay);
   term.destroy();
+
+  // ── one turn of an outside session: its own scope, a picture, a finding, the report ──
+  const outside = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, delivery: link.delivery, branch, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId });
+  const hook = (name) => ctx.codeLink.sessions.hook(project.id, outside.id, { hook_event_name: name, cwd: checkout }, false);
+  // The conversation above ran here too; only this session's turns are looked at.
+  const turns = async () => (await ctx.codeLink.changes(project.id, item.id)).runs.filter((r) => r.source === "claude-code");
+  await hook("UserPromptSubmit");
+  write(checkout, "db/migrations/1_init.sql", "create table greeting (name text);\n");
+  write(checkout, "logo.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64"));
+  await hook("Stop");
+  const [turn] = await turns();
+  const option = (id) => `${scope}.querySelector('option[value="run:${id}"]')`;
+  check("the turn is offered as a scope, named for its agent", !!turn && (await until(`${option(turn?.id)}?.textContent.startsWith('claude-code · ') && ${option(turn?.id)}.parentElement.label.startsWith('本机上的 Agent 运行（')`)), await $(`[...${scope}.querySelectorAll('option')].map((o) => o.textContent)`));
+  await pick(`run:${turn.id}`);
+  check("it shows what the turn changed, and nothing written before it", await until(names("db/migrations/1_init.sql,logo.png")), await listed());
+  check("the migration is flagged by its path", (await $(`${sheet}.querySelector('[data-path="db/migrations/1_init.sql"] [data-testid="diff-risk"]')?.textContent`)) === "迁移" && !(await $(`!!${sheet}.querySelector('[data-path="logo.png"] [data-testid="diff-risk"]')`)));
+  const picture = `${sheet}.querySelector('[data-path="logo.png"]')`;
+  await $(`${picture}?.scrollIntoView(); true`);
+  if (!(await $(`${picture}.hasAttribute('data-open')`))) await $(`${picture}.querySelector('.diff__file-head').click(); true`);
+  await until(`!!${picture}.querySelector('.diff__more button')`);
+  check("a picture is offered to be shown", (await $(`${picture}.querySelector('.diff__more button')?.textContent`)) === "显示图片", await $(`${picture}.textContent`));
+  await $(`${picture}.querySelector('.diff__more button')?.click(); true`);
+  check(
+    "a new picture is drawn beside its absence",
+    await until(`(() => { const box = ${picture}.querySelector('[data-testid="diff-images"]'); const img = box?.querySelector('img'); return box?.querySelectorAll('img').length === 1 && img.src.startsWith('data:image/png;base64,') && img.naturalWidth === 1 && box.textContent.includes('此版本中没有'); })()`),
+    await $(`${picture}.textContent`)
+  );
+  const found = await ctx.tools.execute(
+    "submit_review_findings",
+    { key: item.key, findings: [{ linkId: link.id, path: "db/migrations/1_init.sql", side: "new", line: 1, endLine: 1, quote: "create table greeting (name text);", body: "No primary key.", severity: "error" }] },
+    { by: "ai:reviewer", projectId: project.id }
+  );
+  await $(`${sheet}.querySelector('[data-path="db/migrations/1_init.sql"]')?.scrollIntoView(); true`);
+  check("an agent's finding sits under its line, named as one", await until(`${notes}.some((n) => n.textContent.includes('No primary key.') && n.querySelector('[data-testid="diff-finding"]')?.textContent === 'Agent 发现 · 错误')`), await $(`${notes}.map((n) => n.textContent)`));
+  check("and waits for the person to send it", found[0]?.sentAt === null && (await until(`/^(发送|复制) 1 条评论/.test(${sendButton}?.textContent.trim() ?? '')`)), await $(`${sendButton}?.textContent`));
+  ctx.items.submitDelivery(project.id, item.id, { report: "Greets by name, warmly." }, "ai:scripted");
+  ctx.ipc.send("codeLink.changed", project.id);
+  check("the delivery's report is above the diff", await until(`${sheet}.querySelector('[data-testid="changes-report"]')?.textContent.includes('Greets by name, warmly.')`), await $(`${sheet}.textContent.slice(0, 200)`));
+  if (process.env.TOMRADE_SHOT) fs.writeFileSync(process.env.TOMRADE_SHOT.replace(/\.png$/, "-run.png"), (await win.webContents.capturePage()).toPNG());
+  // A turn that has not stopped has no diff yet, and says so.
+  await hook("UserPromptSubmit");
+  const [open] = await turns();
+  check("a turn still running is listed without a diff", open.id !== turn.id && (await until(`${option(open.id)}?.textContent.endsWith('没有留下改动记录')`)), await $(`[...${scope}.querySelectorAll('option')].map((o) => o.textContent)`));
+  await pick(`run:${open.id}`);
+  check("and choosing it says why, instead of showing other changes", await until(`${sheet}.querySelector('.diff__blank')?.textContent.startsWith('Tomrade 没有这次运行开始和结束时的完整文件')`), await listed());
+  await hook("Stop");
+  await pick("branch");
+  await until(names("README.md,pnpm-lock.yaml,src/greet.ts"));
 
   // ── tickets with nothing to show ─────────────────────────────────────
   await $(`document.querySelector('[role="dialog"] .dlg-head .btn-icon').click(); true`);

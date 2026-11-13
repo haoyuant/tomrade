@@ -2235,7 +2235,9 @@ export class Agent extends Service implements AgentReader {
       rc.handle.cwd = turnInput.cwd;
       rc.handle.env = turnInput.env;
       if (turnInput.cwd && turnInput.purpose !== "backlog") rc.io.run.scratch.set("mediaWorkdir", turnInput.cwd);
-      result = await rc.engine.turn(turnInput, rc.io);
+      await this.boundary(rc, "before", turnInput.cwd);
+      // Stopped while the folder was being read: the engine is not started only to be told so.
+      result = rc.abort.signal.aborted ? { stop: "cancelled" } : await rc.engine.turn(turnInput, rc.io);
       if (result.lostSession && rc.io.resume && !rc.abort.signal.aborted) {
         // Its session is gone (another config folder, cleared history): rather than failing every
         // message on the same dead id, run the turn again in a new session with the conversation carried in.
@@ -2256,7 +2258,18 @@ export class Agent extends Service implements AgentReader {
       }
     } finally {
       if (this.ctx.db.has(rc.projectId)) rc.settleRetry(result?.stop !== "error" && result?.stop !== "cancelled" && !!result);
-      this.finish(rc, await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" }));
+      const final = await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" });
+      await this.boundary(rc, "after", rc.handle.cwd);
+      this.finish(rc, final);
+    }
+  }
+
+  /** Whoever reads the folder at an end of the run is waited for; one that fails costs the run nothing. */
+  private async boundary(rc: RunCtx, phase: "before" | "after", cwd?: string): Promise<void> {
+    try {
+      await this.ctx.parallel("agent/run-boundary", rc.run, rc.thread, phase, cwd);
+    } catch (error) {
+      this.ctx.logger.warn(`agent/run-boundary: ${errorMessage(error)}`);
     }
   }
 

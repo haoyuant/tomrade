@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Db, ProjectDb, Sqlite } from "@tomradex/db";
 import { DeliveryStore } from "@tomradex/db";
 import type { ItemStatus } from "@tomradex/domain";
+import type { ChangeRun } from "./changes.js";
 import { DEFAULT_BRANCH_TEMPLATE } from "./keys.js";
 import type { ConnectAgent } from "./connect.js";
 import type { PrState } from "./rules.js";
@@ -243,6 +244,25 @@ CREATE TABLE plugin_code_link_reviewed (
   at         INTEGER NOT NULL
 );
 `
+  },
+  // An agent's runs in a code link's folder: commits in this machine's repository, so they stay on this machine.
+  {
+    version: 24,
+    up: `
+CREATE TABLE plugin_code_link_runs (
+  link_id    TEXT NOT NULL,
+  id         TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  source     TEXT NOT NULL,
+  root       TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at   INTEGER,
+  before_sha TEXT,
+  after_sha  TEXT,
+  left_out   TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (link_id, id)
+);
+`
   }
 ];
 
@@ -255,7 +275,8 @@ export const TABLES = {
   plugin_code_link_sessions: { project: "project_id", export: false },
   plugin_code_link_hooks_heard: { project: "project_id", export: false },
   plugin_code_link_repo_seen: { project: "project_id", export: false },
-  plugin_code_link_reviewed: { project: "project_id", export: false }
+  plugin_code_link_reviewed: { project: "project_id", export: false },
+  plugin_code_link_runs: { project: "project_id", export: false }
 } as const;
 
 export type LinkSource = "start" | "scan" | "mcp" | "manual";
@@ -969,6 +990,33 @@ export class CodeLinkStore {
     this.db(projectId)
       .prepare("INSERT INTO plugin_code_link_reviewed (link_id, project_id, sha, at) VALUES (?, ?, ?, ?) ON CONFLICT(link_id) DO UPDATE SET sha = excluded.sha, at = excluded.at")
       .run(linkId, projectId, sha, at);
+  }
+
+  /** A code link's runs on this machine, newest first. */
+  changeRuns(projectId: string, linkId: string): ChangeRun[] {
+    return this.db(projectId)
+      .prepare("SELECT id, source, started_at AS startedAt, ended_at AS endedAt, before_sha AS before, after_sha AS after FROM plugin_code_link_runs WHERE link_id = ? ORDER BY started_at DESC, rowid DESC")
+      .all(linkId) as ChangeRun[];
+  }
+
+  /** A run begins in a code link's folder, with what the commit kept of it leaves out (`left`); begun there already, it stays as it was. */
+  startChangeRun(projectId: string, linkId: string, run: Pick<ChangeRun, "id" | "source" | "startedAt" | "before">, root: string, left: string): void {
+    this.db(projectId)
+      .prepare("INSERT OR IGNORE INTO plugin_code_link_runs (link_id, id, project_id, source, root, started_at, before_sha, left_out) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(linkId, run.id, projectId, run.source, root, run.startedAt, run.before, left);
+  }
+
+  /** Where a run is not over: each code link it began in, with the folder and what was kept of it then. */
+  openChangeRuns(projectId: string, id: string): { linkId: string; root: string; before: string | null; leftOut: string }[] {
+    return this.db(projectId).prepare("SELECT link_id AS linkId, root, before_sha AS before, left_out AS leftOut FROM plugin_code_link_runs WHERE id = ? AND ended_at IS NULL").all(id) as { linkId: string; root: string; before: string | null; leftOut: string }[];
+  }
+
+  endChangeRun(projectId: string, linkId: string, id: string, after: string | null, at: number): void {
+    this.db(projectId).prepare("UPDATE plugin_code_link_runs SET after_sha = ?, ended_at = ? WHERE link_id = ? AND id = ? AND ended_at IS NULL").run(after, at, linkId, id);
+  }
+
+  dropChangeRun(projectId: string, linkId: string, id: string): void {
+    this.db(projectId).prepare("DELETE FROM plugin_code_link_runs WHERE link_id = ? AND id = ?").run(linkId, id);
   }
 
   // ── repositories ───────────────────────────────────────────────────────────

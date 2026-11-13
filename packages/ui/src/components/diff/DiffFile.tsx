@@ -5,6 +5,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { sideOf, type CommentSide, type Place } from "./anchors";
 import { CommentNote, Composer, type FileNotes, type NoteActions } from "./DiffComments";
 import { highlightHunk, parserFor, segments, type Token } from "./highlight";
+import { riskOf } from "./risk";
 import { gapBefore, gutterDigits, lineCount, pieces, splitRows, type Piece, type SplitRow } from "./rows";
 import { pairedSpans, type Span } from "./words";
 
@@ -18,6 +19,8 @@ const STATUS: Record<ChangeStatus, { letter: string; label: MessageKey }> = {
   deleted: { letter: "D", label: "diff.statusDeleted" },
   renamed: { letter: "R", label: "diff.statusRenamed" }
 };
+/** The names of the pictures a comparison can show; what the bytes are is the reader's to say. */
+const RASTER = /\.(png|jpe?g|gif|webp)$/i;
 const QUIET: Record<"generated" | "binary" | "large", MessageKey> = { generated: "diff.generatedFolded", binary: "diff.binaryFile", large: "diff.largeFolded" };
 const SIGN: Record<ChangeLine["kind"], string> = { add: "+", del: "-", context: " " };
 
@@ -249,7 +252,27 @@ const DiffBody = memo(function DiffBody({ file, layout, opened, load, canLoad, o
     </div>
   );
 
-  if (file.binary) return <div className="diff__more meta-txt">{t("diff.binaryFile")}</div>;
+  if (file.binary) {
+    if (file.image) {
+      return (
+        <div className="diff__images" data-testid="diff-images">
+          {(["before", "after"] as const).map((side) => {
+            const label = t(side === "before" ? "diff.imageBefore" : "diff.imageAfter");
+            const src = file.image?.[side];
+            return (
+              <figure key={side}>
+                <figcaption className="meta-txt">{label}</figcaption>
+                {src ? <img src={src} alt={label} /> : <span className="meta-txt">{t("diff.imageAbsent")}</span>}
+              </figure>
+            );
+          })}
+        </div>
+      );
+    }
+    // Asked for once and answered with no picture, it is the binary file it always was.
+    if (file.image === undefined && RASTER.test(file.path)) return more("diff.loadImage", "diff.binaryFile");
+    return <div className="diff__more meta-txt">{t("diff.binaryFile")}</div>;
+  }
   if (!hunks) return more("diff.loadFile", "diff.notLoaded");
   if (!hunks.length) return <div className="diff__more meta-txt">{t("diff.noContent")}</div>;
 
@@ -319,6 +342,7 @@ export interface DiffFileProps extends BodyProps {
 export function DiffFile({ index, open, viewed, quiet, scroller, actions, onToggle, onViewed, ...body }: DiffFileProps) {
   const { t } = useI18n();
   const { file } = body;
+  const risk = riskOf(file.path) ?? (file.oldPath ? riskOf(file.oldPath) : null);
   const section = useRef<HTMLElement>(null);
   const [near, setNear] = useState(index < EAGER_FILES || typeof IntersectionObserver === "undefined");
 
@@ -348,6 +372,11 @@ export function DiffFile({ index, open, viewed, quiet, scroller, actions, onTogg
         </span>
         {!open && quiet && <span className="meta-txt diff__note">{t(QUIET[quiet])}</span>}
         <span className="diff__file-tools" onClick={(e) => e.stopPropagation()}>
+          {risk && (
+            <span className="tag neutral" title={t("diff.riskHint")} data-testid="diff-risk">
+              {t(risk)}
+            </span>
+          )}
           {fileCounts(file)}
           {actions}
           <label className="diff__viewed">

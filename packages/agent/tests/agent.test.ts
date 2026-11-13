@@ -34,6 +34,23 @@ async function settled(ctx: Context, projectId: string, runId: string, timeout =
 }
 
 describe("the loop engine on the platform", () => {
+  it("waits for whoever reads the folder at each end of a run: before the engine starts, and before the run settles", async () => {
+    const { ctx, agent, project } = await boot([]);
+    const order: string[] = [];
+    ctx.on("agent/run-boundary", async (_run, _thread, phase) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push(phase);
+      // A reader that fails costs the run nothing.
+      if (phase === "before") throw new Error("could not read the folder");
+    });
+    ctx.on("agent/run-ended", (run) => void order.push(`ended:${run.stop}`));
+    agent.engine({ id: "capture", title: "Capture", author: "ai:test", available: async () => ({ ok: true }), turn: async () => (order.push("engine"), { stop: "end" }) });
+    const thread = agent.newThread(project.id, "capture");
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+    await settled(ctx, project.id, runId);
+    expect(order).toEqual(["before", "engine", "after", "ended:end"]);
+  });
+
   it("shows an engine-returned error in the thread instead of leaving a blank turn", async () => {
     const { ctx, agent, project } = await boot([]);
     agent.engine({

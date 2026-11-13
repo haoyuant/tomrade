@@ -26,7 +26,9 @@
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
-    "cordis": "4.0.0-rc.8"
+    "@tomradex/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tomradex/contributions": "workspace:*",
@@ -35,7 +37,6 @@
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",
     "@tomradex/testkit": "workspace:*",
-    "@tomradex/tools": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }

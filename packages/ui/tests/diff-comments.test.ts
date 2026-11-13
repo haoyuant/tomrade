@@ -21,7 +21,7 @@ const hunk: ChangeHunk = {
   ]
 };
 const file = (over: Partial<ChangedFile> = {}): ChangedFile => ({ path: "src/total.ts", oldPath: null, status: "modified", additions: 2, deletions: 1, binary: false, generated: false, truncated: false, hunks: [hunk], ...over });
-const changes = (files: ChangedFile[]): ChangesView => ({ linkId: "l", links: [], scopes: ["branch"], commits: [], scope: { kind: "branch" }, base: "aaa", head: "bbb", root: null, files });
+const changes = (files: ChangedFile[]): ChangesView => ({ linkId: "l", links: [], scopes: ["branch"], commits: [], scope: { kind: "branch" }, base: "aaa", head: "bbb", root: null, runs: [], report: null, files });
 const note = (over: Partial<DiffComment> = {}): DiffComment => ({ id: "c1", path: "src/total.ts", side: "new", line: 11, endLine: 11, quote: "  const sum = price * quantity;", body: "Name it subtotal.\nIt is not the sum yet.", state: "open", sent: false, createdAt: Date.now() - 120_000, ...over });
 const stored = (values: Record<string, string>) => vi.stubGlobal("localStorage", { getItem: (key: string) => values[key] ?? null, setItem() {}, removeItem() {} });
 const render = (files: ChangedFile[], props: Partial<DiffViewProps> = {}) => renderToStaticMarkup(createElement(DiffView, { changes: changes(files), ignoreWhitespace: false, onIgnoreWhitespace() {}, ...props }));
@@ -149,4 +149,31 @@ it("draws the comment being written under its lines, which are marked", () => {
   const editing = body({ placed: [{ comment: note(), place: { hunk: 0, first: 2, last: 2, line: 11, endLine: 11 } }], outdated: [], editing: "c1", draft: null });
   expect(editing).toContain("diff.commentSaveEdit");
   expect(editing).not.toContain("diff__comment-body");
+});
+
+it("names an agent's finding as one, with how much it matters and who found it", () => {
+  const finding = note({ finding: { reviewer: "ai:reviewer", severity: "warning" } });
+  const html = render([file()], { comments: [finding, note({ id: "c2", line: 12, endLine: 12, quote: "  return sum;" })], ...all });
+  expect(html.match(/data-testid="diff-finding"/g)).toHaveLength(1);
+  expect(html).toContain("diff.finding");
+  expect(html).toContain("diff.findingWarning");
+  expect(html).toContain('title="ai:reviewer"');
+});
+
+it("draws a picture's two versions side by side, and offers to read one only where the name says picture", () => {
+  const body = (over: Partial<ChangedFile>) =>
+    renderToStaticMarkup(createElement(DiffFile, { index: 0, file: file({ binary: true, hunks: null, ...over }), layout: "unified", open: true, viewed: false, quiet: null, load: "idle", canLoad: true, opened: [], scroller: createRef<HTMLElement>(), onToggle() {}, onViewed() {}, onLoad() {}, onUnfold() {} }));
+  const both = body({ path: "logo.png", image: { before: "data:image/png;base64,before", after: "data:image/png;base64,after" } });
+  expect(both).toContain('src="data:image/png;base64,before"');
+  expect(both).toContain('src="data:image/png;base64,after"');
+  const added = body({ path: "logo.png", status: "added", image: { before: null, after: "data:image/png;base64,after" } });
+  expect(added.match(/<img /g)).toHaveLength(1);
+  expect(added).toContain("diff.imageAbsent");
+  expect(body({ path: "logo.png" })).toContain("diff.loadImage");
+  // Read and found to be no picture, or never one by its name: the binary file it always was.
+  for (const plain of [body({ path: "logo.png", image: null }), body({ path: "font.woff2" })]) {
+    expect(plain).toContain("diff.binaryFile");
+    expect(plain).not.toContain("diff.loadImage");
+    expect(plain).not.toContain("diff__images");
+  }
 });

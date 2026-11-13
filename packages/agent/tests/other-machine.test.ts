@@ -89,6 +89,7 @@ it("stops the turn running here once a sync says another machine took the conver
   const { ctx, project, done } = await setup();
   try {
     let aborted = false;
+    let started = false;
     ctx.agent.engine({
       id: "slow",
       title: "Slow",
@@ -96,6 +97,7 @@ it("stops the turn running here once a sync says another machine took the conver
       available: async () => ({ ok: true }),
       turn: (_input, io) =>
         new Promise((resolve) => {
+          started = true;
           io.emit({ type: "text", text: "Working" });
           io.signal.addEventListener("abort", () => { aborted = true; resolve({ stop: "end" }); }, { once: true });
         })
@@ -103,7 +105,7 @@ it("stops the turn running here once a sync says another machine took the conver
     const store = ctx.agent.store;
     const thread = store.createThread(project.id, "slow", "Here");
     const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
-    await expect.poll(() => ctx.agent.activeRuns().some((a) => a.run.id === runId)).toBe(true);
+    await expect.poll(() => started && ctx.agent.activeRuns().some((a) => a.run.id === runId)).toBe(true);
 
     // what a sync brings in from the machine that took it over
     const note = "Stopped: the conversation was taken over from the machine running this turn.";

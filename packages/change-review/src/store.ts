@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS plugin_changereview_comments (
 );
 CREATE INDEX IF NOT EXISTS idx_plugin_changereview_comments_item ON plugin_changereview_comments(item_id);
 `
-  }
+  },
+  // A comment a reviewing agent made: who, in which run, and how much it matters.
+  { version: 2, up: "ALTER TABLE plugin_changereview_comments ADD COLUMN finding TEXT" }
 ];
 
 /** This machine's review of a checkout that is here: another machine sees other lines, and has its own agent to tell. */
@@ -33,7 +35,18 @@ export const TABLES = {
 export type ReviewSide = "old" | "new";
 export type ReviewState = "open" | "resolved";
 
-/** A person's comment on a line, or a run of lines, of a ticket's diff. */
+export type ReviewSeverity = "info" | "warning" | "error";
+
+/** What makes a comment an agent's finding rather than a person's words. */
+export interface ReviewFinding {
+  /** The agent that found it, as an author: `ai:claude-code`. */
+  reviewer: string;
+  /** The run it was found in, when a conversation here found it. */
+  runId?: string;
+  severity: ReviewSeverity;
+}
+
+/** A comment on a line, or a run of lines, of a ticket's diff: a person's, or a reviewing agent's finding. */
 export interface ReviewComment {
   id: string;
   itemId: string;
@@ -49,6 +62,8 @@ export interface ReviewComment {
   createdAt: number;
   updatedAt: number;
   sentAt: number | null;
+  /** Present on an agent's finding, and kept through every edit of it. */
+  finding?: ReviewFinding;
 }
 
 /** What a new comment says of itself; the rest is the store's. */
@@ -68,6 +83,7 @@ interface Row {
   created_at: number;
   updated_at: number;
   sent_at: number | null;
+  finding: string | null;
 }
 
 const toComment = (r: Row): ReviewComment => ({
@@ -83,7 +99,8 @@ const toComment = (r: Row): ReviewComment => ({
   state: r.state as ReviewState,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
-  sentAt: r.sent_at
+  sentAt: r.sent_at,
+  ...(r.finding ? { finding: JSON.parse(r.finding) as ReviewFinding } : {})
 });
 
 export class ReviewStore {
@@ -99,10 +116,10 @@ export class ReviewStore {
     return row ? toComment(row) : null;
   }
 
-  add(projectId: string, itemId: string, id: string, draft: ReviewDraft, now: number): ReviewComment {
+  add(projectId: string, itemId: string, id: string, draft: ReviewDraft, now: number, finding?: ReviewFinding): ReviewComment {
     this.db(projectId)
-      .prepare("INSERT INTO plugin_changereview_comments (id, project_id, item_id, link_id, path, side, line, end_line, quote, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(id, projectId, itemId, draft.linkId, draft.path, draft.side, draft.line, draft.endLine, draft.quote, draft.body, now, now);
+      .prepare("INSERT INTO plugin_changereview_comments (id, project_id, item_id, link_id, path, side, line, end_line, quote, body, created_at, updated_at, finding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, projectId, itemId, draft.linkId, draft.path, draft.side, draft.line, draft.endLine, draft.quote, draft.body, now, now, finding ? JSON.stringify(finding) : null);
     return this.get(projectId, id)!;
   }
 

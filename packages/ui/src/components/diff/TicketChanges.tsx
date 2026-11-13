@@ -14,8 +14,9 @@ const BRANCH: ChangeScope = { kind: "branch" };
 
 /**
  * A ticket's changes with what chooses them: the code link when it has several, and the scope (its branch against
- * the base, the working tree where one is here, one commit, or what came since the last review). The comments on its
- * lines are kept and sent from here too. The diff itself is `DiffView`'s.
+ * the base, the working tree where one is here, one commit, one run of an agent, or what came since the last review).
+ * The comments on its lines are kept and sent from here too, and the delivery's report is shown above. The diff itself
+ * is `DiffView`'s.
  */
 export function TicketChanges({ source, viewedKey, onNotice }: { source: ChangesSource; viewedKey: string; onNotice: (text: string) => void }) {
   const { t, locale } = useI18n();
@@ -47,7 +48,7 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
   const [busy, setBusy] = useState(false);
   // The view is given the shown link's comments; a send takes every link's.
   const comments = useMemo<DiffComment[]>(
-    () => (kept.data ?? []).filter((c) => c.linkId === shownLink).map((c) => ({ id: c.id, path: c.path, side: c.side, line: c.line, endLine: c.endLine, quote: c.quote, body: c.body, state: c.state, sent: c.sentAt !== null, createdAt: c.createdAt })),
+    () => (kept.data ?? []).filter((c) => c.linkId === shownLink).map((c) => ({ id: c.id, path: c.path, side: c.side, line: c.line, endLine: c.endLine, quote: c.quote, body: c.body, state: c.state, sent: c.sentAt !== null, createdAt: c.createdAt, finding: c.finding })),
     [kept.data, shownLink]
   );
   const unsent = (kept.data ?? []).filter((c) => c.state === "open" && c.sentAt === null);
@@ -119,6 +120,18 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
         <option value="branch">{t("diff.scopeBranch")}</option>
         {changes.scopes.includes("uncommitted") && <option value="uncommitted">{t("diff.scopeUncommitted")}</option>}
         {changes.scopes.includes("since") && changes.reviewed && <option value="since">{t("diff.scopeSince", { when: minute(changes.reviewed.at) })}</option>}
+        {changes.runs.length > 0 && (
+          <optgroup label={t("diff.scopeRuns", { count: changes.runs.length })}>
+            {changes.runs.map((r) => {
+              const run = `${r.source} · ${minute(r.startedAt)}`;
+              return (
+                <option key={r.id} value={`run:${r.id}`}>
+                  {r.before && r.after ? run : t("diff.scopeRunNoDiff", { run })}
+                </option>
+              );
+            })}
+          </optgroup>
+        )}
         {changes.commits.length > 0 && (
           <optgroup label={t("diff.scopeCommits", { count: changes.commits.length })}>
             {changes.commits.map((c) => (
@@ -141,30 +154,38 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
   );
 
   return (
-    <DiffView
-      changes={changes}
-      loading={read.isFetching}
-      ignoreWhitespace={ignoreWhitespace}
-      onIgnoreWhitespace={setIgnoreWhitespace}
-      onLoadFile={onLoadFile}
-      viewedKey={viewedKey}
-      toolbar={toolbar}
-      comments={comments}
-      onAddComment={addComment}
-      onEditComment={editComment}
-      onRemoveComment={removeComment}
-      commentsAction={sendControl}
-      fileActions={
-        changes?.root
-          ? (file) =>
-              file.status === "deleted" ? null : (
-                <button type="button" className="btn btn-icon" data-testid="changes-open" aria-label={t("diff.openInEditor")} title={t("diff.openInEditor")} onClick={() => void open(file)}>
-                  <Icon name="i-popout" size={14} />
-                </button>
-              )
-          : undefined
-      }
-    />
+    <>
+      {changes?.report && (
+        <details className="diff__report" data-testid="changes-report" open>
+          <summary>{t("diff.reportTitle")}</summary>
+          <div className="diff__report-body">{changes.report}</div>
+        </details>
+      )}
+      <DiffView
+        changes={changes}
+        loading={read.isFetching}
+        ignoreWhitespace={ignoreWhitespace}
+        onIgnoreWhitespace={setIgnoreWhitespace}
+        onLoadFile={onLoadFile}
+        viewedKey={viewedKey}
+        toolbar={toolbar}
+        comments={comments}
+        onAddComment={addComment}
+        onEditComment={editComment}
+        onRemoveComment={removeComment}
+        commentsAction={sendControl}
+        fileActions={
+          changes?.root
+            ? (file) =>
+                file.status === "deleted" ? null : (
+                  <button type="button" className="btn btn-icon" data-testid="changes-open" aria-label={t("diff.openInEditor")} title={t("diff.openInEditor")} onClick={() => void open(file)}>
+                    <Icon name="i-popout" size={14} />
+                  </button>
+                )
+            : undefined
+        }
+      />
+    </>
   );
 }
 

@@ -11,7 +11,8 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import { reviewPrompt } from "./prompt.js";
-import { MIGRATIONS, ReviewStore, TABLES, type ReviewComment, type ReviewDraft, type ReviewState } from "./store.js";
+import { MIGRATIONS, ReviewStore, TABLES, type ReviewComment, type ReviewDraft, type ReviewFinding, type ReviewSeverity, type ReviewState } from "./store.js";
+import { registerReviewTools } from "./tools.js";
 import { CHANGE_REVIEW_WORDS } from "./words.js";
 
 /** Where a ticket's comments would go: its session's terminal pane, its background conversation, or nowhere Tomrade can reach. */
@@ -77,6 +78,7 @@ export class ChangeReview extends Service {
 
   [Service.init]() {
     this.home.db.migrate("changereview", MIGRATIONS, { tables: TABLES });
+    this.home.inject(["tools"], (ctx) => registerReviewTools(ctx));
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("changeReview.comments", (projectId, itemId) => ctx.changeReview.comments(projectId, itemId));
       ctx.ipc.handle("changeReview.add", (projectId, itemId, draft) => ctx.changeReview.add(projectId, itemId, draft));
@@ -99,16 +101,32 @@ export class ChangeReview extends Service {
     return this.store.of(projectId, itemId).filter((comment) => links.has(comment.linkId));
   }
 
-  add(projectId: string, itemId: string, draft: ReviewDraft): ReviewComment {
+  /** A comment has a ticket, a code link of it, a side and lines, and words; its words come back trimmed. */
+  private checked(projectId: string, itemId: string, draft: ReviewDraft): ReviewDraft {
     if (!this.home.items.get(projectId, itemId)) throw new Error(`unknown ticket ${itemId}`);
     if (!this.home.codeLink.links(projectId, itemId).some((link) => link.id === draft.linkId)) throw new Error(`unknown code link ${draft.linkId}`);
     if (draft.side !== "old" && draft.side !== "new") throw new Error("a comment is on the old side or the new");
     if (!Number.isInteger(draft.line) || !Number.isInteger(draft.endLine) || draft.line < 1 || draft.endLine < draft.line) throw new Error("a comment is on a line, or a run of lines");
     const body = draft.body.trim();
     if (!draft.path || !body) throw new Error(this.words()("emptyComment"));
-    const comment = this.store.add(projectId, itemId, randomUUID(), { ...draft, body }, Date.now());
+    return { linkId: draft.linkId, path: draft.path, side: draft.side, line: draft.line, endLine: draft.endLine, quote: draft.quote, body };
+  }
+
+  add(projectId: string, itemId: string, draft: ReviewDraft): ReviewComment {
+    const comment = this.store.add(projectId, itemId, randomUUID(), this.checked(projectId, itemId, draft), Date.now());
     this.home.emit("changeReview/changed", projectId, itemId);
     return comment;
+  }
+
+  /**
+   * A reviewing agent's findings, kept as comments it is named on and nobody has sent: the person reads them beside
+   * their own, and sends or resolves them the same way. All of them are kept, or none when one has no place.
+   */
+  addFindings(projectId: string, itemId: string, found: (ReviewDraft & { severity: ReviewSeverity })[], by: Omit<ReviewFinding, "severity">): ReviewComment[] {
+    const drafts = found.map((finding) => ({ draft: this.checked(projectId, itemId, finding), severity: finding.severity }));
+    const comments = drafts.map(({ draft, severity }) => this.store.add(projectId, itemId, randomUUID(), draft, Date.now(), { ...by, severity }));
+    if (comments.length) this.home.emit("changeReview/changed", projectId, itemId);
+    return comments;
   }
 
   /** Null when the comment is not there. */

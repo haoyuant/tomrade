@@ -115,6 +115,8 @@ export interface SessionMoment {
 export type SessionChange = "doing" | "moved";
 
 export interface SessionsOptions {
+  /** A hook that may begin or end a turn of an outside session, awaited before the hook is answered: what is in `cwd` is read as it is now. */
+  onBoundary?(session: SessionView, event: "prompt" | "pre-tool" | "stop" | "session-end", cwd: string | null): Promise<void>;
   /** Where a session's files (mcp.json, settings.json, pid) live. */
   dirOf(sessionId: string): string;
   onChange(projectId: string, change: SessionChange): void;
@@ -556,6 +558,10 @@ export class Sessions {
     const p = (payload ?? {}) as HookPayload;
     const name = p.hook_event_name ?? "";
     const event = cliHookEvent(name);
+    const turn = event === "prompt" || event === "pre-tool" || event === "stop" || event === "session-end" ? event : null;
+    // A turn's ends are read from the post that tells the session's story: not herdr's, not dsh's bridge, not a repository's hooks doubling a token's.
+    const told = turn && !p.herdr && p.tomrade_source !== "dsh-hooks" && (replies || !this.live.has(sessionId)) ? this.store.session(projectId, sessionId) : null;
+    if (turn && told) await this.options.onBoundary?.(told, turn, typeof p.cwd === "string" ? p.cwd : told.cwd);
     // dsh's bridge carries answers only; its reporter has told the session's story already.
     const own = p.tomrade_source === "dsh-hooks" ? {} : this.observe(projectId, sessionId, p);
     const bridged = !!event && BRIDGED_BY_DSH.has(event);

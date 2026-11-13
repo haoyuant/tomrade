@@ -61,7 +61,7 @@ function storedLayout(): DiffLayout {
   }
 }
 
-const scopeKey = (scope: ChangeScope): string => (scope.kind === "commit" ? `commit:${scope.sha}` : scope.kind);
+const scopeKey = (scope: ChangeScope): string => (scope.kind === "commit" ? `commit:${scope.sha}` : scope.kind === "run" ? `run:${scope.id}` : scope.kind);
 
 /** What was read for single files, for one set of changes; another set starts empty. */
 interface Fetched {
@@ -123,7 +123,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
   const keyOf = useCallback((file: ChangedFile, full: boolean) => `${file.path}\0${fileVersion(file)}\0${full ? "full" : "part"}`, []);
   const read = fetched.of === identity ? fetched.files : undefined;
 
-  /** Each listed file as it is drawn: with the hunks read for it apart, when there are any. A file nothing was read for stays the same object. */
+  /** Each listed file as it is drawn: with the hunks, or the picture, read for it apart, when there are any. A file nothing was read for stays the same object. */
   const drawn = useMemo(
     () =>
       (listed ?? []).map((file) => {
@@ -131,7 +131,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
         const part = read?.[keyOf(file, false)];
         const got = typeof full === "object" ? full : typeof part === "object" ? part : null;
         const state = [full, part].includes("loading") ? "loading" : [full, part].includes("failed") ? "failed" : "idle";
-        return { listed: file, file: got ? { ...file, hunks: got.hunks, truncated: got.truncated } : file, load: state as FileLoad };
+        return { listed: file, file: got ? { ...file, hunks: got.hunks, truncated: got.truncated, ...(got.image !== undefined ? { image: got.image } : {}) } : file, load: state as FileLoad };
       }),
     [listed, read, keyOf]
   );
@@ -249,7 +249,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
         setFetched((prev) => (value !== "loading" && prev.of !== now.identity ? prev : { of: now.identity, files: { ...(prev.of === now.identity ? prev.files : {}), [key]: value } }));
       put("loading");
       now.onLoadFile(path, full ? { full: true } : undefined).then(
-        (got) => put(got?.hunks ? got : "failed"),
+        (got) => put(got && (got.hunks || got.binary) ? got : "failed"),
         () => put("failed")
       );
     },
@@ -385,7 +385,7 @@ export function DiffView({ changes, loading, ignoreWhitespace, onIgnoreWhitespac
       </div>
       {taking && notesOpen && <CommentsList rows={listedComments} onJump={jump} />}
       {drawn.length === 0 ? (
-        <div className="diff__blank meta-txt">{t(ignoreWhitespace ? "diff.emptyWhitespace" : "diff.empty")}</div>
+        <div className="diff__blank meta-txt">{t(changes.unavailable ? "diff.runUnavailable" : ignoreWhitespace ? "diff.emptyWhitespace" : "diff.empty")}</div>
       ) : (
         <div className="diff__panes">
           {stacked ? (

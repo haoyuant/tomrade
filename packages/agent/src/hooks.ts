@@ -15,6 +15,8 @@ declare module "cordis" {
     "agent/before-send"(thread: ThreadSummary): string | void;
     /** A limit stopped this thread: true when a plugin decides what happens next, so nobody is asked. */
     "agent/before-switch-offer"(thread: ThreadSummary): true | void;
+    /** Awaited just before a run's engine starts and once it is through, before the run settles: the folder as it is at each end. */
+    "agent/run-boundary"(run: RunView, thread: ThreadSummary, phase: "before" | "after", cwd?: string): Promise<void> | void;
     /** A run began driving a thread. */
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */
