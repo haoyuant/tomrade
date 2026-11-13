@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
-import { account, cleanup, machine, share, type Account, type Machine } from "./world.js";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
+import { account, cleanup, machine, share, until, type Account, type Machine } from "./world.js";
 
 let acct: Account;
 beforeAll(async () => { acct = await account(); }, 60_000);
@@ -136,6 +136,53 @@ it("a machine that cannot take one made for its platform leaves it for another",
   expect(b.s.recent()).toEqual([]);
   await c.queue.tick();
   expect(c.queue.list()).toMatchObject([{ state: "running", claimedBy: "win-c" }]);
+}, 60_000);
+
+it("made for any machine of a platform, it is taken by one that could not take it at first, once it can", async () => {
+  const bus = new Set<{ device: string; ctx: never }>();
+  const a = await machine(acct, "mac-a", { bus: bus as never });
+  const b = await machine(acct, "win-b", { bus: bus as never });
+  const projectId = a.project.id;
+  const make = (title: string) => a.items.create({ projectId, boardId: a.board.id, title, status: "todo", workType: "coding", by: "human" });
+  const [first, second, third] = [make("One"), make("Two"), make("Three")];
+  await share(a, b, projectId);
+  let told = 0, probed = 0;
+  a.ctx.on("cloudHub/signal" as never, (() => { told++; }) as never);
+  const agent = b.ctx.get("agent") as { codeEngines(): { available(): Promise<unknown> }[] };
+  const engines = agent.codeEngines.bind(agent);
+  agent.codeEngines = () => engines().map((e) => ({ ...e, available: () => { probed++; return e.available(); } }));
+
+  // Seen while this machine takes nothing: it looks, by its own settings alone, and says nothing to the others.
+  await a.queue.send({ projectId, itemId: first.id, platform: process.platform });
+  for (let i = 0; i < 3; i++) await b.queue.tick();
+  expect(b.queue.list()).toMatchObject([{ state: "queued" }]);
+  expect({ told, probed }).toEqual({ told: 0, probed: 0 });
+  // Turned on: taken without waiting for the next look.
+  b.accept();
+  await until(() => b.code.starts.length === 1);
+
+  // Busy: the next one waits, and is taken when the first is over.
+  await a.queue.send({ projectId, itemId: second.id, platform: process.platform });
+  for (let i = 0; i < 2; i++) await b.queue.tick();
+  expect(b.code.starts).toHaveLength(1);
+  b.code.sessions.get("session-1")!.state = "ended";
+  await b.queue.tick();
+  await until(() => b.code.starts.length === 2);
+  expect(b.code.starts[1]).toMatchObject({ itemId: second.id });
+  b.code.sessions.get("session-2")!.state = "ended";
+  await b.queue.tick();
+
+  // No agent ready, and nothing here says when one is: looked at again after a while.
+  b.engines[0]!.ok = false;
+  await a.queue.send({ projectId, itemId: third.id, platform: process.platform });
+  await b.queue.tick();
+  b.engines[0]!.ok = true;
+  await b.queue.tick();
+  expect(b.code.starts).toHaveLength(2);
+  const now = Date.now();
+  const later = vi.spyOn(Date, "now").mockImplementation(() => now + 61_000);
+  try { await b.queue.tick(); } finally { later.mockRestore(); }
+  expect(b.code.starts[2]).toMatchObject({ itemId: third.id });
 }, 60_000);
 
 it("waits for a machine that is off, and is no longer on offer once its time has run out", async () => {
