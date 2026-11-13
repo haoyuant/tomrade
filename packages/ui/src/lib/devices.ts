@@ -25,6 +25,16 @@ export const PLATFORM_LABELS: Record<string, string> = { darwin: "macos", win32:
 /** The label that names one computer for a ticket. */
 export const deviceLabel = (name: string): string => `device:${name.trim().toLowerCase()}`;
 
+/**
+ * What the status bar says of the account's computers: how many are on, of how many, and which. Null until
+ * this computer has its place among two or more: one computer alone has nothing to say.
+ */
+export function devicesStatus(info: DevicesInfo | undefined): { online: number; total: number; names: string[] } | null {
+  if (info?.state !== "ready" || info.devices.length < 2) return null;
+  const on = info.devices.filter((d) => d.online);
+  return { online: on.length, total: info.devices.length, names: on.map((d) => d.name) };
+}
+
 /** Rename, remove and check again each answer with the list as it is afterwards. */
 export function useDeviceActions() {
   const qc = useQueryClient();

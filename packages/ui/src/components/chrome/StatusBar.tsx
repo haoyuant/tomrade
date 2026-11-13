@@ -4,12 +4,27 @@ import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuStackItem } from "~/components/ui/menu";
 import { ATTENTION_KEY, useAttention, useOpenAttention } from "~/lib/attention";
+import { devicesStatus, useDevices } from "~/lib/devices";
 import { agoLabel, authorLabel, timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useProjects, useRunCommand, useStatusItems } from "~/lib/queries";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "./ProjectShell";
 import { openSettingsPane } from "~/lib/settingsHost";
+
+/** How many of the account's computers are on, once there is a second one: a way to the Devices pane from every screen. */
+function DevicesItem() {
+  const { t } = useI18n();
+  const status = devicesStatus(useDevices().data);
+  if (!status) return null;
+  const title = status.names.length ? t("devices.statusTitle", { names: status.names.join(" · ") }) : t("devices.statusTitleNone");
+  return (
+    <button type="button" className="status-item status-link" data-testid="status-devices" title={title} aria-label={title} onClick={() => openSettingsPane("devices")}>
+      <Icon name="i-monitor" size={13} />
+      <span className="status-label">{t("devices.statusOnline", { online: status.online, total: status.total })}</span>
+    </button>
+  );
+}
 
 const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp(\/[^/]+)?$/, "") : null);
 
@@ -214,6 +229,7 @@ export function StatusBar({
         </button>
       )}
       <Spacer />
+      <DevicesItem />
       {endItems.map((s) => (s.command || s.menu || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
       {children}
     </footer>

@@ -220,6 +220,8 @@ const run = async () => {
   check("once it is removed this computer takes the place", await until(`!!${card(self)}`, 15_000) && supabase.state.registered.includes(self), await cardIds());
   check("this computer is marked as such, and online", (await $(`${card(self)}?.textContent ?? ''`)).includes("This computer") && (await $(`${card(self)}?.dataset.online`)) === "true");
   check("it comes first", (await cardIds())[0] === self, await cardIds());
+  const bar = () => $(`document.querySelector('[data-testid="status-devices"]')?.textContent ?? null`);
+  check("the status bar says how many of the two are on", await until(`(document.querySelector('[data-testid="status-devices"]')?.textContent ?? '').includes('1 of 2 online')`), await bar());
   check("the other is greyed, with when it was last online", (await $(`${card("win-000001")}?.classList.contains('offline')`)) && (await $(`${card("win-000001")}?.querySelector('[data-testid="device-presence"]')?.textContent ?? ''`)).includes("Last online 2h ago"), await $(`${card("win-000001")}?.textContent`));
   const winCard = () => $(`${card("win-000001")}?.textContent ?? ''`);
   check("with its platform, version and agents", (await winCard()).includes("Windows") && (await winCard()).includes("Tomrade 0.29.0") && (await winCard()).includes("Claude Code") && (await $(`!!${card("win-000001")}?.querySelector('.device-agent.unready')`)), await winCard());
@@ -249,6 +251,7 @@ const run = async () => {
   // Its presence, as the channel would say it: this stand-in speaks no Realtime.
   ctx.cloudHub.machines.seen({ [self]: [{ at: Date.now() }], "win-000001": [{ at: Date.now() }] });
   check("the other reads as online once its presence arrives", await until(`${card("win-000001")}?.dataset.online === 'true'`) && (await $(`${card("win-000001")}?.querySelector('[data-testid="device-presence"]')?.textContent ?? ''`)).includes("Online"));
+  check("the status bar follows the other computer coming online, and names it", await until(`(document.querySelector('[data-testid="status-devices"]')?.textContent ?? '').includes('2 of 2 online')`) && (await $(`document.querySelector('[data-testid="status-devices"]').title`)).includes("DESKTOP-WIN"), await bar());
   check("what it works on: the ticket, the agent, how it stands, and the auto run", (await winCard()).includes("Working on") && (await winCard()).includes("Claude Code · working") && (await winCard()).includes("Auto run: 2 of 5"), await winCard());
   check("a ticket of a project this computer never opened still shows, by its key, and does not open", (await winCard()).includes("ZZ-9") && (await $(`[...${card("win-000001")}.querySelectorAll('[data-testid="device-session"]')].find(r => r.textContent.includes('ZZ-9'))?.querySelector('button') === null`)), await winCard());
   await shot("devices-04-online-light");
@@ -316,7 +319,13 @@ const run = async () => {
   // ── one computer only ────────────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}'; true`);
   await sleep(1500);
+  check("the status bar follows the other computer going offline", (await bar())?.includes("1 of 2 online") && !(await $(`document.querySelector('[data-testid="status-devices"]').title`)).includes("Windows tower"), await bar());
+  await press(`document.querySelector('[data-testid="status-devices"]')`);
+  check("and opens Settings on the Devices pane", await until(`(${pane}?.textContent ?? '').includes('The computers signed in to your account')`), await paneText());
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
   await ctx.cloudHub.removeDevice("win-000001");
+  check("with one computer the status bar says nothing of devices", await until(`!document.querySelector('[data-testid="status-devices"]')`), await bar());
   await openDevices();
   check("with one computer, it says how another appears", await until(`!!document.querySelector('[data-testid="devices-only-one"]')`) && (await paneText()).includes("Sign in to the same account on another computer and it appears here."), await paneText());
   check("and the plan line says one of two", (await $(`document.querySelector('[data-testid="devices-plan"]')?.textContent ?? ''`)).includes("1 of 2 computers"));
