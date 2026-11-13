@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DispatchView } from "@tomradex/dispatch";
-import { match, unfit, type MatchRole } from "@tomradex/dispatch/match";
+import type { DeviceShare, DispatchView, SharedDevice } from "@tomradex/dispatch";
+import { match, unfit, type MatchDevice, type MatchRole } from "@tomradex/dispatch/match";
 import type { DeviceSession, DeviceView, DevicesInfo } from "@tomradex/hub-cloud";
 import { invoke } from "./api";
 import { keys, useHubInfo } from "./queries";
@@ -17,9 +17,66 @@ export function useDispatches() {
   return useQuery({ queryKey: keys.dispatches, queryFn: () => invoke("dispatch.list").catch((): DispatchView[] => []), enabled: hub.data?.cloudEnabled === true, retry: false });
 }
 
-/** The newest request for a ticket: the one going, else the last word on it. */
-export const dispatchOf = (dispatches: DispatchView[] | undefined, projectId: string, key: string): DispatchView | null =>
-  (dispatches ?? []).find((d) => d.projectId === projectId && d.key === key) ?? null;
+/**
+ * The newest request for a ticket: the one going, else the last word on it. One another person made for this
+ * computer (`self`) is not the ticket being sent anywhere: it is theirs, asked of this computer.
+ */
+export const dispatchOf = (dispatches: DispatchView[] | undefined, projectId: string, key: string, self?: string): DispatchView | null =>
+  (dispatches ?? []).find((d) => d.projectId === projectId && d.key === key && !(d.fromEmail && self && d.toDevice === self)) ?? null;
+
+/** The computers other people share with this account. Asked when someone looks at where a ticket can run, never on a timer. */
+export function useSharedDevices(enabled = true) {
+  const hub = useHubInfo();
+  return useQuery({ queryKey: keys.sharedDevices, queryFn: () => invoke("dispatch.shared").catch((): SharedDevice[] => []), enabled: enabled && hub.data?.cloudEnabled === true, retry: false, staleTime: 60_000 });
+}
+
+/** The people this computer is shared with. */
+export function useShares(enabled = true) {
+  return useQuery({ queryKey: keys.deviceShares, queryFn: () => invoke("dispatch.shares"), enabled, retry: false });
+}
+
+/** Sharing this computer with one person, changing their share, taking it back: each answers with the list as it is afterwards. */
+export function useShareActions() {
+  const qc = useQueryClient();
+  const took = (shares: DeviceShare[]) => qc.setQueryData(keys.deviceShares, shares);
+  return {
+    share: useMutation({ mutationFn: (input: DeviceShare) => invoke("dispatch.share", input), onSuccess: took }),
+    unshare: useMutation({ mutationFn: (email: string) => invoke("dispatch.unshare", email), onSuccess: took })
+  };
+}
+
+/** Requests from other people for this computer that wait on its owner's yes. */
+export function useAsks() {
+  const hub = useHubInfo();
+  return useQuery({ queryKey: keys.dispatchAsks, queryFn: () => invoke("dispatch.asks").catch((): DispatchView[] => []), enabled: hub.data?.cloudEnabled === true, retry: false });
+}
+
+/** Saying yes or no to a request for this computer. */
+export function useAskActions() {
+  const qc = useQueryClient();
+  const again = () => void qc.invalidateQueries({ queryKey: keys.dispatches });
+  return {
+    approve: useMutation({ mutationFn: (id: string) => invoke("dispatch.approve", id), onSettled: again }),
+    decline: useMutation({ mutationFn: (id: string) => invoke("dispatch.decline", id), onSettled: again })
+  };
+}
+
+const LIMITS = ["read", "ask", "edits", "full"] as const;
+/**
+ * Another person's computer as choosing a place for a ticket reads it. Whether it is on is not known across
+ * accounts, so it counts as on: a ticket sent there waits for it. Where each ticket needs its owner's yes, the
+ * switch that lets a computer take work unasked says nothing.
+ */
+const sharedAsDevice = (d: SharedDevice): MatchDevice => {
+  const lower = d.accept && LIMITS.indexOf(d.accept.ceiling) < LIMITS.indexOf(d.ceiling) ? d.accept.ceiling : d.ceiling;
+  return { id: d.share, name: d.name, self: false, online: true, platform: d.platform, agents: d.agents, repos: [], sessions: [], accept: { on: d.auto ? (d.accept?.on ?? false) : true, projects: d.accept?.projects ?? "all", concurrent: Number.MAX_SAFE_INTEGER, ceiling: lower } };
+};
+
+/** Why a computer another person shares cannot be sent a ticket of this project, worked as this role; null when it can. */
+export function whyNotShared(device: SharedDevice, projectId: string, role?: RunRole): Unable | null {
+  const why = unfit(sharedAsDevice(device), projectId, [], role);
+  return why === "not-accepting" || why === "project" || why === "role-agent" || why === "role-limit" ? why : null;
+}
 
 /** The label that says a ticket runs on any computer of a platform. */
 export const PLATFORM_LABELS: Record<string, string> = { darwin: "macos", win32: "windows", linux: "linux" };

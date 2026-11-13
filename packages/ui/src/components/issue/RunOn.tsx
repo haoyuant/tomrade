@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
 import { invoke } from "~/lib/api";
 import type { Role } from "@tomradex/roles";
-import { PLATFORM_LABELS, deviceLabel, labelMiss, runOnState, useDevices, type RunTarget, type Unable } from "~/lib/devices";
+import { PLATFORM_LABELS, deviceLabel, labelMiss, runOnState, useDevices, useSharedDevices, whyNotShared, type RunTarget, type Unable } from "~/lib/devices";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { invalidateWorkspace, keys, useHubInfo } from "~/lib/queries";
 import { openSettingsPane } from "~/lib/settingsHost";
@@ -35,10 +35,15 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
   const [remember, setRemember] = useState(false);
   const chosen = able.find((d) => d.id === target);
   const platform = target.startsWith("platform:") ? target.slice("platform:".length) : null;
+  // Computers other people share with this account: each is its owner's, and says whose.
+  const shared = useSharedDevices(item.workType !== "general");
+  const lent = useMemo(() => (shared.data ?? []).map((device) => ({ device, why: whyNotShared(device, projectId, role) })), [shared.data, projectId, role]);
+  const borrowed = target.startsWith("share:") ? (lent.find((l) => l.device.share === target.slice("share:".length) && !l.why)?.device ?? null) : null;
+  const lentName = (d: { name: string; owner: string }) => t("devices.sharedName", { name: d.name, owner: d.owner });
   const send = useMutation({
     mutationFn: async () => {
-      const sent = await invoke("dispatch.send", { projectId, itemId: item.id, ...(platform ? { platform } : { to: target }), ...(role && sendRole ? { role: role.id } : {}) });
-      if (remember) {
+      const sent = await invoke("dispatch.send", { projectId, itemId: item.id, ...(borrowed ? { share: borrowed.share } : platform ? { platform } : { to: target }), ...(role && sendRole ? { role: role.id } : {}) });
+      if (remember && !borrowed) {
         const label = platform ? PLATFORM_LABELS[platform] : chosen ? deviceLabel(chosen.name) : null;
         const kept = item.labels.filter((l) => !Object.values(PLATFORM_LABELS).includes(l.toLowerCase()) && !l.toLowerCase().startsWith("device:"));
         if (label) await invoke("items.update", projectId, item.id, { labels: [...kept, label] }, item.version);
@@ -48,12 +53,12 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.dispatches });
       invalidateWorkspace(qc, projectId);
-      toast({ body: t("devices.sentTo", { name: chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" }) }) });
+      toast({ body: t("devices.sentTo", { name: borrowed ? lentName(borrowed) : (chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" })) }) });
       onClose();
     },
     onError: (error) => toast(errorSpec(error))
   });
-  if (item.workType === "general" || state.kind === "hidden") return lead ? <div className="run-on stack-3">{lead}</div> : null;
+  if (item.workType === "general" || (state.kind === "hidden" && !lent.length)) return lead ? <div className="run-on stack-3">{lead}</div> : null;
   const miss = labelMiss(item, projectId, devices.data, role);
   // The label asked for a computer that cannot take it: said, so a ticket meant for elsewhere does not start here unnoticed.
   const missed = miss && (
@@ -69,7 +74,7 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
       {t(pane === "hub" ? "devices.runOnOpenHub" : "devices.runOnOpenDevices")}
     </button>
   );
-  if (state.kind !== "choose") {
+  if (state.kind !== "choose" && state.kind !== "hidden" && !lent.length) {
     const only = ONLY_HERE[state.kind];
     return (
       <div className="run-on stack-3" data-testid="run-on" data-state={state.kind}>
@@ -83,10 +88,11 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
       </div>
     );
   }
-  const unable = state.others.filter((o) => o.why);
+  const unable = state.kind === "choose" ? state.others.filter((o) => o.why) : [];
   const remote = target !== "here";
+  const sendTo = borrowed ? lentName(borrowed) : (chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" }));
   return (
-    <div className="run-on stack-3" data-testid="run-on" data-state={able.length ? "choose" : "no-taker"}>
+    <div className="run-on stack-3" data-testid="run-on" data-state={able.length || lent.some((l) => !l.why) ? "choose" : "no-taker"}>
       {lead}
       <label className="run-on-row">
         <span className="run-on-name">{t("devices.runOn")}</span>
@@ -95,20 +101,27 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
           {able.map((d) => <option key={d.id} value={d.id}>{d.online ? d.name : t("devices.runOnOffline", { name: d.name })}</option>)}
           {platforms.map((p) => <option key={p} value={`platform:${p}`}>{t("devices.anyOf", { platform: t(PLATFORM_WORDS[p]!) })}</option>)}
           {unable.map(({ device, why }) => <option key={device.id} value={device.id} disabled>{t(UNABLE[why!], { name: device.name, role: role?.title ?? "" })}</option>)}
+          {lent.length > 0 && (
+            <optgroup label={t("devices.sharedGroup")}>
+              {lent.map(({ device, why }) => (
+                <option key={device.share} value={`share:${device.share}`} disabled={!!why}>{why ? t(UNABLE[why], { name: lentName(device), role: role?.title ?? "" }) : lentName(device)}</option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
-      {!able.length && <p className="meta-txt" data-testid="run-on-hint">{t("devices.runOnNoTaker")} {settings("devices")}</p>}
+      {!able.length && state.kind === "choose" && <p className="meta-txt" data-testid="run-on-hint">{t("devices.runOnNoTaker")} {settings("devices")}</p>}
       {!remote && missed}
       {remote && (
         <>
           <p className="meta-txt" data-testid="run-on-note">
-            {t(chosen && !chosen.online ? "devices.runOnNoteOffline" : "devices.runOnNote")}
+            {borrowed ? t(borrowed.auto ? "devices.runOnSharedAuto" : "devices.runOnSharedAsks", { owner: borrowed.owner }) : t(chosen && !chosen.online ? "devices.runOnNoteOffline" : "devices.runOnNote")}
             {role && sendRole && <> {t("devices.runOnAsRole", { role: role.title })}</>}
           </p>
-          <label className="accept-check"><input type="checkbox" checked={remember} onChange={() => setRemember((v) => !v)} /><span>{t("devices.runOnRemember")}</span></label>
+          {!borrowed && <label className="accept-check"><input type="checkbox" checked={remember} onChange={() => setRemember((v) => !v)} /><span>{t("devices.runOnRemember")}</span></label>}
           <div>
             <button type="button" className="btn btn-primary" data-testid="run-on-send" disabled={send.isPending} onClick={() => send.mutate()}>
-              {t("devices.send", { name: chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" }) })}
+              {t("devices.send", { name: sendTo })}
             </button>
           </div>
         </>

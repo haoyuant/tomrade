@@ -6,7 +6,7 @@ import type {} from "@tomradex/code-link";
 import { errorMessage } from "@tomradex/contracts";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/hub-cloud";
-import type { Role } from "@tomradex/roles";
+import { CEILINGS, rankOf, type Ceiling, type Role } from "@tomradex/roles";
 import type { Admission, DispatchRequest, Refusal } from "./policy.js";
 
 /** How a request stands. `done`: the session it started is over, however it went; `reason` says when it went badly. */
@@ -32,15 +32,50 @@ export interface DispatchView {
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
+  /** From another account, to a machine its owner shared with that person: their address. Null between an account's own machines. */
+  fromEmail: string | null;
+  /** It was made to wait for the owner's yes on the machine it is for. */
+  needsYes: boolean;
+  /** The owner has said yes, or none was needed. */
+  approved: boolean;
+  /** The most the owner lets that person's tickets do there; null between an account's own machines. */
+  ceiling: Ceiling | null;
+}
+
+/** A machine another person shares with this account, as much as choosing one reads of it. */
+export interface SharedDevice {
+  /** What a ticket is sent to. */
+  share: string;
+  /** Its owner, by the address of their account. */
+  owner: string;
+  deviceId: string;
+  name: string;
+  platform: string;
+  agents: { id: string; title: string; ready: boolean }[];
+  /** Whether it takes work sent to it unasked, and for which projects; null on a machine that does not say. */
+  accept: { on: boolean; projects: "all" | string[]; ceiling: Ceiling } | null;
+  /** The most a ticket of this account's may do there. */
+  ceiling: Ceiling;
+  /** False: each ticket waits for the owner's yes on that machine. */
+  auto: boolean;
+  lastSeenAt: number;
+}
+
+/** A person this machine is shared with. */
+export interface DeviceShare {
+  email: string;
+  ceiling: Ceiling;
+  auto: boolean;
 }
 
 /** What a machine sends: a ticket, and where it should run. */
 export interface DispatchInput {
   projectId: string;
   itemId: string;
-  /** One machine, by its id; or any machine of a platform (`win32`, `darwin`, `linux`). */
+  /** One machine, by its id; or any machine of a platform (`win32`, `darwin`, `linux`); or a machine another person shares, by its share. */
   to?: string;
   platform?: string;
+  share?: string;
   engine?: string;
   permissionMode?: string;
   /** The project's role to work the ticket as (a role's id). With no machine or platform named, the role's own requirement names one. */
@@ -52,13 +87,24 @@ const Row = z.object({
   project_id: z.string(), item_key: z.string(), title: z.string(),
   wish: z.object({ engine: z.string().optional(), permissionMode: z.string().optional(), role: z.string().optional() }).catch({}),
   state: z.enum(["queued", "accepted", "running", "done", "refused", "cancelled"]), reason: z.string().nullable(),
-  claimed_by: z.string().nullable(), created_at: z.string(), updated_at: z.string(), expires_at: z.string()
+  claimed_by: z.string().nullable(), created_at: z.string(), updated_at: z.string(), expires_at: z.string(),
+  // Absent on an account server from before machines could be shared.
+  from_email: z.string().nullable().optional(), needs_yes: z.boolean().optional(), approved: z.boolean().optional(), ceiling: z.enum(CEILINGS).nullable().optional()
 });
 const view = (r: z.infer<typeof Row>): DispatchView => ({
   id: r.id, fromDevice: r.from_device, toDevice: r.to_device, toPlatform: r.to_platform, projectId: r.project_id, key: r.item_key, title: r.title,
   wish: r.wish, state: r.state, reason: r.reason, claimedBy: r.claimed_by,
-  createdAt: Date.parse(r.created_at) || 0, updatedAt: Date.parse(r.updated_at) || 0, expiresAt: Date.parse(r.expires_at) || 0
+  createdAt: Date.parse(r.created_at) || 0, updatedAt: Date.parse(r.updated_at) || 0, expiresAt: Date.parse(r.expires_at) || 0,
+  fromEmail: r.from_email ?? null, needsYes: r.needs_yes ?? false, approved: r.approved ?? true, ceiling: r.ceiling ?? null
 });
+const Shared = z.object({
+  share: z.string(), owner: z.string().nullable().transform((owner) => owner ?? ""), device_id: z.string(), name: z.string(), platform: z.string().nullable().transform((p) => p ?? ""),
+  agents: z.array(z.object({ id: z.string(), title: z.string(), ready: z.boolean() })).catch([]),
+  accept: z.object({ on: z.boolean(), projects: z.union([z.literal("all"), z.array(z.string())]), ceiling: z.enum(CEILINGS) }).nullable().catch(null),
+  ceiling: z.enum(CEILINGS), auto: z.boolean(), last_seen_at: z.string()
+});
+const Share = z.object({ email: z.string(), ceiling: z.enum(CEILINGS), auto: z.boolean() });
+const lower = (a: Ceiling | null | undefined, b: Ceiling | null | undefined): Ceiling | null => (a && b ? (rankOf(a) <= rankOf(b) ? a : b) : (a ?? b ?? null));
 
 /** The slices of other services a dispatch runs through; each is read when needed, and none is imported. */
 interface Cloud {
@@ -207,8 +253,8 @@ export class Queue {
       // Taken here.
       else if (row.claimedBy === this.me && (row.state === "running" || row.state === "accepted")) await act(() => this.follow(cloud, row));
       else if (row.claimedBy === this.me && row.state === "cancelled" && this.live.has(row.id)) await act(() => this.halt(row));
-      // On offer to this machine: waiting, or taken by a machine that went quiet before the work started.
-      else if ((row.state === "queued" || (row.state === "accepted" && row.claimedBy !== this.me && row.updatedAt < now - LAPSED_MS)) && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && (this.passed.get(row.id) ?? 0) <= now - AGAIN_MS))) await act(() => this.consider(cloud, row));
+      // On offer to this machine: waiting with the owner's yes where it needs one, or taken by a machine that went quiet before the work started.
+      else if (row.approved && (row.state === "queued" || (row.state === "accepted" && row.claimedBy !== this.me && row.updatedAt < now - LAPSED_MS)) && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && (this.passed.get(row.id) ?? 0) <= now - AGAIN_MS))) await act(() => this.consider(cloud, row));
     }
     if (acted) {
       cloud.signal?.(SIGNAL);
@@ -224,7 +270,9 @@ export class Queue {
     // waited for like the ticket itself, until the request runs out; one that works no ticket is none.
     const roles = this.home.get("roles") as RolesHost | undefined;
     const role = row.wish.role ? (roles?.get(row.projectId, row.wish.role) ?? null) : null;
-    const request: DispatchRequest = { from: row.fromDevice, projectId: row.projectId, key: row.key, permissionMode: row.wish.permissionMode ?? null, limit: role?.permission ?? null };
+    // From another account: the lower of what the role allows and what the owner lets that person's tickets do; and a
+    // request the owner said yes to by hand is let in whatever the switch for the account's own machines says.
+    const request: DispatchRequest = { from: row.fromEmail ?? row.fromDevice, projectId: row.projectId, key: row.key, permissionMode: row.wish.permissionMode ?? null, limit: lower(role?.permission, row.ceiling), ...(row.needsYes && row.approved ? { byHand: true } : {}) };
     const refuse = async (reason: Refusal, detail?: string) => {
       // One meant for any machine of this platform is another's to take: this one only steps aside.
       if (!addressed) { this.passed.set(row.id, Date.now()); return false; }
@@ -259,7 +307,7 @@ export class Queue {
       await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "refused", p_reason: admission.detail ? `${admission.reason}: ${admission.detail}` : admission.reason });
       return;
     }
-    const opts = { mode: "run" as const, engine: engine.id, ...(admission.permissionMode ? { permissionMode: admission.permissionMode } : {}), ...(role ? { role: role.id } : {}), source: { dispatch: row.id, device: row.fromDevice } };
+    const opts = { mode: "run" as const, engine: engine.id, ...(admission.permissionMode ? { permissionMode: admission.permissionMode } : {}), ...(role ? { role: role.id } : {}), source: { dispatch: row.id, device: row.fromDevice, ...(row.fromEmail ? { from: row.fromEmail } : {}) } };
     let started: Started;
     // Getting the work going can take a while (a repository to clone): the claim is kept alive meanwhile.
     const keep = setInterval(() => void this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "accepted" }).catch(() => {}), KEEP_MS);
@@ -321,7 +369,12 @@ export class Queue {
       const session = code.sessionsOf(row.projectId, item.id, { live: true })[0];
       // Tomrade stopped before the ticket was started: the request goes back on offer, to this machine or the next it is for.
       if (row.state === "accepted") {
-        await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "queued" });
+        try {
+          await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "queued" });
+        } catch {
+          // An account server from before a request could be put back: it is given back the way it then was, so it does not hang.
+          await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "refused", p_reason: "start: Tomrade stopped before the ticket was started" });
+        }
         return;
       }
       if (!session) {
@@ -360,8 +413,15 @@ export class Queue {
     if (!cloud) throw new Error("[not_signed_in] Sign in to send a ticket to another device.");
     const item = this.items()?.get(input.projectId, input.itemId);
     if (!item) throw new Error(`unknown item ${input.itemId}`);
+    const wish = (role: Role | null) => ({ ...(input.engine ? { engine: input.engine } : {}), ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}), ...(role ? { role: role.id } : {}) });
     const role = input.role ? ((this.home.get("roles") as RolesHost | undefined)?.get(input.projectId, input.role) ?? null) : null;
     if (input.role && role?.stage !== "implement") throw new Error(`This project has no role ${input.role} that works tickets.`);
+    // To a machine another person shares: it joins that person's queue, and waits for their yes unless they said it need not.
+    if (input.share) {
+      const sent = await this.call(cloud, "tomrade_create_shared_dispatch", { p_share: input.share, p_from: this.me, p_project: input.projectId, p_key: item.key, p_title: item.title, p_wish: wish(role), p_ttl_seconds: TTL_SECONDS });
+      this.take([sent!, ...this.rows.filter((r) => r.id !== sent!.id)]);
+      return sent!;
+    }
     // Where the caller names nothing, the role's own requirement does: one machine by its name, or any of a platform.
     let to = input.to, platform = input.platform;
     if (!to && !platform && role?.needs.device) {
@@ -373,7 +433,7 @@ export class Queue {
     if (!to && !platform) throw new Error("Name the device, or the platform, to send the ticket to.");
     const sent = await this.call(cloud, "tomrade_create_dispatch", {
       p_from: this.me, p_to: to ?? null, p_platform: to ? null : platform ?? null, p_project: input.projectId, p_key: item.key, p_title: item.title,
-      p_wish: { ...(input.engine ? { engine: input.engine } : {}), ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}), ...(role ? { role: role.id } : {}) }, p_ttl_seconds: TTL_SECONDS
+      p_wish: wish(role), p_ttl_seconds: TTL_SECONDS
     });
     cloud.signal?.(SIGNAL);
     this.take([sent!, ...this.rows.filter((r) => r.id !== sent!.id)]);
@@ -388,5 +448,62 @@ export class Queue {
     cloud.signal?.(SIGNAL);
     if (cancelled) this.take(this.rows.map((r) => (r.id === id ? cancelled : r)));
     return this.list();
+  }
+
+  /** Requests from other people for this machine that wait on its owner's yes, oldest first. */
+  asks(): DispatchView[] {
+    const now = Date.now();
+    return this.rows.filter((row) => row.toDevice === this.me && row.state === "queued" && row.needsYes && !row.approved && row.expiresAt > now).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** The owner says yes here: the request is then taken like any other, at once. */
+  async approve(id: string): Promise<void> {
+    const cloud = this.cloud();
+    if (!cloud) throw new Error("[not_signed_in] Sign in to answer a request for this device.");
+    const approved = await this.call(cloud, "tomrade_approve_dispatch", { p_id: id, p_device: this.me });
+    if (approved) this.take(this.rows.map((r) => (r.id === id ? approved : r)));
+    await this.tick();
+  }
+
+  /** The owner says no: the person who asked reads that it was turned away. */
+  async decline(id: string): Promise<void> {
+    const cloud = this.cloud();
+    if (!cloud) throw new Error("[not_signed_in] Sign in to answer a request for this device.");
+    const refused = await this.call(cloud, "tomrade_update_dispatch", { p_id: id, p_device: this.me, p_state: "refused", p_reason: "declined" });
+    if (refused) this.take(this.rows.map((r) => (r.id === id ? refused : r)));
+  }
+
+  private async ask<T>(name: string, args: Record<string, unknown>, shape: z.ZodType<T>): Promise<T> {
+    const cloud = this.cloud();
+    if (!cloud) throw new Error("[not_signed_in] Sign in to share a device.");
+    const { data, error } = await cloud.client.rpc(name, args);
+    if (error) throw new Error(error.code ? error.message : `[network] ${error.message}`);
+    return shape.parse(data);
+  }
+
+  /** The people this machine is shared with. Empty where nobody is signed in. */
+  async shares(): Promise<DeviceShare[]> {
+    if (!this.cloud()) return [];
+    return this.ask("tomrade_device_shares", { p_device: this.me }, z.array(Share));
+  }
+
+  /** Lets one person send tickets to this machine, or changes how far theirs may go and whether each needs a yes. */
+  async share(input: DeviceShare): Promise<DeviceShare[]> {
+    await this.ask("tomrade_share_device", { p_device: this.me, p_email: input.email, p_ceiling: input.ceiling, p_auto: input.auto }, Share);
+    return this.shares();
+  }
+
+  /** Takes a share back. What that person still has going here is cancelled, and the session it runs is stopped. */
+  async unshare(email: string): Promise<DeviceShare[]> {
+    await this.ask("tomrade_unshare_device", { p_device: this.me, p_email: email }, z.number());
+    await this.tick();
+    return this.shares();
+  }
+
+  /** The machines other people share with this account. Asked for when someone chooses where a ticket runs: nothing reads it on a timer. */
+  async shared(): Promise<SharedDevice[]> {
+    if (!this.cloud()) return [];
+    const rows = await this.ask("tomrade_shared_devices", {}, z.array(Shared));
+    return rows.map((r) => ({ share: r.share, owner: r.owner, deviceId: r.device_id, name: r.name, platform: r.platform, agents: r.agents, accept: r.accept, ceiling: r.ceiling, auto: r.auto, lastSeenAt: Date.parse(r.last_seen_at) || 0 }));
   }
 }

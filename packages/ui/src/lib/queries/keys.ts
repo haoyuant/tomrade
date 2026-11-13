@@ -46,6 +46,10 @@ export const keys = {
   account: ["account"] as const,
   devices: ["devices"] as const,
   dispatches: ["dispatches"] as const,
+  /** Under `dispatches`, so what changes the queue asks for them again. */
+  dispatchAsks: ["dispatches", "asks"] as const,
+  deviceShares: ["devices", "shares"] as const,
+  sharedDevices: ["devices", "shared"] as const,
   announcements: ["announcements"] as const,
   attention: ["attention"] as const,
   pushStatus: ["attention", "pushStatus"] as const,

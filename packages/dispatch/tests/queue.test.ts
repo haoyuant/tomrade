@@ -404,6 +404,8 @@ it("sends only what a request may carry, between machines of the account", async
   await a.queue.send({ projectId, itemId: ticket.id, to: "win-b" });
   await expect(a.queue.send({ projectId, itemId: ticket.id, to: "win-b" })).rejects.toThrow(/already sent to a machine/);
   const row = (await acct.admin<Record<string, unknown>>("select * from public.tomrade_dispatches"))[0]!;
-  expect(Object.keys(row).sort()).toEqual(["claimed_by", "created_at", "expires_at", "from_device", "id", "item_key", "project_id", "reason", "state", "title", "to_device", "to_platform", "updated_at", "user_id", "wish"]);
+  expect(Object.keys(row).sort()).toEqual(["approved", "ceiling", "claimed_by", "created_at", "expires_at", "from_device", "from_email", "from_user", "id", "item_key", "needs_yes", "project_id", "reason", "state", "title", "to_device", "to_platform", "updated_at", "user_id", "wish"]);
+  // Between an account's own machines nothing waits for a yes, and nobody else is named.
+  expect(row).toMatchObject({ approved: true, needs_yes: false, from_user: null, from_email: null, ceiling: null });
   expect(JSON.stringify(row)).not.toMatch(new RegExp(a.dir.replace(/[\\/]/g, ".")));
 }, 60_000);
