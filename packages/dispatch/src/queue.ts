@@ -369,7 +369,12 @@ export class Queue {
       const session = code.sessionsOf(row.projectId, item.id, { live: true })[0];
       // Tomrade stopped before the ticket was started: the request goes back on offer, to this machine or the next it is for.
       if (row.state === "accepted") {
-        await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "queued" });
+        try {
+          await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "queued" });
+        } catch {
+          // An account server from before a request could be put back: it is given back the way it then was, so it does not hang.
+          await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "refused", p_reason: "start: Tomrade stopped before the ticket was started" });
+        }
         return;
       }
       if (!session) {
