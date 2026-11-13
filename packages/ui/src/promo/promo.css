@@ -1,0 +1,166 @@
+/* The promo film's own rules: the stage, the captions, the opening's terminals and the end card. Everything the app
+   draws (the window, the cards, the question) keeps the app's classes and is styled by styles/app.css; these rules
+   are unlayered, so they outrank it where the film needs a card held still or a pane let go of its height.
+   Colours come from the theme's tokens; the few the film adds are declared once, below. */
+:root {
+  --film-backdrop: #07060c;
+  --film-bar-ink: #c9c3d6;
+  --film-bar-edge: #4a4460;
+  --film-pointer: #17131f;
+  --film-pointer-edge: #ffffff;
+  --film-light-close: #ff5f57;
+  --film-light-min: #febc2e;
+  --film-light-zoom: #28c840;
+  --film-window-shade: rgba(10, 6, 24, 0.5);
+  --film-ink: #2a1320;
+  --film-sun-core: #ffd9a0;
+}
+
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-backdrop); }
+#film { height: 100%; }
+.film-fit { transform-origin: 0 0; width: max-content; }
+.film { position: relative; overflow: hidden; background: var(--film-backdrop); }
+/* Every frame is drawn from its number: nothing eases by the clock. */
+.film *, .film *::before, .film *::after { transition: none !important; }
+.film button { cursor: default; }
+.film-mark { position: fixed; left: 0; width: 32px; height: 4px; }
+.film-bar { position: fixed; left: 0; right: 0; bottom: 0; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; color: var(--film-bar-ink); font: 13px/1 -apple-system, "Segoe UI", sans-serif; }
+.film-bar input { flex: 1; }
+.film-bar button { padding: 5px 12px; border: 1px solid var(--film-bar-edge); border-radius: 6px; background: transparent; }
+
+.film-measure { position: absolute; left: 0; top: 0; width: 330px; visibility: hidden; pointer-events: none; }
+.film .card { content-visibility: visible; cursor: default; }
+
+/* One theme's whole picture. */
+.film-layer {
+  position: absolute; inset: 0; overflow: hidden; isolation: isolate;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: var(--text-base); line-height: var(--leading-body);
+}
+
+/* ─── the sky: SkyLights.tsx's lights, as gradients ──────────────────── */
+.film-sky, .film-sky > i { position: absolute; inset: 0; pointer-events: none; }
+.film-sky { z-index: -2; }
+.film-sky-haze {
+  --c: var(--sun-sky-haze);
+  background: radial-gradient(ellipse 72% 56% at 8% -8%, var(--c), color-mix(in srgb, var(--c) 74%, transparent) 20%, color-mix(in srgb, var(--c) 46%, transparent) 42%, color-mix(in srgb, var(--c) 22%, transparent) 64%, color-mix(in srgb, var(--c) 7%, transparent) 84%, transparent);
+}
+.daybreak .film-sky-stars { background: var(--sun-stars); }
+.film-sky > .film-sky-sun {
+  --c: var(--sun-glow); --h: var(--sun-haze);
+  inset: -16%; transform-origin: 76% 93%;
+  background:
+    radial-gradient(ellipse 78.8% 62.1% at 78.8% 97%, var(--h), color-mix(in srgb, var(--h) 74%, transparent) 20%, color-mix(in srgb, var(--h) 46%, transparent) 42%, color-mix(in srgb, var(--h) 22%, transparent) 64%, color-mix(in srgb, var(--h) 7%, transparent) 84%, transparent),
+    radial-gradient(ellipse 42.4% 33.3% at 74.2% 90.9%, var(--c), color-mix(in srgb, var(--c) 74%, transparent) 20%, color-mix(in srgb, var(--c) 46%, transparent) 42%, color-mix(in srgb, var(--c) 22%, transparent) 64%, color-mix(in srgb, var(--c) 7%, transparent) 84%, transparent);
+}
+/* Dawn on the horizon: the light that comes up the frame as the sun does. */
+.film-sky-glow { background: linear-gradient(0deg, color-mix(in srgb, var(--sun-gold) 34%, transparent), color-mix(in srgb, var(--sun-red) 10%, transparent) 34%, transparent 62%); }
+/* A still grain, so the wide soft lights do not band once the film is compressed. */
+.film-grain {
+  position: absolute; inset: 0; z-index: 9; pointer-events: none; opacity: 0.045; mix-blend-mode: overlay;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* ─── captions ───────────────────────────────────────────────────────── */
+.film-caption {
+  position: absolute; z-index: 6;
+  font-family: var(--font-display); font-weight: 700; letter-spacing: -0.032em; line-height: 1.1; color: var(--fg);
+}
+.film-caption:lang(zh) { letter-spacing: 0; font-weight: 600; }
+.film-caption.is-serif { font-family: Charter, Georgia, Palatino, "Songti SC", "Times New Roman", serif; font-weight: 400; letter-spacing: -0.012em; }
+.film-caption-line { display: block; }
+.film-caption-word { display: inline-block; vertical-align: top; overflow-x: visible; overflow-y: clip; padding-bottom: 0.16em; margin-bottom: -0.16em; white-space: pre; }
+.film-caption-word > span { display: inline-block; white-space: pre; }
+.film-caption .is-lit {
+  background: linear-gradient(100deg, var(--sun-btn-from), var(--sun-btn-to));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* ─── the opening: terminals, each stopped on a question ─────────────── */
+.film-pile { position: absolute; inset: 0; z-index: 4; }
+.film-pane {
+  position: absolute; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 0.8em; background: var(--surface);
+  box-shadow: var(--elev-raised), 0 1.6em 3.4em -1.4em var(--film-window-shade);
+  font-family: var(--font-mono);
+}
+.film-pane-head { display: flex; align-items: center; gap: 0.6em; padding: 0.62em 0.95em; border-bottom: 1px solid var(--border-soft); font-size: 0.92em; color: var(--muted); white-space: nowrap; }
+.film-pane-dot { width: 0.62em; height: 0.62em; border-radius: 50%; background: var(--warn); flex: none; }
+.film-pane-state { margin-left: auto; font-family: var(--font-display); font-weight: 600; color: var(--warn); }
+.film-pane-log { padding: 0.62em 1em 0; font-size: 0.94em; line-height: 1.6; color: var(--meta); white-space: nowrap; }
+.film-pane-log b { margin-right: 0.55em; font-weight: 400; color: var(--success); }
+.film-pane-ask { padding: 0.32em 0.74em 0; font-size: 1.34em; line-height: 1.5; color: var(--fg); white-space: nowrap; }
+.film-pane-caret { display: inline-block; width: 0.56em; height: 1.06em; margin-left: 0.3em; vertical-align: -0.18em; background: var(--accent); }
+.film-count {
+  position: absolute; z-index: 5; display: flex; align-items: center; gap: 0.5em; padding: 0.42em 0.95em;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--elev-raised);
+  font-family: var(--font-display); font-weight: 600; font-size: 31px; line-height: 1.3; color: var(--fg); white-space: nowrap;
+}
+.film-count > i { width: 0.46em; height: 0.46em; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0.5em var(--warn); }
+
+/* ─── the app's window ───────────────────────────────────────────────── */
+.film-window {
+  position: absolute; z-index: 2; transform-origin: 0 0; overflow: hidden;
+  --traffic-inset: 86px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  box-shadow: 0 0 0 0.5px var(--border), 0 34px 90px -34px var(--film-window-shade), 0 10px 30px -18px var(--film-window-shade);
+}
+.film-lights { position: absolute; left: 14px; top: 50%; display: flex; gap: 8px; transform: translateY(-50%); }
+.film-lights > i { width: 12px; height: 12px; border-radius: 50%; background: var(--film-light-close); }
+.film-lights > i:nth-child(2) { background: var(--film-light-min); }
+.film-lights > i:nth-child(3) { background: var(--film-light-zoom); }
+.film-project :is(.ico, .chev) { color: var(--meta); flex-shrink: 0; }
+.film-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.film-track { position: relative; overflow: hidden; }
+.film-card { position: absolute; width: 330px; transform-origin: 50% 50%; }
+/* A card on its way to another column is off the board for a moment. */
+.film-card.is-lifted .card { box-shadow: var(--elev-raised), 0 14px 30px -14px var(--sun-glow); border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
+.film-ask { position: absolute; z-index: 5; width: 336px; transform-origin: 0 44px; border-radius: var(--radius-md); box-shadow: var(--elev-raised), 0 22px 50px -22px var(--film-window-shade); }
+.film-ask .q-ask { margin: 0; }
+
+.film-clock { position: absolute; z-index: 6; display: flex; align-items: center; gap: 0.2em; line-height: 1.1; font-weight: 700; color: var(--fg); white-space: nowrap; }
+.film-clock .num { letter-spacing: -0.04em; font-weight: 600; }
+.film-clock svg { color: var(--sun-sky); }
+.film-clock.is-day svg { color: var(--sun-gold); }
+
+/* ─── the pointer ────────────────────────────────────────────────────── */
+.film-cursor { position: absolute; left: 0; top: 0; z-index: 20; pointer-events: none; }
+.film-cursor svg { position: absolute; left: -5px; top: -5px; transform-origin: 5px 5px; filter: drop-shadow(0 2px 3px var(--film-window-shade)); }
+.film-cursor path { fill: var(--film-pointer); stroke: var(--film-pointer-edge); stroke-width: 1.3; stroke-linejoin: round; }
+.film-cursor-ring { position: absolute; left: 0; top: 0; width: 170px; height: 170px; border-radius: 50%; border: 5px solid var(--film-pointer-edge); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* ─── the three facts ────────────────────────────────────────────────── */
+.film-horizon {
+  position: absolute; z-index: 6; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--sun-sky) 18%, var(--sun-red) 55%, var(--sun-gold) 80%, transparent);
+}
+
+/* ─── the end card ───────────────────────────────────────────────────── */
+.film-rays {
+  position: absolute; z-index: 1; width: 2600px; height: 2600px; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--sun-gold) 40%, transparent) 0deg 3.2deg, transparent 3.2deg 9deg, color-mix(in srgb, var(--sun-red) 22%, transparent) 9deg 11.4deg, transparent 11.4deg 18deg);
+  mask-image: radial-gradient(circle, transparent 7%, black 9%, rgb(0 0 0 / 0.5) 22%, transparent 46%);
+}
+.film-sun {
+  position: absolute; z-index: 2; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, var(--film-sun-core), var(--sun-gold) 42%, var(--sun-red) 100%);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--sun-gold) 22%, transparent), 0 0 0 11.5px color-mix(in srgb, var(--sun-red) 45%, transparent), 0 0 120px 20px var(--sun-glow);
+}
+.film-sun-cat {
+  position: absolute; left: 3%; top: 6%; width: 94%; height: 104%;
+  background: var(--film-ink);
+  mask: url("/logo.png") center / contain no-repeat;
+}
+.film-name {
+  position: absolute; left: 0; right: 0; z-index: 3; text-align: center; white-space: nowrap;
+  font-family: var(--font-display); font-weight: 800; letter-spacing: 0.16em; line-height: 1.15; padding-left: 0.16em; color: var(--accent);
+}
+.film-name > span { display: inline-block; }
+.film-get {
+  position: absolute; z-index: 3; padding: 0.42em 1.25em; border-radius: 999px; white-space: nowrap;
+  font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; line-height: 1.3; color: var(--accent-on);
+  background: linear-gradient(135deg, var(--sun-btn-from), var(--sun-btn-to));
+  box-shadow: inset 0 1px 0 var(--sun-sheen), 0 14px 36px -14px var(--sun-glow);
+}
+.film-fine { position: absolute; left: 0; right: 0; z-index: 3; text-align: center; font-family: var(--font-display); font-weight: 500; letter-spacing: 0.02em; color: var(--muted); }

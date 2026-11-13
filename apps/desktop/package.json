@@ -63,6 +63,7 @@
     "test:analytics": "electron scripts/analytics-check.mjs",
     "test:pull-default": "electron scripts/pull-default-check.mjs",
     "test:graph": "electron scripts/graph-check.mjs",
+    "promo": "electron scripts/promo-render.mjs",
     "test:changes": "electron scripts/changes-check.mjs",
     "test:usage": "electron scripts/usage-check.mjs",
     "test:rules": "electron scripts/rules-check.mjs",
