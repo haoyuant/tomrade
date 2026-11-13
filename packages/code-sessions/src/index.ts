@@ -1354,8 +1354,10 @@ function apply(ctx: Context, config: Config) {
     if (ask.op === "markReviewed") return ctx.codeLink.markReviewed(projectId, itemId, { linkId: ask.linkId });
     const review = ctx.get("changeReview");
     if (!review) {
-      if (ask.op === "comments") return [];
+      if (ask.op === "comments" || ask.op === "reviews") return [];
       if (ask.op === "target") return { kind: "none" };
+      if (ask.op === "reviewers") return { engines: [], pick: null, author: null };
+      if (ask.op === "release") return null;
       throw new Error("change review is not running");
     }
     switch (ask.op) {
@@ -1371,6 +1373,14 @@ function apply(ctx: Context, config: Config) {
         return review.target(projectId, itemId);
       case "send":
         return review.send(projectId, itemId, { deliver: ask.deliver });
+      case "reviewers":
+        return review.reviewers(projectId, itemId);
+      case "reviews":
+        return review.reviews(projectId, itemId);
+      case "review":
+        return review.review(projectId, itemId, { engine: ask.engine });
+      case "release":
+        return review.release(projectId, itemId);
     }
   };
 

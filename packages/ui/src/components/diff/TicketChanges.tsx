@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTarget } from "@tomradex/change-review";
 import type { ChangedFile, ChangeScope } from "@tomradex/code-link";
@@ -8,6 +8,7 @@ import { messageOf } from "~/lib/api";
 import { scopeOf, scopeValue, useChangeComments, useChanges, useReviewTarget, type ChangesSource } from "~/lib/changes";
 import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { AgentReviewBar } from "./AgentReviewBar";
 import { DiffView, type DiffComment, type DiffCommentDraft } from "./DiffView";
 
 const BRANCH: ChangeScope = { kind: "branch" };
@@ -15,8 +16,8 @@ const BRANCH: ChangeScope = { kind: "branch" };
 /**
  * A ticket's changes with what chooses them: the code link when it has several, and the scope (its branch against
  * the base, the working tree where one is here, one commit, one run of an agent, or what came since the last review).
- * The comments on its lines are kept and sent from here too, and the delivery's report is shown above. The diff itself
- * is `DiffView`'s.
+ * The comments on its lines are kept and sent from here too, the delivery's report is shown above, and an agent's review
+ * of the changes is asked for and read here. The diff itself is `DiffView`'s.
  */
 export function TicketChanges({ source, viewedKey, onNotice }: { source: ChangesSource; viewedKey: string; onNotice: (text: string) => void }) {
   const { t, locale } = useI18n();
@@ -48,10 +49,15 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
   const [busy, setBusy] = useState(false);
   // The view is given the shown link's comments; a send takes every link's.
   const comments = useMemo<DiffComment[]>(
-    () => (kept.data ?? []).filter((c) => c.linkId === shownLink).map((c) => ({ id: c.id, path: c.path, side: c.side, line: c.line, endLine: c.endLine, quote: c.quote, body: c.body, state: c.state, sent: c.sentAt !== null, createdAt: c.createdAt, finding: c.finding })),
+    () => (kept.data ?? []).filter((c) => c.linkId === shownLink).map((c) => ({ id: c.id, path: c.path, side: c.side, line: c.line, endLine: c.endLine, quote: c.quote, body: c.body, state: c.state, sent: c.sentAt !== null, createdAt: c.createdAt, finding: c.finding, stale: c.stale })),
     [kept.data, shownLink]
   );
   const unsent = (kept.data ?? []).filter((c) => c.state === "open" && c.sentAt === null);
+  // A branch that moved ages the reviews made of it, and their findings with them.
+  const head = changes?.head;
+  useEffect(() => {
+    if (head) void qc.invalidateQueries({ queryKey: source.commentsKey });
+  }, [head, qc, source]);
   /** A write to the comments: read again whether or not it went, and say why when it did not. */
   const writing = async <T,>(write: () => Promise<T>): Promise<T> => {
     try {
@@ -161,6 +167,7 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
           <div className="diff__report-body">{changes.report}</div>
         </details>
       )}
+      {changes && <AgentReviewBar source={source} when={minute} onNotice={onNotice} />}
       <DiffView
         changes={changes}
         loading={read.isFetching}

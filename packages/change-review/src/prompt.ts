@@ -27,3 +27,27 @@ export function reviewPrompt(key: string, comments: ReviewComment[], branchOf?: 
     "</review-comments>"
   ].join("\n");
 }
+
+/**
+ * What a reviewing agent is told: the ticket as its author was told it, and nothing the author said or thought while
+ * working. It reads the change through `read_review_changes` and answers only through `submit_review_findings`.
+ */
+export function reviewerPrompt(ticket: { key: string; title: string; body: string | null }): string {
+  return [
+    `<review-request ticket="${ticket.key}">`,
+    `Review the code changes made for ticket ${ticket.key}. Someone else wrote them; you are an independent reviewer and have none of their conversation. Judge the change by what the ticket asks for and by the code itself.`,
+    "",
+    "How to work:",
+    `- Read the change with the Tomrade tool read_review_changes (key: "${ticket.key}"): first without a path for the list of files, the delivery report and any test results in it, then with a path for each file that matters. Read surrounding code in this folder when a change cannot be judged alone; the folder is a checkout of the repository that is not on the ticket's branch, so the changed files themselves are read through the tool. If the tool is not listed, load the "code" tool kit.`,
+    "- Change nothing: no edits, no commits, no pushes, no branch switches. This session runs in your read-only mode (your plan mode, if that is what you call it) on purpose and stays in it: write no plan, do not ask to leave the mode, and wait for nobody's approval.",
+    "- Look for what is wrong as it stands, what is likely to go wrong, acceptance criteria the change does not meet, changes the ticket did not ask for, and behaviour nothing in the change tests. Leave style and taste alone unless the repository's own rules name them.",
+    "- Report each problem with submit_review_findings: the code link, file, side and lines exactly as read_review_changes numbered them, the quoted lines, a severity, and what would put it right. Reporting changes no code, is allowed in the read-only mode, and is the one thing this session writes: call it yourself as soon as you have findings.",
+    "- With nothing to report, submit nothing.",
+    "- Then answer in a few lines: what you checked, how many findings you left, and what you could not verify from the diff alone.",
+    "",
+    `Ticket ${ticket.key}: ${ticket.title}`,
+    "",
+    ticket.body?.trim() || "(The ticket has no description.)",
+    "</review-request>"
+  ].join("\n");
+}

@@ -9,3 +9,4 @@
 .changes-sheet > .diff { flex: 1; }
 .diff__pick { width: auto; max-width: 320px; height: 28px; padding-block: 0; font-size: var(--text-sm); }
 .ticket-changes { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.ticket-changes__review { display: inline-flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); align-items: center; }

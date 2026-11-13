@@ -140,9 +140,16 @@ export function FindingTag({ comment }: { comment: DiffComment }) {
   const finding = comment.finding;
   if (!finding) return null;
   return (
-    <span className={`tag diff__finding diff__finding--${finding.severity}`} title={finding.reviewer} data-testid="diff-finding">
-      {t("diff.finding")} · {t(SEVERITY[finding.severity])}
-    </span>
+    <>
+      <span className={`tag diff__finding diff__finding--${finding.severity}`} title={finding.reviewer} data-testid="diff-finding">
+        {t("diff.finding")} · {t(SEVERITY[finding.severity])}
+      </span>
+      {comment.stale && (
+        <span className="tag faint" title={t("diff.reviewStaleHint")} data-testid="diff-finding-stale">
+          {t("diff.reviewStale")}
+        </span>
+      )}
+    </>
   );
 }
 

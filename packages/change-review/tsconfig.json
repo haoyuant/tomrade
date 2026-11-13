@@ -13,10 +13,12 @@
     { "path": "../agent" },
     { "path": "../code-link" },
     { "path": "../db" },
+    { "path": "../dispatch" },
     { "path": "../domain" },
     { "path": "../hub" },
     { "path": "../ipc" },
     { "path": "../items" },
+    { "path": "../settings" },
     { "path": "../tools" }
   ]
 }

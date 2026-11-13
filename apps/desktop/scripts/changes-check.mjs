@@ -5,7 +5,9 @@
  * the clipboard with no session to take it and to a background session's conversation with one, and what came since the
  * review is all the diff then shows. Then one turn of an outside session as a scope of its own, with a picture drawn
  * beside its absence, a migration flagged, a reviewing agent's finding under its line and the delivery's report above
- * the diff. A general ticket and one with no branch say nothing.
+ * the diff. Then an agent's review asked for from the diff: a read-only conversation of its own that is told the ticket,
+ * its finding under its line, and both said to be of older code once the branch moves. A general ticket and one with no
+ * branch say nothing.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:changes
@@ -273,6 +275,10 @@ const run = async () => {
         : ask.op === "remove" ? review.remove(project.id, ask.id)
         : ask.op === "target" ? review.target(project.id, m.itemId)
         : ask.op === "send" ? await review.send(project.id, m.itemId, { deliver: ask.deliver })
+        : ask.op === "reviewers" ? await review.reviewers(project.id, m.itemId)
+        : ask.op === "reviews" ? review.reviews(project.id, m.itemId)
+        : ask.op === "review" ? await review.review(project.id, m.itemId, { engine: ask.engine })
+        : ask.op === "release" ? (review.release(project.id, m.itemId), null)
         : await ctx.codeLink.markReviewed(project.id, m.itemId, { linkId: ask.linkId });
       return { type: "changeReviewDone", token: m.token, value };
     }
@@ -361,6 +367,45 @@ const run = async () => {
   await hook("Stop");
   await pick("branch");
   await until(names("README.md,pnpm-lock.yaml,src/greet.ts"));
+
+  // ── an agent's review, asked for from the diff ───────────────────────
+  const reviewBar = `${sheet}.querySelector('[data-testid="changes-review"]')`;
+  const reviewStart = `${sheet}.querySelector('[data-testid="changes-review-start"]')`;
+  check("with no agent here that can review, the diff says so and offers none", await until(`${reviewStart}?.disabled === true && ${reviewStart}.title === '这台电脑上没有能审查的编码 Agent。' && ${reviewStart}.textContent.trim() === '让另一个 Agent 审查'`), await $(`${reviewBar}?.textContent`));
+  const reviewTold = [];
+  ctx.agent.engine({
+    id: "checker", title: "Checker", author: "ai:checker", capabilities: ["backlog", "code"],
+    permissionModes: { default: "workspace", choices: [{ value: "read-only", label: "Read only" }, { value: "workspace", label: "Workspace" }] },
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      reviewTold.push({ text: input.input.text, mode: input.permissionMode, ticket: input.ticket?.key ?? null, cwd: input.cwd ?? null });
+      ctx.changeReview.submitFindings(project.id, item.id, [{ linkId: link.id, path: "src/greet.ts", side: "new", line: 2, endLine: 2, quote: "export const bye = (name: string) => `bye ${name}`;", body: "Nothing tests bye.", severity: "warning" }], { by: "ai:checker", run: { id: io.run.id, threadId: input.threadId } });
+      return { stop: "end" };
+    }
+  });
+  ctx.ipc.send("codeLink.changed", project.id);
+  check("an agent that can is offered to review", await until(`${reviewStart}?.disabled === false`), await $(`${reviewBar}?.textContent`));
+  await $(`${reviewStart}.click(); true`);
+  const reviewStatus = `${sheet}.querySelector('[data-testid="changes-review-status"]')`;
+  check("the review ends with what it found", await until(`${reviewStatus}?.dataset.state === 'done' && ${reviewStatus}.textContent.startsWith('Checker 留下 1 条意见 · ')`, 150), await $(`${reviewBar}?.textContent`));
+  const [made] = ctx.changeReview.reviews(project.id, item.id);
+  check(
+    "it ran in a conversation of its own, read-only, told the ticket and how to read the change",
+    reviewTold.length === 1 && reviewTold[0].mode === "read-only" && reviewTold[0].ticket === null && reviewTold[0].text.includes(`Ticket ${item.key}: Greet by name`) && reviewTold[0].text.includes("read_review_changes") &&
+      made?.state === "done" && made.findings === 1 && ctx.agent.store.thread(project.id, made.threadId)?.itemId === null,
+    { reviewTold, made }
+  );
+  check("in a folder that is not the ticket's checkout", !!reviewTold[0]?.cwd && reviewTold[0].cwd !== checkout, reviewTold[0]?.cwd);
+  check("its finding sits under its line and waits to be sent", await until(`${notes}.some((n) => n.textContent.includes('Nothing tests bye.') && !!n.querySelector('[data-testid="diff-finding"]') && !n.querySelector('[data-testid="diff-finding-stale"]'))`) && ctx.changeReview.comments(project.id, item.id).find((c) => c.body === "Nothing tests bye.")?.sentAt === null, await $(`${notes}.map((n) => n.textContent)`));
+  check("another review can be asked for", (await $(`${reviewStart}.textContent.trim()`)) === "再审一次" && !(await $(`!!${sheet}.querySelector('[data-testid="changes-review-stale"]')`)));
+  if (process.env.TOMRADE_SHOT) fs.writeFileSync(process.env.TOMRADE_SHOT.replace(/\.png$/, "-review.png"), (await win.webContents.capturePage()).toPNG());
+  // The branch moves on: what the review found is of older code.
+  write(checkout, "README.md", "# app\n\none\nTWO\nthree\nfour\n");
+  commit(checkout, `${item.key}: one more line`);
+  await ctx.codeLink.scan(project.id);
+  ctx.ipc.send("codeLink.changed", project.id);
+  check("once the branch moves, the review is said to be of older code", await until(`${sheet}.querySelector('[data-testid="changes-review-stale"]')?.textContent === '针对旧改动'`, 150), await $(`${reviewBar}?.textContent`));
+  check("and so is its finding, where a person's comment is not", await until(`${notes}.filter((n) => !!n.querySelector('[data-testid="diff-finding-stale"]')).length === 1 && ${notes}.some((n) => n.textContent.includes('Nothing tests bye.') && !!n.querySelector('[data-testid="diff-finding-stale"]'))`), await $(`${notes}.map((n) => n.textContent)`));
 
   // ── tickets with nothing to show ─────────────────────────────────────
   await $(`document.querySelector('[role="dialog"] .dlg-head .btn-icon').click(); true`);

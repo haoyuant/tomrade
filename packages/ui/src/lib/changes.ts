@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { ReviewComment, ReviewDraft, ReviewEdit, ReviewSent, ReviewTarget } from "@tomradex/change-review";
+import type { AgentReviewView, ReviewComment, ReviewDraft, ReviewEdit, ReviewSent, ReviewTarget, ReviewerChoices } from "@tomradex/change-review";
 import type { ChangedFile, ChangeFileOptions, ChangeReviewed, ChangeScope, ChangesOptions, ChangesView, Editor } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { keys } from "./queries";
@@ -26,6 +26,14 @@ export interface ChangesSource {
   sendComments(opts?: { deliver?: boolean }): Promise<ReviewSent>;
   /** What is on this machine now, recorded as reviewed; null where there is nothing to record. */
   markReviewed(opts?: { linkId?: string }): Promise<ChangeReviewed | null>;
+  /** The coding agents on this machine, and which of them can review these changes. */
+  reviewers(): Promise<ReviewerChoices>;
+  /** The reviews agents made of the ticket's changes, newest first. */
+  reviews(): Promise<AgentReviewView[]>;
+  /** Starts an agent's review in a session of its own; the one already going comes back instead of a second. */
+  startReview(opts?: { engine?: string }): Promise<AgentReviewView>;
+  /** The person has seen the findings that waited on them. */
+  releaseReview(): Promise<void>;
 }
 
 /** A ticket's changes in the app window. Kept under code link's keys, so its events ask again. */
@@ -46,7 +54,11 @@ export const ticketChanges = (projectId: string, itemId: string): ChangesSource 
   removeComment: (id) => invoke("changeReview.remove", projectId, id),
   reviewTarget: () => invoke("changeReview.target", projectId, itemId),
   sendComments: (opts) => invoke("changeReview.send", projectId, itemId, opts),
-  markReviewed: (opts) => invoke("codeLink.markReviewed", projectId, itemId, opts)
+  markReviewed: (opts) => invoke("codeLink.markReviewed", projectId, itemId, opts),
+  reviewers: () => invoke("changeReview.reviewers", projectId, itemId),
+  reviews: () => invoke("changeReview.reviews", projectId, itemId),
+  startReview: (opts) => invoke("changeReview.review", projectId, itemId, opts),
+  releaseReview: () => invoke("changeReview.release", projectId, itemId)
 });
 
 export const scopeValue = (scope: ChangeScope): string => (scope.kind === "commit" ? `commit:${scope.sha}` : scope.kind === "run" ? `run:${scope.id}` : scope.kind);
@@ -75,3 +87,20 @@ export const useChangeComments = (source: Pick<ChangesSource, "commentsKey" | "c
 
 /** Where the comments would go. Kept with the changes: what moves a session asks for both again. */
 export const useReviewTarget = (source: ChangesSource) => useQuery({ queryKey: [...source.key, "reviewTarget"], queryFn: () => source.reviewTarget() });
+
+/** How often a review that is going is asked about again: its end is heard too, this only covers a missed word. */
+const REVIEW_POLL_MS = 5000;
+
+/** The agent reviews of a ticket's changes. Kept under the comments' key: what changes one changes the other. */
+export const useAgentReviews = (source: Pick<ChangesSource, "commentsKey" | "reviews">, enabled = true) =>
+  useQuery({
+    queryKey: [...source.commentsKey, "reviews"],
+    queryFn: () => source.reviews(),
+    enabled,
+    refetchOnWindowFocus: "always",
+    refetchInterval: (query) => (query.state.data?.some((review) => review.state === "running") ? REVIEW_POLL_MS : false)
+  });
+
+/** Who could review here. Asked again each time the window is looked at: an agent may have been signed in meanwhile. */
+export const useReviewers = (source: Pick<ChangesSource, "key" | "reviewers">, enabled = true) =>
+  useQuery({ queryKey: [...source.key, "reviewers"], queryFn: () => source.reviewers(), enabled, staleTime: 30_000 });
