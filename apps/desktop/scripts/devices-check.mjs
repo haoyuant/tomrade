@@ -280,13 +280,13 @@ const run = async () => {
   await sleep(2500);
   const choose = (selector, value) =>
     $(`(() => { const s = document.querySelector(${JSON.stringify(selector)}); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-  const openStart = async () => {
+  const openStart = async (shown = `!!document.querySelector('[data-testid="run-on-select"]')`) => {
     if (!(await press(`document.querySelector('[data-testid="start-ticket"]')`))) {
       await press(`document.querySelector('[data-testid="start-ways"]')`);
       await sleep(400);
       await press(`[...document.querySelectorAll('[role="menuitem"]')].find(n => n.textContent.includes('Full settings'))`);
     }
-    return until(`!!document.querySelector('[data-testid="run-on-select"]')`);
+    return until(shown);
   };
   const sentLine = () => $(`document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? ''`);
   check("Start offers where to run: this computer, the other one, or any of its platform", (await openStart()) && JSON.stringify(await $(`[...document.querySelector('[data-testid="run-on-select"]').options].map(o => o.textContent)`)) === JSON.stringify(["This computer", "Windows tower (offline)", "Any Windows computer"]), await $(`[...(document.querySelector('[data-testid="run-on-select"]')?.options ?? [])].map(o => o.textContent)`));
@@ -321,6 +321,13 @@ const run = async () => {
   check("with one computer, it says how another appears", await until(`!!document.querySelector('[data-testid="devices-only-one"]')`) && (await paneText()).includes("Sign in to the same account on another computer and it appears here."), await paneText());
   check("and the plan line says one of two", (await $(`document.querySelector('[data-testid="devices-plan"]')?.textContent ?? ''`)).includes("1 of 2 computers"));
   await shot("devices-07-only-one");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await $(`location.hash = '#/p/${project.id}/i/${second.key}'; true`);
+  await sleep(2500);
+  const runOn = `document.querySelector('[data-testid="run-on"]')`;
+  check("with one computer, Start still says where it runs, and how another computer could take it", (await openStart(`${runOn}?.dataset.state === 'alone'`)) && (await $(`${runOn}.textContent`)).includes("This computer") && (await $(`document.querySelector('[data-testid="run-on-hint"]')?.textContent ?? ''`)).includes("Sign in to the same account on another computer and tickets can be sent there.") && !(await $(`!!document.querySelector('[data-testid="run-on-select"]')`)) && (await $(`!!document.querySelector('[data-testid="start-confirm"]')`)), await $(`${runOn}?.outerHTML`));
+  await shot("devices-07b-run-on-alone");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
 
   // ── in Chinese ───────────────────────────────────────────────────────
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });

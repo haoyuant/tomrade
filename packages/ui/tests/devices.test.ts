@@ -62,3 +62,29 @@ it("finds the newest request for a ticket", () => {
   expect(dispatchOf([row("x", "TOM-1", "p2")], "p1", "TOM-1")).toBeNull();
   expect(dispatchOf(undefined, "p1", "TOM-1")).toBeNull();
 });
+
+import type { DevicesInfo } from "@tomradex/hub-cloud";
+import { runOnState } from "../src/lib/devices";
+
+it("says what Start's choice of computer lacks: an account, a second computer, a place, or one that takes the ticket", () => {
+  const accept = { on: true, projects: "all" as const, ceiling: "edits" as const, concurrent: 1 };
+  const info = (state: DevicesInfo["state"], devices: DeviceView[] = []): DevicesInfo => ({ state, devices, plan: { id: "free", limit: 2, subscribeUrl: "" } });
+  const self = device("self", { self: true, accept });
+  // No account service, or nothing read yet, or still registering: nothing to say, and no wrong word in the meantime.
+  expect(runOnState(false, info("ready", [self]), "p1")).toEqual({ kind: "hidden" });
+  expect(runOnState(undefined, undefined, "p1")).toEqual({ kind: "hidden" });
+  expect(runOnState(true, undefined, "p1")).toEqual({ kind: "hidden" });
+  expect(runOnState(true, info("pending", [self]), "p1")).toEqual({ kind: "hidden" });
+  expect(runOnState(true, info("signed-out"), "p1")).toEqual({ kind: "signed-out" });
+  expect(runOnState(true, info("ready", [self]), "p1")).toEqual({ kind: "alone" });
+  // A computer with no place among the account's is not asked to sign in: it is signed in.
+  expect(runOnState(true, info("removed"), "p1")).toEqual({ kind: "out" });
+  expect(runOnState(true, info("over-limit", [device("a", {}), device("b", {})]), "p1")).toEqual({ kind: "out" });
+
+  const others = [device("win", { accept }), device("off", { accept: { ...accept, on: false } }), device("picky", { accept: { ...accept, projects: ["p2"] } }), device("silent", {})];
+  const chosen = runOnState(true, info("ready", [self, ...others]), "p1");
+  expect(chosen.kind === "choose" && chosen.others.map((o) => [o.device.id, o.why])).toEqual([["win", null], ["off", "not-accepting"], ["picky", "project"], ["silent", "not-accepting"]]);
+  // None can take it: they are still listed, each with why.
+  const none = runOnState(true, info("ready", [self, ...others.slice(1)]), "p1");
+  expect(none.kind === "choose" && none.others.every((o) => o.why)).toBe(true);
+});

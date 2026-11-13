@@ -46,9 +46,31 @@ export function elsewhereOn(devices: DeviceView[] | undefined, projectId: string
 /** `here`, a device's id, or `platform:<name>` for any computer of a platform. */
 export type RunTarget = string;
 
+/** Why another computer cannot be sent a ticket of this project: it takes no work, or none for this project. Null when it can. */
+export const whyNot = (device: DeviceView, projectId: string): "not-accepting" | "project" | null =>
+  !device.accept?.on ? "not-accepting" : device.accept.projects === "all" || device.accept.projects.includes(projectId) ? null : "project";
+
 /** The computers a ticket of this project can be sent to: the others that accept work for it. */
 export const takers = (devices: DeviceView[] | undefined, projectId: string): DeviceView[] =>
-  (devices ?? []).filter((d) => !d.self && d.accept?.on && (d.accept.projects === "all" || d.accept.projects.includes(projectId)));
+  (devices ?? []).filter((d) => !d.self && !whyNot(d, projectId));
+
+/**
+ * What Start has to say of where a ticket runs.
+ * - `hidden`: nothing yet, or nothing to offer: no account service here, the list not read, this computer still registering.
+ * - `signed-out`, `alone`, `out`: only this computer, and what is missing: an account, a second computer, a place among the account's.
+ * - `choose`: the other computers, each with why it cannot take the ticket, or null when it can.
+ */
+export type RunOnState =
+  | { kind: "hidden" | "signed-out" | "alone" | "out" }
+  | { kind: "choose"; others: { device: DeviceView; why: "not-accepting" | "project" | null }[] };
+
+export function runOnState(cloudEnabled: boolean | undefined, info: DevicesInfo | undefined, projectId: string): RunOnState {
+  if (!cloudEnabled || !info || info.state === "pending") return { kind: "hidden" };
+  if (info.state === "signed-out") return { kind: "signed-out" };
+  if (info.state !== "ready") return { kind: "out" };
+  const others = info.devices.filter((d) => !d.self).map((device) => ({ device, why: whyNot(device, projectId) }));
+  return others.length ? { kind: "choose", others } : { kind: "alone" };
+}
 
 /** What the ticket's labels say of where it should run: a `device:<name>` label, else a platform's (`windows`, `macos`, `linux`). */
 export function targetOf(item: { labels: string[] }, devices: DeviceView[]): RunTarget | null {
