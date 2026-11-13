@@ -43,6 +43,13 @@ export function elsewhereOn(devices: DeviceView[] | undefined, projectId: string
   return found[0] ?? null;
 }
 
+/**
+ * Whether to ask, once, if this computer should take work from the account's others: it has its place among
+ * two or more, can say whether it accepts work, says it does not, and was never asked.
+ */
+export const shouldAskAccept = (info: DevicesInfo | undefined, asked: boolean): boolean =>
+  !asked && info?.state === "ready" && info.devices.length >= 2 && info.devices.some((d) => d.self && d.accept?.on === false);
+
 /** `here`, a device's id, or `platform:<name>` for any computer of a platform. */
 export type RunTarget = string;
 

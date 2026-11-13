@@ -28,7 +28,8 @@ it("prefers a machine that is on, then the one that said so last", () => {
   expect(elsewhereOn([older, off], "p1", "TOM-1")?.device.id).toBe("old");
 });
 
-import { dispatchOf, targetOf, takers } from "../src/lib/devices";
+import type { DevicesInfo } from "@tomradex/hub-cloud";
+import { dispatchOf, shouldAskAccept, targetOf, takers } from "../src/lib/devices";
 
 it("offers a ticket only the other computers that accept work for its project", () => {
   const accept = { on: true, projects: "all" as const, ceiling: "edits" as const, concurrent: 1 };
@@ -42,6 +43,28 @@ it("offers a ticket only the other computers that accept work for its project", 
   expect(takers(devices, "p1").map((d) => d.id)).toEqual(["win"]);
   expect(takers(devices, "p2").map((d) => d.id)).toEqual(["win", "picky"]);
   expect(takers(undefined, "p1")).toEqual([]);
+});
+
+it("asks a computer once whether it should take work: only one with a place among two or more that says it takes none", () => {
+  const off = { on: false, projects: "all" as const, ceiling: "edits" as const, concurrent: 1 };
+  const info = (state: DevicesInfo["state"], devices: DeviceView[]): DevicesInfo => ({ state, devices, plan: { id: "free", limit: 2, subscribeUrl: "" } });
+  const self = device("self", { self: true, accept: off });
+  const other = device("win", {});
+  expect(shouldAskAccept(info("ready", [self, other]), false)).toBe(true);
+  // Asked before, here: never again.
+  expect(shouldAskAccept(info("ready", [self, other]), true)).toBe(false);
+  // Alone, not signed in, no place, or the list not read yet: nothing to ask.
+  expect(shouldAskAccept(info("ready", [self]), false)).toBe(false);
+  expect(shouldAskAccept(info("signed-out", []), false)).toBe(false);
+  expect(shouldAskAccept(info("pending", [self, other]), false)).toBe(false);
+  expect(shouldAskAccept(info("removed", []), false)).toBe(false);
+  expect(shouldAskAccept(info("over-limit", [other, device("mac", {})]), false)).toBe(false);
+  expect(shouldAskAccept(undefined, false)).toBe(false);
+  // It takes work already; or it cannot say (nothing here takes work): no question either way.
+  expect(shouldAskAccept(info("ready", [device("self", { self: true, accept: { ...off, on: true } }), other]), false)).toBe(false);
+  expect(shouldAskAccept(info("ready", [device("self", { self: true }), other]), false)).toBe(false);
+  // Another computer's being off is that computer's question.
+  expect(shouldAskAccept(info("ready", [device("self", { self: true, accept: { ...off, on: true } }), device("win", { accept: off })]), false)).toBe(false);
 });
 
 it("reads where a ticket should run from its labels: one computer by name, or any of a platform", () => {
@@ -63,7 +86,6 @@ it("finds the newest request for a ticket", () => {
   expect(dispatchOf(undefined, "p1", "TOM-1")).toBeNull();
 });
 
-import type { DevicesInfo } from "@tomradex/hub-cloud";
 import { runOnState } from "../src/lib/devices";
 
 it("says what Start's choice of computer lacks: an account, a second computer, a place, or one that takes the ticket", () => {
