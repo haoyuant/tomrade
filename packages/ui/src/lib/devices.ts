@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DispatchView } from "@tomradex/dispatch";
-import { match } from "@tomradex/dispatch/match";
+import { match, unfit, type MatchRole } from "@tomradex/dispatch/match";
 import type { DeviceSession, DeviceView, DevicesInfo } from "@tomradex/hub-cloud";
 import { invoke } from "./api";
 import { keys, useHubInfo } from "./queries";
@@ -64,20 +64,31 @@ export const shouldAskAccept = (info: DevicesInfo | undefined, asked: boolean): 
 /** `here`, a device's id, or `platform:<name>` for any computer of a platform. */
 export type RunTarget = string;
 
-/** Why another computer cannot be sent a ticket of this project: it takes no work, or none for this project. Null when it can. */
-export const whyNot = (device: DeviceView, projectId: string): "not-accepting" | "project" | null =>
-  !device.accept?.on ? "not-accepting" : device.accept.projects === "all" || device.accept.projects.includes(projectId) ? null : "project";
+/** Why a computer can never be sent a ticket as things stand, as opposed to having only to come on or free up. */
+export type Unable = "not-accepting" | "project" | "role-agent" | "role-limit";
 
-/** The computers a ticket of this project can be sent to: the others that accept work for it. */
-export const takers = (devices: DeviceView[] | undefined, projectId: string): DeviceView[] =>
-  (devices ?? []).filter((d) => !d.self && !whyNot(d, projectId));
+/** A role as far as choosing a computer reads it; null where the ticket is worked as no particular role. */
+export type RunRole = MatchRole | null | undefined;
+
+/**
+ * Why another computer cannot be sent a ticket of this project: it takes no work, or none for this project, or
+ * (worked as a role) it has none of the role's agents, or lets a sent ticket do less than the role allows. Null when it can.
+ */
+export function whyNot(device: DeviceView, projectId: string, role?: RunRole): Unable | null {
+  const why = unfit(device, projectId, [], role);
+  return why === "not-accepting" || why === "project" || why === "role-agent" || why === "role-limit" ? why : null;
+}
+
+/** The computers a ticket of this project can be sent to: the others that accept work for it and can work it as the role. */
+export const takers = (devices: DeviceView[] | undefined, projectId: string, role?: RunRole): DeviceView[] =>
+  (devices ?? []).filter((d) => !d.self && !whyNot(d, projectId, role));
 
 /** What a ticket's label asks for and cannot have: the label, the platform it names (null: one computer, by `name`), and why. */
 export interface LabelMiss {
   label: string;
   platform: string | null;
   name: string;
-  why: "nobody" | "not-accepting" | "project" | "no-agent";
+  why: "nobody" | "not-accepting" | "project" | "no-agent" | "role-agent" | "role-limit";
 }
 
 /**
@@ -85,11 +96,12 @@ export interface LabelMiss {
  * that place tickets everywhere else. Null when the labels ask for nothing, for this computer, or for one that
  * can take it or has only to come on or free up; and until this computer has its place among the account's.
  */
-export function labelMiss(item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined): LabelMiss | null {
+export function labelMiss(item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined, role?: RunRole): LabelMiss | null {
   if (info?.state !== "ready") return null;
-  const found = match({ projectId, labels: item.labels }, info.devices);
+  const found = match({ projectId, labels: item.labels, role }, info.devices);
   if (found.kind !== "none" || found.why === "excluded" || found.why === "offline" || found.why === "busy") return null;
-  const named = item.labels.some((l) => l.trim().toLowerCase().startsWith("device:"));
+  // What the role asks of a computer stands in for the ticket's labels.
+  const named = role?.needs.device ? true : role?.needs.platform ? false : item.labels.some((l) => l.trim().toLowerCase().startsWith("device:"));
   const platform = named ? null : (Object.entries(PLATFORM_LABELS).find(([, label]) => label === found.wanted)?.[0] ?? null);
   return { label: named ? `device:${found.wanted}` : found.wanted, platform, name: found.name ?? found.wanted, why: found.why };
 }
@@ -98,8 +110,8 @@ export function labelMiss(item: { labels: string[] }, projectId: string, info: D
  * Whether a ticket's labels ask for another computer than this one, whether or not one can take it now: Start
  * then asks where it runs before starting it here. False until this computer has its place among the account's.
  */
-export const asksElsewhere = (item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined): boolean =>
-  info?.state === "ready" && match({ projectId, labels: item.labels }, info.devices).kind !== "here";
+export const asksElsewhere = (item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined, role?: RunRole): boolean =>
+  info?.state === "ready" && match({ projectId, labels: item.labels, role }, info.devices).kind !== "here";
 
 /**
  * What Start has to say of where a ticket runs.
@@ -109,19 +121,22 @@ export const asksElsewhere = (item: { labels: string[] }, projectId: string, inf
  */
 export type RunOnState =
   | { kind: "hidden" | "signed-out" | "alone" | "out" }
-  | { kind: "choose"; others: { device: DeviceView; why: "not-accepting" | "project" | null }[] };
+  | { kind: "choose"; others: { device: DeviceView; why: Unable | null }[] };
 
-export function runOnState(cloudEnabled: boolean | undefined, info: DevicesInfo | undefined, projectId: string): RunOnState {
+export function runOnState(cloudEnabled: boolean | undefined, info: DevicesInfo | undefined, projectId: string, role?: RunRole): RunOnState {
   if (!cloudEnabled || !info || info.state === "pending") return { kind: "hidden" };
   if (info.state === "signed-out") return { kind: "signed-out" };
   if (info.state !== "ready") return { kind: "out" };
-  const others = info.devices.filter((d) => !d.self).map((device) => ({ device, why: whyNot(device, projectId) }));
+  const others = info.devices.filter((d) => !d.self).map((device) => ({ device, why: whyNot(device, projectId, role) }));
   return others.length ? { kind: "choose", others } : { kind: "alone" };
 }
 
-/** What the ticket's labels say of where it should run: a `device:<name>` label, else a platform's (`windows`, `macos`, `linux`). */
-export function targetOf(item: { labels: string[] }, devices: DeviceView[]): RunTarget | null {
-  const labels = item.labels.map((l) => l.toLowerCase());
+/**
+ * What says where the ticket should run: what its role asks of a computer, else its labels: a `device:<name>` label,
+ * else a platform's (`windows`, `macos`, `linux`).
+ */
+export function targetOf(item: { labels: string[] }, devices: DeviceView[], role?: RunRole): RunTarget | null {
+  const labels = role?.needs.device ? [deviceLabel(role.needs.device)] : role?.needs.platform && PLATFORM_LABELS[role.needs.platform] ? [PLATFORM_LABELS[role.needs.platform]!] : item.labels.map((l) => l.toLowerCase());
   const named = devices.find((d) => labels.includes(deviceLabel(d.name)));
   if (named) return named.id;
   const platform = Object.entries(PLATFORM_LABELS).find(([, label]) => labels.includes(label))?.[0];

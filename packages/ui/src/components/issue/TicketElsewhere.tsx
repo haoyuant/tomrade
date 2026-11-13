@@ -6,6 +6,7 @@ import { invoke } from "~/lib/api";
 import { dispatchOf, elsewhereOn, useDevices, useDispatches } from "~/lib/devices";
 import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useRoles } from "~/lib/roles";
 import { keys } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 
@@ -63,10 +64,13 @@ function SentLine({ sent, devices }: { sent: DispatchView; devices: DeviceView[]
     : sent.state === "done" ? (sent.reason ? t("devices.sentStopped", { name, reason: sent.reason }) : t("devices.sentDone", { name }))
     : t(`devices.sent_${sent.state}` as MessageKey, { name });
   const going = sent.state === "queued" || sent.state === "accepted" || sent.state === "running";
+  // The role it was sent as, by its name while the project has it.
+  const role = useRoles(sent.projectId, !!sent.wish.role).data?.find((r) => r.id === sent.wish.role);
   return (
     <p className={`ticket-elsewhere${going ? "" : " last"}`} data-testid="ticket-sent" data-state={sent.state}>
       {going && <LiveDot />}
       {text}
+      {role && <span data-testid="ticket-sent-role"> · {t("roles.sessionRole", { role: role.title })}</span>}
       {going && <TakeBack id={sent.id} />}
     </p>
   );

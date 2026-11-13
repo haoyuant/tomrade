@@ -1,4 +1,5 @@
-import { rankOf, type Ceiling } from "@tomradex/roles";
+// The scale alone, from its own file: this module is read in the renderer too, where a service has no place.
+import { rankOf, type Ceiling } from "@tomradex/roles/permission";
 
 /** A role, as much as matching reads of it: the agents it names, the most it lets them do, and what it asks of a machine. */
 export interface MatchRole {
