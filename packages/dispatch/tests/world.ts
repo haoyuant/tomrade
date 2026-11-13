@@ -14,7 +14,7 @@ import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 import { Dispatch } from "@tomradex/dispatch";
 
-const MIGRATIONS = ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql", "202611140001_dispatch_roles.sql", "202611140002_device_shares.sql"];
+const MIGRATIONS = ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql", "202611140001_dispatch_roles.sql", "202611140002_device_shares.sql", "202611140003_dispatch_role_claims.sql"];
 export const QUIET = { watch: false, reconcileMs: 0, snapshotIdleMs: 60_000, snapshotMaxMs: 60_000 };
 
 export interface Account {

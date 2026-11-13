@@ -12,7 +12,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 
 const PLATFORM_WORDS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 /** The reasons a machine gives for turning a ticket away, as it names them. */
-const REFUSALS = new Set(["off", "project-not-allowed", "project-missing", "permission", "busy", "not-idle", "on-battery", "no-agent", "start", "declined"]);
+const REFUSALS = new Set(["off", "project-not-allowed", "project-missing", "permission", "busy", "not-idle", "on-battery", "no-agent", "start", "declined", "outdated"]);
 /** A request that is over stays on the ticket this long. */
 const SHOWN_MS = 24 * 3_600_000;
 
