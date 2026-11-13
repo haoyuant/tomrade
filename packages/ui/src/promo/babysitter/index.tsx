@@ -26,6 +26,7 @@ const OVER_BOARD: [CaptionKey, number, number][] = [
  */
 export const babysitter = film<Board>({
   id: "babysitter",
+  shelf: "2-stories/babysitter",
   seconds: T.total,
   poster: 3.2,
   day: dawn,

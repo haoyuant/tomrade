@@ -36,6 +36,7 @@ const stateOf = (i: number, t: number): CellState | undefined => (i === 5 ? unde
  */
 export const terminal = film<true>({
   id: "terminal",
+  shelf: "3-features/terminal",
   seconds: TERMINAL_SECONDS,
   poster: 7.6,
   formats: ["wide"],

@@ -23,6 +23,7 @@ const BOX = { x: 836, y: 300, w: 962, k: 2.915 };
 /** "Nobody touched this card.": one ticket, large, taken from To Do to Done by what its agent does in a terminal. */
 export const card = film<true>({
   id: "card",
+  shelf: "3-features/card",
   seconds: CARD_SECONDS,
   poster: 6.6,
   formats: ["wide"],

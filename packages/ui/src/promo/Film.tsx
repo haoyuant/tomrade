@@ -16,6 +16,8 @@ export interface Cue {
 /** One film: its length, its sky, what it draws in a frame, where the pointer goes and what is heard. */
 export interface FilmDef {
   id: string;
+  /** The folder its renders are kept in, under the output folder: what kind of film it is, then its own name. */
+  shelf: string;
   seconds: number;
   /** The second its still is taken at: the picture a post shows before it plays. */
   poster: number;

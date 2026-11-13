@@ -8,6 +8,7 @@ import { CUTS, cuesOf, pointerOf, spanOf } from "../src/promo/day/cuts";
 import { COLUMNS, columnsAt, liveAt, paths, place, statusAt, variantAt } from "../src/promo/sim";
 import { BOARD, CHANGES, KEYS, KEYS_SECONDS, LANTERN, LANTERN_SECONDS, METRO, METRO_SECONDS, NUMBERS, NUMBERS_SECONDS, PAD, PADS, PHONE, PHONE_SECONDS, POSTER, POSTER_SECONDS, RIVER, SEQUENCER, SEQUENCER_SECONDS, TRAINS, TTY, TTY_SECONDS, arrived, keysCues, lanternCues, metroCues, numbersCues, padRow, phoneCues, playhead, posterCues, sequencerCues, trainAt, ttyCues } from "../src/promo/beat/scripts";
 import { C, CARD_SECONDS, K, PANE_MOVES, TERMINAL_POINTER, TERMINAL_SECONDS, W, WALL_POINTER, WALL_SECONDS, cardCues, terminalCues, wallCues } from "../src/promo/free/scripts";
+import { BANDS, LONG, SHORT, featureAt, launchCues, secondsOf, songOf } from "../src/promo/launch/scripts";
 import { FPS } from "../src/promo/time";
 
 const HEIGHT = 70;
@@ -132,4 +133,22 @@ it("moves the sequencer's pads only as the playhead crosses them, and the metro'
   // the one that changes is at the person's station while it is asked, and nowhere else is anyone
   expect(trainAt(CHANGES.train, (CHANGES.asks + CHANGES.answered) / 2).up).toBe(1);
   expect(arrived(METRO.marks.out)).toBe(TRAINS.length);
+});
+
+it("gives every launch film the same bars in both lengths: six features end to end, then the recap and the end", () => {
+  for (const bars of [SHORT, LONG]) {
+    expect(bars.define < bars.features && bars.features + 6 * bars.each === bars.recap && bars.recap < bars.end && bars.end < bars.beats).toBe(true);
+    // each feature's scene runs through its own eight beats, whatever the bars give it
+    for (let n = 0; n < 6; n += 1) {
+      expect(featureAt(bars, bars.features + n * bars.each)).toEqual({ index: n, u: 0 });
+      expect(featureAt(bars, bars.features + (n + 1) * bars.each - 0.001)!.u).toBeCloseTo(8, 1);
+    }
+    expect(featureAt(bars, bars.recap)).toBeNull();
+    for (const style of Object.keys(BANDS) as (keyof typeof BANDS)[]) {
+      const song = songOf(style, bars);
+      expect(launchCues(song, bars).every((cue) => cue.at > 0 && cue.at < secondsOf(song))).toBe(true);
+      // the end card has the seconds it needs
+      expect(((bars.beats - bars.end) * 60) / song.bpm + 1.2).toBeGreaterThan(3.9);
+    }
+  }
 });

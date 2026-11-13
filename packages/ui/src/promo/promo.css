@@ -446,3 +446,138 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .numbers:lang(zh) .numbers-slot strong { letter-spacing: 0; }
 .numbers-slot span { font-size: 46px; line-height: 1.35; opacity: 0.8; max-width: 900px; }
 .numbers-ticks { position: absolute; left: 130px; right: 130px; bottom: 70px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--n-hot) calc(100% * var(--done)), color-mix(in srgb, var(--n-ink) 18%, transparent) 0); }
+
+/* ─── the launch films' small scenes: pieces of the app, larger than life ─ */
+.vg { position: relative; overflow: hidden; flex: none; }
+.vg-put { position: absolute; transform-origin: 0 0; }
+.vg .film-ask { position: relative; }
+.vg-rail { position: absolute; display: flex; gap: 0; font-family: var(--font-display); font-size: 24px; color: var(--meta); }
+.vg-rail > span { width: 140px; padding-bottom: 8px; border-bottom: 3px solid var(--border); }
+.vg-rail > span.is-here { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.vg-stamp { position: absolute; width: 150px; height: 150px; display: grid; place-items: center; border-radius: 50%; border: 8px solid var(--success); color: var(--success); font-size: 96px; transform-origin: 50% 50%; }
+.vg-pointer { position: absolute; z-index: 9; width: 30px; height: 40px; background: var(--film-pointer-edge); clip-path: polygon(0 0, 0 78%, 24% 60%, 42% 100%, 60% 92%, 42% 54%, 76% 54%); filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.5)); }
+.vg-edges { position: absolute; inset: 0; }
+.vg-edges path { fill: none; stroke: var(--accent-light); stroke-width: 2.5; }
+.vg-edges path.is-done { stroke: var(--border); stroke-dasharray: 6 5; }
+.vg-clock { position: absolute; right: 26px; bottom: 22px; display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 58px; font-weight: 700; color: var(--fg); }
+.vg-clock svg { color: var(--sun-gold); }
+.vg-count { position: absolute; left: 26px; bottom: 30px; font-size: 34px; font-weight: 700; color: var(--success); }
+
+/* ─── launch · keynote: a dark stage, one piece at a time ─────────────── */
+.keynote { position: absolute; inset: 0; overflow: hidden; background: #08070f; color: var(--fg); font-family: var(--font-display); }
+.keynote-light { position: absolute; inset: 0; background: radial-gradient(60% 55% at 68% 46%, rgb(96 70 190 / 0.34), transparent 70%), radial-gradient(40% 40% at 16% 90%, rgb(255 122 77 / 0.2), transparent 70%); }
+.keynote-define { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+.keynote-sun { position: static; width: 170px; height: 170px; margin-bottom: 18px; }
+.keynote-define > b { font-size: 150px; font-weight: 800; letter-spacing: 0.04em; line-height: 1; background: linear-gradient(100deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.keynote-define > strong { font-size: 76px; font-weight: 700; }
+.keynote-define > span { max-width: 1300px; font-size: 40px; color: var(--muted); }
+.keynote-words { position: absolute; left: 100px; right: 100px; top: 44px; display: flex; align-items: center; gap: 34px; }
+.keynote-words > b { flex: none; font-size: 170px; font-weight: 800; line-height: 1.1; background: linear-gradient(100deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.keynote:lang(en) .keynote-words > b { font-size: 132px; letter-spacing: -0.04em; }
+.keynote-words > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.keynote-words strong { font-size: 68px; font-weight: 700; line-height: 1.15; white-space: nowrap; }
+.keynote:lang(en) .keynote-words strong { font-size: 58px; }
+.keynote-words em { font-style: normal; font-size: 38px; color: var(--muted); }
+.keynote-words > span { flex: none; align-self: flex-start; margin-top: 30px; font-size: 26px; color: var(--accent); letter-spacing: 0.1em; }
+.keynote-card { position: absolute; left: 520px; top: 380px; margin: -30px 0 0 -30px; padding: 30px; border-radius: 34px; border: 1px solid rgb(255 255 255 / 0.14); background: color-mix(in srgb, var(--bg) 82%, transparent); box-shadow: 0 60px 140px -50px #000, 0 0 120px -30px rgb(255 122 77 / 0.35); transform-origin: 50% 50%; }
+.keynote-all { position: absolute; inset: 60px 80px 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px 30px; }
+.keynote-all figure { margin: 0; transform-origin: 50% 50%; }
+.keynote-all figure > div { width: 560px; height: 344px; overflow: hidden; border-radius: 22px; border: 1px solid rgb(255 255 255 / 0.14); background: color-mix(in srgb, var(--bg) 82%, transparent); }
+.keynote-all figcaption { display: flex; align-items: baseline; gap: 14px; margin-top: 12px; font-size: 30px; color: var(--fg-2); }
+.keynote-all figcaption > b { font-size: 44px; color: var(--accent); }
+
+/* ─── launch · flyover: one sheet, one take ───────────────────────────── */
+.fly { position: absolute; inset: 0; overflow: hidden; background: #0a0d1c; color: var(--fg); font-family: var(--font-display); }
+.fly-sheet { position: absolute; left: 0; top: 0; background-image: linear-gradient(rgb(120 140 255 / 0.09) 2px, transparent 2px), linear-gradient(90deg, rgb(120 140 255 / 0.09) 2px, transparent 2px); background-size: 140px 140px; }
+.fly-sheet > svg { position: absolute; inset: 0; }
+.fly-sheet path { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; opacity: 0.55; }
+.fly-stop { position: absolute; }
+.fly-words { position: absolute; left: -634px; top: -612px; width: 1268px; height: 190px; display: flex; align-items: center; gap: 30px; white-space: nowrap; }
+.fly-words > b { flex: none; font-size: 170px; font-weight: 800; line-height: 1.1; background: linear-gradient(100deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.fly:lang(en) .fly-words > b { font-size: 128px; letter-spacing: -0.04em; }
+.fly-words > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fly-words strong { font-size: 66px; font-weight: 700; }
+.fly:lang(en) .fly-words strong { font-size: 54px; }
+.fly-words em { font-style: normal; font-size: 38px; color: var(--muted); }
+.fly-words > span { flex: none; align-self: flex-start; margin-top: 34px; font-size: 26px; color: var(--accent); letter-spacing: 0.1em; }
+.fly-frame { position: absolute; left: -440px; top: -270px; padding: 26px; border-radius: 30px; border: 1px solid rgb(255 255 255 / 0.16); background: color-mix(in srgb, var(--bg) 88%, transparent); box-shadow: 0 60px 140px -50px #000; transform-origin: 50% 50%; margin: -26px 0 0 -26px; }
+.fly-veil { position: absolute; inset: 0; background: rgb(10 13 28 / 0.8); }
+
+/* ─── launch · manual: the man page and its preview ───────────────────── */
+.man { font-size: 38px; line-height: 58px; }
+.man-hook { font-size: 64px; line-height: 104px; padding-top: 180px; }
+.man-big { font-size: 120px; line-height: 170px; font-weight: 700; }
+.man-head { margin-top: 18px; color: var(--tty-amber); font-weight: 700; }
+.man-name { padding-left: 2em; font-size: 46px; line-height: 70px; white-space: normal; max-width: 770px; }
+.man-name > b { color: var(--tty-green); }
+.man-more { padding-left: 2.4em; max-width: 1500px; white-space: normal; }
+.man-option { padding-left: 1em; width: 780px; overflow: hidden; text-overflow: ellipsis; border-radius: 8px; color: var(--tty-dim); }
+.man-option > b { color: inherit; }
+.man-option.is-done { color: var(--tty-fg); }
+.man-option.is-done > i { font-style: normal; color: var(--tty-green); }
+.man-option.is-on { background: var(--tty-green); color: #06090a; text-shadow: none; font-weight: 700; }
+.man-pane { position: absolute; right: 0; top: 100px; width: 940px; border: 3px solid var(--tty-dim); border-radius: 14px; background: #0b0f14; text-shadow: none; }
+.man-pane-bar { padding: 2px 24px; border-bottom: 3px solid var(--tty-dim); color: var(--tty-green); }
+.man-pane-body { padding: 28px 30px; white-space: normal; font-family: var(--font-body); font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg); }
+.man-pane-foot { padding: 4px 24px 8px; border-top: 3px solid var(--tty-dim); color: var(--tty-amber); }
+.man .tty-end { font-size: 50px; line-height: 80px; }
+
+/* ─── launch · zine: paper, a serif, one red ──────────────────────────── */
+.zine { --paper: #f2e9d8; --ink: #1d1820; --red: #d2402a; position: absolute; inset: 0; overflow: hidden; background: var(--paper); color: var(--ink); font-family: Charter, Georgia, "Songti SC", "Noto Serif CJK SC", serif; }
+.zine::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.5; mix-blend-mode: multiply; background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 0.22 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.zine-cover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.zine-cover > b { font-size: 170px; font-weight: 700; line-height: 1; padding-left: 0.3em; }
+.zine-cover > i { width: 1200px; height: 6px; margin: 34px 0 50px; background: var(--ink); }
+.zine-cover > strong { font-size: 104px; font-weight: 700; line-height: 1.25; }
+.zine-cover > strong.is-red { color: var(--red); font-style: italic; transform-origin: 50% 50%; }
+.zine-cover > span { margin-top: 56px; font-size: 34px; letter-spacing: 0.22em; }
+.zine-define { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; padding: 0 180px; text-align: center; }
+.zine-define > span { font-size: 40px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--red); }
+.zine-define > blockquote { margin: 0; font-size: 98px; white-space: nowrap; font-weight: 700; line-height: 1.25; }
+.zine-define > p { margin: 0; font-size: 44px; font-style: italic; color: #5a5058; }
+.zine-page { position: absolute; left: 90px; top: 130px; width: 660px; display: flex; flex-direction: column; }
+.zine-page > span { font-size: 34px; letter-spacing: 0.2em; color: var(--red); }
+.zine-page > b { margin-top: 10px; font-size: 380px; font-weight: 700; line-height: 1.05; color: var(--red); }
+.zine:lang(en) .zine-page > b { font-size: 200px; font-style: italic; }
+.zine-page > strong { margin-top: 10px; font-size: 68px; font-weight: 700; line-height: 1.25; }
+.zine-page > em { margin-top: 20px; font-size: 40px; color: #5a5058; }
+.zine-photo { position: absolute; left: 850px; top: 232px; padding: 22px 22px 26px; background: #fffdf8; box-shadow: 0 30px 70px -30px rgb(40 20 10 / 0.6), 0 2px 6px rgb(40 20 10 / 0.2); transform-origin: 50% 50%; }
+.zine-print { position: relative; inset: auto; isolation: auto; overflow: hidden; }
+.zine-photo > svg { position: absolute; left: 22px; top: 22px; overflow: visible; }
+.zine-photo ellipse { fill: none; stroke: var(--red); stroke-width: 7; stroke-linecap: round; stroke-dasharray: 1; }
+.zine-tape { position: absolute; left: 60px; top: -22px; z-index: 2; width: 170px; height: 46px; background: rgb(210 64 42 / 0.35); transform: rotate(-5deg); }
+.zine-tape.is-right { left: auto; right: 60px; transform: rotate(4deg); }
+.zine-sheet { position: absolute; inset: 70px 90px 30px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px 40px; justify-items: center; }
+.zine-sheet figure { margin: 0; padding: 14px 14px 10px; background: #fffdf8; box-shadow: 0 20px 50px -24px rgb(40 20 10 / 0.6); transform-origin: 50% 50%; }
+.zine-sheet figure > div { width: 520px; height: 319px; }
+.zine-sheet figcaption { display: flex; align-items: baseline; gap: 14px; margin-top: 8px; font-size: 30px; }
+.zine-sheet figcaption > b { font-size: 46px; color: var(--red); }
+.zine-facts { color: #5a5058; }
+
+/* ─── launch · dial: a day round a 24-hour face ───────────────────────── */
+.dial { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(70% 70% at 22% 55%, #1b2150, #0a0c20 75%); color: var(--fg); font-family: var(--font-display); }
+.dial-stage, .dial-stage > svg { position: absolute; inset: 0; }
+.dial-face { fill: none; stroke: rgb(255 255 255 / 0.22); stroke-width: 4; stroke-dasharray: 1; }
+.dial-night { fill: none; stroke: #4a55c8; stroke-width: 16; stroke-linecap: round; opacity: 0.55; }
+.dial-done { fill: none; stroke: var(--sun-gold); stroke-width: 8; stroke-linecap: round; }
+.dial-tick { stroke: rgb(255 255 255 / 0.4); stroke-width: 3; stroke-linecap: round; }
+.dial-mark { fill: #0a0c20; stroke: rgb(255 255 255 / 0.5); stroke-width: 4; }
+.dial-mark.is-lit { fill: var(--accent); stroke: #ffd9a0; }
+.dial-hand { stroke: var(--fg); stroke-width: 6; stroke-linecap: round; }
+.dial-tip { fill: var(--sun-gold); filter: drop-shadow(0 0 16px var(--sun-gold)); }
+.dial-tip.is-night { fill: #c9d2ff; filter: drop-shadow(0 0 16px #8a96ff); }
+.dial-hour { position: absolute; transform: translate(-50%, -50%); font-size: 30px; color: var(--meta); }
+.dial-verb { position: absolute; font-size: 44px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+.dial-now { position: absolute; left: 400px; top: 600px; width: 400px; margin: -110px 0 0 -200px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dial-now > span { font-size: 84px; font-weight: 700; letter-spacing: -0.04em; margin-top: 126px; }
+.dial-now > b { font-size: 60px; font-weight: 800; background: linear-gradient(100deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.dial-sun { position: static; width: 220px; height: 220px; }
+.dial-words { position: absolute; left: 800px; top: 60px; display: flex; flex-direction: column; gap: 6px; white-space: nowrap; }
+.dial-words > strong { font-size: 68px; font-weight: 700; }
+.dial:lang(en) .dial-words > strong { font-size: 56px; }
+.dial-words > em { font-style: normal; font-size: 38px; color: var(--muted); }
+.dial-card { position: absolute; left: 880px; top: 330px; margin: -28px 0 0 -28px; padding: 28px; border-radius: 30px; border: 1px solid rgb(255 255 255 / 0.14); background: color-mix(in srgb, var(--bg) 86%, transparent); box-shadow: 0 60px 140px -50px #000; transform-origin: 50% 50%; }
+.dial-list { position: absolute; left: 860px; top: 190px; margin: 0; padding: 0; list-style: none; display: grid; gap: 22px; font-size: 52px; }
+.dial-list > li { display: flex; align-items: baseline; gap: 28px; white-space: nowrap; }
+.dial-list span { font-size: 38px; color: var(--meta); }
+.dial-list b { color: var(--accent); font-weight: 800; }

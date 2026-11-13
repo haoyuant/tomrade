@@ -12,7 +12,7 @@ const LETTERS: Record<string, string[]> = {
   R: ["████ ", "█   █", "████ ", "█  █ ", "█   █"], A: [" ███ ", "█   █", "█████", "█   █", "█   █"], D: ["████ ", "█   █", "█   █", "█   █", "████ "],
   E: ["█████", "█    ", "████ ", "█    ", "█████"]
 };
-const BANNER = [0, 1, 2, 3, 4].map((row) => [..."TOMRADE"].map((letter) => LETTERS[letter][row]).join("  "));
+export const BANNER = [0, 1, 2, 3, 4].map((row) => [..."TOMRADE"].map((letter) => LETTERS[letter][row]).join("  "));
 const AGENTS = ["claude", "codex"];
 
 /** A command as far as it has been typed by beat q, with the cursor after it while it is the last thing on screen. */
@@ -109,6 +109,7 @@ function screen(q: number, lang: Lang): ReactNode {
 /** "$ whoami": the whole frame is a terminal, and the story is typed into it. */
 export const tty = film<true>({
   id: "tty",
+  shelf: "2-stories/tty",
   seconds: TTY_SECONDS,
   poster: 13 * TTY_BEAT,
   formats: ["wide"],

@@ -35,6 +35,7 @@ function demo(turn: number, u: number, lang: "en" | "zh"): ReactNode {
 /** "With Tomrade, it's a few keys.": large keycaps, one going down to a bar, and what each one does. */
 export const keys = film<true>({
   id: "keys",
+  shelf: "2-stories/keys",
   seconds: KEYS_SECONDS,
   poster: 13 * KEYS_BEAT,
   formats: ["wide"],

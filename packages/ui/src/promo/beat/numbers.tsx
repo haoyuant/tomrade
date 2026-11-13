@@ -13,6 +13,7 @@ const OUT = NUMBERS.marks.out;
 /** "Tomrade, by the numbers.": one large number to a bar, what it counts, and a line under it. */
 export const numbers = film<true>({
   id: "numbers",
+  shelf: "2-stories/numbers",
   seconds: NUMBERS_SECONDS,
   poster: 29 * NUMBERS_BEAT,
   formats: ["wide"],

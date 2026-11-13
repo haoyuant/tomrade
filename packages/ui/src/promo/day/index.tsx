@@ -14,6 +14,7 @@ function filmOf(cut: Cut): FilmDef {
   const { shown, endAt, seconds } = spanOf(cut);
   return film<Board>({
     id: cut.id,
+    shelf: `${cut.id === "main" ? "2-stories" : "3-features"}/${cut.id}`,
     seconds,
     poster: cut.poster - from,
     day: (t) => day(from + t),

@@ -27,6 +27,7 @@ const OVER: { x: number; y: number; w: number; h: number; at: number; from: [num
  */
 export const waiting = film<true>({
   id: "waiting",
+  shelf: "3-features/waiting",
   seconds: WALL_SECONDS,
   poster: 3.6,
   formats: ["wide"],

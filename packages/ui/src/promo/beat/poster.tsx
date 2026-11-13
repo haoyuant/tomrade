@@ -187,6 +187,7 @@ function picture(q: number, lang: Lang): { ground: Ground; body: ReactNode } {
 /** "You have a lot of agents.": a poster in three colours, a word to a beat. */
 export const poster = film<true>({
   id: "poster",
+  shelf: "2-stories/poster",
   seconds: POSTER_SECONDS,
   poster: 16.6 * POSTER_BEAT,
   formats: ["wide"],

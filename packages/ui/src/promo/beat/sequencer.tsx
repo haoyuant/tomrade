@@ -12,6 +12,7 @@ const OUT = SEQUENCER.marks.out;
 /** "Say one sentence.": the board as a drum machine; a ticket is a pad that sounds when the playhead crosses it. */
 export const sequencer = film<true>({
   id: "sequencer",
+  shelf: "2-stories/sequencer",
   seconds: SEQUENCER_SECONDS,
   poster: 22 * SEQUENCER_BEAT,
   formats: ["wide"],

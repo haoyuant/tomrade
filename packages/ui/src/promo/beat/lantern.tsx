@@ -38,6 +38,7 @@ function lantern(i: number, q: number) {
 /** "Eleven at night.": a night told slowly, in thin lines; each ticket is a lantern on a river. */
 export const lanterns = film<true>({
   id: "lantern",
+  shelf: "2-stories/lantern",
   seconds: LANTERN_SECONDS,
   poster: 23 * LANTERN_BEAT,
   formats: ["wide"],

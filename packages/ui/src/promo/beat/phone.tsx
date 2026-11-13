@@ -14,6 +14,7 @@ const HOME = [SAID[1], SAID[2], SAID[3], SAID[6]];
 /** "You're out. Your computer is home.": a chat on a phone, and the computer at home doing what it says. */
 export const phone = film<true>({
   id: "phone",
+  shelf: "2-stories/phone",
   seconds: PHONE_SECONDS,
   poster: 19 * PHONE_BEAT,
   formats: ["wide"],

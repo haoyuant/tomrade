@@ -26,6 +26,7 @@ function place(line: number, at: number, up: number): { x: number; y: number } {
 /** "Every agent, a line of its own.": a transit map; tickets are trains, and one station is the person's. */
 export const metro = film<true>({
   id: "metro",
+  shelf: "2-stories/metro",
   seconds: METRO_SECONDS,
   poster: 18 * METRO_BEAT,
   formats: ["wide"],
