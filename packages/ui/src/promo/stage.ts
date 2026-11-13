@@ -16,14 +16,14 @@ export interface Format {
 export const WIDE: Format = {
   id: "wide", w: 1920, h: 1080, winTop: 264,
   caption: { x: 122, y: 92, size: 92, width: 1676 },
-  hook: { x: 122, y: 304, size: 128 },
+  hook: { x: 122, y: 322, size: 116 },
   pane: { w: 600, at: [[1350, 262, -3], [1604, 404, 2], [1300, 532, 1.5], [1610, 664, -2.5], [1340, 806, 3], [1584, 918, -1.5]], count: [1460, 92] }
 };
 
 export const TALL: Format = {
   id: "tall", w: 1080, h: 1920, winTop: 604,
   caption: { x: 64, y: 196, size: 112, width: 952 },
-  hook: { x: 64, y: 196, size: 138 },
+  hook: { x: 64, y: 212, size: 126 },
   pane: { w: 700, at: [[404, 938, -3], [672, 1082, 2], [384, 1240, 1.5], [694, 1396, -2.5], [412, 1556, 3], [664, 1712, -1.5]], count: [540, 772] }
 };
 

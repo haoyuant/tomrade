@@ -4,7 +4,7 @@ export type Lang = "en" | "zh";
 /** Captions: *stars* mark what is lit in the sun's colours, a line break starts a new line. */
 export const CAPTIONS = {
   en: {
-    hook1: "Six agents.",
+    hook1: "So many agents.",
     hook2: "One babysitter.",
     hook3: "*You.*",
     meet: "Meet *Tomrade.*",
@@ -22,7 +22,7 @@ export const CAPTIONS = {
     platforms: "Free for macOS, Windows and Linux"
   },
   zh: {
-    hook1: "六个 Agent。",
+    hook1: "一堆 Agent。",
     hook2: "一个保姆。",
     hook3: "*就是你。*",
     meet: "试试 *Tomrade。*",
