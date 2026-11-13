@@ -4,8 +4,10 @@ import { contract, readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
+import type {} from "@tomradex/tools";
 import { AcceptPolicy, POLICY_DEFAULTS, admit, published, type Admission, type DispatchRequest, type MachineState, type Refusal } from "./policy.js";
 import { Queue, type DispatchInput, type DispatchView } from "./queue.js";
+import { registerTools } from "./tools.js";
 import { DISPATCH_WORDS } from "./words.js";
 
 /** One request from another machine, and what this machine said to it. */
@@ -133,6 +135,7 @@ export class Dispatch extends Service {
       ctx.ipc.handle("dispatch.send", (input) => this.queue.send(SendInput.parse(input)));
       ctx.ipc.handle("dispatch.cancel", (id) => this.queue.cancel(z.uuid().parse(id)));
     });
+    this.home.inject(["tools"], (ctx) => registerTools(ctx, () => this.queue));
     // The account's other machines read whether this one takes work, and within what, before they ask.
     this.home.inject(["cloudHub"], () => contract(this.home, "cloudHub")?.describeDevice?.("accept", () => published(this.policy())));
     this.home.on("settings/changed", (next, previous) => {
