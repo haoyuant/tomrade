@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
+import { contract } from "@tomradex/contracts";
 import { execGit, type Git } from "@tomradex/git";
 import type { ChangeCommit, ChangedFile, ChangeFileOptions, ChangeReviewed, ChangeScope, ChangeScopeKind, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { addedFileHunks, parseFileList, parsePatch, type ListedFile, type PatchFile } from "./changes-parse.js";
@@ -26,6 +27,12 @@ const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const SNAPSHOT_FILE_BYTES = 1024 * 1024;
 /** Where the commit of a code link's last review is kept from being collected. */
 const reviewedRef = (linkId: string) => `refs/tomrade/reviewed/${linkId}`;
+/** Where the folder at each end of a run is kept from being collected. */
+const runRef = (linkId: string, id: string, end: "before" | "after") => `refs/tomrade/runs/${linkId}/${id}/${end}`;
+/** The runs kept for one code link; older ones go, and their commits with them. */
+const RUNS_KEPT = 30;
+/** The largest picture read for a comparison. */
+const IMAGE_BYTES = 4 * 1024 * 1024;
 /** A snapshot is nobody's commit: it must not fail for want of the person's identity, nor carry it. */
 const SNAPSHOT_AUTHOR = { GIT_AUTHOR_NAME: "Tomrade", GIT_AUTHOR_EMAIL: "tomrade@localhost", GIT_COMMITTER_NAME: "Tomrade", GIT_COMMITTER_EMAIL: "tomrade@localhost" };
 
@@ -36,6 +43,31 @@ export function looksGenerated(file: string): boolean {
   const parts = file.split("/");
   const name = parts.at(-1) ?? "";
   return GENERATED_NAMES.has(name) || /\.min\.(js|css)$/.test(name) || /\.(js|css)\.map$/.test(name) || parts.slice(0, -1).includes("dist");
+}
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The pictures a diff shows, told by their first bytes. Never SVG: it can carry script. */
+function rasterMime(bytes: Buffer): string | null {
+  if (bytes.subarray(0, 8).equals(PNG)) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  const head = bytes.subarray(0, 12).toString("latin1");
+  if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return "image/gif";
+  if (head.startsWith("RIFF") && head.slice(8) === "WEBP") return "image/webp";
+  return null;
+}
+
+/** `folder` is `root` or a folder in it, whichever way either is spelled. */
+function inside(root: string, folder: string): boolean {
+  const real = (dir: string) => {
+    try {
+      return fs.realpathSync(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  const [outer, inner] = [real(root), real(folder)];
+  return inner === outer || inner.startsWith(outer + path.sep);
 }
 
 /** The two sides compared: commits or trees, or the working tree when `to` is null. */
@@ -87,13 +119,13 @@ export class Changes {
   async changes(projectId: string, itemId: string, opts: ChangesOptions = {}): Promise<ChangesView | null> {
     const target = await this.target(projectId, itemId, opts);
     if (!target) return null;
-    return this.reading(target, async (t) => ({ ...t.view, files: await this.files(t, Boolean(opts.ignoreWhitespace)) }));
+    return this.reading(target, async (t) => ({ ...t.view, files: t.view.unavailable ? [] : await this.files(t, Boolean(opts.ignoreWhitespace)) }));
   }
 
   /** One file of that answer with every hunk, up to `FILE_BYTES`; null when the scope does not change it. */
   async changeFile(projectId: string, itemId: string, opts: ChangesOptions & ChangeFileOptions): Promise<ChangedFile | null> {
     const target = await this.target(projectId, itemId, opts);
-    if (!target) return null;
+    if (!target || target.view.unavailable) return null;
     return this.reading(target, (t) => this.file(t, opts.path, Boolean(opts.ignoreWhitespace), Boolean(opts.full)));
   }
 
@@ -111,6 +143,61 @@ export class Changes {
     const reviewed = { sha, at: Date.now() };
     this.store.setReviewed(projectId, target.link.id, sha, reviewed.at);
     return reviewed;
+  }
+
+  /**
+   * A run begins on a ticket: every code link of it checked out where the run works has its folder kept as a commit,
+   * before the run writes there. A folder that cannot be kept is recorded so, and the run has no diff to show. True
+   * when the run began somewhere it had not.
+   */
+  async startRun(projectId: string, itemId: string, id: string, source: string, cwd?: string | null): Promise<boolean> {
+    let begun = false;
+    for (const link of currentLinks(this.store, projectId, itemId).filter((l) => l.branch)) {
+      if (this.store.changeRuns(projectId, link.id).some((run) => run.id === id)) continue;
+      const root = await this.rootOf(projectId, itemId, link.id);
+      if (!root || (cwd && !inside(root, cwd))) continue;
+      const before = await this.keep(root, runRef(link.id, id, "before"));
+      this.store.startChangeRun(projectId, link.id, { id, source, startedAt: Date.now(), before: before?.sha ?? null }, root, before?.left ?? "");
+      for (const old of this.store.changeRuns(projectId, link.id).slice(RUNS_KEPT)) await this.dropRun(projectId, link.id, old.id, root);
+      begun = true;
+    }
+    return begun;
+  }
+
+  /**
+   * The run is over: each folder it began in is kept again. One it changed nothing in is forgotten there; one where a
+   * file too large to keep was written, changed or removed meanwhile has no end, since its diff would leave that out.
+   * True when the run was running.
+   */
+  async endRun(projectId: string, id: string): Promise<boolean> {
+    const open = this.store.openChangeRuns(projectId, id);
+    for (const run of open) {
+      const kept = fs.existsSync(run.root) ? await this.keep(run.root, runRef(run.linkId, id, "after")) : null;
+      const after = kept && kept.left === run.leftOut ? kept.sha : null;
+      if (run.before && after && (await this.sameTree(run.root, run.before, after))) await this.dropRun(projectId, run.linkId, id, run.root);
+      else this.store.endChangeRun(projectId, run.linkId, id, after, Date.now());
+    }
+    return open.length > 0;
+  }
+
+  /** The folder as a commit that `ref` keeps, with what that commit leaves out. */
+  private async keep(folder: string, ref: string): Promise<{ sha: string; left: string } | null> {
+    const made = await this.snapshotWith(folder);
+    if (!made) return null;
+    const kept = await this.git(["update-ref", ref, made.sha], { cwd: folder, ok: true });
+    return kept.code === 0 ? made : null;
+  }
+
+  private async sameTree(dir: string, one: string, other: string): Promise<boolean> {
+    if (one === other) return true;
+    const trees = await this.git(["rev-parse", `${one}^{tree}`, `${other}^{tree}`], { cwd: dir, ok: true });
+    const [a, b] = trees.stdout.trim().split(/\s+/);
+    return trees.code === 0 && !!a && a === b;
+  }
+
+  private async dropRun(projectId: string, linkId: string, id: string, dir: string): Promise<void> {
+    if (fs.existsSync(dir)) for (const end of ["before", "after"] as const) await this.git(["update-ref", "-d", runRef(linkId, id, end)], { cwd: dir, ok: true });
+    this.store.dropChangeRun(projectId, linkId, id);
   }
 
   /** One git command reading and writing `index` instead of the folder's own. */
@@ -151,26 +238,35 @@ export class Changes {
    * index, HEAD, stash and files are left as they are.
    */
   private async snapshot(folder: string): Promise<string | null> {
+    return (await this.snapshotWith(folder))?.sha ?? null;
+  }
+
+  /** `snapshot`, with what it left out: the untracked files it did not copy, each with its size and when it was written, as one text to compare with another snapshot's. */
+  private async snapshotWith(folder: string): Promise<{ sha: string; left: string } | null> {
     const head = await this.sha(folder, "HEAD");
     if (!head) return null;
     return this.withIndex(folder, async (index) => {
       if ((await this.gitWith(index, ["add", "--update", "--ignore-errors"], { cwd: folder })).code !== 0) return null;
+      const left: string[] = [];
       const small = (await this.untracked(folder)).filter((file) => {
         try {
           const stat = fs.lstatSync(path.join(folder, file));
-          return stat.isFile() && stat.size <= SNAPSHOT_FILE_BYTES;
+          if (stat.isFile() && stat.size <= SNAPSHOT_FILE_BYTES) return true;
+          left.push(`${file}\t${stat.size}\t${stat.mtimeMs}`);
         } catch {
-          return false;
+          // Gone since it was listed.
         }
+        return false;
       });
       if (small.length) await this.addUntracked(folder, index, small, false);
       const tree = (await this.gitWith(index, ["write-tree"], { cwd: folder })).stdout.trim();
       const same = await this.git(["rev-parse", "--verify", "--quiet", `${head}^{tree}`], { cwd: folder, ok: true });
       if (!tree) return null;
-      if (same.code === 0 && same.stdout.trim() === tree) return head;
+      if (same.code === 0 && same.stdout.trim() === tree) return { sha: head, left: left.join("\n") };
       // Never signed: a person's commit.gpgSign would ask for their key.
       const made = await this.gitWith(index, ["commit-tree", "--no-gpg-sign", tree, "-p", head, "-m", "Tomrade: reviewed"], { cwd: folder, env: SNAPSHOT_AUTHOR });
-      return made.code === 0 ? made.stdout.trim() || null : null;
+      const sha = made.code === 0 ? made.stdout.trim() : "";
+      return sha ? { sha, left: left.join("\n") } : null;
     });
   }
 
@@ -269,8 +365,18 @@ export class Changes {
     const since = reviewed && !link.mergedSha;
     const scopes: ChangeScopeKind[] = ["branch", ...(folder ? (["uncommitted"] as const) : []), ...(commits.length ? (["commit"] as const) : []), ...(since ? (["since"] as const) : [])];
     const repos = new Map(links.map((l) => [l.id, this.ctx.repos.get(projectId, l.repoId)?.name ?? ""]));
-    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch, repoName: repos.get(l.id) ?? "" })), scopes, reviewed, commits, root: folder };
+    const runs = this.store.changeRuns(projectId, link.id);
+    if (runs.length) scopes.push("run");
+    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch, repoName: repos.get(l.id) ?? "" })), scopes, reviewed, commits, root: folder, runs, report: this.report(projectId, itemId, link) };
     const asked = opts.scope ?? { kind: "branch" };
+
+    if (asked.kind === "run") {
+      const run = runs.find((r) => r.id === asked.id);
+      const from = run?.before ? await this.sha(dir, run.before) : null;
+      const to = run?.after ? await this.sha(dir, run.after) : null;
+      // A run without both ends is said to have none, rather than shown as something else's changes.
+      return { link, dir, range: { from: from ?? base, to: to ?? head }, view: { ...view, scope: asked, base: from, head: to, unavailable: !from || !to } };
+    }
 
     if (asked.kind === "since" && since) {
       const scope: ChangeScope = { kind: "since" };
@@ -290,6 +396,13 @@ export class Changes {
     }
     // A scope this machine cannot show (no worktree here, a commit the branch no longer has, nothing reviewed yet) falls back to the branch.
     return { link, dir, range: { from: base, to: head }, view: { ...view, scope: { kind: "branch" }, base, head } };
+  }
+
+  /** What was last submitted for the delivery a code link is of. */
+  private report(projectId: string, itemId: string, link: CodeLinkView): string | null {
+    const delivery = this.store.deliveries(projectId, itemId).find((d) => d.sequence === link.delivery);
+    const submissions = contract(this.ctx, "items")?.get(projectId, itemId)?.evidence.submissions ?? [];
+    return submissions.filter((s) => s.deliveryId === delivery?.id).sort((a, b) => b.submittedAt - a.submittedAt)[0]?.report ?? null;
   }
 
   private diffArgs(range: Range, ignoreWhitespace: boolean): string[] {
@@ -403,14 +516,41 @@ export class Changes {
     return files;
   }
 
+  /** One side of a binary file as a picture: as a commit has it, or as the folder does when `ref` is null. Null for anything else. */
+  private async picture(dir: string, ref: string | null, file: string): Promise<string | null> {
+    try {
+      let bytes: Buffer;
+      if (ref) {
+        bytes = (await execGit(this.binary, ["show", `${ref}:${file}`], { cwd: dir, encoding: "buffer", maxBuffer: IMAGE_BYTES })).stdout;
+      } else {
+        // The folder's own file, never one a link leads out of it.
+        const root = await fs.promises.realpath(dir);
+        const full = await fs.promises.realpath(path.join(root, file));
+        if (!full.startsWith(root + path.sep) || (await fs.promises.stat(full)).size > IMAGE_BYTES) return null;
+        bytes = await fs.promises.readFile(full);
+      }
+      const mime = rasterMime(bytes);
+      return mime ? `data:${mime};base64,${bytes.toString("base64")}` : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async file(target: Target, file: string, ignoreWhitespace: boolean, full: boolean): Promise<ChangedFile | null> {
     const listed = (await this.listed(target, ignoreWhitespace)).find((f) => f.path === file);
     const generated = (await this.generated(target.dir, [file])).has(file);
     if (!listed) {
       if (target.range.to !== null || target.index || !(await this.untracked(target.dir, file)).includes(file)) return null;
-      return this.newFile(target.dir, file, generated, FILE_BYTES);
+      const fresh = this.newFile(target.dir, file, generated, FILE_BYTES);
+      if (!fresh?.binary) return fresh;
+      const after = await this.picture(target.dir, null, file);
+      return { ...fresh, image: after ? { before: null, after } : null };
     }
-    if (listed.binary) return { ...listed, generated, truncated: false, hunks: null };
+    if (listed.binary) {
+      const before = listed.status === "added" ? null : await this.picture(target.dir, target.range.from, listed.oldPath ?? listed.path);
+      const after = listed.status === "deleted" ? null : await this.picture(target.dir, target.range.to, listed.path);
+      return { ...listed, generated, truncated: false, hunks: null, image: before || after ? { before, after } : null };
+    }
     const patch = await this.patch(target, ignoreWhitespace, [listed], FILE_BYTES, full);
     if (!patch) return { ...listed, generated, truncated: true, hunks: null };
     const parsed = patch.get(file);

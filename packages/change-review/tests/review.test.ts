@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { Service, type Context } from "cordis";
 import { Agent, type Engine } from "@tomradex/agent";
-import { ChangeReview, type ReviewDraft } from "@tomradex/change-review";
+import { ChangeReview, type ReviewComment, type ReviewDraft } from "@tomradex/change-review";
 import { CodeLink } from "@tomradex/code-link";
 import type { TerminalInput } from "@tomradex/contracts";
 import { Contributions } from "@tomradex/contributions";
@@ -325,5 +325,34 @@ it("reaches no terminal without a backend that types", async () => {
   const t = await machine({ terminals: false });
   t.session("terminal", { pane: PANE });
   expect(t.s.target(t.projectId, t.item.id)).toEqual({ kind: "none" });
+  await t.ctx.fiber.dispose();
+});
+
+it("keeps a reviewing agent's findings as comments it is named on, unsent, and all of them or none", async () => {
+  const t = await machine();
+  const inv = { by: "ai:reviewer" as const, projectId: t.projectId };
+  const finding = (over: Partial<ReviewDraft> = {}) => ({ ...t.draft({ body: "  This can be null.  ", ...over }), severity: "warning" as const });
+  const changed: string[] = [];
+  t.ctx.on("changeReview/changed", (_projectId, itemId) => void changed.push(itemId));
+
+  const kept = (await t.ctx.tools.execute("submit_review_findings", { key: t.item.key, findings: [finding(), finding({ line: 9, endLine: 9, body: "And this." })] }, inv)) as ReviewComment[];
+  expect(kept).toMatchObject([
+    { body: "This can be null.", finding: { reviewer: "ai:reviewer", severity: "warning" }, sentAt: null, state: "open" },
+    { body: "And this.", line: 9, finding: { reviewer: "ai:reviewer", severity: "warning" } }
+  ]);
+  expect(changed).toEqual([t.item.id]);
+  // A person's own comment is not a finding, and resolving a finding leaves it one.
+  expect(t.s.add(t.projectId, t.item.id, t.draft()).finding).toBeUndefined();
+  expect(t.s.edit(t.projectId, kept[0].id, { state: "resolved" })?.finding).toEqual(kept[0].finding);
+
+  const before = t.s.comments(t.projectId, t.item.id).length;
+  await expect(t.ctx.tools.execute("submit_review_findings", { key: t.item.key, findings: [finding(), finding({ linkId: "another-ticket's" })] }, inv)).rejects.toThrow("unknown code link");
+  await expect(t.ctx.tools.execute("submit_review_findings", { key: "AL-999", findings: [finding()] }, inv)).rejects.toThrow("unknown ticket");
+  expect(t.s.comments(t.projectId, t.item.id)).toHaveLength(before);
+
+  // Passed on by the person, a finding reaches the ticket's agent as one.
+  const sent = await t.s.send(t.projectId, t.item.id, { deliver: false });
+  expect(sent.text).toContain("found by a reviewing agent (warning)");
+  expect(sent.text).toContain("And this.");
   await t.ctx.fiber.dispose();
 });

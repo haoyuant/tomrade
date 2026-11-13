@@ -17,6 +17,8 @@ export interface DiffComment {
   /** It has been handed to the agent. */
   sent: boolean;
   createdAt: number;
+  /** A reviewing agent found it: who, and how much it matters. */
+  finding?: { reviewer: string; severity: "info" | "warning" | "error" };
 }
 
 /** What a new comment is made of. */

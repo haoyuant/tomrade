@@ -49,9 +49,9 @@ export const ticketChanges = (projectId: string, itemId: string): ChangesSource 
   markReviewed: (opts) => invoke("codeLink.markReviewed", projectId, itemId, opts)
 });
 
-export const scopeValue = (scope: ChangeScope): string => (scope.kind === "commit" ? `commit:${scope.sha}` : scope.kind);
+export const scopeValue = (scope: ChangeScope): string => (scope.kind === "commit" ? `commit:${scope.sha}` : scope.kind === "run" ? `run:${scope.id}` : scope.kind);
 export const scopeOf = (value: string): ChangeScope =>
-  value.startsWith("commit:") ? { kind: "commit", sha: value.slice(7) } : value === "uncommitted" ? { kind: "uncommitted" } : value === "since" ? { kind: "since" } : { kind: "branch" };
+  value.startsWith("run:") ? { kind: "run", id: value.slice(4) } : value.startsWith("commit:") ? { kind: "commit", sha: value.slice(7) } : value === "uncommitted" ? { kind: "uncommitted" } : value === "since" ? { kind: "since" } : { kind: "branch" };
 
 /**
  * One read of a ticket's changes. The last answer stays up while the next is read, so the view keeps its place and

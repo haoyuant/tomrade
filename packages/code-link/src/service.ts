@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -438,6 +439,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   private scans!: GitScan;
   private landing!: Landing;
   private changesReader!: Changes;
+  /** The run an outside session is in, by session: its id, and the tickets it has begun on. */
+  private readonly cliRuns = new Map<string, { id: string; items: Set<string> }>();
+  /** What is still being kept of a session's folder: its next boundary waits for it. */
+  private readonly cliKeeping = new Map<string, Promise<void>>();
   private connections!: Connections;
   private repoConnect!: RepoConnect;
   /** Repositories whose files are being filled in right now, so two triggers do not write at once. */
@@ -487,6 +492,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.ctx.on("db/opened", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.ctx.on("storage/imported", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.sessions = new Sessions(this.ctx, this.store, {
+      onBoundary: (session, event, cwd) => this.cliBoundary(session, event, cwd),
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId, change) => this.notify(projectId, change),
       prefixOf: (projectId) => this.prefixOf(projectId),
@@ -769,6 +775,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.agent.threadOrigins((_projectId, threads) => threads.filter((th) => th.itemId).map((th) => [th.id, this.words()("origin")] as [string, string]));
       // One process on a conversation's session at a time: while its CLI runs in a terminal, nothing starts here.
       ctx.on("agent/before-send", (thread) => this.handoff.refuseSend(thread));
+      ctx.on("agent/run-boundary", async (run, thread, phase, cwd) => {
+        if (!thread.itemId) return;
+        const moved = phase === "before" ? await this.changesReader.startRun(thread.projectId, thread.itemId, run.id, run.engine, cwd) : await this.changesReader.endRun(thread.projectId, run.id);
+        if (moved) this.notify(thread.projectId);
+      });
       ctx.on("agent/run-started", (_run, thread) => {
         this.running.set(thread.id, thread);
         const session = this.sessionOf(thread);
@@ -2192,6 +2203,42 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** A session's own change reaches the renderer as one: it asks again only for what reads sessions, not the project's tickets. */
+  /**
+   * An outside session's turn as a run: begun at its prompt, or at its first tool when no prompt was heard or it took
+   * its ticket since, and over when it stops. A turn that never said it stopped is over when the next begins.
+   */
+  private cliBoundary(session: SessionView, event: "prompt" | "pre-tool" | "stop" | "session-end", cwd: string | null): Promise<void> {
+    // A conversation's own run is kept at the engine's two ends; its hooks would only repeat that.
+    if (session.threadId && this.running.has(session.threadId)) return Promise.resolve();
+    const run = this.cliRuns.get(session.id);
+    const waiting = session.itemIds.filter((itemId) => !run?.items.has(itemId));
+    // Nearly every tool call: nothing to keep, nothing to wait for.
+    if (event === "pre-tool" && run && !waiting.length) return Promise.resolve();
+    const keeping = (this.cliKeeping.get(session.id) ?? Promise.resolve()).then(async () => {
+      const reader = this.changesReader;
+      let open = this.cliRuns.get(session.id);
+      let moved = false;
+      if (open && event !== "pre-tool") {
+        moved = await reader.endRun(session.projectId, open.id);
+        this.cliRuns.delete(session.id);
+        open = undefined;
+      }
+      if (event === "prompt" || event === "pre-tool") {
+        if (!open) this.cliRuns.set(session.id, (open = { id: randomUUID(), items: new Set() }));
+        for (const itemId of session.itemIds) {
+          if (open.items.has(itemId)) continue;
+          open.items.add(itemId);
+          moved = (await reader.startRun(session.projectId, itemId, open.id, session.agent, cwd)) || moved;
+        }
+      }
+      if (moved) this.notify(session.projectId);
+    });
+    const settled = keeping.catch((error) => this.ctx.logger.warn(`run snapshot: ${errorMessage(error)}`));
+    this.cliKeeping.set(session.id, settled);
+    void settled.then(() => this.cliKeeping.get(session.id) === settled && this.cliKeeping.delete(session.id));
+    return settled;
+  }
+
   private notify(projectId: string, session?: SessionChange): void {
     this.home.emit("codeLink/changed", projectId, session);
     if (session) this.home.get("ipc")?.send("codeLink.sessionsChanged", projectId, session === "moved");

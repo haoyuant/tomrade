@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ChangedFile, ChangeHunk, ChangesView } from "@tomradex/code-link";
 import { DiffView } from "../src/components/diff/DiffView";
+import { riskOf } from "../src/components/diff/risk";
 import { markViewed } from "../src/components/diff/viewed";
 
 vi.mock("~/components/icons", () => ({ Icon: () => null }));
@@ -19,7 +20,7 @@ const hunk: ChangeHunk = {
   ]
 };
 const file = (over: Partial<ChangedFile> = {}): ChangedFile => ({ path: "src/total.ts", oldPath: null, status: "modified", additions: 1, deletions: 1, binary: false, generated: false, truncated: false, hunks: [hunk], ...over });
-const changes = (files: ChangedFile[]): ChangesView => ({ linkId: "l", links: [], scopes: ["branch"], commits: [], scope: { kind: "branch" }, base: "aaa", head: "bbb", root: null, files });
+const changes = (files: ChangedFile[]): ChangesView => ({ linkId: "l", links: [], scopes: ["branch"], commits: [], scope: { kind: "branch" }, base: "aaa", head: "bbb", root: null, runs: [], report: null, files });
 const stored = (values: Record<string, string>) => vi.stubGlobal("localStorage", { getItem: (key: string) => values[key] ?? null, setItem() {}, removeItem() {} });
 const render = (view: ChangesView | null, props: { viewedKey?: string; loading?: boolean; ignoreWhitespace?: boolean } = {}) =>
   renderToStaticMarkup(createElement(DiffView, { changes: view, ignoreWhitespace: false, onIgnoreWhitespace() {}, ...props }));
@@ -78,4 +79,20 @@ it("says so when there is nothing to show", () => {
   expect(render(null, { loading: true })).toContain("diff.loading");
   expect(render(null)).toContain("diff.empty");
   expect(render(changes([]), { ignoreWhitespace: true })).toContain("diff.emptyWhitespace");
+});
+
+it("says a run without both of its ends has no diff, where an empty one would say nothing changed", () => {
+  const missing = render({ ...changes([]), unavailable: true, scope: { kind: "run", id: "gone" } });
+  expect(missing).toContain("diff.runUnavailable");
+  expect(missing).not.toContain("diff.empty");
+});
+
+it("labels the files a reviewer should not skim, by their path alone", () => {
+  const html = render(changes([file({ path: "db/migrations/12_users.sql" }), file({ path: "packages/ui/package.json" }), file({ path: "src/new.ts", oldPath: "src/auth/session.ts", status: "renamed" }), file({ path: ".github/workflows/ci.yml" }), file({ path: "src/clock.ts" })]));
+  expect(html.match(/data-testid="diff-risk"/g)).toHaveLength(4);
+  for (const label of ["diff.riskMigration", "diff.riskDependencies", "diff.riskAccess", "diff.riskDeploy"]) expect(html).toContain(label);
+  expect(riskOf("src/clock.ts")).toBeNull();
+  expect(riskOf("docs/authoring.md")).toBeNull();
+  expect(riskOf("pnpm-lock.yaml")).toBe("diff.riskDependencies");
+  expect(riskOf("src/schema.ts")).toBe("diff.riskMigration");
 });

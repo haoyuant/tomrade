@@ -1,5 +1,6 @@
 import { useI18n } from "~/lib/i18n";
 import type { DiffComment, Place } from "./anchors";
+import { FindingTag } from "./DiffComments";
 import { FilePath } from "./DiffFile";
 
 /** A comment as the list names it: where it sits now, or why it sits nowhere. */
@@ -29,6 +30,7 @@ export function CommentsList({ rows, onJump }: { rows: ListedComment[]; onJump: 
             </span>
             {comment.state === "resolved" && <span className="tag faint">{t("diff.commentResolved")}</span>}
             {!place && <span className="tag faint">{t(drawn ? "diff.commentOutdated" : "diff.commentNotInDiff")}</span>}
+            <FindingTag comment={comment} />
             {comment.sent && <span className="tag faint">{t("diff.commentSent")}</span>}
             <span className="diff__comment-brief">{comment.body}</span>
           </button>
