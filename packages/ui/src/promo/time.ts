@@ -1,9 +1,5 @@
-/** The film is a function of the frame: nothing in it reads a clock. */
+/** A film is a function of the frame: nothing in it reads a clock. */
 export const FPS = 60;
-
-/** Where each part starts, in seconds. */
-export const T = { hook: 0, turn: 3.5, board: 4.9, ask: 10.4, night: 13.6, dawn: 16.4, proof: 19.3, end: 22.1, total: 26 };
-export const FRAMES = Math.round(T.total * FPS);
 
 export const clamp = (x: number, low = 0, high = 1): number => Math.min(high, Math.max(low, x));
 export const lerp = (a: number, b: number, u: number): number => a + (b - a) * u;

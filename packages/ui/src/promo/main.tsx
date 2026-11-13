@@ -4,10 +4,10 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { setDomainLocale } from "~/lib/domain";
 import { LocaleWords } from "~/lib/i18n";
-import { cues, type Cue } from "./cues";
-import { Film } from "./Film";
-import { TALL, WIDE, skyTime } from "./stage";
-import { FPS, FRAMES, clamp } from "./time";
+import { Film, type Cue } from "./Film";
+import { FILMS } from "./films";
+import { TALL, WIDE } from "./stage";
+import { FPS, clamp } from "./time";
 import type { Lang } from "./words";
 import "~/styles/app.css";
 import "~/styles/sunrise.css";
@@ -16,11 +16,13 @@ import "./promo.css";
 declare global {
   interface Window {
     /** What the renderer drives: draw frame n, resolved once it is on screen. */
-    __film?: { frames: number; fps: number; width: number; height: number; cues: Cue[]; ready: () => boolean; seek: (frame: number) => Promise<void> };
+    __film?: { films: string[]; poster: number; frames: number; fps: number; width: number; height: number; cues: Cue[]; ready: () => boolean; seek: (frame: number) => Promise<void> };
   }
 }
 
 const params = new URLSearchParams(location.search);
+const film = FILMS.find((one) => one.id === params.get("film")) ?? FILMS[0];
+const FRAMES = Math.round(film.seconds * FPS);
 const f = params.get("format") === "tall" ? TALL : WIDE;
 const lang: Lang = params.get("lang") === "zh" ? "zh" : "en";
 /** Filming: the stage at its own size, one frame at a time. Otherwise the film plays in the window, to look at. */
@@ -41,13 +43,13 @@ function Player() {
     // The sky's lights are CSS animations: held at the film's time, never the clock's.
     for (const animation of document.getAnimations()) {
       animation.pause();
-      animation.currentTime = skyTime(frame / FPS) * 1000;
+      animation.currentTime = film.skyTime(frame / FPS) * 1000;
     }
   });
   useEffect(() => {
     if (!capture) return;
     window.__film = {
-      frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: cues(),
+      films: FILMS.map((one) => one.id), poster: Math.round(film.poster * FPS), frames: FRAMES, fps: FPS, width: f.w, height: f.h, cues: film.cues(lang),
       ready: () => document.querySelector(".film[data-ready]") !== null,
       seek: (n) => new Promise((resolve) => {
         flushSync(() => setFrame(n));
@@ -86,7 +88,7 @@ function Player() {
   return (
     <LocaleWords locale={lang}>
       <div className="film-fit" style={capture ? undefined : { transform: `scale(${fit})`, marginLeft: Math.max(0, (window.innerWidth - f.w * fit) / 2) }}>
-        <Film frame={frame} f={f} lang={lang} />
+        <Film film={film} frame={frame} f={f} lang={lang} />
       </div>
       {capture ? (
         <i className="film-mark" style={{ top: f.h, background: mark(frame) }} />
@@ -94,7 +96,7 @@ function Player() {
         <div className="film-bar">
           <button type="button" onClick={() => setPlaying((on) => !on)}>{playing ? "Pause" : "Play"}</button>
           <input type="range" min={0} max={FRAMES - 1} value={frame} onChange={(e) => { setPlaying(false); setFrame(Number(e.target.value)); }} />
-          <span>{(frame / FPS).toFixed(2)}s · frame {frame}</span>
+          <span>{film.id} · {(frame / FPS).toFixed(2)}s · frame {frame}</span>
         </div>
       )}
     </LocaleWords>

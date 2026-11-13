@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { Format } from "./stage";
-import { ANSWERED, RUN_FROM } from "./sim";
 import { clamp, ease, lerp, span } from "./time";
 import type { Lang } from "./words";
 
@@ -77,28 +76,17 @@ export function Sky({ rise }: { rise: number }) {
   );
 }
 
-type Target = string | [number, number];
-
+export type Target = string | [number, number];
 /** Where the pointer goes: to something on screen named by data-cursor, or to a point as a share of the frame. */
-const ROUTE: { at: number; to: Target }[] = [
-  { at: 11.3, to: [0.9, 1.06] },
-  { at: 12.05, to: "chip" },
-  { at: 12.3, to: "chip" },
-  { at: ANSWERED - 0.06, to: "confirm" },
-  { at: 13.1, to: "confirm" },
-  { at: RUN_FROM - 0.1, to: "autorun" },
-  { at: RUN_FROM + 0.45, to: "autorun" },
-  { at: RUN_FROM + 1.1, to: [1.06, 0.32] }
-];
-export const CLICKS = [12.14, ANSWERED, RUN_FROM];
+export interface Pointer { route: { at: number; to: Target }[]; clicks: number[]; /** When it is gone, if before its route ends. */ until?: number }
 
 /** The person's pointer, over everything. It reads where its targets are drawn this frame, so it follows the camera. */
-export function Cursor({ t, f }: { t: number; f: Format }) {
+export function Cursor({ t, f, route, clicks, until = Infinity }: { t: number; f: Format } & Pointer) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     const stage = el?.parentElement;
-    if (!el || !stage) return;
+    if (!el || !stage || route.length < 2) return;
     const box = stage.getBoundingClientRect();
     const k = box.width / f.w;
     const point = (to: Target): { x: number; y: number } | null => {
@@ -108,18 +96,18 @@ export function Cursor({ t, f }: { t: number; f: Format }) {
       const r = target.getBoundingClientRect();
       return { x: (r.left + r.width * 0.5 - box.left) / k, y: (r.top + r.height * 0.62 - box.top) / k };
     };
-    const next = Math.max(1, ROUTE.findIndex((stop) => stop.at > t));
-    const from = point(ROUTE[next - 1].to);
-    const to = point(ROUTE[next].to);
+    const next = Math.max(1, route.findIndex((stop) => stop.at > t));
+    const from = point(route[next - 1].to);
+    const to = point(route[next].to);
     if (!from || !to) return;
-    const u = ease.inOut(span(t, ROUTE[next - 1].at, ROUTE[next].at));
+    const u = ease.inOut(span(t, route[next - 1].at, route[next].at));
     el.style.transform = `translate3d(${lerp(from.x, to.x, u)}px, ${lerp(from.y, to.y, u)}px, 0)`;
   });
-  if (t < ROUTE[0].at || t > ROUTE[ROUTE.length - 1].at) return null;
-  const click = CLICKS.find((at) => t >= at && t < at + 0.5);
+  if (route.length < 2 || t < route[0].at || t > route[route.length - 1].at || t >= until) return null;
+  const click = clicks.find((at) => t >= at && t < at + 0.5);
   const press = click === undefined ? 0 : Math.sin(Math.PI * span(t, click, click + 0.2));
   return (
-    <div className="film-cursor" ref={ref} aria-hidden="true">
+    <div className="film-cursor" ref={ref} aria-hidden="true" style={until === Infinity ? undefined : { opacity: 1 - span(t, until - 0.3, until) }}>
       {click !== undefined && <i className="film-cursor-ring" style={{ transform: `translate(-50%, -50%) scale(${ease.out(span(t, click, click + 0.5))})`, opacity: 0.6 * (1 - span(t, click, click + 0.5)) }} />}
       <svg width="54" height="73" viewBox="0 0 17 23" style={{ transform: `scale(${1 - 0.14 * press})` }}>
         <path d="M1.5 1.5v16.6l4-3.7 2.7 6.3 2.6-1.1-2.7-6.2h5.5z" />

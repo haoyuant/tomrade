@@ -1,8 +1,8 @@
 /**
- * The promo film's soundtrack, written from the film's own cue list (packages/ui/src/promo/cues.ts): every sound is
- * computed, sample by sample, so it lands on the frame it belongs to and a render is repeatable. A low pad through
- * the night that turns major at dawn, a note for each card that moves (higher the further along the board it lands),
- * a blip for each terminal that stops to ask, and a bell at the end.
+ * A promo film's soundtrack, written from the film's own cue list (packages/ui/src/promo/Film.tsx): every sound is
+ * computed, sample by sample, so it lands on the frame it belongs to and a render is repeatable. A pad under
+ * everything, minor by night and major by day; a note for each card that moves (higher the further along the board
+ * it lands); a tick for each key typed and each line a terminal writes; and a bell at the end.
  */
 const RATE = 48_000;
 const TAU = 2 * Math.PI;
@@ -71,18 +71,27 @@ export function soundtrack(cues, seconds) {
   });
   const click = (at) => voice(at, 0.05, 0.22, 0, 0.1, (t) => Math.exp(-t / 0.006) * Math.sin(TAU * 2100 * t));
 
-  let dawn = seconds;
   let end = seconds;
-  let turn = 0;
+  let turn = null;
+  /** The pad's chord changes with the light: each mood holds until the next. */
+  const moods = [];
   for (const cue of cues) {
-    if (cue.kind === "dawn") dawn = cue.at;
     if (cue.kind === "end") end = cue.at;
-    if (cue.kind === "turn") turn = cue.at;
+    if (cue.kind === "turn") {
+      turn = cue.at;
+      moods.push({ at: cue.at, major: false });
+    }
+    if (cue.kind === "dusk") moods.push({ at: cue.at, major: false });
+    if (cue.kind === "day" || cue.kind === "dawn") moods.push({ at: cue.at, major: true });
   }
-  // The night under everything, then the morning, then the end's chord held to the last frame.
-  voice(0, turn + 0.6, 0.11, 0, 0.3, (t) => Math.min(attack(t, 0.5), attack(turn + 0.6 - t, 0.5)) * (Math.sin(TAU * 55 * t) + 0.5 * Math.sin(TAU * 82.4 * t)));
-  pad(turn, dawn - turn + 1.6, [45, 57, 60, 64, 69], 0.15);
-  pad(dawn, end - dawn + 1.4, [48, 60, 64, 67, 72], 0.17);
+  // A low hum under an opening that has no chord yet.
+  if (turn !== null) voice(0, turn + 0.6, 0.11, 0, 0.3, (t) => Math.min(attack(t, 0.5), attack(turn + 0.6 - t, 0.5)) * (Math.sin(TAU * 55 * t) + 0.5 * Math.sin(TAU * 82.4 * t)));
+  moods.forEach((mood, i) => {
+    const until = moods[i + 1]?.at ?? end;
+    if (mood.major) pad(mood.at, until - mood.at + 1.4, [48, 60, 64, 67, 72], 0.17);
+    else pad(mood.at, until - mood.at + 1.6, [45, 57, 60, 64, 69], 0.15);
+  });
+  // The end's chord, held to the last frame.
   pad(end - 0.2, seconds - end + 0.2, [36, 55, 60, 64, 67, 76], 0.2);
 
   for (const cue of cues) {
@@ -113,6 +122,26 @@ export function soundtrack(cues, seconds) {
       thump(at, 0.42);
       // F, G, then home to C at the end card
       for (const midi of [[53, 57, 60, 65], [55, 59, 62, 67], [57, 60, 64, 69]][n]) pluck(at, note(midi), 0.15, 0);
+    } else if (cue.kind === "key") {
+      // a key: a short tick, never twice quite the same
+      voice(at, 0.03, 0.05, ((n * 7) % 5) / 6 - 0.3, 0.05, (t) => Math.exp(-t / 0.004) * Math.sin(TAU * (1500 + 110 * ((n * 7) % 5)) * t));
+    } else if (cue.kind === "send") {
+      pluck(at, note(76), 0.18, 0.2);
+    } else if (cue.kind === "card") {
+      pluck(at, SCALE[5 + n], 0.24, n / 4 - 0.7);
+    } else if (cue.kind === "back") {
+      // a run taken back comes down the scale
+      whoosh(at - 0.1, 0.7, 0.26, 17);
+      [79, 76, 72, 67, 64].forEach((midi, k) => pluck(at + k * 0.055, note(midi), 0.15, k / 2.5 - 0.8));
+    } else if (cue.kind === "line") {
+      voice(at, 0.14, 0.05, n ? 0.5 : -0.5, 0.2, (t) => attack(t, 0.002) * Math.exp(-t / 0.03) * Math.sin(TAU * note(88 + n * 3) * t));
+    } else if (cue.kind === "swap") {
+      whoosh(at - 0.15, 0.9, 0.26, 19);
+    } else if (cue.kind === "dusk") {
+      whoosh(at, 2.4, 0.3, 23);
+      bell(at + 0.3, note(57), 0.1, 0);
+    } else if (cue.kind === "morning") {
+      [72, 76, 79].forEach((midi, k) => bell(at + k * 0.11, note(midi), 0.12, k - 1));
     } else if (cue.kind === "end") {
       whoosh(at - 0.5, 1.4, 0.3, 13);
       thump(at, 0.5);

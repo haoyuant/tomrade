@@ -1,15 +1,18 @@
 /**
- * Films the promo (packages/ui/src/promo): builds its page, draws every frame in a window that is never shown, and
- * hands the frames to ffmpeg. The page draws a frame from its number alone, and each frame carries its number as a
- * colour the loop reads back, so a frame is taken only once it is the one asked for: a render is repeatable.
+ * Films the promos (packages/ui/src/promo): builds their page, draws every frame in a window that is never shown,
+ * and hands the frames to ffmpeg with the soundtrack written from the film's own cues (promo-sound.mjs). The page
+ * draws a frame from its number alone, and each frame carries its number as a colour the loop reads back, so a frame
+ * is taken only once it is the one asked for: a render is repeatable.
  *
- *   pnpm promo                                    both cuts, English, into out/promo/
+ *   pnpm promo                                    every film, both cuts, English, into out/promo/
+ *   pnpm promo --film=main,night                  only these films (the page lists them: films.ts)
  *   pnpm promo --format=tall --locale=zh          one cut (wide | tall), one language (en | zh)
  *   pnpm promo --still=12.5,18                    frames of each cut as PNGs, by their second
- *   pnpm promo --frames=300-480 --no-build        a part of it, from the page already built
- *   pnpm promo --sound                            a second file of each cut with the soundtrack (promo-sound.mjs)
+ *   pnpm promo --frames=300-480 --no-build        a part of it, silent, from the page already built
+ *   pnpm promo --silent                           without the soundtrack
  *
- * Needs ffmpeg on the PATH. `pnpm promo:preview` plays the page in a browser (?format=tall, ?lang=zh, space, arrows).
+ * Needs ffmpeg on the PATH. `pnpm promo:preview` plays the page in a browser (?film=main, ?format=tall, ?lang=zh,
+ * space, arrows).
  */
 import { app, BrowserWindow, nativeImage } from "electron";
 import { spawn, spawnSync } from "node:child_process";
@@ -41,7 +44,16 @@ function markOf(bitmap, pxW, k, height) {
   return (digit(bitmap[at + 2]) << 8) | (digit(bitmap[at + 1]) << 4) | digit(bitmap[at]);
 }
 
-async function film(format) {
+/** The films the page knows. */
+async function filmsOf() {
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+  await win.loadFile(page, { query: { capture: "1" } });
+  const films = await win.webContents.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve(window.__film.films) : setTimeout(wait, 30)); wait(); })");
+  win.destroy();
+  return films;
+}
+
+async function film(id, format) {
   const win = new BrowserWindow({ show: false, frame: false, useContentSize: true, width: 800, height: 600, webPreferences: { offscreen: true, backgroundThrottling: false } });
   const wc = win.webContents;
   wc.setFrameRate(60);
@@ -52,8 +64,8 @@ async function film(format) {
     painted = { bitmap: image.toBitmap(), size: image.getSize() };
     wake();
   });
-  await win.loadFile(page, { query: { capture: "1", format, lang: locale } });
-  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues }) : setTimeout(wait, 30)); wait(); })");
+  await win.loadFile(page, { query: { capture: "1", film: id, format, lang: locale } });
+  const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues }) : setTimeout(wait, 30)); wait(); })");
   win.setContentSize(info.width, info.height + MARK_ROWS);
   await wc.executeJavaScript("document.fonts.ready.then(() => new Promise((resolve) => { const wait = () => (window.__film.ready() ? resolve(true) : setTimeout(wait, 30)); wait(); }))");
   await sleep(300);
@@ -78,21 +90,24 @@ async function film(format) {
   };
 
   fs.mkdirSync(out, { recursive: true });
-  const name = `tomrade-promo-${format}-${locale}`;
+  const png = ({ bitmap, pxW, pxH }) => nativeImage.createFromBitmap(bitmap.subarray(0, pxW * pxH * 4), { width: pxW, height: pxH }).toPNG();
+  const name = `tomrade-${id}-${format}-${locale}`;
   if (still !== undefined) {
     for (const second of still.split(",")) {
-      const { bitmap, pxW, pxH } = await frameAt(Math.min(info.frames - 1, Math.round(Number(second) * info.fps)));
       const file = path.join(out, `${name}-${second.replace(".", "_")}s.png`);
-      fs.writeFileSync(file, nativeImage.createFromBitmap(bitmap.subarray(0, pxW * pxH * 4), { width: pxW, height: pxH }).toPNG());
+      fs.writeFileSync(file, png(await frameAt(Math.min(info.frames - 1, Math.round(Number(second) * info.fps)))));
       console.log(file);
     }
     win.destroy();
     return;
   }
 
+  if (!flag("frames")) fs.writeFileSync(path.join(out, `${name}-poster.png`), png(await frameAt(info.poster)));
   const [first, last] = (flag("frames") ?? `0-${info.frames - 1}`).split("-").map(Number);
   const scale = Number(flag("scale") ?? 1);
   const file = path.join(out, `${name}.mp4`);
+  const sound = !process.argv.includes("--silent") && !flag("frames");
+  const picture = sound ? path.join(out, `${name}.picture.mp4`) : file;
   let ffmpeg = null;
   const started = Date.now();
   for (let n = first; n <= Math.min(last, info.frames - 1); n += 1) {
@@ -102,26 +117,25 @@ async function film(format) {
         "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", `${pxW}x${pxH}`, "-r", String(info.fps), "-i", "-",
         "-vf", `scale=${info.width * scale}:${info.height * scale}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p`,
         "-c:v", "libx264", "-preset", "slow", "-crf", "15", "-profile:v", "high",
-        "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-movflags", "+faststart", file
+        "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-movflags", "+faststart", picture
       ], { stdio: ["pipe", "inherit", "inherit"] });
     }
     if (!ffmpeg.stdin.write(bitmap.subarray(0, pxW * pxH * 4))) await once(ffmpeg.stdin, "drain");
-    if ((n - first) % 120 === 0) console.log(`${format} ${locale}: frame ${n} of ${last}, ${((Date.now() - started) / 1000).toFixed(0)}s`);
+    if ((n - first) % 300 === 0) console.log(`${id} ${format} ${locale}: frame ${n} of ${last}, ${((Date.now() - started) / 1000).toFixed(0)}s`);
   }
   ffmpeg.stdin.end();
   const [code] = await once(ffmpeg, "exit");
   if (code !== 0) throw new Error(`ffmpeg left with ${code}`);
-  console.log(file);
   win.destroy();
-  if (process.argv.includes("--sound") && !flag("frames")) {
+  if (sound) {
     const wav = path.join(out, `${name}.wav`);
-    const sounded = path.join(out, `${name}-sound.mp4`);
     fs.writeFileSync(wav, soundtrack(info.cues, info.frames / info.fps));
-    const mux = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", sounded], { stdio: "inherit" });
+    const mux = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", picture, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file], { stdio: "inherit" });
     if (mux.status !== 0) throw new Error("ffmpeg could not add the soundtrack");
     fs.rmSync(wav);
-    console.log(sounded);
+    fs.rmSync(picture);
   }
+  console.log(file);
 }
 
 app.whenReady().then(async () => {
@@ -129,7 +143,11 @@ app.whenReady().then(async () => {
     const built = spawnSync("pnpm", ["run", "promo:build"], { cwd: path.join(repo, "packages/ui"), stdio: "inherit" });
     if (built.status !== 0) throw new Error("the promo page did not build");
   }
-  for (const format of formats) await film(format);
+  const known = await filmsOf();
+  const films = flag("film")?.split(",") ?? known;
+  const unknown = films.filter((id) => !known.includes(id));
+  if (unknown.length) throw new Error(`no such film: ${unknown.join(", ")} (there are ${known.join(", ")})`);
+  for (const id of films) for (const format of formats) await film(id, format);
   app.quit();
 }).catch((error) => {
   console.error(error);

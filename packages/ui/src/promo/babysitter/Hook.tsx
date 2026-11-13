@@ -1,8 +1,11 @@
-import { flight, type Measures, type Paths } from "./Board";
-import { Caption } from "./parts";
-import { PANE_AT, type Format } from "./stage";
-import { T, clamp, ease, noise, span } from "./time";
-import { CAPTIONS, CODE_WORDS, PANES, type Lang } from "./words";
+import { Caption } from "../parts";
+import type { Format } from "../stage";
+import { clamp, ease, noise, span } from "../time";
+import { CODE_WORDS, type Lang } from "../words";
+import type { Measures, Paths } from "../Window";
+import { flight } from "./Board";
+import { LAYOUT, PANE_AT, T } from "./stage";
+import { CAPTIONS, PANES } from "./words";
 
 /** A terminal's height against its width. */
 const RATIO = 0.36;
@@ -14,10 +17,11 @@ const RATIO = 0.36;
 export function Hook({ t, f, lang, at, measures }: { t: number; f: Format; lang: Lang; at: Paths; measures: Measures }) {
   if (t > T.board + 0.6) return null;
   const words = CAPTIONS[lang];
+  const { hook, pane: pile } = LAYOUT[f.id];
   const arrived = PANE_AT.filter((born) => t >= born).length;
   // Each arrival knocks the pile, less each moment after.
   const knock = (axis: number) => PANE_AT.reduce((sum, born, n) => (t < born ? sum : sum + Math.exp(-(t - born) * 11) * 9 * Math.sin((t - born) * 58 + n * 2 + axis)), 0);
-  const line = f.hook.size * 1.1;
+  const line = hook.size * 1.1;
   const out = T.turn + 0.12;
   const count = arrived > 0 && t < T.turn + 0.3;
   const bump = arrived > 0 ? 1 + 0.16 * Math.exp(-(t - PANE_AT[arrived - 1]) * 9) : 1;
@@ -30,7 +34,7 @@ export function Hook({ t, f, lang, at, measures }: { t: number; f: Format; lang:
           const fly = flight(n, t, f, at, measures);
           if (fly.card >= 1) return null;
           const land = ease.back(span(t, born, born + 0.42));
-          const w = f.pane.w;
+          const w = pile.w;
           const h = w * RATIO;
           // The caret blinks out of step from one terminal to the next.
           const caret = Math.floor((t - born) * 2.4 + noise(n) * 2) % 2 === 0;
@@ -50,15 +54,15 @@ export function Hook({ t, f, lang, at, measures }: { t: number; f: Format; lang:
         })}
       </div>
       {count && (
-        <div className="film-count" style={{ left: f.pane.count[0], top: f.pane.count[1], opacity: 1 - span(t, T.turn, T.turn + 0.25), transform: `translate(-50%, -50%) scale(${bump})` }}>
+        <div className="film-count" style={{ left: pile.count[0], top: pile.count[1], opacity: 1 - span(t, T.turn, T.turn + 0.25), transform: `translate(-50%, -50%) scale(${bump})` }}>
           <i />
           <span className="num">{arrived}</span>
           <span>{CODE_WORDS[lang].waitingForYou}</span>
         </div>
       )}
-      <Caption t={t} at={-0.3} until={out} text={words.hook1} lang={lang} x={f.hook.x} y={f.hook.y} size={f.hook.size} width={f.w} />
-      <Caption t={t} at={1.5} until={out} text={words.hook2} lang={lang} x={f.hook.x} y={f.hook.y + line} size={f.hook.size} width={f.w} />
-      <Caption t={t} at={2.5} until={out} text={words.hook3} lang={lang} x={f.hook.x} y={f.hook.y + 2 * line} size={f.hook.size} width={f.w} />
+      <Caption t={t} at={-0.3} until={out} text={words.hook1} lang={lang} x={hook.x} y={hook.y} size={hook.size} width={f.w} />
+      <Caption t={t} at={1.5} until={out} text={words.hook2} lang={lang} x={hook.x} y={hook.y + line} size={hook.size} width={f.w} />
+      <Caption t={t} at={2.5} until={out} text={words.hook3} lang={lang} x={hook.x} y={hook.y + 2 * line} size={hook.size} width={f.w} />
     </>
   );
 }

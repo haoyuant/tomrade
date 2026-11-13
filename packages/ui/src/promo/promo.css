@@ -164,3 +164,43 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
   box-shadow: inset 0 1px 0 var(--sun-sheen), 0 14px 36px -14px var(--sun-glow);
 }
 .film-fine { position: absolute; left: 0; right: 0; z-index: 3; text-align: center; font-family: var(--font-display); font-weight: 500; letter-spacing: 0.02em; color: var(--muted); }
+
+/* ─── the day's films: the assistant, the terminal, the graph ────────── */
+.film-band { position: absolute; inset: 0; z-index: 2; }
+.film-day .film-main, .film-clip { overflow: hidden; }
+/* The assistant folds to its rail: the panel keeps its width and slides out of a narrowing frame. */
+.film-fold { display: flex; flex-shrink: 0; overflow: hidden; }
+.film-chat.ai { max-width: none; }
+.film-chat > .ai-scroll { display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.film-chat-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); }
+.film-chat-input { min-height: 1.4em; white-space: pre-wrap; }
+.film-chat-hint { color: var(--meta); }
+.film-chat-caret { display: inline-block; width: 1.5px; height: 1.15em; margin-left: 1px; vertical-align: -0.2em; background: var(--accent); }
+.film-chat .ai-composer.is-typing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.film-term {
+  position: absolute; z-index: 5; display: flex; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 0.7em; background: var(--surface);
+  box-shadow: var(--elev-raised), 0 1.6em 3.4em -1.2em var(--film-window-shade);
+  font-family: var(--font-mono);
+}
+.film-term.is-rows { flex-direction: column; }
+.film-term-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.film-term-pane + .film-term-pane { border-left: 1px solid var(--border); }
+.film-term.is-rows .film-term-pane + .film-term-pane { border-left: 0; border-top: 1px solid var(--border); }
+.film-term-lines { flex: 1; padding: 0.45em 0.55em; }
+.film-term-line { padding: 0.1em 0.42em; border-radius: 0.3em; line-height: 1.5; color: var(--fg-2); white-space: nowrap; }
+.film-term-line b { margin-right: 0.6em; font-weight: 400; color: var(--accent); }
+.film-term-line em { font-style: normal; font-weight: 600; color: var(--accent); }
+.film-term-line.is-typed { color: var(--fg); }
+.film-term-line.is-good, .film-term-line.is-good b { color: var(--success); }
+.film-pane-dot.is-running { background: var(--success); }
+
+.film-graph { overflow: hidden; }
+.film-graph-canvas { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
+.film-graph-canvas > svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.film-node { position: absolute; transform-origin: 50% 50%; }
+.film-node.is-lit .card {
+  border-color: color-mix(in srgb, var(--accent) calc(70% * var(--lit)), var(--border));
+  box-shadow: var(--elev-raised), 0 0 0 calc(2px * var(--lit)) var(--accent), 0 12px 30px -12px var(--sun-glow);
+}
