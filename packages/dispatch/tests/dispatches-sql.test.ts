@@ -31,7 +31,7 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
   `);
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
-  for (const name of ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql"]) await db.exec(migration(name));
+  for (const name of ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql", "202611140001_dispatch_roles.sql"]) await db.exec(migration(name));
   // Alice subscribes: three machines. Bob has one.
   await db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', null)", [alice]);
   await actor(alice);
@@ -100,6 +100,72 @@ it("is no longer on offer once its time has run out, and makes room for the next
   expect(next.id).not.toBe(sent.id);
   expect((await db.query<{ state: string; reason: string }>("select state, reason from public.tomrade_dispatches where id = $1", [sent.id])).rows[0]).toEqual({ state: "cancelled", reason: "expired" });
   await cancel(next.id);
+});
+
+it("carries the id of a role, and nothing a role says", async () => {
+  await actor(alice);
+  const sent = await create("mac-0001", "win-0001", "TOM-20", { wish: { role: "1f0e9a7c-0000-4000-8000-000000000001", engine: "codex" } });
+  expect(sent.wish).toEqual({ role: "1f0e9a7c-0000-4000-8000-000000000001", engine: "codex" });
+  await cancel(sent.id);
+  await expect(create("mac-0001", "win-0001", "TOM-21", { wish: { role: "no spaces allowed" } })).rejects.toThrow(/Invalid dispatch/);
+  await expect(create("mac-0001", "win-0001", "TOM-21", { wish: { role: { id: "x" } } })).rejects.toThrow(/Invalid dispatch/);
+  await expect(create("mac-0001", "win-0001", "TOM-21", { wish: { role: "careful", instructions: "anything" } })).rejects.toThrow(/Invalid dispatch/);
+});
+
+it("puts a request back when the machine that took it stops before the work starts", async () => {
+  await actor(alice);
+  const sent = await create("mac-0001", null, "TOM-22", { platform: "win32" });
+  expect(await claim(sent.id, "win-0001")).toMatchObject({ state: "accepted", claimed_by: "win-0001" });
+  // only the machine that holds it puts it back
+  await expect(update(sent.id, "win-0002", "queued")).rejects.toThrow(/cannot go to queued/);
+  expect(await update(sent.id, "win-0001", "queued", "ignored")).toMatchObject({ state: "queued", claimed_by: null, reason: null });
+  // and the other machine of the platform may take it now
+  expect(await claim(sent.id, "win-0002")).toMatchObject({ state: "accepted", claimed_by: "win-0002" });
+  expect(await update(sent.id, "win-0002", "running")).toMatchObject({ state: "running" });
+  // once the work runs there is no putting it back
+  await expect(update(sent.id, "win-0002", "queued")).rejects.toThrow(/cannot go to queued/);
+  await cancel(sent.id);
+});
+
+it("lets the next machine take a request whose taker went quiet before starting, and never one that runs", async () => {
+  await actor(alice);
+  const sent = await create("mac-0001", null, "TOM-23", { platform: "win32" });
+  expect(await claim(sent.id, "win-0001")).toMatchObject({ claimed_by: "win-0001" });
+  // a claim just made is the claimer's
+  expect(await claim(sent.id, "win-0002")).toBeNull();
+  const age = async (minutes: number) => {
+    await db.exec("reset role");
+    await db.query("update public.tomrade_dispatches set updated_at = now() - make_interval(mins => $2) where id = $1", [sent.id, minutes]);
+    await actor(alice);
+  };
+  await age(4);
+  expect(await claim(sent.id, "win-0002")).toBeNull();
+  // saying it is still at it keeps the claim
+  await age(6);
+  expect(await update(sent.id, "win-0001", "accepted")).toMatchObject({ state: "accepted", claimed_by: "win-0001" });
+  expect(await claim(sent.id, "win-0002")).toBeNull();
+  // quiet for longer than a machine may be: of the two that ask at once, one gets it
+  await age(6);
+  expect(await claim(sent.id, "mac-0001")).toBeNull();
+  const taken = await Promise.all([claim(sent.id, "win-0002"), claim(sent.id, "win-0001")]);
+  expect(taken.filter(Boolean)).toHaveLength(1);
+  const holder = taken.find(Boolean)!.claimed_by!;
+  expect(await update(sent.id, holder, "running")).toMatchObject({ state: "running" });
+  // running, however long ago it was last heard of, is nobody else's to take
+  await age(600);
+  expect(await claim(sent.id, holder === "win-0001" ? "win-0002" : "win-0001")).toBeNull();
+  expect(await claim(sent.id, holder)).toBeNull();
+  await cancel(sent.id);
+
+  // one made for a single machine is that machine's alone, quiet or not
+  const named = await create("mac-0001", "win-0001", "TOM-24");
+  expect(await claim(named.id, "win-0001")).toBeTruthy();
+  await db.exec("reset role");
+  await db.query("update public.tomrade_dispatches set updated_at = now() - interval '1 hour' where id = $1", [named.id]);
+  await actor(alice);
+  expect(await claim(named.id, "win-0002")).toBeNull();
+  expect(await claim(named.id, "win-0001")).toMatchObject({ state: "accepted", claimed_by: "win-0001" });
+  await cancel(named.id);
 });
 
 it("is the account's alone, between machines that hold a place, with nothing but the fields it names", async () => {

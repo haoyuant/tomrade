@@ -71,7 +71,8 @@ const Decision = z.object({
 const SendInput = z.object({
   projectId: z.string().min(1).max(64), itemId: z.string().min(1).max(64),
   to: z.string().min(1).max(64).optional(), platform: z.string().regex(/^[a-z0-9]{1,16}$/).optional(),
-  engine: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional(), permissionMode: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/).optional()
+  engine: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional(), permissionMode: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/).optional(),
+  role: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional()
 });
 /** How many requests the record keeps. */
 const KEPT = 200;
