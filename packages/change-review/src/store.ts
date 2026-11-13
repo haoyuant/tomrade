@@ -24,12 +24,39 @@ CREATE INDEX IF NOT EXISTS idx_plugin_changereview_comments_item ON plugin_chang
 `
   },
   // A comment a reviewing agent made: who, in which run, and how much it matters.
-  { version: 2, up: "ALTER TABLE plugin_changereview_comments ADD COLUMN finding TEXT" }
+  { version: 2, up: "ALTER TABLE plugin_changereview_comments ADD COLUMN finding TEXT" },
+  // A review an agent made of a ticket's changes in a conversation of its own: what it read, and what came of it.
+  {
+    version: 3,
+    up: `
+CREATE TABLE IF NOT EXISTS plugin_changereview_reviews (
+  id         TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  item_id    TEXT NOT NULL,
+  delivery   INTEGER NOT NULL,
+  engine     TEXT NOT NULL,
+  same       INTEGER NOT NULL DEFAULT 0,
+  thread_id  TEXT NOT NULL,
+  heads      TEXT NOT NULL,
+  asked_by   TEXT NOT NULL,
+  state      TEXT NOT NULL DEFAULT 'running',
+  findings   INTEGER,
+  error      TEXT,
+  handed_at  INTEGER,
+  held       INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL,
+  ended_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_changereview_reviews_item ON plugin_changereview_reviews(item_id);
+CREATE INDEX IF NOT EXISTS idx_plugin_changereview_reviews_thread ON plugin_changereview_reviews(thread_id);
+`
+  }
 ];
 
 /** This machine's review of a checkout that is here: another machine sees other lines, and has its own agent to tell. */
 export const TABLES = {
-  plugin_changereview_comments: { project: "project_id", export: false }
+  plugin_changereview_comments: { project: "project_id", export: false },
+  plugin_changereview_reviews: { project: "project_id", export: false }
 } as const;
 
 export type ReviewSide = "old" | "new";
@@ -43,7 +70,39 @@ export interface ReviewFinding {
   reviewer: string;
   /** The run it was found in, when a conversation here found it. */
   runId?: string;
+  /** The review it belongs to, when Tomrade started that review: the finding then ages with it. */
+  reviewId?: string;
   severity: ReviewSeverity;
+}
+
+/** `running` while its conversation works or waits on the person; `failed` when it stopped on an error or with the app. */
+export type AgentReviewState = "running" | "done" | "failed" | "cancelled";
+
+/** One review of a ticket's changes by an agent, in a conversation that works nothing else. */
+export interface AgentReview {
+  id: string;
+  itemId: string;
+  /** The ticket's delivery it reviewed, one-based. */
+  delivery: number;
+  /** The engine that reviewed. */
+  engine: string;
+  /** The engine that wrote the change reviewed it: no other one was ready. */
+  same: boolean;
+  threadId: string;
+  /** For each code link it read, the tip it read and the tip Tomrade had last seen then. */
+  heads: Record<string, { head: string | null; seen: string | null }>;
+  /** `person`: someone asked for it. `auto`: the ticket was delivered and reviews start by themselves. */
+  askedBy: "person" | "auto";
+  state: AgentReviewState;
+  /** How many findings it left; null until it is over. */
+  findings: number | null;
+  error: string | null;
+  /** When its findings went to the session working the ticket by themselves; null when they wait on the person. */
+  handedAt: number | null;
+  /** Its findings wait on the person: the back and forth reached its limit, or no session could be told. */
+  held: boolean;
+  startedAt: number;
+  endedAt: number | null;
 }
 
 /** A comment on a line, or a run of lines, of a ticket's diff: a person's, or a reviewing agent's finding. */
@@ -64,6 +123,8 @@ export interface ReviewComment {
   sentAt: number | null;
   /** Present on an agent's finding, and kept through every edit of it. */
   finding?: ReviewFinding;
+  /** In a listing: a finding of a review whose branch has moved since, so it speaks of older code. */
+  stale?: boolean;
 }
 
 /** What a new comment says of itself; the rest is the store's. */
@@ -101,6 +162,42 @@ const toComment = (r: Row): ReviewComment => ({
   updatedAt: r.updated_at,
   sentAt: r.sent_at,
   ...(r.finding ? { finding: JSON.parse(r.finding) as ReviewFinding } : {})
+});
+
+interface ReviewRow {
+  id: string;
+  item_id: string;
+  delivery: number;
+  engine: string;
+  same: number;
+  thread_id: string;
+  heads: string;
+  asked_by: string;
+  state: string;
+  findings: number | null;
+  error: string | null;
+  handed_at: number | null;
+  held: number;
+  started_at: number;
+  ended_at: number | null;
+}
+
+const toReview = (r: ReviewRow): AgentReview => ({
+  id: r.id,
+  itemId: r.item_id,
+  delivery: r.delivery,
+  engine: r.engine,
+  same: r.same === 1,
+  threadId: r.thread_id,
+  heads: JSON.parse(r.heads) as AgentReview["heads"],
+  askedBy: r.asked_by as AgentReview["askedBy"],
+  state: r.state as AgentReviewState,
+  findings: r.findings,
+  error: r.error,
+  handedAt: r.handed_at,
+  held: r.held === 1,
+  startedAt: r.started_at,
+  endedAt: r.ended_at
 });
 
 export class ReviewStore {
@@ -141,5 +238,50 @@ export class ReviewStore {
     db.transaction(() => {
       for (const id of ids) stamp.run(at, id);
     });
+  }
+
+  /** A ticket's agent reviews, newest first. */
+  reviews(projectId: string, itemId: string): AgentReview[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE item_id = ? ORDER BY started_at DESC, rowid DESC").all(itemId) as ReviewRow[]).map(toReview);
+  }
+
+  review(projectId: string, id: string): AgentReview | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE id = ?").get(id) as ReviewRow | undefined;
+    return row ? toReview(row) : null;
+  }
+
+  /** The review a conversation is, when it is one. */
+  reviewOfThread(projectId: string, threadId: string): AgentReview | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE thread_id = ?").get(threadId) as ReviewRow | undefined;
+    return row ? toReview(row) : null;
+  }
+
+  /** Every review of the project that is not over. */
+  runningReviews(projectId: string): AgentReview[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE state = 'running' ORDER BY started_at ASC").all() as ReviewRow[]).map(toReview);
+  }
+
+  /** Every review of the project whose findings wait on the person. */
+  heldReviews(projectId: string): AgentReview[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE held = 1 ORDER BY started_at ASC").all() as ReviewRow[]).map(toReview);
+  }
+
+  addReview(projectId: string, review: Pick<AgentReview, "id" | "itemId" | "delivery" | "engine" | "same" | "threadId" | "heads" | "askedBy" | "startedAt">): AgentReview {
+    this.db(projectId)
+      .prepare("INSERT INTO plugin_changereview_reviews (id, project_id, item_id, delivery, engine, same, thread_id, heads, asked_by, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(review.id, projectId, review.itemId, review.delivery, review.engine, review.same ? 1 : 0, review.threadId, JSON.stringify(review.heads), review.askedBy, review.startedAt);
+    return this.review(projectId, review.id)!;
+  }
+
+  patchReview(projectId: string, id: string, patch: Partial<Pick<AgentReview, "state" | "findings" | "error" | "handedAt" | "held" | "endedAt">>): void {
+    const cols: [string, unknown][] = [];
+    if (patch.state !== undefined) cols.push(["state", patch.state]);
+    if (patch.findings !== undefined) cols.push(["findings", patch.findings]);
+    if (patch.error !== undefined) cols.push(["error", patch.error]);
+    if (patch.handedAt !== undefined) cols.push(["handed_at", patch.handedAt]);
+    if (patch.held !== undefined) cols.push(["held", patch.held ? 1 : 0]);
+    if (patch.endedAt !== undefined) cols.push(["ended_at", patch.endedAt]);
+    if (!cols.length) return;
+    this.db(projectId).prepare(`UPDATE plugin_changereview_reviews SET ${cols.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`).run(...cols.map(([, v]) => v), id);
   }
 }

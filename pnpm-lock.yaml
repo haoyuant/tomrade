@@ -689,6 +689,9 @@ importers:
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
+      '@tomradex/dispatch':
+        specifier: workspace:*
+        version: link:../dispatch
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -701,6 +704,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
@@ -720,9 +726,6 @@ importers:
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../repos
-      '@tomradex/settings':
-        specifier: workspace:*
-        version: link:../settings
       '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage

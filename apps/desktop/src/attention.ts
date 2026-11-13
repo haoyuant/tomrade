@@ -3,6 +3,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import { PANEL_SURFACES, type RunView, type ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
+import type {} from "@tomradex/change-review";
 import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
@@ -423,6 +424,14 @@ export const attention = {
           who: engineTitle(notice.agent), text: clip(notice.text), sessionId: notice.sessionId
         });
       }
+      // an agent review's findings that wait on the person: nobody could be told, or the back and forth had its rounds
+      for (const notice of ctx.get("changeReview")?.notices() ?? []) {
+        const key = `review:${notice.key}`;
+        out.set(key, {
+          key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "waiting",
+          who: engineTitle(notice.agent), text: clip(notice.text)
+        });
+      }
       // what the watchdog suspects of a run; a wait of its own already says more
       for (const notice of ctx.get("watchdog")?.notices() ?? []) {
         const key = `thread:${notice.threadId}`;
@@ -557,6 +566,7 @@ export const attention = {
     });
     ctx.on("codeLink/changed", schedule);
     ctx.on("prFeedback/changed", schedule);
+    ctx.on("changeReview/changed", schedule);
     ctx.on("watchdog/changed", schedule);
     ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);

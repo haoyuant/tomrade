@@ -68,7 +68,7 @@ export function registerReviewTools(ctx: Context): void {
       }),
       execute: (args, inv) => {
         const projectId = requireProjectId("submit_review_findings", args.projectId, inv);
-        return ctx.changeReview.addFindings(projectId, ticket(ctx, projectId, args.key).id, args.findings, { reviewer: inv.by, ...(inv.run ? { runId: inv.run.id } : {}) });
+        return ctx.changeReview.submitFindings(projectId, ticket(ctx, projectId, args.key).id, args.findings, { by: inv.by, ...(inv.run ? { run: { id: inv.run.id, threadId: inv.run.threadId } } : {}), ...(inv.connection ? { connection: inv.connection } : {}) });
       }
     })
   );
