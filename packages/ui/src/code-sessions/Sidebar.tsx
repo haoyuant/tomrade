@@ -65,74 +65,23 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
   );
 }
 
-/** What ran in a pane before what it shows now, oldest first: each opens in a pane as an ended session. Not indented: each says the place it ran in, as its pane's card does. */
-function PaneTimeline({ open, past, where, locale, selected, onPick }: { open: boolean; past: SessionRow[]; where: string; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
-  const say = useSay();
-  const day = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
-  return (
-    <Collapse as="ol" open={open} className="cs-list cs-timeline" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
-      {past.map((s) => (
-        <li key={s.id}>
-          <button type="button" className="cs-row" data-status="done" data-ended aria-current={selected.has(s.id) ? "true" : undefined} title={say("pickHint", { mod: MOD })} onClick={(e) => onPick(s, besideClick(e))}>
-            <span className="cs-row-head">
-              <span className={s.key ? "cs-row-name mono" : "cs-row-name"}>{s.key ?? s.conversation ?? sessionName(s)}</span>
-              <span className="cs-where">{say("paneEarlierWhere", { where })}</span>
-            </span>
-            {s.key && s.title && <span className="cs-row-title">{s.title}</span>}
-            <span className="cs-row-meta">{`${s.agentName ?? s.agent} · ${day(s.startedAt)}–${s.endedAt ? hour(s.endedAt) : ""}`}</span>
-          </button>
-        </li>
-      ))}
-    </Collapse>
-  );
-}
-
 /**
  * The bar's cards, one each: a session in a pane of its own, a terminal opened here — read as the ticket its agent
  * claimed, else as what the agent calls the conversation, else as its folder — or an assistant conversation, which opens
  * in the app window. The tickets one agent works in one pane come as a bundle; the ones its cell does not show are marked
  * as on that pane, apart from the one it does. A permission its agent declared the keys for is answered under its card.
  */
-function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; history: WindowState["history"]; locale: string; marks: Marks; picks: Picks }) {
+function HereList({ rows, marks, picks }: { rows: HereRow[]; marks: Marks; picks: Picks }) {
   const say = useSay();
   const words = useWords();
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   // The last few to end wait folded under the rest; one a cell shows stays where it was.
   const [endedOpen, setEndedOpen] = useState(false);
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
   const { active, selected, shownPanes, selectedPane, pane } = marks;
   const ended = rows.filter((r) => statusOf(r) === "done" && !has(active, r));
   const going = rows.filter((r) => !ended.includes(r));
-  // A pane that ran sessions before folds open to them from a line under its card, as the assistant panel's bar folds what just ended: the cards keep their full width.
-  const pastOf = (r: HereRow) => {
-    const at = paneOf(r);
-    return at ? (history[at] ?? []) : [];
-  };
-  const toggle = (at: string) =>
-    setUnfolded((now) => {
-      const next = new Set(now);
-      if (!next.delete(at)) next.add(at);
-      return next;
-    });
-  const earlier = (r: HereRow) => {
-    const at = paneOf(r);
-    const past = pastOf(r);
-    if (!at || !past.length) return null;
-    const label = say("paneEarlierCount", { n: past.length });
-    return (
-      <>
-        <span className="fold-row cs-fold-row">
-          <FoldChevron open={unfolded.has(at)} label={label} testId="cs-pane-history" onToggle={() => toggle(at)} />
-          <span className="cs-bundle-head">{label}</span>
-        </span>
-        <PaneTimeline open={unfolded.has(at)} past={past} where={whereOf(r, cellOf(marks.cells, r), say)} locale={locale} selected={selected} onPick={picks.onSession} />
-      </>
-    );
-  };
   const open = (r: HereRow, e: React.MouseEvent) => openRow(picks, r, besideClick(e));
-  /** `lead`: the row speaks for its pane (alone on it), so the pane's history folds from it. */
-  const item = (r: HereRow, lead = true) => {
+  const item = (r: HereRow) => {
     const s = r.session;
     const status = statusOf(r);
     const current = has(selected, r);
@@ -183,10 +132,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
       } />
     );
     return (
-      <li key={r.id}>
-        {card}
-        {lead && earlier(r)}
-      </li>
+      <li key={r.id}>{card}</li>
     );
   };
   return (
@@ -199,8 +145,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
             <span className="cs-bundle-head" title={say("samePaneHint")}>
               {say("samePane", { n: group.length })}
             </span>
-            {earlier(group[0]!)}
-            <ul className="cs-list">{group.map((r) => item(r, false))}</ul>
+            <ul className="cs-list">{group.map((r) => item(r))}</ul>
           </li>
         );
       })}
@@ -210,7 +155,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
             <FoldChevron open={endedOpen} label={say("justEnded", { n: ended.length })} testId="cs-ended-fold" onToggle={() => setEndedOpen((o) => !o)} />
             <span className="cs-bundle-head">{say("justEnded", { n: ended.length })}</span>
           </span>
-          <Collapse as="ul" open={endedOpen} className="cs-list">{ended.map((r) => item(r, false))}</Collapse>
+          <Collapse as="ul" open={endedOpen} className="cs-list">{ended.map((r) => item(r))}</Collapse>
         </li>
       )}
     </ul>
@@ -530,7 +475,7 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
         </>
       ) : (
         <>
-          {(rows.here.length > 0 || !rows.away.length) && <HereList rows={rows.here} history={state.history} locale={locale} marks={marks} picks={picks} />}
+          {(rows.here.length > 0 || !rows.away.length) && <HereList rows={rows.here} marks={marks} picks={picks} />}
           <OutsideGroup sessions={rows.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={awayList} />
           <Layouts presets={state.presets} defaultPreset={state.defaultPreset} autoPlace={state.autoPlace} onApply={onApplyPreset} onSave={onSavePreset} onDelete={onDeletePreset} />
           <div className="cs-history-foot">
