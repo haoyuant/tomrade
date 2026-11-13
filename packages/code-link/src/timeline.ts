@@ -18,6 +18,8 @@ export interface TimelineEntry {
   /** Its first session. */
   id: string;
   agent: string;
+  /** The project's role it works as (a role's id), when a Start of it named one. */
+  role: string | null;
   startedAt: number;
   /** When its last session ended; null while one lives. */
   endedAt: number | null;
@@ -77,6 +79,7 @@ export function ticketTimeline(sessions: SessionView[], links: CodeLinkView[], f
     return {
       id: group[0]!.id,
       agent: last.agent,
+      role: [...group].reverse().find((s) => s.role)?.role ?? null,
       startedAt: group[0]!.startedAt,
       endedAt: live ? null : Math.max(...group.map((s) => s.endedAt ?? s.lastEventAt ?? s.startedAt)),
       live,

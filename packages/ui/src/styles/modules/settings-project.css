@@ -65,3 +65,17 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .wip-in:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 }
+
+/* Roles: a list whose open row carries its editor. */
+.role-list { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.role-list__item { border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); }
+.role-list__item.is-open { border-color: var(--border); }
+.role-list__head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; width: 100%; padding: var(--space-2) var(--space-3); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.role-list__head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.role-list__title { font-weight: var(--font-weight-medium); }
+.role-list__brief { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-editor { padding: var(--space-3); border-top: 1px solid var(--border-soft); }
+.role-engines { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-2); padding: 0; list-style: none; }
+.role-engines__item { display: flex; gap: var(--space-2); align-items: center; }
+.role-engines__name { flex: 1; min-width: 0; }
+.role-engines__up { transform: rotate(180deg); }

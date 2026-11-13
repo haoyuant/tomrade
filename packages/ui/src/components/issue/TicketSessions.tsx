@@ -9,6 +9,7 @@ import { invoke } from "~/lib/api";
 import { offerApart, useTicketTimeline } from "~/lib/codeLink";
 import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { useRoles } from "~/lib/roles";
 import { keys } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { openExternal } from "~/lib/shell";
@@ -24,6 +25,12 @@ export function TicketSessions({ projectId, itemId, variant = "pane" }: { projec
   const qc = useQueryClient();
   const timeline = useTicketTimeline(projectId, itemId);
   const engines = useEngines();
+  const roles = useRoles(projectId);
+  // A session's role by its name, while the project still has it.
+  const roleOf = (e: TimelineEntry) => {
+    const role = e.role ? roles.data?.find((r) => r.id === e.role) : null;
+    return role ? [t("roles.sessionRole", { role: role.title })] : [];
+  };
   const [open, setOpen] = useState<string | null>(null);
   const stop = useMutation({
     mutationFn: (sessionId: string) => invoke("codeLink.stopSession", projectId, sessionId),
@@ -86,7 +93,7 @@ export function TicketSessions({ projectId, itemId, variant = "pane" }: { projec
               {e.stops.length > 1 ? <FoldChevron open={unfolded} label={t("codeLink.timelineFold")} onToggle={() => setOpen(unfolded ? null : e.id)} /> : <FoldChevronSpace />}
               <div className="ticket-timeline-body">
                 <span className="meta-txt dense">
-                  {e.live && <span className="card-session-mark" aria-hidden="true" />} {[findEngine(engines.data, e.agent)?.title ?? e.agent, when(e), route(e)].join(" · ")}
+                  {e.live && <span className="card-session-mark" aria-hidden="true" />} {[findEngine(engines.data, e.agent)?.title ?? e.agent, ...roleOf(e), when(e), route(e)].join(" · ")}
                 </span>
                 <span className="ticket-timeline-outcome">{e.outcome ?? t("codeLink.timelineNoOutcome")}</span>
                 {facts(e) && <span className="meta-txt dense">{facts(e)}</span>}

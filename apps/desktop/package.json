@@ -63,6 +63,7 @@
     "test:changes": "electron scripts/changes-check.mjs",
     "test:usage": "electron scripts/usage-check.mjs",
     "test:rules": "electron scripts/rules-check.mjs",
+    "test:roles": "electron scripts/roles-check.mjs",
     "test:brief": "electron scripts/brief-check.mjs",
     "test:schedules": "electron scripts/schedules-check.mjs",
     "test:night-shift": "electron scripts/night-shift-check.mjs",
