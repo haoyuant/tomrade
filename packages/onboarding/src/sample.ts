@@ -48,7 +48,8 @@ export const START: readonly string[] = ["b4", "c1", "c3", "b3"];
  * first and is the only lesson that starts the path: it is where an AI first
  * answers, so Start (C1), tidying (B2), rules (B5) and a chat app (D3) wait on
  * it, and undoing waits for the run it undoes. Merging waits for a delivery,
- * and linking a repository of one's own for Start. The rest need nothing.
+ * and linking a repository of one's own, or sending a ticket to another
+ * computer, for Start. The rest need nothing.
  */
 export const PATH: readonly [string, string][] = [
   ["b4", "c1"],
@@ -57,7 +58,8 @@ export const PATH: readonly [string, string][] = [
   ["b4", "b2"],
   ["b4", "b5"],
   ["b4", "d3"],
-  ["c1", "c2"]
+  ["c1", "c2"],
+  ["c1", "d5"]
 ];
 
 /**
@@ -403,6 +405,21 @@ The rules are a file in the project's folder, so they travel with it.
 This tour project never syncs — it is this computer's alone.
 
 **Now:** open Settings → **Hub** → **Tomrade account** → **Sign in**.`
+    },
+    {
+      key: "d5",
+      title: "Send a ticket to another of your computers (optional)",
+      body: `A ticket need not run on the computer you plan on: a Windows fix can go to your Windows computer and be worked on there while you carry on here. Only one computer? Drag this to Done.
+
+1. On the other computer, sign in to the same account. Both computers then appear under Settings → **Devices**.
+2. Still on that computer, in Settings → **Devices**, turn on **Accept work from my other devices**. It is off until you do: it lets an agent run there and change code there, within the limits you set beside it.
+3. Back here, open a code ticket of a project both computers have and open its Start dialog: **Start**, or the arrow beside it → **Full settings…** once Start remembers how you last started. Under **Run on**, choose that computer, then **Send**.
+
+The agent there works on the ticket's own branch, with that computer's sign-in. The work comes back as commits and a pull request, and the ticket says where it runs. The free plan covers two computers.
+
+The Pomodoro example cannot be sent: this tour project lives on this computer alone.
+
+**Now:** open Settings → **Devices** to see which of your computers are signed in.`
     }
   ],
   examples: [
@@ -679,6 +696,21 @@ const zh = (keys: LessonKeys): SampleWords => ({
 这个入门项目永远不会同步——它只属于这台电脑。
 
 **现在**：打开设置 → **主目录** → **Tomrade 账号** → **登录**。`
+    },
+    {
+      key: "d5",
+      title: "把工单派到你的另一台电脑上做（可选）",
+      body: `工单不一定要在你做规划的这台电脑上做：一张 Windows 的修复可以派到你的 Windows 电脑上，由那里的智能体开工，你在这边继续。只有一台电脑的话，直接拖到「已完成」。
+
+1. 在另一台电脑上登录同一个账号。两台电脑都会出现在设置 → **设备** 里。
+2. 还是在那台电脑上，在设置 → **设备** 里打开 **接受我其他设备派来的工作**。它默认关闭：打开就是允许智能体在那台电脑上运行、修改那里的代码，范围由旁边的限制决定。
+3. 回到这台电脑，打开一张两台电脑都有的项目里的代码工单，打开它的开工对话框：点 **开始**；如果「开始」已经记住了上次的选择，点它旁边的箭头 → **完整设置…**。在 **在哪台电脑上运行** 里选那台电脑，再点 **派给…**。
+
+那边的智能体用那台电脑自己的登录，在工单自己的分支上做。成果以提交和 PR 的形式回来，工单上会写明它在哪台电脑上运行。免费版最多两台电脑。
+
+番茄钟示例派不出去：这个入门项目只在这台电脑上。
+
+**现在**：打开设置 → **设备**，看看你的哪些电脑登录了账号。`
     }
   ],
   examples: [
