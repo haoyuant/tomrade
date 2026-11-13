@@ -1356,7 +1356,7 @@ function apply(ctx: Context, config: Config) {
     if (!review) {
       if (ask.op === "comments" || ask.op === "reviews") return [];
       if (ask.op === "target") return { kind: "none" };
-      if (ask.op === "reviewers") return { engines: [], pick: null, author: null };
+      if (ask.op === "reviewers") return { engines: [], pick: null, author: null, roles: [], role: null };
       if (ask.op === "release") return null;
       throw new Error("change review is not running");
     }
@@ -1374,11 +1374,11 @@ function apply(ctx: Context, config: Config) {
       case "send":
         return review.send(projectId, itemId, { deliver: ask.deliver });
       case "reviewers":
-        return review.reviewers(projectId, itemId);
+        return review.reviewers(projectId, itemId, ask.role);
       case "reviews":
         return review.reviews(projectId, itemId);
       case "review":
-        return review.review(projectId, itemId, { engine: ask.engine });
+        return review.review(projectId, itemId, { engine: ask.engine, role: ask.role });
       case "release":
         return review.release(projectId, itemId);
     }

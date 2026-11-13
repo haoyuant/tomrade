@@ -1,3 +1,4 @@
+import { roleSection } from "@tomradex/roles";
 import type { ReviewComment } from "./store.js";
 
 const where = (c: ReviewComment): string => {
@@ -32,7 +33,7 @@ export function reviewPrompt(key: string, comments: ReviewComment[], branchOf?: 
  * What a reviewing agent is told: the ticket as its author was told it, and nothing the author said or thought while
  * working. It reads the change through `read_review_changes` and answers only through `submit_review_findings`.
  */
-export function reviewerPrompt(ticket: { key: string; title: string; body: string | null }): string {
+export function reviewerPrompt(ticket: { key: string; title: string; body: string | null }, role?: { title: string; instructions: string } | null): string {
   return [
     `<review-request ticket="${ticket.key}">`,
     `Review the code changes made for ticket ${ticket.key}. Someone else wrote them; you are an independent reviewer and have none of their conversation. Judge the change by what the ticket asks for and by the code itself.`,
@@ -48,6 +49,7 @@ export function reviewerPrompt(ticket: { key: string; title: string; body: strin
     `Ticket ${ticket.key}: ${ticket.title}`,
     "",
     ticket.body?.trim() || "(The ticket has no description.)",
-    "</review-request>"
+    "</review-request>",
+    ...(role?.instructions ? ["", roleSection(role)] : [])
   ].join("\n");
 }

@@ -14,6 +14,7 @@ import { StartProgressNote } from "./StartProgress";
 import { RunOn } from "./RunOn";
 import { asksElsewhere, labelMiss, runOnState, targetOf, takers, useDevices } from "~/lib/devices";
 import { useI18n } from "~/lib/i18n";
+import { useRoleMode, useRoles } from "~/lib/roles";
 import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
@@ -284,12 +285,22 @@ function StartTicketDialog({
     [engines.data, capability, mode]
   );
   const otherAllowed = mode === "terminal" && !!otherCommand;
+  // The project's role the ticket is worked as: the one picked here, else the one its last session went by, else the implementer.
+  const roles = useRoles(projectId, !general);
+  const workRoles = useMemo(() => (roles.data ?? []).filter((r) => r.stage === "implement"), [roles.data]);
+  const [chosenRole, setChosenRole] = useState<string | null>(null);
+  const role = general ? null : (workRoles.find((r) => r.id === (chosenRole ?? latest?.role)) ?? workRoles.find((r) => r.builtin) ?? null);
+  // A role that names its agents chooses among them for a ticket nobody has started; a conversation under way keeps its own.
+  const roleEngines = role?.engines.length && !latest && !thread ? role.engines.flatMap((id) => findEngine(candidates, id) ?? []) : [];
+  const roleEngine = (roleEngines.find((candidate) => candidate.ok) ?? roleEngines[0])?.id ?? null;
   const [chosenEngine, setChosenEngine] = useState<string | null>(way?.engine ?? null);
   const lastAgent = latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null;
   const remembered = findEngine(candidates, lastAgent)?.id ?? lastAgent;
   const engineId =
     chosenEngine && (candidates.some((engine) => engine.id === chosenEngine) || (chosenEngine === "other" && otherAllowed))
       ? chosenEngine
+      : roleEngine
+        ? roleEngine
       : remembered && (candidates.some((engine) => engine.id === remembered) || (remembered === "other" && otherAllowed))
         ? remembered
         : (candidates.find((engine) => engine.ok) ?? candidates[0])?.id ?? (otherAllowed ? "other" : "");
@@ -313,8 +324,16 @@ function StartTicketDialog({
 
   const permissionModes = !general && mode === "run" ? engine?.permissionModes : undefined;
   const [chosenPermission, setChosenPermission] = useState<string | null>(null);
-  const rememberedPermission = thread?.engine === engineId ? thread?.permissionMode : rememberedStart?.engine === engineId ? rememberedStart.permissionMode : null;
-  const permissionMode = permissionModes ? (chosenPermission ?? rememberedPermission ?? permissionModes.default) : undefined;
+  // The conversation's own mode first, then what the role allows, then how Start was last left on this machine.
+  const threadPermission = thread?.engine === engineId ? thread?.permissionMode : null;
+  const rememberedPermission = rememberedStart?.engine === engineId ? rememberedStart.permissionMode : null;
+  const roleMode = useRoleMode(projectId, role, engineId, !!permissionModes).data ?? null;
+  const permissionMode = permissionModes ? (chosenPermission ?? threadPermission ?? roleMode ?? rememberedPermission ?? permissionModes.default) : undefined;
+  // A role's limit is the role's to apply: only a mode the person picked, or the conversation already has, is sent in its place.
+  const byRoleLimit = !!role?.permission && !chosenPermission && !threadPermission;
+  const sentPermission = byRoleLimit ? undefined : permissionMode;
+  // The built-in implementer nobody changed says nothing: a Start by it is a Start as it always was.
+  const roleArg = role && (!role.builtin || role.changed) ? role.id : undefined;
 
   // General work: the method, recommended by the assistant unless the delivery already has one; the user's pick always wins.
   const methods = useMemo(() => ticketMethods(playbooks.data, "general"), [playbooks.data]);
@@ -403,7 +422,7 @@ function StartTicketDialog({
       .mutateAsync(
         first
           ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
-          : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}), ...(apart ? { apart } : {}) }
+          : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(sentPermission ? { permissionMode: sentPermission } : {}), ...(roleArg ? { role: roleArg } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}), ...(apart ? { apart } : {}) }
       )
       .then((result) => (result.ok ? launched(result) : failed({ message: result.message, failure: result })))
       .catch((err: unknown) => failed({ message: readableError(err) }))
@@ -474,6 +493,17 @@ function StartTicketDialog({
             )}
           </Field>
 
+          {!general && workRoles.length > 0 && (
+            <Field label={t("roles.startRole")} htmlFor="stRole">
+              <select id="stRole" className="select" data-testid="start-role" value={role?.id ?? ""} disabled={busy} onChange={(event) => { setChosenRole(event.target.value); setChosenEngine(null); setChosenPicks(null); setChosenPermission(null); }}>
+                {workRoles.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
+              </select>
+              <p className="meta-txt" data-testid="start-role-hint">
+                {role?.engines.length ? t("roles.startRoleEngines", { role: role.title, agents: role.engines.map((id) => findEngine(engines.data, id)?.title ?? id).join(" → ") }) : t("roles.startRoleHint")}
+              </p>
+            </Field>
+          )}
+
           <Field label={t("codeLink.agentHead")} htmlFor="stEngine">
             <select id="stEngine" className="select" value={engineId} disabled={busy} onChange={(event) => { setChosenEngine(event.target.value); setChosenPicks(null); setChosenPermission(null); }}>
               {candidates.map((candidate) => (
@@ -523,6 +553,7 @@ function StartTicketDialog({
                 {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
               </select>
               {permissionHint(t, permissionMode) && <p className="meta-txt" data-testid="start-permission-hint">{permissionHint(t, permissionMode)}</p>}
+              {byRoleLimit && role && <p className="meta-txt" data-testid="start-role-limit">{t(roleMode ? "roles.startRoleLimit" : "roles.startRoleNoMode", { role: role.title, limit: t(`devices.ceiling_${role.permission!}` as MessageKey), agent: engine?.title ?? "" })}</p>}
               {isFullAccess(permissionMode) && (
                 <p className="start-warning" role="note" data-testid="start-full-access">
                   <Icon name="i-warn" size={13} />

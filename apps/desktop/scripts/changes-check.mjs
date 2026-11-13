@@ -275,9 +275,9 @@ const run = async () => {
         : ask.op === "remove" ? review.remove(project.id, ask.id)
         : ask.op === "target" ? review.target(project.id, m.itemId)
         : ask.op === "send" ? await review.send(project.id, m.itemId, { deliver: ask.deliver })
-        : ask.op === "reviewers" ? await review.reviewers(project.id, m.itemId)
+        : ask.op === "reviewers" ? await review.reviewers(project.id, m.itemId, ask.role)
         : ask.op === "reviews" ? review.reviews(project.id, m.itemId)
-        : ask.op === "review" ? await review.review(project.id, m.itemId, { engine: ask.engine })
+        : ask.op === "review" ? await review.review(project.id, m.itemId, { engine: ask.engine, role: ask.role })
         : ask.op === "release" ? (review.release(project.id, m.itemId), null)
         : await ctx.codeLink.markReviewed(project.id, m.itemId, { linkId: ask.linkId });
       return { type: "changeReviewDone", token: m.token, value };

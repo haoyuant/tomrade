@@ -37,9 +37,9 @@ const sourceOf = (itemId: string): ChangesSource => ({
   reviewTarget: () => changeReview(itemId, { op: "target" }),
   sendComments: (opts) => changeReview(itemId, { op: "send", deliver: opts?.deliver }),
   markReviewed: (opts) => changeReview(itemId, { op: "markReviewed", linkId: opts?.linkId }),
-  reviewers: () => changeReview(itemId, { op: "reviewers" }),
+  reviewers: (role) => changeReview(itemId, { op: "reviewers", role }),
   reviews: () => changeReview(itemId, { op: "reviews" }),
-  startReview: (opts) => changeReview(itemId, { op: "review", engine: opts?.engine }),
+  startReview: (opts) => changeReview(itemId, { op: "review", engine: opts?.engine, role: opts?.role }),
   releaseReview: () => changeReview(itemId, { op: "release" })
 });
 

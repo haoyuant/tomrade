@@ -1452,10 +1452,14 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (result.ok) {
       // Every starter (Start button, night shift, schedules, follow-ons, MCP) comes through here; a continued thread is not a new start.
       if (!result.continued) contract(this.home, "analytics")?.activate("code.link", "start");
-      this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
-      // A start from a conversation, MCP or another window: every open Start button names the new choice at once.
-      this.home.emit("codeLink/start-defaults");
-      this.home.get("ipc")?.send("codeLink.startDefaultsChanged");
+      // What a role chose is the project's way, not this person's habit on this machine: it is not remembered as theirs.
+      const byRole = rest.role ? this.home.get("roles")?.get(projectId, rest.role) : null;
+      if (!byRole || (!byRole.engines.length && !byRole.permission)) {
+        this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+        // A start from a conversation, MCP or another window: every open Start button names the new choice at once.
+        this.home.emit("codeLink/start-defaults");
+        this.home.get("ipc")?.send("codeLink.startDefaultsChanged");
+      }
     }
     // The ticket this one was started ahead of follows it with the same choices once it lands.
     if (result.ok && then && then !== itemId && this.ctx.items.get(projectId, then)) {

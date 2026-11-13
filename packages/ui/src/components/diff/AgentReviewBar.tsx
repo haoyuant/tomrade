@@ -27,6 +27,7 @@ export function ReviewStatus({ review, when }: { review: AgentReviewView; when: 
           {t("diff.reviewStale")}
         </span>
       )}
+      {review.roleTitle && review.role !== "reviewer" && <span className="tag faint" data-testid="changes-review-role">{review.roleTitle}</span>}
       {review.askedBy === "auto" && <span className="tag faint">{t("diff.reviewAuto")}</span>}
       {review.handedAt !== null && <span className="tag faint">{t("diff.reviewHanded")}</span>}
     </>
@@ -41,7 +42,8 @@ export function AgentReviewBar({ source, when, onNotice }: { source: ChangesSour
   const { t } = useI18n();
   const qc = useQueryClient();
   const reviews = useAgentReviews(source).data ?? [];
-  const choices = useReviewers(source).data;
+  const [askedRole, setAskedRole] = useState<string>();
+  const choices = useReviewers(source, true, askedRole).data;
   const [asked, setAsked] = useState<string>();
   const [busy, setBusy] = useState(false);
   const newest = reviews[0];
@@ -55,7 +57,7 @@ export function AgentReviewBar({ source, when, onNotice }: { source: ChangesSour
     if (busy || running || !chosen) return;
     setBusy(true);
     try {
-      const review = await source.startReview({ engine: chosen });
+      const review = await source.startReview({ engine: chosen, role: choices?.role ?? undefined });
       onNotice(t("diff.reviewStarted", { agent: review.engineTitle }));
     } catch (error) {
       onNotice(messageOf(error));
@@ -80,6 +82,13 @@ export function AgentReviewBar({ source, when, onNotice }: { source: ChangesSour
         {same && !running && <span className="meta-txt" data-testid="changes-review-same">{t("diff.reviewSame", { agent: chosenTitle })}</span>}
       </span>
       <span className="diff__review-actions">
+        {(choices?.roles.length ?? 0) > 1 && (
+          <select className="input diff__pick" aria-label={t("diff.reviewRoleLabel")} data-testid="changes-review-role-pick" value={choices?.role ?? ""} disabled={busy || running} onChange={(e) => { setAskedRole(e.target.value); setAsked(undefined); }}>
+            {choices!.roles.map((role) => (
+              <option key={role.id} value={role.id}>{role.title}</option>
+            ))}
+          </select>
+        )}
         {engines.length > 1 && (
           <select className="input diff__pick" aria-label={t("diff.reviewerLabel")} data-testid="changes-reviewer" value={chosen ?? ""} disabled={busy || running} onChange={(e) => setAsked(e.target.value)}>
             {engines.map((engine) => (

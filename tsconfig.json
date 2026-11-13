@@ -158,6 +158,9 @@
       "path": "./packages/watchdog"
     },
     {
+      "path": "./packages/roles"
+    },
+    {
       "path": "./packages/dispatch"
     },
     {

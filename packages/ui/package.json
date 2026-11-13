@@ -46,6 +46,7 @@
     "@tomradex/hub-cloud": "workspace:*",
     "@tomradex/notes": "workspace:*",
     "@tomradex/repos": "workspace:*",
+    "@tomradex/roles": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",
     "@tomradex/theme-image": "workspace:*",

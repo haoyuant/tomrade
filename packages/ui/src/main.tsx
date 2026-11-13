@@ -111,6 +111,7 @@ if (window.tomrade) {
   subscribe("codeLink.cellsChanged", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.codeLink.cells(projectId) }));
   subscribe("codeLink.sessionsChanged", sessionsRefresher(queryClient));
   subscribe("changeReview.changed", (projectId, itemId) => void queryClient.invalidateQueries({ queryKey: keys.changeReview.comments(projectId, itemId) }));
+  subscribe("roles.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.roles.list(projectId) }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.

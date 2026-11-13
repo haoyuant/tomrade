@@ -11,6 +11,7 @@ import { useAllItems, useBoards, useLabels, useRemoveProject, useSaveSettings, u
 import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { RulesBlock } from "./RulesBlock";
+import { RolesBlock } from "./RolesBlock";
 import { BriefBlock } from "./BriefBlock";
 import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -138,7 +139,7 @@ export function ProjectSettingsDialog({
   );
 }
 
-type ProjectSettingsPane = "overview" | "closed" | "rules" | "brief" | "storage" | "repositories" | "files" | "lifecycle";
+type ProjectSettingsPane = "overview" | "closed" | "rules" | "roles" | "brief" | "storage" | "repositories" | "files" | "lifecycle";
 
 /** What the closed-days switch turns on with. */
 const DEFAULT_CLOSED_DAYS = 30;
@@ -290,6 +291,12 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
       label: t("projectRules.label"),
       icon: "i-pen",
       render: () => <><SectionHead title={t("projectRules.label")}>{t("projectRules.lede")}</SectionHead><RulesBlock projectId={project.id} /></>
+    },
+    {
+      id: "roles",
+      label: t("roles.label"),
+      icon: "i-tag",
+      render: () => <><SectionHead title={t("roles.label")}>{t("roles.lede")}</SectionHead><RolesBlock projectId={project.id} /></>
     },
     {
       id: "brief",

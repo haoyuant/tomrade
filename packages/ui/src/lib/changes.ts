@@ -27,11 +27,11 @@ export interface ChangesSource {
   /** What is on this machine now, recorded as reviewed; null where there is nothing to record. */
   markReviewed(opts?: { linkId?: string }): Promise<ChangeReviewed | null>;
   /** The coding agents on this machine, and which of them can review these changes. */
-  reviewers(): Promise<ReviewerChoices>;
+  reviewers(role?: string): Promise<ReviewerChoices>;
   /** The reviews agents made of the ticket's changes, newest first. */
   reviews(): Promise<AgentReviewView[]>;
   /** Starts an agent's review in a session of its own; the one already going comes back instead of a second. */
-  startReview(opts?: { engine?: string }): Promise<AgentReviewView>;
+  startReview(opts?: { engine?: string; role?: string }): Promise<AgentReviewView>;
   /** The person has seen the findings that waited on them. */
   releaseReview(): Promise<void>;
 }
@@ -55,7 +55,7 @@ export const ticketChanges = (projectId: string, itemId: string): ChangesSource 
   reviewTarget: () => invoke("changeReview.target", projectId, itemId),
   sendComments: (opts) => invoke("changeReview.send", projectId, itemId, opts),
   markReviewed: (opts) => invoke("codeLink.markReviewed", projectId, itemId, opts),
-  reviewers: () => invoke("changeReview.reviewers", projectId, itemId),
+  reviewers: (role) => invoke("changeReview.reviewers", projectId, itemId, role),
   reviews: () => invoke("changeReview.reviews", projectId, itemId),
   startReview: (opts) => invoke("changeReview.review", projectId, itemId, opts),
   releaseReview: () => invoke("changeReview.release", projectId, itemId)
@@ -102,5 +102,5 @@ export const useAgentReviews = (source: Pick<ChangesSource, "commentsKey" | "rev
   });
 
 /** Who could review here. Asked again each time the window is looked at: an agent may have been signed in meanwhile. */
-export const useReviewers = (source: Pick<ChangesSource, "key" | "reviewers">, enabled = true) =>
-  useQuery({ queryKey: [...source.key, "reviewers"], queryFn: () => source.reviewers(), enabled, staleTime: 30_000 });
+export const useReviewers = (source: Pick<ChangesSource, "key" | "reviewers">, enabled = true, role?: string) =>
+  useQuery({ queryKey: [...source.key, "reviewers", role ?? ""], queryFn: () => source.reviewers(role), enabled, staleTime: 30_000, placeholderData: keepPreviousData });

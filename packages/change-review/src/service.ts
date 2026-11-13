@@ -12,6 +12,7 @@ import { languageTag, type Item } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
+import type { Role } from "@tomradex/roles";
 import type { SettingsSection } from "@tomradex/settings";
 import { reviewPrompt, reviewerPrompt } from "./prompt.js";
 import { MIGRATIONS, ReviewStore, TABLES, type AgentReview, type ReviewComment, type ReviewDraft, type ReviewFinding, type ReviewSeverity, type ReviewState } from "./store.js";
@@ -32,11 +33,16 @@ export interface ReviewerChoices {
   pick: string | null;
   /** The engine of the session that works the ticket, when there is one: a review prefers another. */
   author: string | null;
+  /** The project's roles that review, and the one these choices are for. Empty without roles. */
+  roles: { id: string; title: string }[];
+  role: string | null;
 }
 
 /** A review as a person reads it. `stale`: the branch has moved since, so what it found is of older code. */
 export interface AgentReviewView extends AgentReview {
   engineTitle: string;
+  /** The role's name, when the review was made as one the project still has. */
+  roleTitle: string | null;
   stale: boolean;
 }
 
@@ -124,9 +130,9 @@ declare module "@tomradex/ipc" {
     "changeReview.target": (projectId: string, itemId: string) => ReviewTarget;
     /** `deliver: false` reaches no session: the comments count as sent and the text comes back to be copied. */
     "changeReview.send": (projectId: string, itemId: string, opts?: { deliver?: boolean }) => ReviewSent;
-    "changeReview.reviewers": (projectId: string, itemId: string) => ReviewerChoices;
+    "changeReview.reviewers": (projectId: string, itemId: string, role?: string) => ReviewerChoices;
     /** Starts an agent's review of the ticket's changes in a session of its own; the one already going comes back instead of a second. */
-    "changeReview.review": (projectId: string, itemId: string, opts?: { engine?: string }) => AgentReviewView;
+    "changeReview.review": (projectId: string, itemId: string, opts?: { engine?: string; role?: string }) => AgentReviewView;
     "changeReview.reviews": (projectId: string, itemId: string) => AgentReviewView[];
     /** The person has seen findings that waited on them: the reminder goes. */
     "changeReview.release": (projectId: string, itemId: string) => void;
@@ -189,7 +195,7 @@ export class ChangeReview extends Service {
       ctx.ipc.handle("changeReview.remove", (projectId, id) => ctx.changeReview.remove(projectId, id));
       ctx.ipc.handle("changeReview.target", (projectId, itemId) => ctx.changeReview.target(projectId, itemId));
       ctx.ipc.handle("changeReview.send", (projectId, itemId, opts) => ctx.changeReview.send(projectId, itemId, opts));
-      ctx.ipc.handle("changeReview.reviewers", (projectId, itemId) => ctx.changeReview.reviewers(projectId, itemId));
+      ctx.ipc.handle("changeReview.reviewers", (projectId, itemId, role) => ctx.changeReview.reviewers(projectId, itemId, role));
       ctx.ipc.handle("changeReview.review", (projectId, itemId, opts) => ctx.changeReview.review(projectId, itemId, opts));
       ctx.ipc.handle("changeReview.reviews", (projectId, itemId) => ctx.changeReview.reviews(projectId, itemId));
       ctx.ipc.handle("changeReview.release", (projectId, itemId) => ctx.changeReview.release(projectId, itemId));
@@ -382,15 +388,16 @@ export class ChangeReview extends Service {
     });
   }
 
-  private view(review: AgentReview, links: CodeLinkView[]): AgentReviewView {
-    return { ...review, engineTitle: this.titleOf(review.engine), stale: this.stale(review, links) };
+  private view(projectId: string, review: AgentReview, links: CodeLinkView[]): AgentReviewView {
+    const role = review.role ? this.home.get("roles")?.get(projectId, review.role) : null;
+    return { ...review, engineTitle: this.titleOf(review.engine), roleTitle: role?.title ?? null, stale: this.stale(review, links) };
   }
 
   /** A ticket's agent reviews, newest first. */
   reviews(projectId: string, itemId: string): AgentReviewView[] {
     if (!this.home.items.get(projectId, itemId)) return [];
     const links = this.home.codeLink.links(projectId, itemId);
-    return this.store.reviews(projectId, itemId).map((review) => this.view(review, links));
+    return this.store.reviews(projectId, itemId).map((review) => this.view(projectId, review, links));
   }
 
   /** The engine that works the ticket here: its newest session's, else the one its branch was started with. */
@@ -403,11 +410,22 @@ export class ChangeReview extends Service {
     return engine && agent ? agent.answering(engine) : engine;
   }
 
-  /** The coding agents here and whether each can review: one that runs inside Tomrade, is ready, and has a mode that changes nothing. */
-  async reviewers(projectId: string, itemId: string): Promise<ReviewerChoices> {
+  /** The project's role a review is made as: the one asked for when it reviews, else the built-in reviewer. Null without roles. */
+  private roleOf(projectId: string, id?: string | null): Role | null {
+    return this.home.get("roles")?.orDefault(projectId, id, "review") ?? null;
+  }
+
+  /**
+   * The coding agents here and whether each can review: one that runs inside Tomrade, is ready, and has a mode that
+   * changes nothing. A role that names its agents is answered in its order, by those alone; one that names none gets
+   * another agent than the one working the ticket, when one is ready.
+   */
+  async reviewers(projectId: string, itemId: string, roleId?: string | null): Promise<ReviewerChoices> {
     const agent = this.home.get("agent");
     const author = this.authorOf(projectId, itemId);
-    if (!agent) return { engines: [], pick: null, author };
+    const role = this.roleOf(projectId, roleId);
+    const roles = (this.home.get("roles")?.list(projectId) ?? []).filter((r) => r.stage === "review").map((r) => ({ id: r.id, title: r.title }));
+    if (!agent) return { engines: [], pick: null, author, roles, role: role?.id ?? null };
     const w = this.words();
     const engines = await Promise.all(
       agent.codeEngines().map(async (engine): Promise<ReviewerChoice> => {
@@ -419,7 +437,8 @@ export class ChangeReview extends Service {
       })
     );
     const ready = engines.filter((engine) => engine.ok);
-    return { engines, pick: (ready.find((engine) => engine.id !== author) ?? ready[0])?.id ?? null, author };
+    const ordered = role?.engines.length ? role.engines.map((id) => ready.find((engine) => engine.id === agent.answering(id))).find((engine) => !!engine) : (ready.find((engine) => engine.id !== author) ?? ready[0]);
+    return { engines, pick: ordered?.id ?? null, author, roles, role: role?.id ?? null };
   }
 
   /**
@@ -427,13 +446,13 @@ export class ChangeReview extends Service {
    * read-only mode, told the ticket and where to read the change — never what the session working the ticket said.
    * A review of the ticket already going comes back instead of a second.
    */
-  async review(projectId: string, itemId: string, opts: { engine?: string; askedBy?: AgentReview["askedBy"] } = {}): Promise<AgentReviewView> {
+  async review(projectId: string, itemId: string, opts: { engine?: string; role?: string; askedBy?: AgentReview["askedBy"] } = {}): Promise<AgentReviewView> {
     const w = this.words();
     const item = this.home.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown ticket ${itemId}`);
     const agent = this.home.get("agent");
     const going = this.store.reviews(projectId, itemId).find((review) => review.state === "running");
-    if (going) return this.view(going, this.home.codeLink.links(projectId, itemId));
+    if (going) return this.view(projectId, going, this.home.codeLink.links(projectId, itemId));
     const links = this.current(projectId, itemId);
     const heads: AgentReview["heads"] = {};
     for (const link of links) {
@@ -441,30 +460,35 @@ export class ChangeReview extends Service {
       if (read?.head) heads[link.id] = { head: read.head, seen: link.headSha };
     }
     if (!agent || !Object.keys(heads).length) throw new Error(w("nothingToReview", { key: item.key }));
-    const choices = await this.reviewers(projectId, itemId);
+    const role = this.roleOf(projectId, opts.role);
+    const choices = await this.reviewers(projectId, itemId, role?.id);
     const asked = opts.engine ? choices.engines.find((engine) => engine.id === agent.answering(opts.engine!)) : null;
     if (opts.engine && !asked?.ok) throw new Error(w("notReviewer", { agent: asked?.title ?? opts.engine, why: asked?.why ?? "unknown" }));
     const engineId = asked?.id ?? choices.pick;
     const engine = engineId ? agent.engineOf(engineId) : undefined;
     const mode = engine ? readMode(engine) : null;
-    if (!engine || !mode) throw new Error(w("noReviewer", { why: choices.engines.map((e) => `${e.title}: ${e.why}`).join(" · ") || w("noReviewerAtAll") }));
+    if (!engine || !mode) {
+      // A role that names its agents is refused by their reasons alone: no other agent stands in for them.
+      const named = role?.engines.length ? role.engines.map((id) => choices.engines.find((e) => e.id === agent.answering(id)) ?? { title: id, why: w("notInstalled") }) : choices.engines;
+      throw new Error(w("noReviewer", { why: named.filter((e) => e.why).map((e) => `${e.title}: ${e.why}`).join(" · ") || w("noReviewerAtAll") }));
+    }
     // A person asking again has seen what waited on them.
     if (opts.askedBy !== "auto") this.release(projectId, itemId);
     const thread = agent.newThread(projectId, engine.id, item.boardId, { title: w("reviewTitle", { key: item.key }) });
     agent.setPermissionMode(projectId, thread.id, mode);
     const review = this.store.addReview(projectId, {
-      id: randomUUID(), itemId, delivery: links[0]!.delivery, engine: engine.id, same: engine.id === choices.author,
+      id: randomUUID(), itemId, delivery: links[0]!.delivery, engine: engine.id, role: role?.id ?? null, same: engine.id === choices.author,
       threadId: thread.id, heads, askedBy: opts.askedBy ?? "person", startedAt: Date.now()
     });
     try {
-      agent.send(projectId, thread.id, { kind: "text", text: reviewerPrompt(item) }, { requestId: `change-review:review:${review.id}`, source: { kind: "change-review" } });
+      agent.send(projectId, thread.id, { kind: "text", text: reviewerPrompt(item, role) }, { requestId: `change-review:review:${review.id}`, source: { kind: "change-review" } });
     } catch (error) {
       this.store.patchReview(projectId, review.id, { state: "failed", error: errorMessage(error), findings: 0, endedAt: Date.now() });
       this.home.emit("changeReview/changed", projectId, itemId);
       throw error;
     }
     this.home.emit("changeReview/changed", projectId, itemId);
-    return this.view(this.store.review(projectId, review.id)!, this.home.codeLink.links(projectId, itemId));
+    return this.view(projectId, this.store.review(projectId, review.id)!, this.home.codeLink.links(projectId, itemId));
   }
 
   /** A review's conversation stopped: what it found is counted, and where the person asked for it, handed on. */

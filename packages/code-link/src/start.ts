@@ -8,6 +8,7 @@ import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
 import type { CheckoutProblem } from "@tomradex/repos";
+import { roleSection, type Role } from "@tomradex/roles";
 import type {} from "@tomradex/settings";
 import { normalizeRepoPath, repoSubfolder, type Author, type Board, type Item, type Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/git";
@@ -32,8 +33,14 @@ export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-h
 /** What the Start dialog settles: where the work runs, who runs it, and with which knobs. */
 export interface StartOptions {
   mode: StartMode;
-  /** An engine id, or "other" for the terminal command template that names any MCP-capable CLI. Absent picks the first available. */
+  /** An engine id, or "other" for the terminal command template that names any MCP-capable CLI. Absent picks the role's first that can start, else the first available. */
   engine?: string;
+  /**
+   * The project's role to work the ticket as (a role's id); absent, or gone, the implementer. Its agents are tried in
+   * its order when no engine is named, its limit sets the permission mode when none is named, and its instructions
+   * follow the brief. What the caller names always goes before the role.
+   */
+  role?: string;
   /** General tickets only: the delivery method; absent keeps the thread's, or the ticket's default. */
   playbook?: string;
   /** Engine option overrides for the thread (model, effort…); given, they replace earlier overrides. */
@@ -260,10 +267,19 @@ export class Starter {
     // In a terminal any CLI agent with an MCP client will do: "other" is whatever the machine's command template names.
     const other = opts.mode === "terminal" && (opts.engine === "other" || (!opts.engine && agent.codeEngines().length === 0)) && !!terminalSettings.otherCommand.trim();
     let engineId = "other";
+    // Without the plugin, or with a role that says nothing, a Start goes as it always did.
+    const role = ctx.get("roles")?.orDefault(projectId, opts.role, "implement") ?? null;
+    let roleMode: string | null = null;
     if (!other) {
-      const picked = await this.pickEngine(agent, opts.engine, opts.mode === "terminal");
+      const picked = opts.engine || !role?.engines.length ? await this.pickEngine(agent, opts.engine, opts.mode === "terminal") : await this.pickForRole(agent, role, opts.mode === "terminal");
       if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, ...(opts.engine ? { engine: opts.engine } : {}) };
       engineId = picked.engine.id;
+      // A role's limit holds a run inside Tomrade; a terminal's agent is started by the machine's own command.
+      if (role?.permission && opts.mode === "run" && !opts.permissionMode) {
+        const modes = picked.engine.permissionModes?.choices.map((choice) => choice.value);
+        roleMode = ctx.get("roles")!.modeFor(projectId, role.id, engineId);
+        if (modes?.length && !roleMode) return { ok: false, gate: "engine", message: `${picked.engine.title} has no permission mode within the limit of the role ${role.title} (${role.permission}) — pick another agent, or change the role`, engine: engineId };
+      }
     }
     // A terminal session connects back over MCP; without the server there is nothing to start, so nothing is created.
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
@@ -316,6 +332,8 @@ export class Starter {
       if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
         if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
         if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
+        // A conversation the person has since given another mode keeps theirs.
+        else if (roleMode && (!continued || !thread.permissionMode)) agent.setPermissionMode(projectId, thread.id, roleMode);
       }
       // Start is the person asking for the work, so a finished ticket's worktree may come back here.
       where = await agent.workdir(projectId, thread.id, { create: true, revive: true });
@@ -364,7 +382,8 @@ export class Starter {
         device: ctx.hub.deviceId,
         externalId,
         ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {}),
-        ...(opts.autoMerge ? { autoMerge: true } : {})
+        ...(opts.autoMerge ? { autoMerge: true } : {}),
+        ...(role && opts.role === role.id ? { role: role.id } : {})
       });
     if (continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     // A continued session answers to whoever asked last, and merges by itself only if asked to this time.
@@ -380,7 +399,8 @@ export class Starter {
     const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en", state?.agentMerge ?? false)
       : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: repoSubfolder(board.repoPath, placement.checkout) ?? normalizeRepoPath(board.repoPath), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en", claudeMdBy });
-    const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
+    const withWarnings = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
+    const briefed = role?.instructions ? `${withWarnings}\n\n${roleSection(role)}` : withWarnings;
     const prompt = opts.message?.trim() ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
     const rules = agent.rules(projectId);
@@ -821,6 +841,20 @@ export class Starter {
       return { ok: true, engine };
     }
     return { ok: false, reason: reasons.join(" · ") };
+  }
+
+  /**
+   * The first of a role's agents that can take a ticket right now, in the role's order. None of them: the Start is
+   * refused with each one's reason, never handed to an agent the role does not name.
+   */
+  async pickForRole(agent: Agent, role: Pick<Role, "title" | "engines">, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+    const reasons: string[] = [];
+    for (const id of role.engines) {
+      const picked = await this.pickEngine(agent, id, terminal);
+      if (picked.ok) return picked;
+      reasons.push(picked.reason);
+    }
+    return { ok: false, reason: `None of the agents of the role ${role.title} can start here — ${reasons.join(" · ")}` };
   }
 
   /** Who can take a ticket over from the engines it stopped on: the agent's pick, past any a terminal Start would refuse until it is linked. */

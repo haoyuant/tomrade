@@ -252,9 +252,9 @@ export type ChangeReviewAsk =
   | { op: "send"; deliver?: boolean }
   | { op: "markReviewed"; linkId?: string }
   /** An agent's review of the changes: who can make one, the ones made, a new one, and the person having seen what waited on them. */
-  | { op: "reviewers" }
+  | { op: "reviewers"; role?: string }
   | { op: "reviews" }
-  | { op: "review"; engine?: string }
+  | { op: "review"; engine?: string; role?: string }
   | { op: "release" };
 
 export type WindowMessage =

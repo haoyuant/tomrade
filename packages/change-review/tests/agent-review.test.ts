@@ -13,6 +13,7 @@ import { CodeLink } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import GitHubAccount from "@tomradex/github";
 import { Repos } from "@tomradex/repos";
+import { REVIEWER, Roles } from "@tomradex/roles";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { disposeFresh, fresh, settle } from "@tomradex/testkit";
@@ -36,7 +37,7 @@ interface Told {
 type Script = (input: TurnInput, io: TurnIO) => void | Promise<void>;
 
 let n = 0;
-async function machine(opts: { engines?: string[]; prefs?: { autoReview?: boolean; autoHandBack?: boolean }; status?: "doing" | "verifying" } = {}) {
+async function machine(opts: { engines?: string[]; prefs?: { autoReview?: boolean; autoHandBack?: boolean }; status?: "doing" | "verifying"; roles?: false } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ language: "en", ...(opts.prefs ? { changeReview: opts.prefs } : {}) }));
@@ -81,6 +82,7 @@ async function machine(opts: { engines?: string[]; prefs?: { autoReview?: boolea
       Contributions,
       Agent,
       enginePlugin,
+      ...(opts.roles === false ? [] : [Roles]),
       [CodeLink, { scanMs: 0, gitBinary: "git", defaultsPath: path.join(hubDir, "code-link.json") }],
       // Looks are asked for by the tests themselves.
       [ChangeReview, { autoDelayMs: 3_600_000 }]
@@ -407,3 +409,57 @@ it("ends a review the app closed under, and reviews that commit no second time b
   expect(t.told).toEqual([]);
   await t.ctx.fiber.dispose();
 });
+
+it("reviews as the project's role: its agents in its order, its instructions after the request", async () => {
+  const t = await machine();
+  t.working("writer");
+  // without a word from the project, the built-in reviewer: another agent than the author's
+  const plain = await t.s.reviewers(t.projectId, t.item.id);
+  expect(plain).toMatchObject({ pick: "checker", role: REVIEWER, roles: [{ id: REVIEWER, title: "Reviewer" }] });
+
+  // a role that names its agents is answered in its order, even by the author's own
+  const security = t.ctx.roles.save(t.projectId, { title: "Security review", stage: "review", engines: ["blunt", "writer", "checker"], instructions: "Look for injection first." });
+  const choices = await t.s.reviewers(t.projectId, t.item.id, security.id);
+  expect(choices).toMatchObject({ pick: "writer", role: security.id });
+  expect(choices.roles.map((role) => role.title)).toEqual(["Reviewer", "Security review"]);
+
+  const review = await t.s.review(t.projectId, t.item.id, { role: security.id });
+  expect(review).toMatchObject({ engine: "writer", same: true, role: security.id, roleTitle: "Security review" });
+  await t.over(review.id);
+  const asked = t.told.at(-1)!;
+  expect(asked).toMatchObject({ engine: "writer", mode: "plan" });
+  expect(asked.text).toContain("</review-request>\n\n<role name=\"Security review\">");
+  expect(asked.text).toContain("Look for injection first.");
+
+  // a role of the other stage is no reviewer: the built-in one stands in
+  const builder = t.ctx.roles.save(t.projectId, { title: "Builder", engines: ["writer"] });
+  expect(await t.s.reviewers(t.projectId, t.item.id, builder.id)).toMatchObject({ pick: "checker", role: REVIEWER });
+  // the role is gone: its review still stands, without its name
+  t.ctx.roles.remove(t.projectId, security.id);
+  expect(t.s.reviews(t.projectId, t.item.id)[0]).toMatchObject({ role: security.id, roleTitle: null });
+  await t.ctx.fiber.dispose();
+});
+
+it("starts no review as a role none of whose agents can review here, and with no other agent in their place", async () => {
+  const t = await machine({ engines: ["writer", "checker", "blunt", "away"] });
+  const role = t.ctx.roles.save(t.projectId, { title: "Strict", stage: "review", engines: ["blunt", "away", "elsewhere"] });
+  expect((await t.s.reviewers(t.projectId, t.item.id, role.id)).pick).toBeNull();
+  await expect(t.s.review(t.projectId, t.item.id, { role: role.id })).rejects.toThrow("No coding agent here can review: Blunt: it has no read-only mode · Away: not signed in · elsewhere: it is not installed here");
+  expect(t.told).toEqual([]);
+  // the person may still name one for this review
+  const review = await t.s.review(t.projectId, t.item.id, { role: role.id, engine: "checker" });
+  expect(review).toMatchObject({ engine: "checker", role: role.id });
+  await t.over(review.id);
+  await t.ctx.fiber.dispose();
+});
+
+it("reviews as before where the project has no roles plugin", async () => {
+  const t = await machine({ roles: false });
+  t.working("writer");
+  expect(await t.s.reviewers(t.projectId, t.item.id)).toMatchObject({ pick: "checker", roles: [], role: null });
+  const review = await t.s.review(t.projectId, t.item.id, { role: "anything" });
+  expect(review).toMatchObject({ engine: "checker", role: null, roleTitle: null });
+  await t.over(review.id);
+  await t.ctx.fiber.dispose();
+});
+

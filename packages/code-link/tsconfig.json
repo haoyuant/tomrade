@@ -20,6 +20,7 @@
     { "path": "../hub" },
     { "path": "../ipc" },
     { "path": "../items" },
+    { "path": "../roles" },
     { "path": "../mcp" },
     { "path": "../plugin-sdk" },
     { "path": "../repos" },
