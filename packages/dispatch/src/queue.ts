@@ -93,6 +93,8 @@ export interface Gate {
 const TTL_SECONDS = 24 * 3600;
 /** The signal's name: the account's machines read the queue again when they hear it. */
 const SIGNAL = "dispatches";
+/** How long a request this machine stepped aside from waits before this machine looks at it again. */
+const AGAIN_MS = 60_000;
 
 /**
  * The account's queue of tickets sent between its machines, as this machine takes part in it: it sends and
@@ -102,8 +104,11 @@ export class Queue {
   private rows: DispatchView[] = [];
   /** The requests this machine runs now, each with the session it started. */
   private readonly live = new Map<string, { projectId: string; sessionId: string }>();
-  /** Requests for any machine of this platform that this one cannot take: left for another, and not looked at again. */
-  private readonly passed = new Set<string>();
+  /**
+   * Requests for any machine of this platform that this one could not take, each with when it last looked: left for
+   * another, and looked at again after a while — or at once when this machine's settings change or a ticket it ran is over.
+   */
+  private readonly passed = new Map<string, number>();
   private working: Promise<void> | null = null;
   private again = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -117,7 +122,7 @@ export class Queue {
     this.home.on("cloudHub/signal", (name) => { if (name === SIGNAL) this.soon(); });
     // A session this machine runs for another ended, or accepting was turned off with requests waiting.
     this.home.on("codeLink/changed", () => { if (this.live.size) this.soon(); });
-    this.home.on("settings/changed", () => this.soon());
+    this.home.on("settings/changed", () => { this.passed.clear(); this.soon(); });
     this.home.inject(["cloudHub"], () => this.soon());
   }
 
@@ -184,15 +189,17 @@ export class Queue {
     }
     let acted = false;
     const now = Date.now();
+    for (const id of this.passed.keys()) if (!rows.some((row) => row.id === id && row.state === "queued")) this.passed.delete(id);
     for (const row of rows) {
-      const act = async (work: () => Promise<unknown>) => { await work().then(() => { acted = true; }, (e) => this.home.logger.warn(`dispatch ${row.key}: ${errorMessage(e)}`)); };
+      // False: looked and left as it was, so the other machines have nothing new to read.
+      const act = async (work: () => Promise<unknown>) => { await work().then((did) => { if (did !== false) acted = true; }, (e) => this.home.logger.warn(`dispatch ${row.key}: ${errorMessage(e)}`)); };
       // Asked from here and never taken: no longer on offer.
       if (row.fromDevice === this.me && row.state === "queued" && row.expiresAt <= now) await act(() => this.call(cloud, "tomrade_cancel_dispatch", { p_id: row.id, p_reason: "expired" }));
       // Taken here.
       else if (row.claimedBy === this.me && (row.state === "running" || row.state === "accepted")) await act(() => this.follow(cloud, row));
       else if (row.claimedBy === this.me && row.state === "cancelled" && this.live.has(row.id)) await act(() => this.halt(row));
       // On offer to this machine.
-      else if (row.state === "queued" && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && !this.passed.has(row.id)))) await act(() => this.consider(cloud, row));
+      else if (row.state === "queued" && row.fromDevice !== this.me && row.expiresAt > now && (row.toDevice === this.me || (!row.toDevice && row.toPlatform === process.platform && (this.passed.get(row.id) ?? 0) <= now - AGAIN_MS))) await act(() => this.consider(cloud, row));
     }
     if (acted) {
       cloud.signal?.(SIGNAL);
@@ -202,12 +209,12 @@ export class Queue {
   }
 
   /** A request on offer: taken if this machine's limits allow it and it has what the work needs; otherwise told why, or left for another. */
-  private async consider(cloud: Cloud, row: DispatchView): Promise<void> {
+  private async consider(cloud: Cloud, row: DispatchView): Promise<false | void> {
     const addressed = row.toDevice === this.me;
     const request: DispatchRequest = { from: row.fromDevice, projectId: row.projectId, key: row.key, permissionMode: row.wish.permissionMode ?? null };
     const refuse = async (reason: Refusal, detail?: string) => {
       // One meant for any machine of this platform is another's to take: this one only steps aside.
-      if (!addressed) { this.passed.add(row.id); return; }
+      if (!addressed) { this.passed.set(row.id, Date.now()); return false; }
       this.gate.refuse(request, reason, detail);
       await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "refused", p_reason: detail ? `${reason}: ${detail}` : reason });
     };
@@ -217,7 +224,7 @@ export class Queue {
     if (!code || !items || !agent) return refuse("start", "this build cannot start tickets");
     // The ticket travels with its project: one that has not arrived yet is waited for, until the request runs out.
     const item = items.getByKey(row.projectId, row.key);
-    if (!item) return;
+    if (!item) return false;
     const engine = await this.engine(agent, row.wish.engine);
     if (!engine) return refuse("no-agent", row.wish.engine ? `${row.wish.engine} is not ready here, and no other coding agent is` : "no coding agent is installed and signed in here");
     const modes = engine.permissionModes?.choices.map((c) => c.value) ?? null;
@@ -277,15 +284,15 @@ export class Queue {
   }
 
   /** A request this machine took: done once its session is over, and found again after a restart. */
-  private async follow(cloud: Cloud, row: DispatchView): Promise<void> {
+  private async follow(cloud: Cloud, row: DispatchView): Promise<false | void> {
     const code = this.code();
-    if (!code) return;
+    if (!code) return false;
     let running = this.live.get(row.id);
     if (!running) {
       // Taken before a restart: the session it started is the ticket's live one, if it still goes.
       const item = this.items()?.getByKey(row.projectId, row.key);
       // The project is not open here yet: nothing can be said of its sessions.
-      if (!item) return;
+      if (!item) return false;
       const session = code.sessionsOf(row.projectId, item.id, { live: true })[0];
       if (row.state === "accepted" || !session) {
         await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: row.state === "accepted" ? "refused" : "done", p_reason: row.state === "accepted" ? "start: Tomrade stopped before the ticket was started" : "the session is no longer there" });
@@ -297,9 +304,8 @@ export class Queue {
     }
     const session = code.sessionsOf(running.projectId, undefined, { ids: [running.sessionId] })[0];
     // Working, or waiting on the person: still going.
-    if (session && (session.state === "running" || session.state === "waiting")) return;
-    this.live.delete(row.id);
-    this.gate.ended(row.id);
+    if (session && (session.state === "running" || session.state === "waiting")) return false;
+    this.free(row.id);
     await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "done", p_reason: session?.state === "error" ? (session.summary ?? "the agent stopped") : null });
   }
 
@@ -307,9 +313,15 @@ export class Queue {
   private async halt(row: DispatchView): Promise<void> {
     const running = this.live.get(row.id);
     if (!running) return;
-    this.live.delete(row.id);
-    this.gate.ended(row.id);
+    this.free(row.id);
     await this.code()?.stopSession(running.projectId, running.sessionId);
+  }
+
+  /** A ticket this machine ran is over: there is room for one it stepped aside from while it was busy. */
+  private free(id: string): void {
+    this.live.delete(id);
+    this.gate.ended(id);
+    if (this.passed.size) { this.passed.clear(); this.soon(); }
   }
 
   /** Asks another machine — one by its id, or any of a platform — to work a ticket. */
