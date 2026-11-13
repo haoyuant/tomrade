@@ -11,7 +11,11 @@ export const DISPATCH_WORDS = defineWords("dispatch", {
     ceilingTitle: "Most a sent session may do without asking",
     maxConcurrentTitle: "Sessions at once",
     onlyWhenIdleTitle: "Only while this computer is idle",
-    onlyOnPowerTitle: "Only while plugged in"
+    onlyOnPowerTitle: "Only while plugged in",
+    askSend: "Send {{key}} “{{title}}” to {{where}}? A coding agent starts on it there, with that computer's own sign-in and within the limits that computer set.",
+    anyPlatform: "any {{platform}} computer",
+    askYes: "Send",
+    askNo: "Don't send"
   },
   zh: {
     sectionTitle: "来自我其他设备的工作",
@@ -23,6 +27,10 @@ export const DISPATCH_WORDS = defineWords("dispatch", {
     ceilingTitle: "派来的会话不经询问最多能做什么",
     maxConcurrentTitle: "同时进行的会话数",
     onlyWhenIdleTitle: "仅在这台电脑空闲时",
-    onlyOnPowerTitle: "仅在接通电源时"
+    onlyOnPowerTitle: "仅在接通电源时",
+    askSend: "把 {{key}}「{{title}}」派给{{where}}？那台电脑会用它自己的登录、在它设定的限制内启动 coding agent 开工。",
+    anyPlatform: "任意一台 {{platform}} 电脑",
+    askYes: "派过去",
+    askNo: "不派"
   }
 });
