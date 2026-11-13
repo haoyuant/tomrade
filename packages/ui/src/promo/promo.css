@@ -343,3 +343,106 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .tty-board > div > span { display: inline-block; transform-origin: 50% 50%; }
 .tty-end { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 20px; }
 .tty-end .tty-banner { margin: 0 0 40px; }
+
+/* ─── films cut to a band: what they share ────────────────────────────── */
+.beat-facts { position: absolute; left: 0; right: 0; bottom: 34px; margin: 0; text-align: center; font-family: var(--font-display); font-size: 26px; letter-spacing: 0.04em; color: var(--muted); }
+
+/* ─── sequencer: the board as a drum machine ──────────────────────────── */
+.seq { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, #2a2440 calc(100% - 55% * var(--night)), #0b0a12), #0b0a12 85%); color: var(--fg); font-family: var(--font-display); }
+.seq-box { position: absolute; left: 90px; top: 196px; width: 1740px; padding: 40px 40px 26px; border-radius: 44px; border: 2px solid #3a3550; background: linear-gradient(180deg, #211e2e, #17151f); box-shadow: 0 40px 100px -40px #000, inset 0 2px 0 #4a4562; transform-origin: 50% 50%; }
+.seq-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.seq-row > b { flex: 0 0 158px; font-size: 34px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.seq-row > i { flex: 0 0 78px; height: 118px; border-radius: 16px; background: #2a2738; box-shadow: inset 0 -6px 0 #1b1925, inset 0 2px 0 #3a3650; }
+.seq-row > i.is-bar { background: #302c40; }
+.seq-row > i.is-under { background: #3d3852; }
+.seq-row > i.is-on { --c: #f1e6d0; background: color-mix(in srgb, var(--c), white calc(45% * var(--flash, 0))); box-shadow: 0 0 calc(18px + 44px * var(--flash, 0)) color-mix(in srgb, var(--c) 70%, transparent), inset 0 -6px 0 rgb(0 0 0 / 0.25); }
+.seq-row > i.is-row1 { --c: #ff8a4c; }
+.seq-row > i.is-row2 { --c: #ffc66b; }
+.seq-row > i.is-row3 { --c: #7df59b; }
+.seq-row > i.is-asking { --c: #ff5a5a; }
+.seq-foot { display: flex; align-items: center; gap: 44px; margin-top: 22px; padding-left: 170px; font-size: 30px; color: var(--muted); font-family: var(--font-mono); }
+.seq-led { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); }
+.seq-led > i { width: 18px; height: 18px; border-radius: 50%; background: #3a3650; }
+.seq-led.is-on { color: #ffc66b; }
+.seq-led.is-on > i { background: #ffc66b; box-shadow: 0 0 18px #ffc66b; }
+.seq-count { transform-origin: 100% 50%; font-size: 40px; color: #7df59b; }
+.seq-tap { position: absolute; top: 20px; width: 70px; height: 70px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #ff5a5a; color: #17151f; font-size: 48px; font-weight: 800; box-shadow: 0 0 40px #ff5a5a; }
+
+/* ─── metro: a transit map, paper by day and ink through the night ────── */
+.sunrise .metro { --metro-bg: #f6f1e7; --metro-ink: #1c1a22; --metro-soft: #8a8496; }
+.daybreak .metro { --metro-bg: #12111a; --metro-ink: #efe9dc; --metro-soft: #8a84a0; }
+.metro { position: absolute; inset: 0; overflow: hidden; background: var(--metro-bg); color: var(--metro-ink); font-family: var(--font-display); }
+.metro-map, .metro-map > svg { position: absolute; inset: 0; }
+.metro-track { fill: none; stroke-width: 20; stroke-linecap: round; stroke-linejoin: round; }
+.metro-spur { fill: none; stroke: var(--metro-ink); stroke-width: 8; stroke-dasharray: 4 18; stroke-linecap: round; }
+.metro-stop { fill: var(--metro-bg); stroke: var(--metro-ink); stroke-width: 7; }
+.metro-stop.is-big { stroke-width: 10; }
+.metro-stop.is-you { stroke-width: 9; }
+.metro-stop.is-asked { fill: #ffb347; }
+.metro-name { position: absolute; transform: translate(-50%, 0); white-space: nowrap; font-size: 34px; font-weight: 600; }
+.metro-name.is-you { font-size: 46px; font-weight: 800; }
+.metro-line { position: absolute; left: 44px; padding: 8px 20px; border-radius: 12px; transform: translate(0, -50%); color: #fff; font-size: 30px; font-weight: 700; white-space: nowrap; z-index: 2; }
+.metro-train { position: absolute; z-index: 3; min-width: 78px; padding: 6px 10px; border-radius: 16px; border: 5px solid var(--metro-bg); text-align: center; color: #fff; font: 700 30px/1.2 var(--font-mono); font-style: normal; box-shadow: 0 8px 22px -8px rgb(0 0 0 / 0.5); }
+.metro-key { position: absolute; left: 110px; bottom: 70px; display: flex; flex-direction: column; gap: 6px; font-size: 28px; color: var(--metro-soft); }
+.metro-key > b { font-size: 36px; color: var(--metro-ink); letter-spacing: 0.04em; }
+.metro-key > em { font-style: normal; color: #ffb347; }
+.metro-count { position: absolute; right: 110px; bottom: 76px; transform-origin: 100% 100%; font-size: 54px; font-weight: 700; }
+
+/* ─── keys: a few keycaps, each with its turn ─────────────────────────── */
+.keys { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 30% 55%, #2a2530, #121016 75%); color: var(--fg); font-family: var(--font-display); }
+.keys-turn { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.keys-caps { position: absolute; left: 120px; top: 380px; width: 760px; display: flex; justify-content: center; gap: 44px; }
+.keys-caps > kbd {
+  width: 300px; height: 300px; border-radius: 46px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #47404f, #2b2632); border: 2px solid #5a5264; color: #f4ecdd; font: 700 150px/1 var(--font-display);
+}
+.keys-say { position: absolute; left: 960px; top: 300px; width: 880px; display: flex; flex-direction: column; gap: 18px; }
+.keys-say > b { font-size: 112px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; white-space: nowrap; }
+.keys:lang(zh) .keys-say > b { letter-spacing: 0; }
+.keys-say > span { font-size: 44px; color: var(--muted); }
+.keys-demo { display: flex; align-items: center; height: 250px; margin-top: 30px; }
+.keys-card { flex: none; width: 146px; height: 96px; margin-left: 18px; border-radius: 16px; border: 2px solid #5a5264; border-left: 8px solid var(--accent); background: #2b2632; box-shadow: 0 14px 30px -14px #000; }
+.keys-card:first-child { margin-left: 0; }
+.keys-demo.is-list { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 10px; font: 500 36px/1.5 var(--font-mono); color: var(--fg-2); }
+.keys-demo.is-panes { display: grid; gap: 14px; width: 620px; }
+.keys-demo.is-panes.is-2, .keys-demo.is-panes.is-4 { grid-template-columns: 1fr 1fr; }
+.keys-demo.is-panes > i { height: 100%; min-height: 110px; border-radius: 14px; border: 2px solid #5a5264; background: #1d1a22; position: relative; }
+.keys-demo.is-panes.is-1 > i { width: 420px; }
+.keys-demo.is-panes > i > b { position: absolute; left: 16px; top: 16px; width: 20px; height: 20px; border-radius: 50%; background: #7df59b; box-shadow: 0 0 16px #7df59b; }
+.keys-demo.is-panes > i.is-asking { border-color: #ffb347; }
+.keys-demo.is-panes > i.is-asking > b { background: #ffb347; box-shadow: 0 0 20px #ffb347; }
+.keys-rest > p { position: absolute; left: 0; right: 0; top: 520px; margin: 0; text-align: center; font-size: 46px; color: var(--muted); }
+.keys-rest > b { position: absolute; left: 0; right: 0; top: 650px; text-align: center; font-size: 150px; font-weight: 800; color: #7df59b; }
+
+/* ─── phone: a chat, and the computer at home ─────────────────────────── */
+.phone { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(160deg, #1a1638, #2a1a3c 55%, #5a2a3a); color: var(--fg); font-family: var(--font-display); }
+.phone-scene { position: absolute; inset: 0; }
+.phone-body { position: absolute; left: 150px; top: 70px; width: 500px; height: 960px; border-radius: 64px; border: 10px solid #0c0a14; background: #15121f; box-shadow: 0 50px 110px -40px #000, inset 0 0 0 2px #3a3550; overflow: hidden; display: flex; flex-direction: column; transform-origin: 50% 60%; }
+.phone-head { padding: 34px 30px 18px; border-bottom: 1px solid #2f2a42; display: flex; flex-direction: column; gap: 4px; }
+.phone-head > b { font-size: 34px; }
+.phone-head > span { font-size: 17px; color: var(--muted); white-space: nowrap; }
+.phone-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; padding: 22px 22px 34px; overflow: hidden; }
+.phone-said { align-self: flex-start; max-width: 82%; padding: 14px 20px; border-radius: 26px 26px 26px 8px; background: #2a2540; font-size: 27px; line-height: 1.35; transform-origin: 0 100%; }
+.phone-said.is-mine { align-self: flex-end; border-radius: 26px 26px 8px 26px; background: linear-gradient(135deg, var(--sun-btn-from), var(--sun-btn-to)); color: var(--accent-on); transform-origin: 100% 100%; }
+.phone-said.is-typing { display: flex; gap: 8px; padding: 22px; }
+.phone-said.is-typing > i { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.phone-choices { display: flex; gap: 10px; margin-top: 12px; }
+.phone-choices > i { padding: 6px 20px; border-radius: 999px; border: 2px solid #5a5478; font-style: normal; font-size: 24px; }
+.phone-choices > i.is-picked { border-color: var(--accent); background: var(--accent); color: var(--accent-on); }
+.phone-home { position: absolute; left: 760px; top: 600px; width: 1040px; padding: 26px 30px 30px; border-radius: 26px; border: 1px solid #3a3550; background: color-mix(in srgb, #15121f 80%, transparent); }
+.phone-home > b { display: block; margin-bottom: 18px; font-size: 28px; color: var(--muted); font-weight: 600; }
+.phone-home > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.phone-home > div > span { display: flex; flex-direction: column; gap: 16px; height: 190px; padding: 14px 18px; border-radius: 16px; background: #1d1930; font-size: 28px; color: var(--muted); }
+.phone-home > div > span.is-here { color: var(--fg); box-shadow: inset 0 0 0 2px var(--accent); }
+.phone-home > div > span > i { align-self: flex-start; padding: 10px 18px; border-radius: 12px; border-left: 7px solid var(--accent); background: #2a2540; font: 600 30px/1.2 var(--font-mono); font-style: normal; color: var(--fg); transform-origin: 0 50%; }
+
+/* ─── numbers: one large number to a bar ──────────────────────────────── */
+.numbers { --n-bg: #0e0d12; --n-ink: #f4ecdd; --n-hot: #ff7a3c; position: absolute; inset: 0; overflow: hidden; background: var(--n-bg); color: var(--n-ink); font-family: var(--font-display); }
+.numbers.is-zero { --n-bg: #ff7a3c; --n-ink: #15121b; --n-hot: #15121b; }
+.numbers-slot { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 130px; gap: 70px; transform-origin: 50% 50%; }
+.numbers-slot > b { flex: none; min-width: 430px; text-align: center; font-size: 760px; line-height: 0.9; font-weight: 800; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; color: var(--n-hot); }
+.numbers-slot > div { display: flex; flex-direction: column; gap: 26px; }
+.numbers-slot strong { font-size: 136px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }
+.numbers:lang(zh) .numbers-slot strong { letter-spacing: 0; }
+.numbers-slot span { font-size: 46px; line-height: 1.35; opacity: 0.8; max-width: 900px; }
+.numbers-ticks { position: absolute; left: 130px; right: 130px; bottom: 70px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--n-hot) calc(100% * var(--done)), color-mix(in srgb, var(--n-ink) 18%, transparent) 0); }

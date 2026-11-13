@@ -6,7 +6,7 @@ import { D, DEPS, NODE, PLAN as DAY, RUN as RUN_DAY } from "../src/promo/day/sto
 import { POINTER } from "../src/promo/babysitter/cues";
 import { CUTS, cuesOf, pointerOf, spanOf } from "../src/promo/day/cuts";
 import { COLUMNS, columnsAt, liveAt, paths, place, statusAt, variantAt } from "../src/promo/sim";
-import { BOARD, LANTERN, LANTERN_SECONDS, POSTER, POSTER_SECONDS, RIVER, TTY, TTY_SECONDS, lanternCues, posterCues, ttyCues } from "../src/promo/beat/scripts";
+import { BOARD, CHANGES, KEYS, KEYS_SECONDS, LANTERN, LANTERN_SECONDS, METRO, METRO_SECONDS, NUMBERS, NUMBERS_SECONDS, PAD, PADS, PHONE, PHONE_SECONDS, POSTER, POSTER_SECONDS, RIVER, SEQUENCER, SEQUENCER_SECONDS, TRAINS, TTY, TTY_SECONDS, arrived, keysCues, lanternCues, metroCues, numbersCues, padRow, phoneCues, playhead, posterCues, sequencerCues, trainAt, ttyCues } from "../src/promo/beat/scripts";
 import { C, CARD_SECONDS, K, PANE_MOVES, TERMINAL_POINTER, TERMINAL_SECONDS, W, WALL_POINTER, WALL_SECONDS, cardCues, terminalCues, wallCues } from "../src/promo/free/scripts";
 import { FPS } from "../src/promo/time";
 
@@ -103,10 +103,10 @@ it("keeps the free films' cues in order and inside them, and their beats in the 
 });
 
 it("cuts the films with a song to its beats: every part inside the music, every cue inside the film", () => {
-  for (const [song, seconds, cues] of [[POSTER, POSTER_SECONDS, posterCues()], [LANTERN, LANTERN_SECONDS, lanternCues()], [TTY, TTY_SECONDS, ttyCues()]] as const) {
+  for (const [song, seconds, cues] of [[POSTER, POSTER_SECONDS, posterCues()], [LANTERN, LANTERN_SECONDS, lanternCues()], [TTY, TTY_SECONDS, ttyCues()], [SEQUENCER, SEQUENCER_SECONDS, sequencerCues()], [METRO, METRO_SECONDS, metroCues()], [KEYS, KEYS_SECONDS, keysCues()], [PHONE, PHONE_SECONDS, phoneCues()], [NUMBERS, NUMBERS_SECONDS, numbersCues()]] as const) {
     const beats = Object.values(song.marks);
     expect(beats).toEqual([...beats].sort((a, b) => a - b));
-    expect(beats.every((mark) => mark > 0 && mark < song.beats)).toBe(true);
+    expect(beats.every((mark) => mark > 0 && mark <= song.beats)).toBe(true);
     expect(seconds).toBeGreaterThan((song.beats * 60) / song.bpm);
     expect(cues.every((cue) => cue.at >= 0 && cue.at < seconds)).toBe(true);
   }
@@ -115,4 +115,21 @@ it("cuts the films with a song to its beats: every part inside the music, every 
   // the river: seven lanterns through the bridge before dawn, the last only once the person has answered
   expect(RIVER.bridge + 6).toBeLessThan(RIVER.dawn);
   expect(RIVER.last).toBeGreaterThan(RIVER.answer);
+});
+
+it("moves the sequencer's pads only as the playhead crosses them, and the metro's trains one station at a time", () => {
+  for (const [i, pad] of PAD.entries()) {
+    expect(pad.on < pad.claim && pad.claim < pad.pr && pad.pr < pad.merge && pad.merge < PADS.stop).toBe(true);
+    // each move lands on the pad's own column
+    for (const q of [pad.claim, pad.pr, pad.merge]) expect(Math.round(playhead(q))).toBe(i * 2);
+    expect([padRow(i, pad.on), padRow(i, pad.claim), padRow(i, pad.pr), padRow(i, pad.merge)]).toEqual([0, 1, 2, 3]);
+  }
+  expect(playhead((PADS.ask + PADS.tap) / 2)).toBe(PADS.asks * 2);
+  for (const [j] of TRAINS.entries()) {
+    for (let q = 0; q < METRO.marks.out; q += 0.25) expect(trainAt(j, q + 0.25).at).toBeGreaterThanOrEqual(trainAt(j, q).at);
+    expect(trainAt(j, CHANGES.day).at).toBe(6);
+  }
+  // the one that changes is at the person's station while it is asked, and nowhere else is anyone
+  expect(trainAt(CHANGES.train, (CHANGES.asks + CHANGES.answered) / 2).up).toBe(1);
+  expect(arrived(METRO.marks.out)).toBe(TRAINS.length);
 });

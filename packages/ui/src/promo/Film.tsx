@@ -40,7 +40,18 @@ export interface FilmDef {
 }
 
 /** A piece of music by its style: its tempo, how many beats it runs, and the beats its parts turn at. */
-export interface Song { style: "pulse" | "nocturne" | "chip"; bpm: number; beats: number; marks: Record<string, number> }
+export interface Song { style: "pulse" | "nocturne" | "chip" | "band"; bpm: number; beats: number; marks: Record<string, number>; band?: Band }
+
+/**
+ * A small band's part, a bar of sixteen steps at a time: which steps the kick, snare and hat play (a hat of 2 is
+ * open), the bass as semitones over the chord's root, where the chord is stabbed, the chords bar by bar, a tune as
+ * semitones over middle C, and how late the off steps come. Before the song's `drop` mark, and between `rest` and
+ * `back`, the drums are out; at `out` it ends on one chord.
+ */
+export interface Band {
+  swing: number; kick: number[]; snare: number[]; hat: number[]; bass: (number | null)[]; stab?: number[];
+  prog: ("Am" | "F" | "C" | "G" | "Em" | "Dm")[]; tune?: (number | null)[][]; lead?: "pluck" | "square" | "piano" | "bell"; pad?: boolean; low?: "saw" | "triangle";
+}
 
 /** A film whose picture reads what its own Prepare measured. */
 export function film<P>(def: Omit<FilmDef, "Prepare" | "Picture"> & { Prepare: FC<{ lang: Lang; f: Format; onDone: (prepared: P) => void }>; Picture: FC<{ t: number; f: Format; lang: Lang; prepared: P }> }): FilmDef {

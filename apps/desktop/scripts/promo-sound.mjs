@@ -125,7 +125,7 @@ export function soundtrack(cues, seconds, song = null) {
       return low * u * u;
     });
   };
-  const CHORD = { Am: [45, 52, 57, 60, 64], F: [41, 48, 53, 57, 60], C: [48, 55, 60, 64, 67], G: [43, 50, 55, 59, 62], Em: [40, 47, 52, 55, 59] };
+  const CHORD = { Am: [45, 52, 57, 60, 64], F: [41, 48, 53, 57, 60], C: [48, 55, 60, 64, 67], G: [43, 50, 55, 59, 62], Em: [40, 47, 52, 55, 59], Dm: [38, 50, 53, 57, 62] };
   const compose = {
     /** Four on the floor: a spare opening, a drop, a breakdown for the night, a roll back in, a last hit. */
     pulse({ bpm, beats, marks: { drop, night, build, back, out } }) {
@@ -221,6 +221,45 @@ export function soundtrack(cues, seconds, song = null) {
         } else if (b === out) {
           for (const midi of [48, 60, 64, 67, 72]) square(at, midi, 3 * B, 0.07, 0, 0.5);
           triangle(at, 36, 3 * B, 0.3);
+        }
+      }
+    }
+    ,
+    /** A band that plays the part the film wrote for it (Film.tsx's Band), sixteen steps to the bar. */
+    band({ bpm, beats, marks: { drop = 0, rest = Infinity, back = Infinity, out = beats }, band }) {
+      const B = 60 / bpm;
+      const S = B / 4;
+      if (drop > 2) riser((drop - 2) * B, 2 * B, 0.4);
+      if (Number.isFinite(back)) riser((back - 2) * B, 2 * B, 0.4);
+      for (let step = 0; step < beats * 4; step += 1) {
+        const b = step / 4;
+        const i = step % 16;
+        const bar = Math.floor(step / 16);
+        const at = step * S + (step % 2 ? band.swing * S : 0);
+        const chord = CHORD[band.prog[bar % band.prog.length]];
+        if (b >= out) {
+          if (step === out * 4) {
+            kick(at, 1);
+            stab(at, [chord[0], ...chord.slice(1).map((midi) => midi + 12)], 4 * B, 0.45);
+            bell(at, note(chord[2] + 24), 0.12, 0);
+          }
+          continue;
+        }
+        const quiet = b < drop || (b >= rest && b < back);
+        if (!quiet && band.kick[i]) kick(at, 0.85);
+        if (!quiet && band.snare[i]) snare(at, 0.3);
+        if (band.hat[i]) hat(at, quiet ? 0.06 : 0.05 + 0.08 * band.hat[i], band.hat[i] > 1);
+        const low = band.bass[i];
+        if (low !== null && low !== undefined && (!quiet || i % 8 === 0)) (band.low === "triangle" ? triangle : saw)(at, chord[0] - 12 + low, S * 1.7, 0.3);
+        if (i === 0 && band.pad) pad(at, 4 * B + 0.5, chord, 0.12);
+        if (!quiet && band.stab?.[i]) stab(at, chord.slice(1), S * 3, 0.26);
+        const tone = b >= drop ? band.tune?.[bar % band.tune.length]?.[i] : null;
+        if (tone !== null && tone !== undefined) {
+          const midi = 60 + tone;
+          if (band.lead === "square") square(at, midi, S * 1.8, 0.1, 0.2, 0.5);
+          else if (band.lead === "piano") piano(at, midi, 0.15, 0.2);
+          else if (band.lead === "bell") bell(at, note(midi + 12), 0.08, 0.3);
+          else pluck(at, note(midi), 0.2, 0.25);
         }
       }
     }
