@@ -513,6 +513,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .man-more { padding-left: 2.4em; max-width: 1500px; white-space: normal; }
 .man-option { padding-left: 1em; width: 780px; overflow: hidden; text-overflow: ellipsis; border-radius: 8px; color: var(--tty-dim); }
 .man-option > b { color: inherit; }
+/* English titles run longer than the column at the page's size: the options are set a little smaller. */
+.man:lang(en) .man-option { font-size: 29px; }
 .man-option.is-done { color: var(--tty-fg); }
 .man-option.is-done > i { font-style: normal; color: var(--tty-green); }
 .man-option.is-on { background: var(--tty-green); color: #06090a; text-shadow: none; font-weight: 700; }
