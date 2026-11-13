@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../agent" },
+    { "path": "../contracts" },
+    { "path": "../db" },
+    { "path": "../domain" },
+    { "path": "../ipc" },
+    { "path": "../storage" }
+  ]
+}

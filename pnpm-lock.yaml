@@ -239,6 +239,9 @@ importers:
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../../packages/repos
+      '@tomradex/roles':
+        specifier: workspace:*
+        version: link:../../packages/roles
       '@tomradex/schedules':
         specifier: workspace:*
         version: link:../../packages/schedules
@@ -704,6 +707,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/roles':
+        specifier: workspace:*
+        version: link:../roles
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -792,6 +798,9 @@ importers:
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../repos
+      '@tomradex/roles':
+        specifier: workspace:*
+        version: link:../roles
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1031,6 +1040,9 @@ importers:
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
+      '@tomradex/roles':
+        specifier: workspace:*
+        version: link:../roles
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -2663,6 +2675,46 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/roles:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8(patch_hash=5de844fb499195456c966ac309be13a126ee4d9c63ddc1d5e5f234e55b600b2d)
+    devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/schedules:
     dependencies:
       '@tomradex/agent':
@@ -3167,6 +3219,9 @@ importers:
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../repos
+      '@tomradex/roles':
+        specifier: workspace:*
+        version: link:../roles
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

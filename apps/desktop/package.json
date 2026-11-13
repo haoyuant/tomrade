@@ -145,6 +145,7 @@
     "@tomradex/projects": "workspace:*",
     "@tomradex/pty-host": "workspace:*",
     "@tomradex/repos": "workspace:*",
+    "@tomradex/roles": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/night-shift": "workspace:*",
     "@tomradex/takeover": "workspace:*",

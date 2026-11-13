@@ -1,12 +1,7 @@
 import { z } from "zod";
+import { CEILINGS, levelOf, modeWithin, rankOf as rank, type Ceiling } from "@tomradex/roles";
 
-/**
- * How far a session another machine asked for may go without asking anyone, from least to most:
- * `read` changes nothing, `ask` asks before each change, `edits` edits files and asks before commands,
- * `full` runs anything.
- */
-export const CEILINGS = ["read", "ask", "edits", "full"] as const;
-export type Ceiling = (typeof CEILINGS)[number];
+export { CEILINGS, levelOf, modeWithin, type Ceiling };
 
 /** What this machine takes from the account's other machines. Off until the person says so. */
 export const AcceptPolicy = z.object({
@@ -26,25 +21,6 @@ export const POLICY_DEFAULTS: AcceptPolicy = AcceptPolicy.parse({});
 
 /** Nobody has touched the machine for this long: it counts as idle. */
 export const IDLE_SECONDS = 180;
-
-/**
- * Each engine names its permission modes its own way. A mode this table does not know counts as `full`:
- * a mode nobody can vouch for is allowed only where everything is.
- */
-const MODE_LEVEL: Record<string, Ceiling> = {
-  plan: "read", "read-only": "read",
-  default: "ask", local: "ask",
-  acceptEdits: "edits", workspace: "edits",
-  auto: "full", bypassPermissions: "full", "full-access": "full"
-};
-export const levelOf = (mode: string): Ceiling => MODE_LEVEL[mode] ?? "full";
-const rank = (level: Ceiling) => CEILINGS.indexOf(level);
-
-/** The most this machine lets one of an engine's modes do: the highest of them within the ceiling, or null when none is. */
-export function modeWithin(ceiling: Ceiling, modes: readonly string[]): string | null {
-  const allowed = modes.filter((mode) => rank(levelOf(mode)) <= rank(ceiling));
-  return allowed.sort((a, b) => rank(levelOf(b)) - rank(levelOf(a)))[0] ?? null;
-}
 
 /** What another machine asks for. Everything in it is a wish: the limits are this machine's own. */
 export interface DispatchRequest {

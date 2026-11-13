@@ -478,6 +478,11 @@ plugins:
   # them to the agent working the ticket. Kept on this machine.
   - id: change-review
     name: "@tomradex/change-review"
+  # A project's roles: named ways of working a ticket (which agents in which
+  # order, how far they may go, what more they are told) that travel with the
+  # project. Start and review read them; without the plugin both work as before.
+  - id: roles
+    name: "@tomradex/roles"
   # Tells the person when a run seems stuck, repeats itself or goes nowhere. It
   # only tells: a run is never stopped or changed.
   - id: watchdog

@@ -18,6 +18,7 @@
     { "path": "../hub" },
     { "path": "../ipc" },
     { "path": "../items" },
+    { "path": "../roles" },
     { "path": "../settings" },
     { "path": "../tools" }
   ]

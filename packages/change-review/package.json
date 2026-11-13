@@ -27,6 +27,7 @@
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/roles": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
