@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DispatchView } from "@tomradex/dispatch";
+import { match } from "@tomradex/dispatch/match";
 import type { DeviceSession, DeviceView, DevicesInfo } from "@tomradex/hub-cloud";
 import { invoke } from "./api";
 import { keys, useHubInfo } from "./queries";
@@ -53,6 +54,28 @@ export const whyNot = (device: DeviceView, projectId: string): "not-accepting" |
 /** The computers a ticket of this project can be sent to: the others that accept work for it. */
 export const takers = (devices: DeviceView[] | undefined, projectId: string): DeviceView[] =>
   (devices ?? []).filter((d) => !d.self && !whyNot(d, projectId));
+
+/** What a ticket's label asks for and cannot have: the label, the platform it names (null: one computer, by `name`), and why. */
+export interface LabelMiss {
+  label: string;
+  platform: string | null;
+  name: string;
+  why: "nobody" | "not-accepting" | "project" | "no-agent";
+}
+
+/**
+ * A ticket whose label asks for another computer, or another platform, that cannot take it: by the same rules
+ * that place tickets everywhere else. Null when the labels ask for nothing, for this computer, or for one that
+ * can take it or has only to come on or free up; and until this computer has its place among the account's.
+ */
+export function labelMiss(item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined): LabelMiss | null {
+  if (info?.state !== "ready") return null;
+  const found = match({ projectId, labels: item.labels }, info.devices);
+  if (found.kind !== "none" || found.why === "excluded" || found.why === "offline" || found.why === "busy") return null;
+  const named = item.labels.some((l) => l.trim().toLowerCase().startsWith("device:"));
+  const platform = named ? null : (Object.entries(PLATFORM_LABELS).find(([, label]) => label === found.wanted)?.[0] ?? null);
+  return { label: named ? `device:${found.wanted}` : found.wanted, platform, name: found.name ?? found.wanted, why: found.why };
+}
 
 /**
  * What Start has to say of where a ticket runs.

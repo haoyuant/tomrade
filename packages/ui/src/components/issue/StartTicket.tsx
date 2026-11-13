@@ -12,7 +12,7 @@ import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, t
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
 import { RunOn } from "./RunOn";
-import { targetOf, takers, useDevices } from "~/lib/devices";
+import { labelMiss, targetOf, takers, useDevices } from "~/lib/devices";
 import { useI18n } from "~/lib/i18n";
 import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
@@ -219,7 +219,8 @@ function StartTicketDialog({
   // Where it runs: here unless the person picks another computer, or the ticket's labels name one that can take it.
   const devices = useDevices();
   const [chosenTarget, setChosenTarget] = useState<string | null>(null);
-  const target = chosenTarget ?? (quick ? null : targetOf(item, takers(devices.data?.devices, projectId))) ?? "here";
+  // A label no computer can answer now leaves the ticket here, where Start says why.
+  const target = chosenTarget ?? (quick || labelMiss(item, projectId, devices.data) ? null : targetOf(item, takers(devices.data?.devices, projectId))) ?? "here";
   const elsewhere = target !== "here";
   const engines = useEngines();
   const settings = useSettings();
