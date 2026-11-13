@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS plugin_changereview_reviews (
 CREATE INDEX IF NOT EXISTS idx_plugin_changereview_reviews_item ON plugin_changereview_reviews(item_id);
 CREATE INDEX IF NOT EXISTS idx_plugin_changereview_reviews_thread ON plugin_changereview_reviews(thread_id);
 `
-  }
+  },
+  // The project's role a review was made as.
+  { version: 4, up: "ALTER TABLE plugin_changereview_reviews ADD COLUMN role TEXT" }
 ];
 
 /** This machine's review of a checkout that is here: another machine sees other lines, and has its own agent to tell. */
@@ -86,6 +88,8 @@ export interface AgentReview {
   delivery: number;
   /** The engine that reviewed. */
   engine: string;
+  /** The project's role it reviewed as (a role's id); null from before roles, or without them. */
+  role: string | null;
   /** The engine that wrote the change reviewed it: no other one was ready. */
   same: boolean;
   threadId: string;
@@ -169,6 +173,7 @@ interface ReviewRow {
   item_id: string;
   delivery: number;
   engine: string;
+  role: string | null;
   same: number;
   thread_id: string;
   heads: string;
@@ -187,6 +192,7 @@ const toReview = (r: ReviewRow): AgentReview => ({
   itemId: r.item_id,
   delivery: r.delivery,
   engine: r.engine,
+  role: r.role ?? null,
   same: r.same === 1,
   threadId: r.thread_id,
   heads: JSON.parse(r.heads) as AgentReview["heads"],
@@ -266,10 +272,10 @@ export class ReviewStore {
     return (this.db(projectId).prepare("SELECT * FROM plugin_changereview_reviews WHERE held = 1 ORDER BY started_at ASC").all() as ReviewRow[]).map(toReview);
   }
 
-  addReview(projectId: string, review: Pick<AgentReview, "id" | "itemId" | "delivery" | "engine" | "same" | "threadId" | "heads" | "askedBy" | "startedAt">): AgentReview {
+  addReview(projectId: string, review: Pick<AgentReview, "id" | "itemId" | "delivery" | "engine" | "role" | "same" | "threadId" | "heads" | "askedBy" | "startedAt">): AgentReview {
     this.db(projectId)
-      .prepare("INSERT INTO plugin_changereview_reviews (id, project_id, item_id, delivery, engine, same, thread_id, heads, asked_by, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(review.id, projectId, review.itemId, review.delivery, review.engine, review.same ? 1 : 0, review.threadId, JSON.stringify(review.heads), review.askedBy, review.startedAt);
+      .prepare("INSERT INTO plugin_changereview_reviews (id, project_id, item_id, delivery, engine, role, same, thread_id, heads, asked_by, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(review.id, projectId, review.itemId, review.delivery, review.engine, review.role, review.same ? 1 : 0, review.threadId, JSON.stringify(review.heads), review.askedBy, review.startedAt);
     return this.review(projectId, review.id)!;
   }
 

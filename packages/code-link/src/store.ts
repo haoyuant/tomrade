@@ -263,7 +263,9 @@ CREATE TABLE plugin_code_link_runs (
   PRIMARY KEY (link_id, id)
 );
 `
-  }
+  },
+  // The project's role a session works as, when its Start named one.
+  { version: 25, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN role TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -448,6 +450,8 @@ export interface SessionView {
   requestedBy: string | null;
   /** The person said, when asking for the work, to merge it once delivered. */
   autoMerge: boolean;
+  /** The project's role it works as (a role's id), when its Start went by one. */
+  role: string | null;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -559,6 +563,7 @@ interface SessionRow {
   blocked: string | null;
   requested_by: string | null;
   auto_merge: number | null;
+  role: string | null;
   device: string;
   started_at: number;
   ended_at: number | null;
@@ -684,6 +689,7 @@ const toSession = (r: SessionRow): SessionView => ({
   blocked: (r.blocked as SessionBlock | null) ?? null,
   requestedBy: r.requested_by ?? null,
   autoMerge: r.auto_merge === 1,
+  role: r.role ?? null,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -768,6 +774,7 @@ export interface SessionPatch {
   blocked?: SessionBlock | null;
   requestedBy?: string | null;
   autoMerge?: boolean;
+  role?: string | null;
   endedAt?: number | null;
 }
 
@@ -1214,17 +1221,17 @@ export class CodeLinkStore {
     return row ? toSession(row) : null;
   }
 
-  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null; autoMerge?: boolean }): SessionView {
+  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null; autoMerge?: boolean; role?: string | null }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
     // A ticket it starts on is its first mark: the conversation belongs to it from the first line.
     const marks: SessionMark[] = input.itemIds.map((itemId) => ({ itemId, at: now }));
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, marks_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, marks_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, role, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), JSON.stringify(marks), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), JSON.stringify(marks), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, input.role ?? null, now, input.device, now);
     return this.session(projectId, id)!;
   }
 
@@ -1301,6 +1308,7 @@ export class CodeLinkStore {
       blocked: "blocked",
       requestedBy: "requested_by",
       autoMerge: "auto_merge",
+      role: "role",
       endedAt: "ended_at"
     };
     const sets: string[] = [];
