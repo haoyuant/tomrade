@@ -353,6 +353,25 @@ const run = async () => {
   await shot("devices-07c-run-on-miss");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
 
+  // ── one click, once Start remembers how it last went ─────────────────
+  ctx.agent.engine({ id: "ready", title: "Ready", author: "ai:ready", capabilities: ["code"], available: async () => ({ ok: true }), async turn() { return { stop: "end" }; } });
+  ctx.codeLink.startDefaults = () => ({ mode: "run", engine: "ready" });
+  const starts = [];
+  ctx.codeLink.start = (_projectId, itemId) => new Promise(() => { starts.push(itemId); });
+  await win0.webContents.reload();
+  await sleep(3500);
+  await $(`location.hash = '#/p/${project.id}/i/${second.key}'; true`);
+  check("once Start remembers how it last went, its button starts in one click", await until(`(document.querySelector('[data-testid="start-quick"]')?.textContent ?? '').includes('Ready')`), await $(`document.querySelector('.split-btn')?.textContent`));
+  await press(`document.querySelector('[data-testid="start-ways"]')`);
+  await sleep(400);
+  check("its menu still leads to another computer", (await press(`[...document.querySelectorAll('[role="menuitem"]')].find(n => n.textContent.includes('Run on another computer…'))`)) && (await until(`!!document.querySelector('[data-testid="run-on"]') && !!document.querySelector('[data-testid="start-confirm"]')`)), await $(`[...document.querySelectorAll('[role="menuitem"]')].map(n => n.textContent)`));
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
+  await press(`document.querySelector('[data-testid="start-quick"]')`);
+  check("one click on a ticket whose label asks for another computer starts nothing here: Start opens and says why", (await until(`(document.querySelector('[data-testid="run-on-miss"]')?.textContent ?? '').includes('asks for a Windows computer')`)) && starts.length === 0, { starts, shown: await $(`document.querySelector('[data-testid="run-on"]')?.textContent ?? null`) });
+  await shot("devices-07d-quick-label");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+
   // ── in Chinese ───────────────────────────────────────────────────────
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
   await win0.webContents.reload();

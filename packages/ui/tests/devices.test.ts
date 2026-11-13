@@ -158,3 +158,27 @@ it("says why a label's computer cannot take a ticket, by the rules that place ti
   expect(labelMiss({ labels: ["windows"] }, "p1", info([self], "pending"))).toBeNull();
   expect(labelMiss({ labels: ["windows"] }, "p1", undefined)).toBeNull();
 });
+
+import { asksElsewhere } from "../src/lib/devices";
+
+it("knows a ticket whose label asks for another computer, so Start asks before starting it here", () => {
+  const accept = { on: true, projects: "all" as const, ceiling: "edits" as const, concurrent: 1 };
+  const ready = [{ id: "claude-code", title: "Claude Code", ready: true }];
+  const info = (devices: DeviceView[], state: DevicesInfo["state"] = "ready"): DevicesInfo => ({ state, devices, plan: { id: "free", limit: 2, subscribeUrl: "" } });
+  const self = device("self", { self: true, name: "Studio", platform: "darwin", accept, agents: ready });
+  const win = device("win", { name: "Tower", platform: "win32", accept, agents: ready });
+  const mac = device("mac", { name: "Mini", platform: "darwin", accept, agents: ready });
+  const asks = (labels: string[], devices: DeviceView[]) => asksElsewhere({ labels }, "p1", info(devices));
+  // Another computer that can take it, one that has to wait, one that cannot, and one nobody has.
+  expect(asks(["windows"], [self, win])).toBe(true);
+  expect(asks(["device:tower"], [self, { ...win, online: false }])).toBe(true);
+  expect(asks(["windows"], [self, { ...win, accept: { ...accept, on: false } }])).toBe(true);
+  expect(asks(["linux"], [self, win])).toBe(true);
+  // No label of where, or one that means this computer — even with another of its platform around.
+  expect(asks(["bug"], [self, win])).toBe(false);
+  expect(asks(["macos"], [self, mac])).toBe(false);
+  expect(asks(["device:studio"], [self, win])).toBe(false);
+  // Nothing is known of the others before this computer has its place.
+  expect(asksElsewhere({ labels: ["windows"] }, "p1", info([], "signed-out"))).toBe(false);
+  expect(asksElsewhere({ labels: ["windows"] }, "p1", undefined)).toBe(false);
+});

@@ -95,6 +95,13 @@ export function labelMiss(item: { labels: string[] }, projectId: string, info: D
 }
 
 /**
+ * Whether a ticket's labels ask for another computer than this one, whether or not one can take it now: Start
+ * then asks where it runs before starting it here. False until this computer has its place among the account's.
+ */
+export const asksElsewhere = (item: { labels: string[] }, projectId: string, info: DevicesInfo | undefined): boolean =>
+  info?.state === "ready" && match({ projectId, labels: item.labels }, info.devices).kind !== "here";
+
+/**
  * What Start has to say of where a ticket runs.
  * - `hidden`: nothing yet, or nothing to offer: no account service here, the list not read, this computer still registering.
  * - `signed-out`, `alone`, `out`: only this computer, and what is missing: an account, a second computer, a place among the account's.
