@@ -228,6 +228,17 @@ const run = async () => {
   check("what it was doing reads as last known", (await winCard()).includes("Last known, 2h ago") && (await winCard()).includes(ticket.key) && (await winCard()).includes("Faster on Windows"), await winCard());
   await shot("devices-03-two-light");
 
+  // ── asked once whether this computer should take work ────────────────
+  const askToast = `[...document.querySelectorAll('.toast')].find(n => n.textContent.includes('Turn on accepting work here?'))`;
+  check("with a second computer, this one is asked once whether it should take work", await until(`!!${askToast}`), await $(`[...document.querySelectorAll('.toast')].map(n => n.textContent)`));
+  await shot("devices-03b-accept-ask");
+  await press(`[...${askToast}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open the setting')`);
+  check("its answer opens the setting, on the Devices pane", await until(`!!document.querySelector('[data-testid="accept-switch"]') && (${pane}?.textContent ?? '').includes('The computers signed in to your account')`), await paneText());
+  // The list is read again: the question stays answered.
+  ctx.cloudHub.machines.seen({ [self]: [{ at: Date.now() }] });
+  await sleep(1500);
+  check("answered, it is not asked again, and accepting stays off", !(await $(`!!${askToast}`)) && (await $(`localStorage.getItem('tomrade.devices.acceptAsked')`)) === "1" && supabase.state.devices.get(self)?.facts?.accept?.on === false);
+
   // ── accepting work from the other computers ──────────────────────────
   const accept = `document.querySelector('[data-testid="accept-work"]')`;
   const sw = `document.querySelector('[data-testid="accept-switch"]')`;
