@@ -250,7 +250,12 @@ export type ChangeReviewAsk =
   | { op: "remove"; id: string }
   | { op: "target" }
   | { op: "send"; deliver?: boolean }
-  | { op: "markReviewed"; linkId?: string };
+  | { op: "markReviewed"; linkId?: string }
+  /** An agent's review of the changes: who can make one, the ones made, a new one, and the person having seen what waited on them. */
+  | { op: "reviewers" }
+  | { op: "reviews" }
+  | { op: "review"; engine?: string }
+  | { op: "release" };
 
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }

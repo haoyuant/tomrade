@@ -19,6 +19,8 @@ export interface DiffComment {
   createdAt: number;
   /** A reviewing agent found it: who, and how much it matters. */
   finding?: { reviewer: string; severity: "info" | "warning" | "error" };
+  /** A finding of a review the branch has moved past: it speaks of older code. */
+  stale?: boolean;
 }
 
 /** What a new comment is made of. */

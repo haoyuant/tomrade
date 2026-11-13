@@ -152,6 +152,10 @@ button.diff__gap:hover:not(:disabled), .diff__fold:hover { color: var(--accent);
 .diff__finding--warning { color: var(--warn); }
 .diff__finding--error { color: var(--danger); }
 
+.diff__review { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); font-size: var(--text-sm); }
+.diff__review-status { display: flex; flex: 1 1 240px; flex-wrap: wrap; gap: var(--space-1) var(--space-2); align-items: center; min-width: 0; color: var(--fg-2); }
+.diff__review-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
 .diff__report { flex-shrink: 0; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); font-size: var(--text-sm); }
 .diff__report > summary { color: var(--muted); cursor: pointer; }
 .diff__report-body { max-height: 200px; padding-top: var(--space-2); overflow: auto; color: var(--fg-2); overflow-wrap: anywhere; white-space: pre-wrap; }

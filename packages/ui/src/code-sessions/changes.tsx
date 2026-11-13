@@ -36,7 +36,11 @@ const sourceOf = (itemId: string): ChangesSource => ({
   removeComment: (id) => changeReview(itemId, { op: "remove", id }),
   reviewTarget: () => changeReview(itemId, { op: "target" }),
   sendComments: (opts) => changeReview(itemId, { op: "send", deliver: opts?.deliver }),
-  markReviewed: (opts) => changeReview(itemId, { op: "markReviewed", linkId: opts?.linkId })
+  markReviewed: (opts) => changeReview(itemId, { op: "markReviewed", linkId: opts?.linkId }),
+  reviewers: () => changeReview(itemId, { op: "reviewers" }),
+  reviews: () => changeReview(itemId, { op: "reviews" }),
+  startReview: (opts) => changeReview(itemId, { op: "review", engine: opts?.engine }),
+  releaseReview: () => changeReview(itemId, { op: "release" })
 });
 
 function Sheet({ target, onNotice }: { target: Shown; onNotice: (text: string) => void }) {
