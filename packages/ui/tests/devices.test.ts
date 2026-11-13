@@ -102,3 +102,37 @@ it("says what Start's choice of computer lacks: an account, a second computer, a
   const none = runOnState(true, info("ready", [self, ...others.slice(1)]), "p1");
   expect(none.kind === "choose" && none.others.every((o) => o.why)).toBe(true);
 });
+
+import { labelMiss } from "../src/lib/devices";
+
+it("says why a label's computer cannot take a ticket, by the rules that place tickets", () => {
+  const accept = { on: true, projects: "all" as const, ceiling: "edits" as const, concurrent: 1 };
+  const ready = [{ id: "claude-code", title: "Claude Code", ready: true }];
+  const info = (devices: DeviceView[], state: DevicesInfo["state"] = "ready"): DevicesInfo => ({ state, devices, plan: { id: "free", limit: 2, subscribeUrl: "" } });
+  const self = device("self", { self: true, name: "Studio", platform: "darwin", accept, agents: ready });
+  const win = (over: Partial<DeviceView> = {}) => device("win", { name: "Tower", platform: "win32", accept, agents: ready, ...over });
+  const miss = (labels: string[], devices: DeviceView[]) => labelMiss({ labels }, "p1", info(devices));
+
+  // A platform nobody has, and a name nobody has.
+  expect(miss(["windows"], [self])).toEqual({ label: "windows", platform: "win32", name: "windows", why: "nobody" });
+  expect(miss(["Device:Gone"], [self, win()])).toEqual({ label: "device:gone", platform: null, name: "gone", why: "nobody" });
+  // The one the label asks for, and why it cannot: by platform and by name alike.
+  expect(miss(["windows"], [self, win({ accept: { ...accept, on: false } })])).toMatchObject({ platform: "win32", name: "Tower", why: "not-accepting" });
+  expect(miss(["windows"], [self, win({ accept: undefined })])).toMatchObject({ name: "Tower", why: "not-accepting" });
+  expect(miss(["windows"], [self, win({ accept: { ...accept, projects: ["p2"] } })])).toMatchObject({ name: "Tower", why: "project" });
+  expect(miss(["windows"], [self, win({ agents: [{ id: "codex", title: "Codex", ready: false }] })])).toMatchObject({ name: "Tower", why: "no-agent" });
+  expect(miss(["device:tower"], [self, win({ accept: { ...accept, on: false } })])).toEqual({ label: "device:tower", platform: null, name: "Tower", why: "not-accepting" });
+
+  // Off or full only has to wait: it can still be sent there.
+  expect(miss(["windows"], [self, win({ online: false })])).toBeNull();
+  expect(miss(["windows"], [self, win({ sessions: [session("TOM-9")] })])).toBeNull();
+  // It can take it; the label means this computer; or no label speaks of where.
+  expect(miss(["windows"], [self, win()])).toBeNull();
+  expect(miss(["macos"], [self, win()])).toBeNull();
+  expect(miss(["device:studio"], [self])).toBeNull();
+  expect(miss(["bug"], [self])).toBeNull();
+  // Before this computer has its place, nothing is known of the others: nothing is said.
+  expect(labelMiss({ labels: ["windows"] }, "p1", info([], "signed-out"))).toBeNull();
+  expect(labelMiss({ labels: ["windows"] }, "p1", info([self], "pending"))).toBeNull();
+  expect(labelMiss({ labels: ["windows"] }, "p1", undefined)).toBeNull();
+});

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
 import { invoke } from "~/lib/api";
-import { PLATFORM_LABELS, deviceLabel, runOnState, useDevices, type RunTarget } from "~/lib/devices";
+import { PLATFORM_LABELS, deviceLabel, labelMiss, runOnState, useDevices, type RunTarget } from "~/lib/devices";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { invalidateWorkspace, keys, useHubInfo } from "~/lib/queries";
 import { openSettingsPane } from "~/lib/settingsHost";
@@ -52,6 +52,16 @@ export function RunOn({ projectId, item, target, onTarget, onClose }: { projectI
     onError: (error) => toast(errorSpec(error))
   });
   if (item.workType === "general" || state.kind === "hidden") return null;
+  const miss = labelMiss(item, projectId, devices.data);
+  // The label asked for a computer that cannot take it: said, so a ticket meant for elsewhere does not start here unnoticed.
+  const missed = miss && (
+    <p className="meta-txt" role="note" data-testid="run-on-miss">
+      {t("devices.missNote", {
+        ask: miss.platform ? t("devices.missAskPlatform", { label: miss.label, platform: PLATFORM_WORDS[miss.platform] ? t(PLATFORM_WORDS[miss.platform]!) : miss.platform }) : t("devices.missAskDevice", { label: miss.label }),
+        why: miss.why === "nobody" ? t(miss.platform ? "devices.missWhy_nobodyPlatform" : "devices.missWhy_nobodyDevice") : t(`devices.missWhy_${miss.why}`, { name: miss.name })
+      })}
+    </p>
+  );
   const settings = (pane: "hub" | "devices") => (
     <button type="button" className="link-btn" data-testid="run-on-settings" onClick={() => { onClose(); openSettingsPane(pane); }}>
       {t(pane === "hub" ? "devices.runOnOpenHub" : "devices.runOnOpenDevices")}
@@ -66,6 +76,7 @@ export function RunOn({ projectId, item, target, onTarget, onClose }: { projectI
           <span className="meta-txt">{t("devices.thisComputer")}</span>
         </div>
         <p className="meta-txt" data-testid="run-on-hint">{t(only.hint)} {only.pane && settings(only.pane)}</p>
+        {missed}
       </div>
     );
   }
@@ -83,6 +94,7 @@ export function RunOn({ projectId, item, target, onTarget, onClose }: { projectI
         </select>
       </label>
       {!able.length && <p className="meta-txt" data-testid="run-on-hint">{t("devices.runOnNoTaker")} {settings("devices")}</p>}
+      {!remote && missed}
       {remote && (
         <>
           <p className="meta-txt" data-testid="run-on-note">
