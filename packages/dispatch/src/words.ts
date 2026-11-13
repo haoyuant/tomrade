@@ -15,7 +15,8 @@ export const DISPATCH_WORDS = defineWords("dispatch", {
     askSend: "Send {{key}} “{{title}}” to {{where}}? A coding agent starts on it there, with that computer's own sign-in and within the limits that computer set.",
     anyPlatform: "any {{platform}} computer",
     askYes: "Send",
-    askNo: "Don't send"
+    askNo: "Don't send",
+    askedHere: "{{who}} asks to run {{key}} “{{title}}” on this computer. It waits for your yes."
   },
   zh: {
     sectionTitle: "来自我其他设备的工作",
@@ -31,6 +32,7 @@ export const DISPATCH_WORDS = defineWords("dispatch", {
     askSend: "把 {{key}}「{{title}}」派给{{where}}？那台电脑会用它自己的登录、在它设定的限制内启动 coding agent 开工。",
     anyPlatform: "任意一台 {{platform}} 电脑",
     askYes: "派过去",
-    askNo: "不派"
+    askNo: "不派",
+    askedHere: "{{who}} 请求在这台电脑上运行 {{key}}「{{title}}」，等你同意。"
   }
 });

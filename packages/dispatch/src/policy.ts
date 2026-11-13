@@ -33,6 +33,11 @@ export interface DispatchRequest {
   permissionMode?: string | null;
   /** The most the ticket's role lets a session do, as this machine's own copy of the role says; the lower of it and this machine's limit holds. */
   limit?: Ceiling | null;
+  /**
+   * The person at this machine said yes to this very request: one from another account, which the machine's owner
+   * let in for it alone. The switch that lets the account's own machines send work unasked says nothing of it.
+   */
+  byHand?: boolean;
 }
 
 /** How this machine stands right now. */
@@ -60,7 +65,7 @@ export type Admission = { ok: true; permissionMode: string | null } | { ok: fals
  * ceiling is refused, not lowered: the machine that asked is told, and can ask for less.
  */
 export function admit(policy: AcceptPolicy, request: DispatchRequest, state: MachineState): Admission {
-  if (!policy.accept) return { ok: false, reason: "off" };
+  if (!policy.accept && !request.byHand) return { ok: false, reason: "off" };
   if (!policy.allProjects && !policy.projects.includes(request.projectId)) return { ok: false, reason: "project-not-allowed" };
   if (!state.projects.includes(request.projectId)) return { ok: false, reason: "project-missing" };
   const asked = request.permissionMode ?? null;

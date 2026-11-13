@@ -1,12 +1,13 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import { contract, readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
+import { languageTag } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/tools";
-import { AcceptPolicy, POLICY_DEFAULTS, admit, published, type Admission, type DispatchRequest, type MachineState, type Refusal } from "./policy.js";
-import { Queue, type DispatchInput, type DispatchView } from "./queue.js";
+import { AcceptPolicy, CEILINGS, POLICY_DEFAULTS, admit, published, type Admission, type DispatchRequest, type MachineState, type Refusal } from "./policy.js";
+import { Queue, type DeviceShare, type DispatchInput, type DispatchView, type SharedDevice } from "./queue.js";
 import { registerTools } from "./tools.js";
 import { DISPATCH_WORDS } from "./words.js";
 
@@ -31,6 +32,8 @@ declare module "cordis" {
   interface Events {
     /** This machine took or turned away a request from another of the account's machines. */
     "dispatch/decided"(decision: DispatchDecision): void;
+    /** The queue as this machine reads it changed: for main-process observers; the renderer hears dispatch.changed. */
+    "dispatch/changed"(): void;
   }
 }
 
@@ -44,6 +47,17 @@ declare module "@tomradex/ipc" {
     "dispatch.send": (input: DispatchInput) => DispatchView;
     /** Takes a sent ticket back; the machine that runs it stops. */
     "dispatch.cancel": (id: string) => DispatchView[];
+    /** The people this machine is shared with. */
+    "dispatch.shares": () => DeviceShare[];
+    /** Shares this machine with one person, or changes their share. */
+    "dispatch.share": (input: DeviceShare) => DeviceShare[];
+    "dispatch.unshare": (email: string) => DeviceShare[];
+    /** The machines other people share with this account. */
+    "dispatch.shared": () => SharedDevice[];
+    /** Requests from other people for this machine that wait on its owner's yes. */
+    "dispatch.asks": () => DispatchView[];
+    "dispatch.approve": (id: string) => void;
+    "dispatch.decline": (id: string) => void;
   }
   interface Broadcasts {
     "dispatch.changed": () => void;
@@ -72,8 +86,10 @@ const SendInput = z.object({
   projectId: z.string().min(1).max(64), itemId: z.string().min(1).max(64),
   to: z.string().min(1).max(64).optional(), platform: z.string().regex(/^[a-z0-9]{1,16}$/).optional(),
   engine: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional(), permissionMode: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/).optional(),
-  role: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional()
+  role: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/).optional(),
+  share: z.uuid().optional()
 });
+const ShareInput = z.object({ email: z.string().trim().min(3).max(256), ceiling: z.enum(CEILINGS), auto: z.boolean() });
 /** How many requests the record keeps. */
 const KEPT = 200;
 
@@ -126,7 +142,10 @@ export class Dispatch extends Service {
       refuse: (request, reason, detail) => this.keep({ at: Date.now(), from: request.from, projectId: request.projectId, key: request.key, accepted: false, reason, ...(detail ? { detail } : {}) }),
       began: (id) => this.began(id),
       ended: (id) => this.ended(id),
-      changed: () => this.home.get("ipc")?.send("dispatch.changed")
+      changed: () => {
+        this.home.get("ipc")?.send("dispatch.changed");
+        this.home.emit("dispatch/changed");
+      }
     }, this.config.tickMs);
     this.queue.start();
     this.home.effect(() => () => this.queue.stop(), "dispatch queue");
@@ -135,6 +154,13 @@ export class Dispatch extends Service {
       ctx.ipc.handle("dispatch.list", () => this.queue.list());
       ctx.ipc.handle("dispatch.send", (input) => this.queue.send(SendInput.parse(input)));
       ctx.ipc.handle("dispatch.cancel", (id) => this.queue.cancel(z.uuid().parse(id)));
+      ctx.ipc.handle("dispatch.shares", () => this.queue.shares());
+      ctx.ipc.handle("dispatch.share", (input) => this.queue.share(ShareInput.parse(input)));
+      ctx.ipc.handle("dispatch.unshare", (email) => this.queue.unshare(z.string().min(3).max(256).parse(email)));
+      ctx.ipc.handle("dispatch.shared", () => this.queue.shared());
+      ctx.ipc.handle("dispatch.asks", () => this.queue.asks());
+      ctx.ipc.handle("dispatch.approve", (id) => this.queue.approve(z.uuid().parse(id)));
+      ctx.ipc.handle("dispatch.decline", (id) => this.queue.decline(z.uuid().parse(id)));
     });
     this.home.inject(["tools"], (ctx) => registerTools(ctx, () => this.queue));
     // The account's other machines read whether this one takes work, and within what, before they ask.
@@ -182,6 +208,12 @@ export class Dispatch extends Service {
   /** A session taken for another machine began, or is over: what counts against "sessions at once". */
   began(id: string): void { this.running.add(id); }
   ended(id: string): void { this.running.delete(id); }
+
+  /** What waits on the person at this machine: requests from people it is shared with that need their yes. */
+  notices(): { key: string; projectId: string; text: string }[] {
+    const w = DISPATCH_WORDS(languageTag(this.home.settings.locale?.()));
+    return this.queue.asks().map((ask) => ({ key: ask.id, projectId: ask.projectId, text: w("askedHere", { who: ask.fromEmail ?? ask.fromDevice, key: ask.key, title: ask.title }) }));
+  }
 
   recent(limit = 50): DispatchDecision[] {
     return this.decisions.slice(-Math.max(1, Math.min(limit, KEPT))).reverse();

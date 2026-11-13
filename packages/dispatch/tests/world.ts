@@ -14,7 +14,7 @@ import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 import { Dispatch } from "@tomradex/dispatch";
 
-const MIGRATIONS = ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql", "202611140001_dispatch_roles.sql"];
+const MIGRATIONS = ["202611110001_devices.sql", "202611110002_device_limit.sql", "202611110003_device_activity.sql", "202611110004_device_accept.sql", "202611110005_dispatches.sql", "202611140001_dispatch_roles.sql", "202611140002_device_shares.sql"];
 export const QUIET = { watch: false, reconcileMs: 0, snapshotIdleMs: 60_000, snapshotMaxMs: 60_000 };
 
 export interface Account {
@@ -26,25 +26,29 @@ export interface Account {
   register(device: string, platform?: string): Promise<void>;
   /** As the database's owner: for what no machine can do, such as moving a clock. */
   admin<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
+  /** Another person's account on the same account server, by the address they sign in with. */
+  guest(email: string): Promise<Account>;
   close(): Promise<void>;
 }
 
+export const OWNER_EMAIL = "owner@example.test";
+
 export async function account(): Promise<Account> {
   const db = new PGlite();
-  const user = randomUUID();
+  const first = randomUUID();
   await db.exec(`
     create role anon; create role authenticated;
     create schema auth;
-    create table auth.users(id uuid primary key);
+    create table auth.users(id uuid primary key, email text);
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;
   `);
-  await db.query("insert into auth.users values ($1)", [user]);
+  await db.query("insert into auth.users values ($1, $2)", [first, OWNER_EMAIL]);
   for (const name of MIGRATIONS) await db.exec(fs.readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), "utf8"));
   // The tests play more machines than the free plan allows.
-  await db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', null)", [user]);
+  await db.query("insert into public.tomrade_entitlements(user_id, plan, device_limit) values ($1, 'placeholder_plus', null)", [first]);
   // One call at a time: each sets who is asking before it asks.
   let turn: Promise<unknown> = Promise.resolve();
   const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
@@ -52,6 +56,7 @@ export async function account(): Promise<Account> {
     turn = next.catch(() => undefined);
     return next;
   };
+  const as = (user: string): Account => {
   const asUser = async () => {
     await db.exec("reset role");
     await db.query("select set_config('request.jwt.claim.sub', $1, false)", [user]);
@@ -97,8 +102,16 @@ export async function account(): Promise<Account> {
       await db.exec("reset role");
       return (await db.query(sql, params)).rows as never[];
     }),
+    guest: (email) => inTurn(async () => {
+      await db.exec("reset role");
+      const id = randomUUID();
+      await db.query("insert into auth.users values ($1, $2)", [id, email]);
+      return as(id);
+    }),
     close: () => db.close()
   };
+  };
+  return as(first);
 }
 
 /** Stands for code link on a machine: these tests play the agents. */
@@ -164,6 +177,7 @@ export async function machine(acct: Account, device: string, opts: MachineOption
   opts.bus?.add(me);
   bag.ctx.provide("cloudHub", {
     client: acct.client(), info: () => ({ user: { id: acct.user, email: "user@example.test" } }),
+    devicesInfo: () => ({ state: "ready", devices: [] }),
     describeDevice() {}, refreshDevice() {},
     signal: (name: string) => { for (const other of opts.bus ?? []) if (other !== me) other.ctx.emit("cloudHub/signal", name, device); }
   } as never);

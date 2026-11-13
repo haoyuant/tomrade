@@ -432,6 +432,11 @@ export const attention = {
           who: engineTitle(notice.agent), text: clip(notice.text)
         });
       }
+      // someone this computer is shared with asks to run a ticket here: it waits on the owner's yes
+      for (const notice of ctx.get("dispatch")?.notices() ?? []) {
+        const key = `ask:${notice.key}`;
+        out.set(key, { key, projectId: notice.projectId, threadId: null, itemId: null, itemKey: null, kind: "waiting", who: null, text: clip(notice.text) });
+      }
       // what the watchdog suspects of a run; a wait of its own already says more
       for (const notice of ctx.get("watchdog")?.notices() ?? []) {
         const key = `thread:${notice.threadId}`;
@@ -567,6 +572,7 @@ export const attention = {
     ctx.on("codeLink/changed", schedule);
     ctx.on("prFeedback/changed", schedule);
     ctx.on("changeReview/changed", schedule);
+    ctx.on("dispatch/changed", schedule);
     ctx.on("watchdog/changed", schedule);
     ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);
