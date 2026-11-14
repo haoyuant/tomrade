@@ -151,6 +151,9 @@ const SIGNAL = "dispatches";
 /** How long a request this machine stepped aside from waits before this machine looks at it again. */
 const AGAIN_MS = 60_000;
 
+/** Working, or waiting on the person: still going. */
+const going = (session: { state: string } | undefined) => !!session && (session.state === "running" || session.state === "waiting");
+
 /**
  * The account's queue of tickets sent between its machines, as this machine takes part in it: it sends and
  * cancels its own, and takes the ones meant for it — by its own limits, starting them as its own Start does.
@@ -175,8 +178,9 @@ export class Queue {
     this.interval = setInterval(() => void this.tick(), this.tickMs);
     this.interval.unref?.();
     this.home.on("cloudHub/signal", (name) => { if (name === SIGNAL) this.soon(); });
-    // A session this machine runs for another ended, or accepting was turned off with requests waiting.
-    this.home.on("codeLink/changed", () => { if (this.live.size) this.soon(); });
+    // A session this machine runs for another ended: said at once. No other session event changes what the queue holds.
+    this.home.on("codeLink/changed", () => { if (this.ended()) this.soon(); });
+    // Accepting was turned on or off with requests waiting.
     this.home.on("settings/changed", () => { this.passed.clear(); this.soon(); });
     this.home.inject(["cloudHub"], () => this.soon());
   }
@@ -387,10 +391,17 @@ export class Queue {
       this.gate.began(row.id);
     }
     const session = code.sessionsOf(running.projectId, undefined, { ids: [running.sessionId] })[0];
-    // Working, or waiting on the person: still going.
-    if (session && (session.state === "running" || session.state === "waiting")) return false;
+    if (going(session)) return false;
     this.free(row.id);
     await this.call(cloud, "tomrade_update_dispatch", { p_id: row.id, p_device: this.me, p_state: "done", p_reason: session?.state === "error" ? (session.summary ?? "the agent stopped") : null });
+  }
+
+  /** Whether a session this machine started for a request is over, by what this machine itself knows: nothing is asked of the account. */
+  private ended(): boolean {
+    const code = this.code();
+    if (!code) return false;
+    for (const { projectId, sessionId } of this.live.values()) if (!going(code.sessionsOf(projectId, undefined, { ids: [sessionId] })[0])) return true;
+    return false;
   }
 
   /** Taken back by the machine that asked: the session it started here is stopped. */
