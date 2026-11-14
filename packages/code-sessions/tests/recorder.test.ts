@@ -209,6 +209,11 @@ it("cuts a pane's recording between its sessions into the manual work done there
   await recorder.settled();
   expect(await recorder.activity("w1:p8")).toEqual([{ t: 1_000_000, bytes: 500, full: true }, { t: 1_001_000, bytes: 250, full: false }]);
   expect(manualStretches(await recorder.activity("w1:p8"), [], clock.now)).toEqual([{ from: 1_001_000, to: 1_001_000, bytes: 250 }]);
+  // A stretch that has just ended is read whole, though its last write and its final name are still on their way.
+  const next = recorder.open("w1:p9", hooks())!;
+  next.write({ seq: 1, width: 80, height: 24, full: false, bytes: bytes("z".repeat(300)) });
+  next.close();
+  expect(await recorder.activity("w1:p9")).toEqual([{ t: clock.now, bytes: 300, full: false }]);
 });
 
 it("records nothing without a folder or with the setting off, and a folder that cannot be written is said once and the cell goes on", async () => {
