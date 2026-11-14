@@ -186,6 +186,37 @@ it("made for any machine of a platform, it is taken by one that could not take i
   expect(b.code.starts[2]).toMatchObject({ itemId: third.id });
 }, 60_000);
 
+it("asks the account nothing on a session event while the ticket it took still runs, and says at once when it is over", async () => {
+  const { a, b, ticket, projectId } = await pair();
+  b.accept();
+  await a.queue.send({ projectId, itemId: ticket.id, to: "win-b" });
+  await b.queue.tick();
+  expect(states(b)).toEqual([`${ticket.key}:running`]);
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  // The look that follows taking it has come and gone.
+  await pause(500);
+  const client = (b.ctx.get("cloudHub") as unknown as { client: { rpc(...args: unknown[]): unknown; from(...args: unknown[]): unknown } }).client;
+  const asked: string[] = [];
+  const { rpc, from } = client;
+  client.rpc = (...args) => { asked.push(`rpc ${String(args[0])}`); return rpc(...args); };
+  client.from = (...args) => { asked.push(`read ${String(args[0])}`); return from(...args); };
+  const event = () => b.ctx.emit("codeLink/changed" as never, projectId as never);
+
+  // The agent works and stops to ask the person, over and over: the queue has nothing new to hear.
+  for (let i = 0; i < 5; i++) {
+    b.code.sessions.get("session-1")!.state = i % 2 ? "running" : "waiting";
+    event();
+    await pause(300);
+  }
+  expect(asked).toEqual([]);
+
+  // Over: said without waiting for the next look.
+  b.code.sessions.get("session-1")!.state = "ended";
+  event();
+  await until(() => states(b)[0] === `${ticket.key}:done`);
+  expect(asked.filter((what) => what.startsWith("rpc"))).toEqual(["rpc tomrade_update_dispatch"]);
+}, 60_000);
+
 it("waits for a machine that is off, and is no longer on offer once its time has run out", async () => {
   const a = await machine(acct, "mac-a");
   const ticket = a.items.create({ projectId: a.project.id, boardId: a.board.id, title: "While you were out", status: "todo", workType: "coding", by: "human" });
