@@ -267,8 +267,11 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .poster-name { letter-spacing: 0.08em; padding-left: 0.08em; }
 .poster-line { font-family: Charter, Georgia, "Songti SC", serif; font-weight: 400; letter-spacing: 0; -webkit-text-stroke: 0; }
 .poster-get { display: inline-block; padding: 0.4em 1.2em; border-radius: 999px; background: var(--poster-ink); color: var(--poster-paper); font-weight: 700; letter-spacing: 0.01em; -webkit-text-stroke: 0; }
-.poster-sun { position: absolute; border-radius: 50%; background: var(--poster-red); overflow: hidden; }
-.poster-sun > .film-sun-cat { background: var(--poster-ink); }
+/* No red disc anywhere in this film: red comes as bars, tiles and whole grounds, never a circle on paper. */
+.poster-rule { position: absolute; height: 34px; background: var(--poster-red); }
+.poster-morning { position: absolute; left: 0; right: 0; bottom: 0; background: var(--poster-paper); border-top: 30px solid var(--poster-red); }
+.poster-tile { position: absolute; border-radius: 22%; background: var(--poster-red); overflow: hidden; }
+.poster-tile > .film-sun-cat { background: var(--poster-ink); }
 .poster-moon { position: absolute; width: 190px; height: 190px; border-radius: 50%; box-shadow: inset -52px 15px 0 0 var(--poster-paper); }
 .poster-grid { position: absolute; left: 300px; top: 210px; width: 1320px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 60px 0; justify-items: center; align-items: center; }
 .poster-grid > i { width: 110px; height: 110px; border-radius: 50%; background: currentColor; }
@@ -282,7 +285,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .poster-marks > i.is-on { opacity: 1; background: conic-gradient(var(--poster-red) calc(360deg * var(--fill)), transparent 0); border-color: var(--poster-red); }
 .poster-marks > i.is-on:first-child { border-color: currentColor; }
 .poster-dots { position: absolute; left: 130px; top: 660px; width: 1660px; display: grid; grid-template-columns: repeat(15, 1fr); gap: 46px 0; justify-items: center; }
-.poster-dots > i { width: 64px; height: 64px; border-radius: 50%; background: currentColor; }
+.poster-dots > i { width: 64px; height: 64px; border-radius: 14px; background: currentColor; }
 .poster-dots > i.is-asking { background: var(--poster-red); }
 .poster-log { position: absolute; left: 130px; top: 250px; font-family: var(--font-mono); font-size: 62px; font-weight: 600; letter-spacing: 0; line-height: 1.5; -webkit-text-stroke: 0; }
 
@@ -595,7 +598,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 /* The traffic lights hang from the title bar, which only the sky themes make a positioned box. */
 .film-window .titlebar { position: relative; }
 .dawn .vg-pointer { background: var(--film-pointer-edge); }
-.dawn .film-rays { opacity: 0.7; }
+/* On paper, rays round a red sun read as a flag: Dawn's end card has the sun and its glow, and no rays. */
+.dawn .film-rays { display: none; }
 .dawn :is(.keynote, .fly, .dial) { background: var(--bg); }
 .dawn .keynote-light { background: radial-gradient(60% 55% at 68% 46%, rgb(217 130 43 / 0.24), transparent 70%), radial-gradient(40% 40% at 16% 90%, rgb(156 57 44 / 0.16), transparent 70%); }
 .dawn :is(.keynote-card, .keynote-all figure > div, .fly-frame, .dial-card) { border-color: var(--border); background: var(--surface); box-shadow: 0 50px 110px -50px rgb(83 47 39 / 0.55); }

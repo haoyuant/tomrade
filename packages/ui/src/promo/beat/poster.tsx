@@ -73,7 +73,7 @@ function picture(q: number, lang: Lang): { ground: Ground; body: ReactNode } {
         ground: "paper",
         body: (
           <>
-            <i className="poster-sun" style={{ left: W / 2, top: H / 2, width: 760, height: 760, transform: `translate(-50%, -50%) scale(${ease.back(span(q, 16, 16.7))})` }} />
+            <i className="poster-rule" style={{ left: 248, top: 742, width: 1424 * ease.outQuint(span(q, 16.2, 17.2)) }} />
             <Slam q={q} at={16} size={300}><span className="poster-name">TOMRADE</span></Slam>
           </>
         )
@@ -95,7 +95,7 @@ function picture(q: number, lang: Lang): { ground: Ground; body: ReactNode } {
       blocks((i) => ({ x: spread(i) + 90 * ease.out(clamp(u * 3 - i * 0.3)), y: 540 - 40 * Math.sin(Math.PI * clamp(u * 3 - i * 0.3)), s: 1, red: clamp(u * 3 - i * 0.3) > 0.5 })),
       <>
         {blocks((i) => ({ x: lerp(spread(i) + 90, 1400, ease.inOut(clamp(u * 2.6))), y: 540, s: lerp(1, 0.3, clamp(u * 2.6)), red: true }))}
-        <i className="poster-block is-red poster-tick" style={{ left: 1400, top: 540, width: 360, height: 360, borderRadius: "50%", transform: `translate(-50%, -50%) scale(${ease.back(clamp(u * 2.6 - 0.7))})` }}>✓</i>
+        <i className="poster-block is-red poster-tick" style={{ left: 1400, top: 540, width: 340, height: 340, borderRadius: 54, transform: `translate(-50%, -50%) scale(${ease.back(clamp(u * 2.6 - 0.7))})` }}>✓</i>
       </>
     ];
     const verb = words.verbs[k - 20];
@@ -157,14 +157,14 @@ function picture(q: number, lang: Lang): { ground: Ground; body: ReactNode } {
     };
   }
   if (q < 52) {
-    // the sun comes up from under the frame and takes all of it
+    // morning: the paper comes up the frame from below, under a red edge, and takes all of it
     const up = ease.inOut(span(q, 48, 52));
     return {
       ground: "ink",
       body: (
         <>
-          <i className="poster-sun" style={{ left: W / 2, top: lerp(1700, 620, up), width: 600, height: 600, transform: `translate(-50%, -50%) scale(${lerp(1, 4.2, up * up)})` }} />
-          <Slam key={k} q={q} at={k} size={520} color="var(--poster-paper)">{words.dawn[k - 48]}</Slam>
+          <i className="poster-morning" style={{ top: lerp(H, -30, up) }} />
+          <Slam key={k} q={q} at={k} size={520} color={k < 50 ? "var(--poster-paper)" : "var(--poster-ink)"}>{words.dawn[k - 48]}</Slam>
         </>
       )
     };
@@ -175,7 +175,7 @@ function picture(q: number, lang: Lang): { ground: Ground; body: ReactNode } {
     ground: "paper",
     body: (
       <>
-        <i className="poster-sun" style={{ left: W / 2, top: 310, width: 380, height: 380, transform: `translate(-50%, -50%) scale(${ease.back(span(q, 56, 56.8))})` }}><i className="film-sun-cat" /></i>
+        <i className="poster-tile" style={{ left: W / 2, top: 310, width: 360, height: 360, transform: `translate(-50%, -50%) scale(${ease.back(span(q, 56, 56.8))})` }}><i className="film-sun-cat" /></i>
         <Slam q={q} at={57} size={150} y={610}><span className="poster-name">TOMRADE</span></Slam>
         <Slam q={q} at={58} size={58} y={770}><span className="poster-line">{outro.tagline.replace("\n", lang === "zh" ? "" : " ")}</span></Slam>
         <Slam q={q} at={60} size={50} y={910}><span className="poster-get">{outro.get}</span></Slam>
