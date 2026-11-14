@@ -295,7 +295,8 @@ export class Queue {
     const second = this.gate.peek(request, modes);
     if (!second.ok) return refuse(second.reason, second.detail);
     // From here it is this machine's: only one machine's claim lands.
-    const claimed = await this.call(cloud, "tomrade_claim_dispatch", { p_id: row.id, p_device: this.me });
+    // A request with a role is given only to an app that says it knows roles: one from before them would drop the role.
+    const claimed = await this.call(cloud, "tomrade_claim_dispatch", { p_id: row.id, p_device: this.me, ...(row.wish.role ? { p_roles: true } : {}) });
     if (!claimed) return;
     const failed = async (reason: Refusal, detail: string) => {
       this.gate.refuse(request, reason, detail);
