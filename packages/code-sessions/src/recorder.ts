@@ -603,6 +603,8 @@ export class Recorder {
   async activity(pane: string): Promise<Activity[]> {
     const out: Activity[] = [];
     for (const seg of this.segmentsOf(pane)) {
+      // One that has just ended: read once its last write is on disk and it has its final name, or it reads as empty.
+      await seg.settling?.catch(() => undefined);
       let data: Buffer;
       try {
         data = await fs.promises.readFile(seg.file);
