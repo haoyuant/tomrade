@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FC } from "react";
 import { IconSprite } from "~/components/icons";
 import { Motes } from "~/components/Motes";
+import { LOOK } from "./look";
 import { Cursor, Sky, type Pointer } from "./parts";
 import type { Format } from "./stage";
 import { FPS } from "./time";
@@ -97,8 +98,18 @@ export function Film({ film: def, frame, f, lang }: { film: FilmDef; frame: numb
       <def.Prepare lang={lang} f={f} onDone={setPrepared} />
       {prepared !== null && (
         <>
-          {day < 1 && <Layer film={def} theme="daybreak" t={t} f={f} lang={lang} prepared={prepared} />}
-          {day > 0 && <Layer film={def} theme="sunrise" day={day} t={t} f={f} lang={lang} prepared={prepared} />}
+          {LOOK === "dawn" ? (
+            // Dawn has one paper for the whole film: no sky of its own, no night to come out of.
+            <div className="film-layer dawn">
+              <def.Picture t={t} f={f} lang={lang} prepared={prepared} />
+              {!def.bare && <i className="film-grain" aria-hidden="true" />}
+            </div>
+          ) : (
+            <>
+              {day < 1 && <Layer film={def} theme="daybreak" t={t} f={f} lang={lang} prepared={prepared} />}
+              {day > 0 && <Layer film={def} theme="sunrise" day={day} t={t} f={f} lang={lang} prepared={prepared} />}
+            </>
+          )}
           <Cursor t={t} f={f} {...def.pointer} />
         </>
       )}

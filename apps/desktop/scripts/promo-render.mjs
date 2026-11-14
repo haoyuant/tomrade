@@ -9,6 +9,7 @@
  *   pnpm promo --format=tall --locale=zh          one cut (wide | tall), one language (en | zh)
  *   pnpm promo --still=12.5,18                    frames of each cut as PNGs, by their second
  *   pnpm promo --frames=300-480 --no-build        a part of it, silent, from the page already built
+ *   pnpm promo --look=dawn                        in Dawn's warm paper instead of the night (files end in -dawn)
  *   pnpm promo --silent                           without the soundtrack
  *   pnpm promo --index                            only rewrite out/promo/INDEX.md from what is there
  *
@@ -35,6 +36,8 @@ const page = path.join(repo, "out/promo/_page/promo.html");
 const formats = flag("format") ? [flag("format")] : ["wide", "tall"];
 const locale = flag("locale") ?? "en";
 const still = flag("still");
+/** The look to draw in (packages/ui/src/promo/look.ts), when not the films' own night. */
+const look = flag("look");
 /** Rows under the picture that hold the frame's mark. */
 const MARK_ROWS = 4;
 
@@ -69,7 +72,7 @@ async function film(id, format) {
     painted = { bitmap: image.toBitmap(), size: image.getSize() };
     wake();
   });
-  await win.loadFile(page, { query: { capture: "1", film: id, format, lang: locale } });
+  await win.loadFile(page, { query: { capture: "1", film: id, format, lang: locale, ...(look ? { look } : {}) } });
   const info = await wc.executeJavaScript("new Promise((resolve) => { const wait = () => (window.__film ? resolve({ shelf: window.__film.shelf, formats: window.__film.formats, poster: window.__film.poster, frames: window.__film.frames, fps: window.__film.fps, width: window.__film.width, height: window.__film.height, cues: window.__film.cues, song: window.__film.song }) : setTimeout(wait, 30)); wait(); })");
   if (!info.formats.includes(format)) {
     console.log(`${id} has no ${format} cut yet`);
@@ -103,7 +106,7 @@ async function film(id, format) {
   const to = flag("out") ? out : path.join(out, info.shelf);
   fs.mkdirSync(to, { recursive: true });
   const png = ({ bitmap, pxW, pxH }) => nativeImage.createFromBitmap(bitmap.subarray(0, pxW * pxH * 4), { width: pxW, height: pxH }).toPNG();
-  const name = `tomrade-${id}-${format}-${locale}`;
+  const name = `tomrade-${id}-${format}-${locale}${look ? `-${look}` : ""}`;
   if (still !== undefined) {
     for (const second of still.split(",")) {
       const file = path.join(to, `${name}-${second.replace(".", "_")}s.png`);
@@ -162,14 +165,14 @@ function index() {
   for (const [shelf, title, about] of SHELVES) {
     const dir = path.join(out, shelf);
     if (!fs.existsSync(dir)) continue;
-    lines.push(`## ${title} (\`${shelf}/\`)`, "", about, "", "| Film | Cut | Language | Length | File |", "|---|---|---|---|---|");
+    lines.push(`## ${title} (\`${shelf}/\`)`, "", about, "", "| Film | Cut | Language | Look | Length | File |", "|---|---|---|---|---|---|");
     for (const name of fs.readdirSync(dir).sort()) {
       const films = fs.existsSync(path.join(dir, name)) && fs.statSync(path.join(dir, name)).isDirectory() ? fs.readdirSync(path.join(dir, name)).filter((file) => file.endsWith(".mp4") && !file.includes(".picture.")).sort() : [];
       for (const file of films) {
-        const [, id, format, locale] = file.match(/^tomrade-(.+)-(wide|tall)-([a-z]+)\.mp4$/) ?? [];
+        const [, id, format, locale, dawn] = file.match(/^tomrade-(.+)-(wide|tall)-([a-z]{2})(-dawn)?\.mp4$/) ?? [];
         if (!id) continue;
         const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path.join(dir, name, file)], { encoding: "utf8" });
-        lines.push(`| ${id} | ${format} | ${locale} | ${Math.round(Number(probe.stdout))} s | \`${shelf}/${name}/${file}\` |`);
+        lines.push(`| ${id} | ${format} | ${locale} | ${dawn ? "dawn" : "night"} | ${Math.round(Number(probe.stdout))} s | \`${shelf}/${name}/${file}\` |`);
       }
     }
     lines.push("");
