@@ -39,6 +39,8 @@ button.device-ticket:hover { color: var(--accent); text-decoration: underline; t
 .accept-project, .accept-check { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
 .accept-log { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
 .run-on { padding-bottom: var(--space-3); margin-bottom: var(--space-3); border-bottom: 1px solid var(--border-soft); }
+/* Sent elsewhere, nothing of the dialog follows it. */
+.run-on[data-remote] { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
 .run-on-row { display: flex; align-items: center; gap: var(--space-3); }
 .run-on-name { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg); }
 .run-on-row .input { width: auto; max-width: 280px; }

@@ -334,6 +334,8 @@ function StartTicketDialog({
   const labelled = asksElsewhere(item, projectId, devices.data, role);
   const target = chosenTarget ?? (labelled && !labelMiss(item, projectId, devices.data, role) ? targetOf(item, takers(devices.data?.devices, projectId, role), role) : null) ?? "here";
   const elsewhere = target !== "here";
+  // Sending to another computer is the dialog's main action then: its button sits where Start does.
+  const [sendSlot, setSendSlot] = useState<HTMLElement | null>(null);
 
   // General work: the method, recommended by the assistant unless the delivery already has one; the user's pick always wins.
   const methods = useMemo(() => ticketMethods(playbooks.data, "general"), [playbooks.data]);
@@ -469,7 +471,7 @@ function StartTicketDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
       <DialogHead title={title} />
       <DialogBody>
-        <RunOn projectId={projectId} item={item} target={target} role={role} sendRole={!!roleArg} lead={roleRow} onTarget={setChosenTarget} onClose={onClose} />
+        <RunOn projectId={projectId} item={item} target={target} role={role} sendRole={!!roleArg} lead={roleRow} sendSlot={sendSlot} onTarget={setChosenTarget} onClose={onClose} />
         <div className="stack-4" data-testid="start-dialog" style={elsewhere ? { display: "none" } : undefined}>
           {apart && (
             <p className="meta-txt" role="note" data-testid="start-apart">
@@ -656,7 +658,7 @@ function StartTicketDialog({
         <DialogClose asChild>
           <button type="button" className="btn btn-secondary">{t("common.cancel")}</button>
         </DialogClose>
-        {elsewhere ? null : asked && mode === "run" && threadId ? (
+        {elsewhere ? <span ref={setSendSlot} style={{ display: "contents" }} /> : asked && mode === "run" && threadId ? (
           <button
             type="button"
             className="btn btn-primary"

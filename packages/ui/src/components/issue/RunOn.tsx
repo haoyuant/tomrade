@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Item } from "@tomradex/domain";
 import { invoke } from "~/lib/api";
@@ -23,7 +24,7 @@ const UNABLE: Record<Unable, MessageKey> = { "not-accepting": "devices.runOnNotA
  * worked as when one is given. While no other computer could take it, the row stays and says what is missing,
  * so the choice can be found.
  */
-export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget, onClose }: { projectId: string; item: Item; target: RunTarget; /** The role the ticket is worked as. */ role?: Role | null; /** Whether the role goes with the ticket: the built-in one nobody changed says nothing. */ sendRole?: boolean; /** The row above this one, in the same block: the role's. */ lead?: ReactNode; onTarget: (target: RunTarget) => void; onClose: () => void }) {
+export function RunOn({ projectId, item, target, role, sendRole, lead, sendSlot, onTarget, onClose }: { /** Where the dialog keeps its main action: Send goes there, where Start is when the ticket starts here. */ sendSlot?: HTMLElement | null; projectId: string; item: Item; target: RunTarget; /** The role the ticket is worked as. */ role?: Role | null; /** Whether the role goes with the ticket: the built-in one nobody changed says nothing. */ sendRole?: boolean; /** The row above this one, in the same block: the role's. */ lead?: ReactNode; onTarget: (target: RunTarget) => void; onClose: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
@@ -92,7 +93,7 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
   const remote = target !== "here";
   const sendTo = borrowed ? lentName(borrowed) : (chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" }));
   return (
-    <div className="run-on stack-3" data-testid="run-on" data-state={able.length || lent.some((l) => !l.why) ? "choose" : "no-taker"}>
+    <div className="run-on stack-3" data-testid="run-on" data-state={able.length || lent.some((l) => !l.why) ? "choose" : "no-taker"} data-remote={remote ? "" : undefined}>
       {lead}
       <label className="run-on-row">
         <span className="run-on-name">{t("devices.runOn")}</span>
@@ -119,11 +120,12 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, onTarget,
             {role && sendRole && <> {t("devices.runOnAsRole", { role: role.title })}</>}
           </p>
           {!borrowed && <label className="accept-check"><input type="checkbox" checked={remember} onChange={() => setRemember((v) => !v)} /><span>{t("devices.runOnRemember")}</span></label>}
-          <div>
+          {sendSlot && createPortal(
             <button type="button" className="btn btn-primary" data-testid="run-on-send" disabled={send.isPending} onClick={() => send.mutate()}>
               {t("devices.send", { name: sendTo })}
-            </button>
-          </div>
+            </button>,
+            sendSlot
+          )}
         </>
       )}
     </div>
