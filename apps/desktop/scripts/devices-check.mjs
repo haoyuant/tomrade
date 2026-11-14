@@ -347,6 +347,11 @@ const run = async () => {
   Object.assign(supabase.state.dispatches[0], { state: "refused", reason: "permission: bypassPermissions is above this machine's limit (edits)", claimed_by: "win-000001", updated_at: new Date().toISOString() });
   await ctx.dispatch.queue.tick();
   check("turned away, the ticket says by whom and why", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Windows tower turned it away: it asked for more access than this computer allows')`) && !(await $(`!!document.querySelector('[data-testid="ticket-sent-cancel"]')`)), await sentLine());
+  // Sent as a role to a computer whose Tomrade is from before roles: the account server turns it away for that computer.
+  Object.assign(supabase.state.dispatches[0], { reason: "outdated", claimed_by: null, updated_at: new Date().toISOString() });
+  await ctx.dispatch.queue.tick();
+  check("turned away for a computer whose Tomrade is from before roles, the ticket says to update it there", await until(`(document.querySelector('[data-testid="ticket-sent"]')?.textContent ?? '').includes('Windows tower turned it away: Tomrade on that computer is too old to work a ticket as a role; update it there')`), await sentLine());
+  await shot("devices-06c2-outdated");
   // Sent again, then taken back.
   await openStart();
   await choose('[data-testid="run-on-select"]', "platform:win32");
