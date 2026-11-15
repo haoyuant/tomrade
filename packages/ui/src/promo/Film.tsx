@@ -77,7 +77,8 @@ function light(day: number, f: Format): CSSProperties | undefined {
 function Layer({ film: def, theme, day, t, f, lang, prepared }: { film: FilmDef; theme: "daybreak" | "sunrise"; day?: number; t: number; f: Format; lang: Lang; prepared: unknown }) {
   return (
     <div className={`film-layer ${theme}`} data-unified-sky="" style={day === undefined ? undefined : light(day, f)}>
-      {!def.bare && <Sky rise={def.rise(t)} />}
+      {/* In the Sunrise look the sun is up from the first frame. */}
+      {!def.bare && <Sky rise={LOOK === "sunrise" ? 1 : def.rise(t)} />}
       {!def.bare && <Motes sky={theme} />}
       <def.Picture t={t} f={f} lang={lang} prepared={prepared} />
       {!def.bare && <i className="film-grain" aria-hidden="true" />}
@@ -91,7 +92,7 @@ export function Film({ film: def, frame, f, lang }: { film: FilmDef; frame: numb
   const [prepared, setPrepared] = useState<unknown>(null);
   const day = def.day(t);
   return (
-    <div className="film" data-ready={prepared === null ? undefined : ""} style={{ width: f.w, height: f.h }}>
+    <div className={`film look-${LOOK}`} data-ready={prepared === null ? undefined : ""} style={{ width: f.w, height: f.h }}>
       <IconSprite />
       {/* the end card's cat, asked for from the first frame so it is there when the end comes */}
       <i className="film-sun-cat film-preload" aria-hidden="true" />
@@ -104,6 +105,8 @@ export function Film({ film: def, frame, f, lang }: { film: FilmDef; frame: numb
               <def.Picture t={t} f={f} lang={lang} prepared={prepared} />
               {!def.bare && <i className="film-grain" aria-hidden="true" />}
             </div>
+          ) : LOOK === "sunrise" ? (
+            <Layer film={def} theme="sunrise" t={t} f={f} lang={lang} prepared={prepared} />
           ) : (
             <>
               {day < 1 && <Layer film={def} theme="daybreak" t={t} f={f} lang={lang} prepared={prepared} />}

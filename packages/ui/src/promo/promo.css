@@ -598,8 +598,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 /* The traffic lights hang from the title bar, which only the sky themes make a positioned box. */
 .film-window .titlebar { position: relative; }
 .dawn .vg-pointer { background: var(--film-pointer-edge); }
-/* On paper, rays round a red sun read as a flag: Dawn's end card has the sun and its glow, and no rays. */
-.dawn .film-rays { display: none; }
+/* On a pale ground, rays round a red sun read as a flag: by day the end card has the sun and its glow, and no rays. */
+:is(.dawn, .sunrise) .film-rays { display: none; }
 .dawn :is(.keynote, .fly, .dial) { background: var(--bg); }
 .dawn .keynote-light { background: radial-gradient(60% 55% at 68% 46%, rgb(217 130 43 / 0.24), transparent 70%), radial-gradient(40% 40% at 16% 90%, rgb(156 57 44 / 0.16), transparent 70%); }
 .dawn :is(.keynote-card, .keynote-all figure > div, .fly-frame, .dial-card) { border-color: var(--border); background: var(--surface); box-shadow: 0 50px 110px -50px rgb(83 47 39 / 0.55); }
@@ -621,3 +621,27 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .dawn .tty-cursor { box-shadow: none; }
 .dawn .man-option.is-on { color: #fbf3e2; }
 .dawn .man-pane { background: var(--surface); }
+
+/* ─── the Sunrise look (?look=sunrise): the morning sky, indigo ink, vermilion into gold, for every film ─ */
+.look-sunrise { --film-window-shade: rgb(36 27 58 / 0.24); }
+.look-sunrise .vg-pointer { background: var(--fg); }
+.look-sunrise :is(.keynote, .fly, .dial) { background: linear-gradient(180deg, #ece6f6, #f6f3f8 46%, #fbeee4); }
+.look-sunrise .keynote-light { background: radial-gradient(60% 55% at 70% 40%, rgb(185 168 236 / 0.4), transparent 70%), radial-gradient(46% 44% at 14% 92%, rgb(242 164 58 / 0.3), transparent 70%); }
+.look-sunrise :is(.keynote-card, .keynote-all figure > div, .fly-frame, .dial-card) { border-color: var(--border); background: #fffdfd; box-shadow: 0 50px 110px -50px rgb(36 27 58 / 0.45), 0 0 90px -40px var(--sun-glow); }
+.look-sunrise .fly-sheet { background-image: linear-gradient(rgb(36 27 58 / 0.07) 2px, transparent 2px), linear-gradient(90deg, rgb(36 27 58 / 0.07) 2px, transparent 2px); }
+.look-sunrise .fly-veil { background: rgb(246 243 248 / 0.86); }
+.look-sunrise .dial-face { stroke: rgb(36 27 58 / 0.28); }
+.look-sunrise .dial-tick { stroke: rgb(36 27 58 / 0.42); }
+.look-sunrise .dial-night { stroke: #6a57d5; opacity: 0.45; }
+.look-sunrise .dial-mark { fill: #f6f3f8; stroke: rgb(36 27 58 / 0.5); }
+.look-sunrise .dial-mark.is-lit { fill: var(--accent); stroke: #f6c9a0; }
+.look-sunrise .dial-tip.is-night { fill: #6a57d5; filter: drop-shadow(0 0 12px #6a57d5); }
+/* A terminal by day: indigo ink on the morning's lilac, the theme's green and vermilion for what was lit. */
+.look-sunrise .tty {
+  --tty-fg: #241b3a; --tty-green: #2f7a4f; --tty-amber: #c93a24; --tty-red: #b8321f; --tty-dim: #9a90ad; --tty-brand: #d2511d;
+  background: radial-gradient(ellipse at 50% 45%, #fdfbff, #ebe5f3 84%); text-shadow: none;
+}
+.look-sunrise .tty-lines { background: repeating-linear-gradient(180deg, transparent 0 3px, rgb(36 27 58 / 0.045) 3px 4px); box-shadow: inset 0 0 220px 40px rgb(36 27 58 / 0.13); }
+.look-sunrise .tty-cursor { box-shadow: none; }
+.look-sunrise .man-option.is-on { color: #fdfbff; }
+.look-sunrise .man-pane { background: #fffdfd; }
