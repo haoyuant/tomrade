@@ -99,13 +99,7 @@ export function Film({ film: def, frame, f, lang }: { film: FilmDef; frame: numb
       <def.Prepare lang={lang} f={f} onDone={setPrepared} />
       {prepared !== null && (
         <>
-          {LOOK === "dawn" ? (
-            // Dawn has one paper for the whole film: no sky of its own, no night to come out of.
-            <div className="film-layer dawn">
-              <def.Picture t={t} f={f} lang={lang} prepared={prepared} />
-              {!def.bare && <i className="film-grain" aria-hidden="true" />}
-            </div>
-          ) : LOOK === "sunrise" ? (
+          {LOOK === "sunrise" ? (
             <Layer film={def} theme="sunrise" t={t} f={f} lang={lang} prepared={prepared} />
           ) : (
             <>

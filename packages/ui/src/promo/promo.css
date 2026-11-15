@@ -137,11 +137,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 }
 
 /* ─── the end card ───────────────────────────────────────────────────── */
-.film-rays {
-  position: absolute; z-index: 1; width: 2600px; height: 2600px; border-radius: 50%;
-  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--sun-gold) 40%, transparent) 0deg 3.2deg, transparent 3.2deg 9deg, color-mix(in srgb, var(--sun-red) 22%, transparent) 9deg 11.4deg, transparent 11.4deg 18deg);
-  mask-image: radial-gradient(circle, transparent 7%, black 9%, rgb(0 0 0 / 0.5) 22%, transparent 46%);
-}
 .film-sun {
   position: absolute; z-index: 2; border-radius: 50%; overflow: hidden;
   background: radial-gradient(circle at 50% 30%, var(--film-sun-core), var(--sun-gold) 42%, var(--sun-red) 100%);
@@ -587,40 +582,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .dial-list span { font-size: 38px; color: var(--meta); }
 .dial-list b { color: var(--accent); font-weight: 800; }
 
-/* ─── the Dawn look (?look=dawn): warm paper, vermilion and brown ink, for every film ─ */
-.film-layer.dawn {
-  --sun-btn-from: #b23a28; --sun-btn-to: #d9822b; --sun-gold: #d99a3a; --sun-red: #b8432f; --sun-sky: #b08b6a;
-  --sun-glow: rgb(156 57 44 / 0.28); --sun-sheen: rgb(255 255 255 / 0.3);
-  --film-window-shade: rgb(83 47 39 / 0.3); --film-pointer-edge: #3a1d16; --film-ink: #3a1d16; --film-sun-core: #ffe4b0;
-}
-.film-layer.dawn:not(.zine-print)::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(70% 60% at 82% 104%, rgb(217 130 43 / 0.26), transparent 70%), radial-gradient(60% 50% at 6% -6%, rgb(255 255 255 / 0.5), transparent 70%); }
-.dawn .film-window { background: var(--bg); }
 /* The traffic lights hang from the title bar, which only the sky themes make a positioned box. */
 .film-window .titlebar { position: relative; }
-.dawn .vg-pointer { background: var(--film-pointer-edge); }
-/* On a pale ground, rays round a red sun read as a flag: by day the end card has the sun and its glow, and no rays. */
-:is(.dawn, .sunrise) .film-rays { display: none; }
-.dawn :is(.keynote, .fly, .dial) { background: var(--bg); }
-.dawn .keynote-light { background: radial-gradient(60% 55% at 68% 46%, rgb(217 130 43 / 0.24), transparent 70%), radial-gradient(40% 40% at 16% 90%, rgb(156 57 44 / 0.16), transparent 70%); }
-.dawn :is(.keynote-card, .keynote-all figure > div, .fly-frame, .dial-card) { border-color: var(--border); background: var(--surface); box-shadow: 0 50px 110px -50px rgb(83 47 39 / 0.55); }
-.dawn .fly-sheet { background-image: linear-gradient(rgb(83 47 39 / 0.08) 2px, transparent 2px), linear-gradient(90deg, rgb(83 47 39 / 0.08) 2px, transparent 2px); }
-.dawn .fly-veil { background: color-mix(in srgb, var(--bg) 86%, transparent); }
-.dawn .dial { background: radial-gradient(70% 70% at 22% 55%, #fbf3e2, var(--bg) 75%); }
-.dawn .dial-face { stroke: rgb(83 47 39 / 0.3); }
-.dawn .dial-tick { stroke: rgb(83 47 39 / 0.45); }
-.dawn .dial-night { stroke: #6a4a86; opacity: 0.4; }
-.dawn .dial-mark { fill: var(--bg); stroke: rgb(83 47 39 / 0.5); }
-.dawn .dial-mark.is-lit { fill: var(--accent); stroke: #e9b98a; }
-.dawn .dial-tip.is-night { fill: #6a4a86; filter: drop-shadow(0 0 12px #6a4a86); }
-/* A terminal on paper: ink for the text, the theme's green and vermilion for what was lit. */
-.dawn .tty {
-  --tty-fg: #4a2a22; --tty-green: #4d653b; --tty-amber: #9c392c; --tty-red: #9b302b; --tty-dim: #a48d76; --tty-brand: #b23a28;
-  background: radial-gradient(ellipse at 50% 45%, #fbf3e2, #efe2c9 82%); text-shadow: none;
-}
-.dawn .tty-lines { background: repeating-linear-gradient(180deg, transparent 0 3px, rgb(83 47 39 / 0.05) 3px 4px); box-shadow: inset 0 0 220px 40px rgb(83 47 39 / 0.16); }
-.dawn .tty-cursor { box-shadow: none; }
-.dawn .man-option.is-on { color: #fbf3e2; }
-.dawn .man-pane { background: var(--surface); }
 
 /* ─── the Sunrise look (?look=sunrise): the morning sky, indigo ink, vermilion into gold, for every film ─ */
 .look-sunrise { --film-window-shade: rgb(36 27 58 / 0.24); }

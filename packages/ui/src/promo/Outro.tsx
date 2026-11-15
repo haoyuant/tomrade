@@ -23,7 +23,7 @@ export function Proof({ t, from, until, texts, f, lang }: { t: number; from: num
   );
 }
 
-/** The end: the cat on the rising sun, the name, the line, and where to get it. `d` is how long it has been up. */
+/** The end: the cat on the sun, the name, the line, and where to get it. `d` is how long it has been up. */
 export function End({ d, f, lang }: { d: number; f: Format; lang: Lang }) {
   if (d < 0) return null;
   const words = OUTRO[lang];
@@ -41,7 +41,6 @@ export function End({ d, f, lang }: { d: number; f: Format; lang: Lang }) {
   const fine = ease.out(span(d, 1.95, 2.4));
   return (
     <>
-      <i className="film-rays" style={{ left: f.w / 2, top: sunY, opacity: 0.9 * ease.out(span(d, 0.25, 1.4)), transform: `translate(-50%, -50%) rotate(${d * 2.2}deg) scale(${0.9 + 0.1 * up})` }} />
       <div className="film-sun" style={{ left: f.w / 2, top: sunY + (1 - up) * 300, width: 2 * r, height: 2 * r, opacity: clamp(span(d, 0, 0.35)), transform: `translate(-50%, -50%) scale(${0.86 + 0.14 * up})` }}>
         <i className="film-sun-cat" />
       </div>

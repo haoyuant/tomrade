@@ -9,8 +9,7 @@
  *   pnpm promo --format=tall --locale=zh          one cut (wide | tall), one language (en | zh)
  *   pnpm promo --still=12.5,18                    frames of each cut as PNGs, by their second
  *   pnpm promo --frames=300-480 --no-build        a part of it, silent, from the page already built
- *   pnpm promo --look=sunrise                     in Sunrise throughout instead of the night (files end in -sunrise);
- *                                                 --look=dawn draws them in Dawn's warm paper
+ *   pnpm promo --look=sunrise                     in Sunrise throughout instead of the night (files end in -sunrise)
  *   pnpm promo --silent                           without the soundtrack
  *   pnpm promo --index                            only rewrite out/promo/INDEX.md from what is there
  *
@@ -170,7 +169,7 @@ function index() {
     for (const name of fs.readdirSync(dir).sort()) {
       const films = fs.existsSync(path.join(dir, name)) && fs.statSync(path.join(dir, name)).isDirectory() ? fs.readdirSync(path.join(dir, name)).filter((file) => file.endsWith(".mp4") && !file.includes(".picture.")).sort() : [];
       for (const file of films) {
-        const [, id, format, locale, , drawn] = file.match(/^tomrade-(.+)-(wide|tall)-([a-z]{2})(-(dawn|sunrise))?\.mp4$/) ?? [];
+        const [, id, format, locale, , drawn] = file.match(/^tomrade-(.+)-(wide|tall)-([a-z]{2})(-(sunrise))?\.mp4$/) ?? [];
         if (!id) continue;
         const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path.join(dir, name, file)], { encoding: "utf8" });
         lines.push(`| ${id} | ${format} | ${locale} | ${drawn ?? "night"} | ${Math.round(Number(probe.stdout))} s | \`${shelf}/${name}/${file}\` |`);

@@ -66,7 +66,7 @@ export function zine(id: string, bars: Bars): FilmDef {
               </div>
               <div className="zine-photo" style={{ opacity: clamp(local * 5), transform: `rotate(${LAID[on.index].tilt + 7 * (1 - ease.outQuint(clamp(local / 1.4)))}deg) translate3d(${(1 - ease.outQuint(clamp(local / 1.4))) * 220}px, 0, 0) scale(${1.14 * (1 + 0.005 * pulse(q))})` }}>
                 <i className="zine-tape" /><i className="zine-tape is-right" />
-                <div className={`${LOOK === "night" ? "daybreak" : LOOK} film-layer zine-print`}><Vignette id={words.features[on.index].key} u={on.u} lang={lang} /></div>
+                <div className={`${LOOK === "night" ? "daybreak" : "sunrise"} film-layer zine-print`}><Vignette id={words.features[on.index].key} u={on.u} lang={lang} /></div>
                 {/* the pen goes round what matters, late in the bars */}
                 <svg width={VG.w} height={VG.h} aria-hidden="true">
                   <ellipse cx={LAID[on.index].ring[0]} cy={LAID[on.index].ring[1]} rx={LAID[on.index].ring[2] / 2 + 26} ry={LAID[on.index].ring[3] / 2 + 22} pathLength={1} style={{ strokeDashoffset: 1 - ease.inOut(span(on.u, 5.2, 6.6)) }} transform={`rotate(-4 ${LAID[on.index].ring[0]} ${LAID[on.index].ring[1]})`} />
@@ -78,7 +78,7 @@ export function zine(id: string, bars: Bars): FilmDef {
             <div className="zine-sheet" style={{ opacity: 1 - leave }}>
               {words.features.map((one, n) => (
                 <figure key={one.key} style={{ transform: `rotate(${LAID[n].tilt}deg) scale(${ease.back(span(q, bars.recap + n * 0.3, bars.recap + 0.8 + n * 0.3))})` }}>
-                  <div className={`${LOOK === "night" ? "daybreak" : LOOK} film-layer zine-print`}><Vignette id={one.key} u={7.6} lang={lang} style={{ transform: `scale(${520 / VG.w})`, transformOrigin: "0 0" }} /></div>
+                  <div className={`${LOOK === "night" ? "daybreak" : "sunrise"} film-layer zine-print`}><Vignette id={one.key} u={7.6} lang={lang} style={{ transform: `scale(${520 / VG.w})`, transformOrigin: "0 0" }} /></div>
                   <figcaption><b>{one.verb}</b>{one.title}</figcaption>
                 </figure>
               ))}
