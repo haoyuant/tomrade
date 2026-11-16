@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { WorktreeHold } from "@tomradex/code-link";
 import { Icon } from "~/components/icons";
-import { FoldChevron, StatusMark } from "~/components/ui/atoms";
+import { FoldChevron, FoldChevronSpace, StatusMark } from "~/components/ui/atoms";
 import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeSizes, useWorktrees, worktreeState } from "~/lib/codeLink";
 import { intlTag, useI18n } from "~/lib/i18n";
 import { reveal, revealLabel } from "~/lib/shell";
@@ -17,12 +17,15 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   const toast = useToast();
   const [open, setOpen] = useState(false);
   // What can go comes first; the rest in the order of their tickets.
-  const trees = (useWorktrees(projectId).data ?? [])
+  const listed = useWorktrees(projectId);
+  const trees = (listed.data ?? [])
     .filter((tree) => tree.repoId === repoId)
     .sort((a, b) => Number(!!a.hold) - Number(!!b.hold) || (a.tickets[0]?.key ?? "~").localeCompare(b.tickets[0]?.key ?? "~", undefined, { numeric: true }));
   const sizes = useWorktreeSizes(projectId, trees.map((tree) => tree.dir), open);
   const remove = useRemoveWorktrees(projectId);
-  if (!trees.length) return null;
+  // Said even when there are none, so the list is found before a disk fills; nothing is said until git has answered.
+  if (!listed.data) return null;
+  const none = trees.length === 0;
 
   const finished = trees.filter((tree) => tree.owner === "ticket" && !tree.hold);
   const known = trees.flatMap((tree) => sizes.get(tree.dir) ?? []);
@@ -42,22 +45,26 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   return (
     <>
       <div className="fold-row repo-worktrees" data-testid="repo-worktrees">
-        <FoldChevron open={open} label={t(open ? "repositories.worktreesHide" : "repositories.worktreesShow")} onToggle={() => setOpen((v) => !v)} />
+        {none ? <FoldChevronSpace /> : <FoldChevron open={open} label={t(open ? "repositories.worktreesHide" : "repositories.worktreesShow")} onToggle={() => setOpen((v) => !v)} />}
         <div className="cfg-row" style={{ marginTop: 0 }}>
           <Icon name="i-folder" size={14} style={{ color: "var(--meta)" }} />
           <span className="repo-remote-copy">
-            <span className="cfg-name">{t("repositories.worktrees", { n: trees.length })}</span>
-            <span className="meta-txt repo-remote-detail">
-              {t("repositories.worktreesFinished", { n: finished.length })}
-              {open && known.length === trees.length ? ` · ${diskSize(known.reduce((sum, bytes) => sum + bytes, 0))}` : ""}
-            </span>
+            <span className="cfg-name">{none ? t("repositories.worktreesNone") : t("repositories.worktrees", { n: trees.length })}</span>
+            {!none && (
+              <span className="meta-txt repo-remote-detail">
+                {t("repositories.worktreesFinished", { n: finished.length })}
+                {open && known.length === trees.length ? ` · ${diskSize(known.reduce((sum, bytes) => sum + bytes, 0))}` : ""}
+              </span>
+            )}
           </span>
-          <button type="button" className="btn btn-secondary repo-worktrees-clear" disabled={!finished.length || remove.isPending} onClick={() => take(finished.map((tree) => tree.dir))}>
-            {remove.isPending ? t("repositories.worktreesRemoving") : t("repositories.worktreesRemoveFinished")}
-          </button>
+          {!none && (
+            <button type="button" className="btn btn-secondary repo-worktrees-clear" disabled={!finished.length || remove.isPending} onClick={() => take(finished.map((tree) => tree.dir))}>
+              {remove.isPending ? t("repositories.worktreesRemoving") : t("repositories.worktreesRemoveFinished")}
+            </button>
+          )}
         </div>
       </div>
-      {open && (
+      {open && !none && (
         <div className="fold-row-body stack-2 repo-worktree-list">
           {trees.map((tree) => {
             const ticket = tree.tickets[0];

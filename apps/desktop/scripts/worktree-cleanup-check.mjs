@@ -62,6 +62,14 @@ const run = async () => {
   await ctx.repos.setCheckout(repoDir, repoDir);
   ctx.boards.update(project.id, board.id, { repoId: repo.id, repoPath: "" });
 
+  // A second repository nothing was ever started in.
+  const quietDir = path.join(work, "code", "quiet");
+  fs.mkdirSync(quietDir, { recursive: true });
+  fs.writeFileSync(path.join(quietDir, "package.json"), JSON.stringify({ name: "quiet", version: "0.0.0" }));
+  execSync("git init -q -b main && git add -A && git -c user.email=dev@localhost -c user.name=Dev commit -q -m start", { cwd: quietDir, stdio: "ignore" });
+  const quiet = ctx.repos.create({ projectId: project.id, remote: quietDir });
+  await ctx.repos.setCheckout(quietDir, quietDir);
+
   const worked = async (title) => {
     const item = ctx.items.create({ projectId: project.id, boardId: board.id, title, workType: "coding", status: "todo", by: "human" });
     const started = await ctx.codeLink.start(project.id, item.id, { mode: "run", engine: "fake-code" });
@@ -101,6 +109,9 @@ const run = async () => {
   const headText = () => $(`${head}?.textContent ?? ''`);
   check("the repository says how many worktrees are on this computer", (await ctx.codeLink.worktreesOf(project.id)).length === 3 && (await wait(async () => (await headText()).includes("Worktrees on this computer: 3"))), await headText());
   check("and how many of them a finished ticket left", (await headText()).includes("1 from finished tickets can be removed"), await headText());
+
+  const quietHead = `document.querySelector('[data-repo="${quiet.id}"] [data-testid="repo-worktrees"]')`;
+  check("a repository with none says so, with nothing to unfold or remove", await wait(() => $(`${quietHead}?.querySelector('.cfg-name')?.textContent === 'No worktrees on this computer' && !${quietHead}.querySelector('.fold-chev') && !${quietHead}.querySelector('.repo-worktrees-clear')`)), await $(`${quietHead}?.textContent ?? null`));
 
   await press(`${head}.querySelector('.fold-chev')`);
   const rows = () => $(`[...document.querySelectorAll('[data-repo="${repo.id}"] .repo-worktree')].map((row) => ({ hold: row.dataset.hold, text: row.textContent, size: row.querySelector('.repo-worktree-size')?.textContent ?? '', removable: !!row.querySelector('.repo-worktree-remove') }))`);

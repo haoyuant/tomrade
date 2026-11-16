@@ -1456,6 +1456,7 @@ export const es: PartialMessages = {
     runInCheckout: "Dejar que los agentes trabajen en mi checkout",
     runInCheckoutNote: "Desactivado: cada ejecución recibe su propia copia del repositorio dentro del Hub (un worktree de git), así que los archivos de tu checkout no se tocan mientras un agente trabaja. Activado: los agentes trabajan directamente en tu checkout: editan los archivos que tienes abiertos, incluidos tus cambios sin confirmar.",
     worktrees: "Worktrees en este equipo: {{n}}",
+    worktreesNone: "No hay worktrees en este equipo",
     worktreesFinished: "{{n}} de tickets terminados se pueden quitar",
     worktreesShow: "Mostrar los worktrees",
     worktreesHide: "Ocultar los worktrees",

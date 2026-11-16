@@ -1532,6 +1532,7 @@ export const zhHant: PartialMessages = {
     runInCheckout: "讓代理直接在我的倉庫目錄裡改程式碼",
     runInCheckoutNote: "關閉時：每次執行都會在 Hub 目錄下取得倉庫的一份獨立副本（git worktree），代理在副本裡修改，你倉庫目錄裡的檔案完全不受影響。開啟後：代理直接在你的倉庫目錄裡工作——改的就是你正開啟的那些檔案，包括你還沒提交的變更。",
     worktrees: "這台電腦上的 worktree：{{n}} 個",
+    worktreesNone: "這台電腦上沒有 worktree",
     worktreesFinished: "其中 {{n}} 個屬於已結束的工單，可以移除",
     worktreesShow: "展開 worktree 清單",
     worktreesHide: "收合 worktree 清單",

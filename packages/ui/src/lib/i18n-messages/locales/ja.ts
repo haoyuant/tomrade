@@ -1480,6 +1480,7 @@ export const ja: PartialMessages = {
     runInCheckout: "エージェントに自分のチェックアウト内で作業させる",
     runInCheckoutNote: "オフ：実行ごとにハブ配下へリポジトリの独立したコピー（git worktree）が作られ、エージェントが作業中もあなたのチェックアウト内のファイルには一切触れません。オン：エージェントはあなたのチェックアウトで直接作業します。開いているファイルそのもの（未コミットの変更を含む）が書き換えられます。",
     worktrees: "このコンピューター上の worktree：{{n}} 個",
+    worktreesNone: "このコンピューターに worktree はありません",
     worktreesFinished: "うち {{n}} 個は終了したチケットのもので、削除できます",
     worktreesShow: "worktree の一覧を表示",
     worktreesHide: "worktree の一覧を隠す",

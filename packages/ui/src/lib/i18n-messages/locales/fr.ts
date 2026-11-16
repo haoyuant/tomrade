@@ -1456,6 +1456,7 @@ export const fr: PartialMessages = {
     runInCheckout: "Laisser les agents travailler dans ma copie locale",
     runInCheckoutNote: "Désactivé : chaque exécution reçoit sa propre copie du dépôt sous le Hub (un worktree git) ; les fichiers de votre copie locale ne sont jamais touchés pendant qu’un agent travaille. Activé : les agents travaillent directement dans votre copie locale — ils modifient les fichiers que vous avez ouverts, y compris vos changements non commités.",
     worktrees: "Worktrees sur cet ordinateur : {{n}}",
+    worktreesNone: "Aucun worktree sur cet ordinateur",
     worktreesFinished: "{{n}} de tickets terminés peuvent être supprimés",
     worktreesShow: "Afficher les worktrees",
     worktreesHide: "Masquer les worktrees",
