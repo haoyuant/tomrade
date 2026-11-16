@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { WorktreeHold } from "@tomradex/code-link";
+import { WorktreeRow } from "~/components/projects/RepoWorktrees";
 import { Eyebrow } from "~/components/ui/atoms";
 import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeOverview, useWorktreeSizes, worktreeTotals, type WorktreeBucket } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -14,6 +15,9 @@ const SERIES: Record<"worktrees" | "other" | WorktreeBucket, string> = {
   open: "var(--chart-4)"
 };
 const series = (part: keyof typeof SERIES): CSSProperties => ({ "--series": SERIES[part] }) as CSSProperties;
+
+/** How many of the removable ones are named before the rest are asked for. */
+const FREE_SHOWN = 6;
 
 const BUCKETS: WorktreeBucket[] = ["free", "held", "open"];
 const BUCKET_KEY: Record<WorktreeBucket, MessageKey> = {
@@ -49,18 +53,24 @@ export function WorktreeOverview() {
   const groups = overview.data?.groups ?? [];
   const sizes = useWorktreeSizes(groups.flatMap((group) => group.trees.map((tree) => ({ projectId: group.projectId, dir: tree.dir }))), true);
   const remove = useRemoveWorktrees();
+  const [all, setAll] = useState(false);
   if (!overview.data) return null;
 
   const totals = worktreeTotals(groups, sizes);
   const disk = overview.data.disk;
   const measuring = totals.measured < totals.count;
   const size = (bytes: number) => (totals.measured === 0 && totals.count > 0 ? "…" : diskSize(bytes));
+  // The ones the button takes, named: the largest first once they are measured.
+  const free = groups
+    .flatMap((group) => group.trees.filter((tree) => !tree.hold).map((tree) => ({ tree, projectId: group.projectId, where: `${group.repo} · ${group.project}` })))
+    .sort((a, b) => (sizes.get(b.tree.dir) ?? 0) - (sizes.get(a.tree.dir) ?? 0));
+  const shown = all ? free : free.slice(0, FREE_SHOWN);
   const removable = groups.map((group) => ({ projectId: group.projectId, dirs: group.trees.filter((tree) => !tree.hold).map((tree) => tree.dir) })).filter((ask) => ask.dirs.length);
   const most = Math.max(1, ...totals.repos.map((repo) => repo.bytes));
   const otherUsed = disk ? Math.max(0, disk.total - disk.free - totals.bytes) : 0;
 
-  const take = () =>
-    remove.mutate(removable, {
+  const take = (asks: { projectId: string; dirs: string[] }[]) =>
+    remove.mutate(asks, {
       onSuccess: (removals) => {
         const { removed, kept, reason } = removalSummary(removals);
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");
@@ -159,8 +169,26 @@ export function WorktreeOverview() {
             </div>
           </section>
 
+          {free.length > 0 && (
+            <section className="usage-section worktree-free-list" aria-label={t("repositories.overviewFreeList")}>
+              <div className="usage-section-head">
+                <span className="usage-section-title">{t("repositories.overviewFreeList")}</span>
+                {free.length > FREE_SHOWN && (
+                  <button type="button" className="btn btn-ghost" onClick={() => setAll((v) => !v)}>
+                    {all ? t("repositories.overviewShowFewer") : t("repositories.overviewShowAll", { n: free.length })}
+                  </button>
+                )}
+              </div>
+              <div className="stack-2">
+                {shown.map(({ tree, projectId, where }) => (
+                  <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} where={where} busy={remove.isPending} onRemove={() => take([{ projectId, dirs: [tree.dir] }])} />
+                ))}
+              </div>
+            </section>
+          )}
+
           <div className="row worktree-overview-foot">
-            <button type="button" className="btn btn-secondary worktree-overview-clear" disabled={!removable.length || remove.isPending} onClick={take}>
+            <button type="button" className="btn btn-secondary worktree-overview-clear" disabled={!removable.length || remove.isPending} onClick={() => take(removable)}>
               {remove.isPending ? t("repositories.worktreesRemoving") : t("repositories.overviewRemove", { n: totals.buckets.free.n })}
             </button>
             <p className="usage-chart-note">{t("repositories.overviewDetail")}</p>

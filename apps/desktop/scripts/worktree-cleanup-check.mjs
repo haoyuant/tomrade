@@ -116,6 +116,7 @@ const run = async () => {
   check("each part is named with its count and size", await $(`[...${over}.querySelectorAll('.usage-engine-key[data-bucket]')].every((key) => /1 · [0-9.]+ MB/.test(key.textContent))`));
   check("the disk's own bar shows the worktrees in it", await $(`!!${over}.querySelector('[data-bar="disk"] .usage-share-seg')`));
   check("and the repository that holds them is listed", (await $(`${over}.querySelector('.worktree-repos [data-repo="${repo.id}"]')?.textContent ?? ''`)).includes("app"));
+  check("the one that can go is named, with its repository, and can be removed right there", (await $(`[...${over}.querySelectorAll('.worktree-free-list .repo-worktree')].map((row) => row.textContent).join('|')`)).includes(merged.item.key) && (await $(`${over}.querySelectorAll('.worktree-free-list .repo-worktree').length === 1 && !!${over}.querySelector('.worktree-free-list .repo-worktree-remove') && ${over}.querySelector('.worktree-free-list .repo-worktree-state').textContent.startsWith('app · Alpha · ')`)), await $(`${over}.querySelector('.worktree-free-list')?.textContent ?? null`));
   check("below it, when a finished ticket's is removed", await $(`[...document.querySelectorAll('.sheet-settings label, .sheet-settings .field-label, .sheet-settings *')].some((n) => n.childElementCount === 0 && n.textContent === "Remove a finished ticket's worktree")`));
   await shot("worktree-cleanup-00-settings");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
