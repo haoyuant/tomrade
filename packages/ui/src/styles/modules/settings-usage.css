@@ -98,6 +98,9 @@
 .worktree-overview .usage-swatch.worktree-free { background: var(--surface-warm); border: 1px solid var(--border); }
 .worktree-overview .worktree-repos .usage-purpose-row { grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 9.5rem; }
 .worktree-overview .worktree-repo-project { color: var(--meta); }
+/* A repository unfolds into its worktrees, as rows fold everywhere else. */
+.worktree-overview .worktree-repos .fold-row > .usage-purpose-row { flex: 1; min-width: 0; }
+.worktree-overview .worktree-repo-trees { margin: var(--space-2) 0 var(--space-3); }
 /* Each bar's key sits under it, three across, and the next bar keeps its distance. */
 .worktree-overview .usage-engine-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
 .worktree-overview .usage-engine-legend + .usage-share-label, .worktree-overview .usage-engine-legend + .usage-share-label + .usage-share { margin-top: var(--space-3); }

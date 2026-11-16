@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import type { WorktreeHold } from "@tomradex/code-link";
 import { WorktreeRow } from "~/components/projects/RepoWorktrees";
-import { Eyebrow } from "~/components/ui/atoms";
+import { Eyebrow, FoldChevron } from "~/components/ui/atoms";
 import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeOverview, useWorktreeSizes, worktreeTotals, type WorktreeBucket } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError, useToast } from "~/lib/toast";
@@ -54,6 +54,13 @@ export function WorktreeOverview() {
   const sizes = useWorktreeSizes(groups.flatMap((group) => group.trees.map((tree) => ({ projectId: group.projectId, dir: tree.dir }))), true);
   const remove = useRemoveWorktrees();
   const [all, setAll] = useState(false);
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (key: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   if (!overview.data) return null;
 
   const totals = worktreeTotals(groups, sizes);
@@ -154,18 +161,38 @@ export function WorktreeOverview() {
               <span className="usage-section-title">{t("repositories.overviewByRepo")}</span>
             </div>
             <div className="usage-purposes worktree-repos">
-              {totals.repos.map((repo) => (
-                <div key={`${repo.projectId}:${repo.repoId}`} className="usage-purpose-row" data-repo={repo.repoId} title={`${repo.repo} · ${repo.project}`}>
-                  <span className="usage-purpose-name">
-                    {repo.repo}
-                    <span className="worktree-repo-project"> · {repo.project}</span>
-                  </span>
-                  <div className="usage-purpose-track">
-                    <span className="usage-purpose-fill" style={{ ...series("worktrees"), width: `${share(repo.bytes, most)}%` }} />
+              {totals.repos.map((repo) => {
+                const key = `${repo.projectId}:${repo.repoId}`;
+                const unfolded = open.has(key);
+                // What can go first, then the largest: all of it already read for the totals above.
+                const trees = (groups.find((group) => group.projectId === repo.projectId && group.repoId === repo.repoId)?.trees ?? [])
+                  .slice()
+                  .sort((x, y) => Number(!!x.hold) - Number(!!y.hold) || (sizes.get(y.dir) ?? 0) - (sizes.get(x.dir) ?? 0));
+                return (
+                  <div key={key} className="worktree-repo" data-repo={repo.repoId}>
+                    <div className="fold-row">
+                      <FoldChevron open={unfolded} label={t(unfolded ? "repositories.worktreesHide" : "repositories.worktreesShow")} onToggle={() => toggle(key)} />
+                      <div className="usage-purpose-row" title={`${repo.repo} · ${repo.project}`}>
+                        <span className="usage-purpose-name">
+                          {repo.repo}
+                          <span className="worktree-repo-project"> · {repo.project}</span>
+                        </span>
+                        <div className="usage-purpose-track">
+                          <span className="usage-purpose-fill" style={{ ...series("worktrees"), width: `${share(repo.bytes, most)}%` }} />
+                        </div>
+                        <span className="usage-purpose-count num">{t("repositories.overviewBucketValue", { n: repo.n, size: size(repo.bytes) })}</span>
+                      </div>
+                    </div>
+                    {unfolded && (
+                      <div className="fold-row-body stack-2 worktree-repo-trees">
+                        {trees.map((tree) => (
+                          <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} busy={remove.isPending} onRemove={() => take([{ projectId: repo.projectId, dirs: [tree.dir] }])} />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <span className="usage-purpose-count num">{t("repositories.overviewBucketValue", { n: repo.n, size: size(repo.bytes) })}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 

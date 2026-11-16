@@ -116,9 +116,15 @@ const run = async () => {
   check("each part is named with its count and size", await $(`[...${over}.querySelectorAll('.usage-engine-key[data-bucket]')].every((key) => /1 · [0-9.]+ MB/.test(key.textContent))`));
   check("the disk's own bar shows the worktrees in it", await $(`!!${over}.querySelector('[data-bar="disk"] .usage-share-seg')`));
   check("and the repository that holds them is listed", (await $(`${over}.querySelector('.worktree-repos [data-repo="${repo.id}"]')?.textContent ?? ''`)).includes("app"));
+  await press(`${over}.querySelector('.worktree-repos [data-repo="${repo.id}"] .fold-chev')`);
+  const repoTrees = () => $(`[...${over}.querySelectorAll('.worktree-repos [data-repo="${repo.id}"] .worktree-repo-trees .repo-worktree')].map((row) => ({ hold: row.dataset.hold, size: row.querySelector('.repo-worktree-size')?.textContent ?? '' }))`);
+  check("a repository unfolds into its worktrees, what can go first, each with what it takes", await wait(async () => { const rows = await repoTrees(); return rows.length === 3 && rows[0].hold === "none" && rows.every((row) => /^[0-9.]+ MB$/.test(row.size)); }), await repoTrees());
   check("the one that can go is named, with its repository, and can be removed right there", (await $(`[...${over}.querySelectorAll('.worktree-free-list .repo-worktree')].map((row) => row.textContent).join('|')`)).includes(merged.item.key) && (await $(`${over}.querySelectorAll('.worktree-free-list .repo-worktree').length === 1 && !!${over}.querySelector('.worktree-free-list .repo-worktree-remove') && ${over}.querySelector('.worktree-free-list .repo-worktree-state').textContent.startsWith('app · Alpha · ')`)), await $(`${over}.querySelector('.worktree-free-list')?.textContent ?? null`));
   check("below it, when a finished ticket's is removed", await $(`[...document.querySelectorAll('.sheet-settings label, .sheet-settings .field-label, .sheet-settings *')].some((n) => n.childElementCount === 0 && n.textContent === "Remove a finished ticket's worktree")`));
   await shot("worktree-cleanup-00-settings");
+  await $(`${over}.querySelector('.worktree-repos')?.scrollIntoView({ block: "start" });true`);
+  await sleep(300);
+  await shot("worktree-cleanup-00-settings-repositories");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await wait(async () => !(await $(`!!document.querySelector('.sheet-settings')`)));
 
