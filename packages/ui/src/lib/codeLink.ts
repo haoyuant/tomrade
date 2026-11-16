@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions, WorktreeHold, WorktreeRemoval, WorktreeView } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
 
@@ -117,6 +117,56 @@ export function useRecheckRemote(projectId: string, remote: string) {
       void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       void qc.invalidateQueries({ queryKey: keys.codeLink.remoteIdentity(remote) });
       invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
+/** The worktrees Tomrade made for the project's repositories on this machine. Each read asks git about them, so the page that lists them asks as it opens and after a removal. */
+export const useWorktrees = (projectId: string) => useQuery({ queryKey: keys.codeLink.worktrees(projectId), queryFn: () => invoke("codeLink.worktrees", projectId) });
+
+/** What each takes on disk, by folder; asked only while the list is open, and a size not read yet is absent. */
+export function useWorktreeSizes(projectId: string, dirs: string[], enabled: boolean): Map<string, number | null> {
+  const sizes = useQueries({
+    queries: dirs.map((dir) => ({ queryKey: keys.codeLink.worktreeSize(projectId, dir), queryFn: () => invoke("codeLink.worktreeSize", projectId, dir), enabled, staleTime: 10 * 60_000 }))
+  });
+  return new Map(dirs.flatMap((dir, at) => (sizes[at]?.data === undefined ? [] : [[dir, sizes[at]!.data!] as const])));
+}
+
+const MB = 1024 * 1024;
+/** What a worktree weighs: megabytes, gigabytes from one up, kilobytes for one with no install in it. */
+export const diskSize = (bytes: number): string =>
+  bytes >= 1024 * MB ? `${(bytes / (1024 * MB)).toFixed(1)} GB` : bytes >= 10 * MB ? `${Math.round(bytes / MB)} MB` : bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+
+export const WORKTREE_HOLD_KEY: Record<WorktreeHold, MessageKey> = {
+  open: "repositories.worktreeHold_open",
+  busy: "repositories.worktreeHold_busy",
+  dirty: "repositories.worktreeHold_dirty",
+  loose: "repositories.worktreeHold_loose"
+};
+
+/** Why a worktree is still there, or when it goes: one line under its name. */
+export function worktreeState(tree: Pick<WorktreeView, "owner" | "hold" | "removeAt">, now: number): { key: MessageKey; at?: number } {
+  if (tree.hold === "open" && tree.owner === "conversation") return { key: "repositories.worktreeHold_openConversation" };
+  if (tree.hold) return { key: WORKTREE_HOLD_KEY[tree.hold] };
+  if (tree.removeAt === null) return { key: "repositories.worktreeFree" };
+  return tree.removeAt <= now ? { key: "repositories.worktreeDueNow" } : { key: "repositories.worktreeDue", at: tree.removeAt };
+}
+
+/** What a removal that left some behind says: how many went, and why the first that stayed did. */
+export function removalSummary(removals: WorktreeRemoval[]): { removed: number; kept: number; reason: string | null } {
+  const kept = removals.filter((removal) => !removal.removed);
+  return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null };
+}
+
+export function useRemoveWorktrees(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dirs: string[]) => invoke("codeLink.removeWorktrees", projectId, dirs),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.codeLink.worktrees(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      // where an agent would run may have changed
+      void qc.invalidateQueries({ queryKey: keys.agent.workdirAll });
     }
   });
 }

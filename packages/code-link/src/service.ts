@@ -35,6 +35,7 @@ import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelV
 import type { ChangedFile, ChangeFileOptions, ChangeReviewed, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { fileInside, findEditor, openInEditor, type EditorOpened } from "./editor.js";
 import { Changes } from "./changes-read.js";
+import { WORKTREE_SECTION, Worktrees, type WorktreeRemoval, type WorktreeView } from "./worktrees.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -241,6 +242,12 @@ declare module "@tomradex/ipc" {
     "codeLink.resolveMerge": (projectId: string, itemId: string, requestedBy: string) => StartBatchEntry;
     /** Where this machine's worktree for the ticket is, if it has one. */
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
+    /** The worktrees Tomrade made for the project's repositories on this machine, with what holds each. */
+    "codeLink.worktrees": (projectId: string) => WorktreeView[];
+    /** How much disk one of them takes, in bytes; reading it takes a while. */
+    "codeLink.worktreeSize": (projectId: string, dir: string) => number | null;
+    /** Remove these on the person's word; one that something holds stays, with the reason. */
+    "codeLink.removeWorktrees": (projectId: string, dirs: string[]) => WorktreeRemoval[];
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
     /** Connection evidence on the default and connection branches of the local clone. */
@@ -340,6 +347,8 @@ export const CodeLinkConfig = z.preprocess(
     hiddenScanMs: z.number().int().min(0).default(600_000),
     /** How often sessions are checked against the clock and their process; 0 turns it off. */
     sweepMs: z.number().int().min(0).default(5_000),
+    /** How often finished tickets' worktrees are looked at for removal; 0 turns it off, with the pass a finished ticket asks for. */
+    worktreeSweepMs: z.number().int().min(0).default(3_600_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
     fetch: z.boolean().default(true),
     /** How long a Start may take before the person is told it failed, rather than left waiting on a stuck step. */
@@ -358,6 +367,8 @@ export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 
 /** How many records' token counts are kept to go on from. */
 const USAGE_COUNTS = 32;
+/** The first look at finished worktrees after a start: once the app has settled, not while it opens. */
+const WORKTREE_START_MS = 2 * 60_000;
 
 
 const SETTINGS_SECTION = {
@@ -439,6 +450,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private scans!: GitScan;
   private landing!: Landing;
   private changesReader!: Changes;
+  private worktreeCare!: Worktrees;
   /** The run an outside session is in, by session: its id, and the tickets it has begun on. */
   private readonly cliRuns = new Map<string, { id: string; items: Set<string> }>();
   /** What is still being kept of a session's folder: its next boundary waits for it. */
@@ -589,7 +601,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       lastHooks: (projectId, repoId) => this.connections.lastHooks(projectId, repoId),
       connectors: this.connectorSet()
     });
+    this.worktreeCare = new Worktrees({ ctx: this.ctx, store: this.store, git: this.git, paneAlive: (pane) => this.herdr.paneAlive(pane), worktrees: this.worktrees, notify: (projectId) => this.notify(projectId) });
     this.ctx.settings.register(SETTINGS_SECTION);
+    this.ctx.settings.register(WORKTREE_SECTION);
     this.ctx.on("write/pre-commit", (intent, next) => {
       if (intent.entity === "item" && intent.op === "update") {
         const before = intent.before as Item | null;
@@ -736,6 +750,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       // Each is taken before it starts, so a ticket follows once; the start runs after this write has settled.
       if (after.status === "done") for (const followOn of this.followOnStore.take(intent.projectId, intent.id)) void Promise.resolve().then(() => this.startFollowOn(followOn, after));
       if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
+      if ((after.status === "done" || after.status === "cancelled") && this.config.worktreeSweepMs > 0) this.worktreeCare.soon();
       if (after.status === "verifying") this.offerMerge(intent.projectId, after);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
@@ -845,6 +860,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.startTickets", (projectId, request) => ctx.codeLink.startTickets(projectId, request));
       ctx.ipc.handle("codeLink.resolveMerge", (projectId, itemId, requestedBy) => ctx.codeLink.resolveMerge(projectId, itemId, requestedBy));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
+      ctx.ipc.handle("codeLink.worktrees", (projectId) => ctx.codeLink.worktreesOf(projectId));
+      ctx.ipc.handle("codeLink.worktreeSize", (projectId, dir) => ctx.codeLink.worktreeSize(projectId, dir));
+      ctx.ipc.handle("codeLink.removeWorktrees", (projectId, dirs) => ctx.codeLink.removeWorktrees(projectId, dirs));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
       ctx.ipc.handle("codeLink.connect", (projectId, repoId, mode) => ctx.codeLink.connect(projectId, repoId, mode));
@@ -912,9 +930,15 @@ export class CodeLink extends Service implements CodeLinkReader {
           }, this.config.sweepMs)
         : null;
     sweeper?.unref?.();
+    // Worktrees left by tickets that finished before this start, or whose keeping time ran out since, go on these passes.
+    const tidier = this.config.worktreeSweepMs > 0 ? setInterval(() => void this.worktreeCare.sweep(), this.config.worktreeSweepMs) : null;
+    tidier?.unref?.();
+    if (tidier) this.worktreeCare.soon(WORKTREE_START_MS);
     return () => {
       if (timer) clearInterval(timer);
       if (sweeper) clearInterval(sweeper);
+      if (tidier) clearInterval(tidier);
+      this.worktreeCare.dispose();
       if (this.autoConnectTimer) clearTimeout(this.autoConnectTimer);
     };
   }
@@ -1391,6 +1415,25 @@ export class CodeLink extends Service implements CodeLinkReader {
       if (dir && fs.existsSync(dir)) return dir;
     }
     return null;
+  }
+
+  /** The worktrees Tomrade made for the project's repositories on this machine, with what holds each. */
+  worktreesOf(projectId: string): Promise<WorktreeView[]> {
+    return this.worktreeCare.list(projectId);
+  }
+
+  worktreeSize(projectId: string, dir: string): Promise<number | null> {
+    return this.worktreeCare.size(projectId, dir);
+  }
+
+  /** On a person's word. Only the ones nothing would be lost with go; the rest come back with what holds them. */
+  removeWorktrees(projectId: string, dirs: string[]): Promise<WorktreeRemoval[]> {
+    return this.worktreeCare.remove(projectId, dirs);
+  }
+
+  /** One pass now over every open project's finished worktrees, as the timer makes; how many went. */
+  sweepWorktrees(): Promise<number> {
+    return this.worktreeCare.sweep();
   }
 
   // ── writes ─────────────────────────────────────────────────────────────────

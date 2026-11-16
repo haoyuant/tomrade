@@ -169,8 +169,19 @@ describe("repositories", () => {
     expect(direct.worktree).toBeNull();
     expect(direct.cwd).toBe(path.join(code.checkout, "packages", "ui"));
 
-    await repos.removeWorktree(view);
+    // Removing it is git's own check: uncommitted work keeps it, what git ignores goes with it.
+    fs.writeFileSync(path.join(view.worktree!, "scratch.txt"), "half done\n");
+    expect(await repos.removeWorktree(code.checkout, view.worktree!)).toMatch(/modified or untracked/);
+    expect(fs.existsSync(view.worktree!)).toBe(true);
+    fs.rmSync(path.join(view.worktree!, "scratch.txt"));
+    fs.mkdirSync(path.join(view.worktree!, "node_modules", "dep"), { recursive: true });
+    fs.writeFileSync(path.join(view.worktree!, "node_modules", "dep", "index.js"), "");
+    fs.appendFileSync(path.join(code.checkout, ".git", "info", "exclude"), "node_modules/\n");
+    expect(await repos.removeWorktree(code.checkout, view.worktree!)).toBeNull();
     expect(fs.existsSync(view.worktree!)).toBe(false);
+    // Never a folder outside the Hub's worktrees: the person's checkout stays.
+    expect(await repos.removeWorktree(code.checkout, code.checkout)).toMatch(/not a worktree Tomrade made/);
+    expect(fs.existsSync(code.checkout)).toBe(true);
   });
 
   it("reads the workstream's folder as a folder in the repository, however it was spelled", async () => {

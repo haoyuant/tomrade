@@ -502,9 +502,9 @@ export class Repos extends Service implements ReposReader {
       if (!fs.existsSync(cwd)) throw new Error(`The workstream's folder ${sub} does not exist in ${placement.checkout} — create it there, or change the folder in the workstream's settings, before an agent runs in it`);
       return { repo, cwd, worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
     }
-    const hubDir = this.hub.dir;
-    if (!hubDir) throw new HubUnsetError();
-    const worktree = path.join(hubDir, "worktrees", slugOf(repo.name), threadId);
+    const dir = this.worktreesDir(repo);
+    if (!dir) throw new HubUnsetError();
+    const worktree = path.join(dir, threadId);
     // Looking never writes: a worktree that is not there is reported, not made.
     if (opts.create === false && !fs.existsSync(worktree)) return { repo, cwd: null, worktree: null, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
     if (!fs.existsSync(worktree)) {
@@ -550,10 +550,24 @@ export class Repos extends Service implements ReposReader {
     return { repo, cwd, worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
-  /** Remove a thread's worktree. The branch, if the agent made one, stays in the checkout. */
-  async removeWorktree(view: WorkdirView): Promise<void> {
-    if (!view.worktree) return;
-    await this.runGit(["worktree", "remove", "--force", view.worktree], { cwd: view.checkout, ok: true });
-    fs.rmSync(view.worktree, { recursive: true, force: true });
+  /** Where this machine keeps the repository's worktrees, one folder per conversation; null with no Hub folder chosen. */
+  worktreesDir(repo: Pick<Repo, "name">): string | null {
+    const hubDir = this.hub.dir;
+    return hubDir ? path.join(hubDir, "worktrees", slugOf(repo.name)) : null;
+  }
+
+  /**
+   * Remove a worktree Tomrade made. Its branch stays in the checkout. git refuses one with uncommitted changes or
+   * untracked files (ignored ones — installed dependencies, build output — go with it), and so does this: what git
+   * said comes back, null once it is gone. A folder outside the Hub's worktrees is never removed.
+   */
+  async removeWorktree(checkout: string, worktree: string): Promise<string | null> {
+    const hubDir = this.hub.dir;
+    const inside = hubDir ? path.relative(path.join(hubDir, "worktrees"), worktree) : "";
+    if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) return `${worktree} is not a worktree Tomrade made`;
+    const removed = await this.runGit(["worktree", "remove", worktree], { cwd: checkout, ok: true });
+    if (removed.code !== 0) return (removed.stderr ?? "").trim().split("\n").pop() || "git worktree remove failed";
+    fs.rmSync(worktree, { recursive: true, force: true });
+    return null;
   }
 }

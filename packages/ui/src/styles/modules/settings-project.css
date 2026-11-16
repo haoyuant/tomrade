@@ -27,6 +27,12 @@
 .project-settings-copy { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-settings-facts { display: flex; flex-direction: column; gap: var(--space-2); }
 .repo-row .repo-branch { width: 120px; flex: 0 1 120px; min-width: 60px; }
+.repo-worktree .repo-worktree-size { flex-shrink: 0; min-width: 4.5em; text-align: right; }
+.repo-worktree .repo-worktree-ticket { display: flex; align-items: center; gap: var(--space-2); }
+.repo-worktree .repo-worktree-ticket > * { flex-shrink: 0; }
+.repo-worktree .repo-worktree-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Why it stays is read whole: it wraps where a name would be cut. */
+.repo-worktree .repo-worktree-state { min-width: 0; overflow-wrap: anywhere; }
 .repo-row .repo-name { min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-row .repo-use-credential { align-self: flex-start; white-space: normal; text-align: left; height: auto; }
 .repo-remove-confirm { flex-wrap: wrap; margin-top: var(--space-2); }
