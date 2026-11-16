@@ -111,6 +111,7 @@ export function SchemaField({
   const label = schema.title ?? humanize(name);
   const type = typeOf(schema);
   const numeric = type === "integer" || type === "number";
+  const checkbox = type === "boolean" && !schema.enum;
   const [picking, setPicking] = useState(false);
   const pick = (next: unknown) => {
     onChange(next);
@@ -134,8 +135,16 @@ export function SchemaField({
 
   return (
     <div className="field">
-      <label htmlFor={inputId}>{label}</label>
-      {schema.enum ? (
+      {/* A checkbox sits on its title's line, as every other checkbox in Tomrade does. */}
+      {checkbox ? (
+        <label className="field-check">
+          <input id={inputId} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => pick(e.target.checked)} />
+          <span>{label}</span>
+        </label>
+      ) : (
+        <label htmlFor={inputId}>{label}</label>
+      )}
+      {checkbox ? null : schema.enum ? (
         <select id={inputId} className="input" disabled={disabled} value={String(value ?? "")} onChange={(e) => pick(e.target.value)}>
           {schema.enum.map((option) => (
             <option key={String(option)} value={String(option)}>
@@ -143,8 +152,6 @@ export function SchemaField({
             </option>
           ))}
         </select>
-      ) : type === "boolean" ? (
-        <input id={inputId} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => pick(e.target.checked)} />
       ) : type === "array" || type === "object" ? (
         <JsonInput id={inputId} value={value} disabled={disabled} onCommit={pick} />
       ) : schema.format === "directory" || schema.format === "audio" ? (
