@@ -32,7 +32,7 @@ import { reportError } from "~/lib/toast";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 // closedWindow is per project, drawn in each project's settings.
-const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow", "dispatch"]);
+const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "performanceMode", "unifiedSky", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding", "closedWindow", "dispatch", "worktrees"]);
 
 /** A row in the side menu and the pane it reveals are one and the same thing. */
 interface Pane {
@@ -210,6 +210,8 @@ export function SettingsDialog({
       group: "app",
       render: () => <HubPane />
     },
+    // What Tomrade's worktrees take of this computer's disk sits beside where they are kept; drawn while code link runs.
+    ...(sections.data ?? []).filter((s) => s.id === "worktrees").map((section): Pane => ({ id: section.id, label: section.title, icon: "i-folder", group: "app", render: () => pluginPane(section) })),
     { id: "devices", label: t("devices.label"), icon: "i-monitor", group: "app", render: () => <DevicesPane onLeave={() => onOpenChange(false)} /> },
     { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(

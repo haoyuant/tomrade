@@ -25,6 +25,7 @@ import {
 import { openExternal, pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { AgentConnection } from "./AgentConnection";
+import { RepoWorktrees } from "./RepoWorktrees";
 import { ConnectionPanel, message } from "./destination";
 import { InlineEdit } from "~/components/ui/InlineEdit";
 import { isCommitKey } from "~/lib/keys";
@@ -394,6 +395,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         </div>
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
+      {checkout?.checkout && <RepoWorktrees projectId={projectId} repoId={repo.id} />}
       <AgentConnection projectId={projectId} repoId={repo.id} />
       <AgentMerge projectId={projectId} repoId={repo.id} policy={remoteState?.mergePolicy ?? "human"} local={remoteState?.remote === "none"} />
       <GhHint enabled={remoteState?.remote !== "none"} />

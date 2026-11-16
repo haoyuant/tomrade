@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions, WorktreeGroup, WorktreeHold, WorktreeRemoval, WorktreeView } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
 
@@ -117,6 +117,96 @@ export function useRecheckRemote(projectId: string, remote: string) {
       void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       void qc.invalidateQueries({ queryKey: keys.codeLink.remoteIdentity(remote) });
       invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
+/** The worktrees Tomrade made for the project's repositories on this machine. Each read asks git about them, so the page that lists them asks as it opens and after a removal. */
+export const useWorktrees = (projectId: string) => useQuery({ queryKey: keys.codeLink.worktrees(projectId), queryFn: () => invoke("codeLink.worktrees", projectId) });
+
+/** Every open project's worktrees by repository, and the disk the Hub keeps them on: what Settings shows of them. */
+export const useWorktreeOverview = () => useQuery({ queryKey: keys.codeLink.worktreeOverview, queryFn: () => invoke("codeLink.worktreeOverview") });
+
+/** What each takes on disk, by folder; asked only while they are shown, and a size not read yet is absent. */
+export function useWorktreeSizes(trees: { projectId: string; dir: string }[], enabled: boolean): Map<string, number | null> {
+  const sizes = useQueries({
+    queries: trees.map(({ projectId, dir }) => ({ queryKey: keys.codeLink.worktreeSize(projectId, dir), queryFn: () => invoke("codeLink.worktreeSize", projectId, dir), enabled, staleTime: 10 * 60_000 }))
+  });
+  return new Map(trees.flatMap(({ dir }, at) => (sizes[at]?.data === undefined ? [] : [[dir, sizes[at]!.data!] as const])));
+}
+
+const MB = 1024 * 1024;
+/** What a worktree weighs: megabytes, gigabytes from one up, kilobytes for one with no install in it. */
+export const diskSize = (bytes: number): string =>
+  bytes >= 1024 * MB ? `${(bytes / (1024 * MB)).toFixed(1)} GB` : bytes >= 10 * MB ? `${Math.round(bytes / MB)} MB` : bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+
+export const WORKTREE_HOLD_KEY: Record<WorktreeHold, MessageKey> = {
+  open: "repositories.worktreeHold_open",
+  busy: "repositories.worktreeHold_busy",
+  dirty: "repositories.worktreeHold_dirty",
+  loose: "repositories.worktreeHold_loose"
+};
+
+/** Why a worktree is still there, or when it goes: one line under its name. */
+export function worktreeState(tree: Pick<WorktreeView, "owner" | "hold" | "removeAt">, now: number): { key: MessageKey; at?: number } {
+  if (tree.hold === "open" && tree.owner === "conversation") return { key: "repositories.worktreeHold_openConversation" };
+  if (tree.hold) return { key: WORKTREE_HOLD_KEY[tree.hold] };
+  if (tree.removeAt === null) return { key: "repositories.worktreeFree" };
+  return tree.removeAt <= now ? { key: "repositories.worktreeDueNow" } : { key: "repositories.worktreeDue", at: tree.removeAt };
+}
+
+/** What a removal that left some behind says: how many went, and why the first that stayed did. */
+export function removalSummary(removals: WorktreeRemoval[]): { removed: number; kept: number; reason: string | null } {
+  const kept = removals.filter((removal) => !removal.removed);
+  return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null };
+}
+
+/** Where a worktree's space counts: nothing holds it, it is finished but something does, or it is still in use. */
+export type WorktreeBucket = "free" | "held" | "open";
+export const worktreeBucket = (tree: Pick<WorktreeView, "hold">): WorktreeBucket => (!tree.hold ? "free" : tree.hold === "open" ? "open" : "held");
+
+/**
+ * The worktrees of every repository added up, with the sizes read so far: how many, what they take, how that splits
+ * by whether each can go, and the repositories from the one that takes most.
+ */
+export function worktreeTotals(groups: WorktreeGroup[], sizes: ReadonlyMap<string, number | null>) {
+  const buckets: Record<WorktreeBucket, { n: number; bytes: number }> = { free: { n: 0, bytes: 0 }, held: { n: 0, bytes: 0 }, open: { n: 0, bytes: 0 } };
+  let count = 0;
+  let measured = 0;
+  let bytes = 0;
+  const repos = groups
+    .map((group) => {
+      let taken = 0;
+      for (const tree of group.trees) {
+        const size = sizes.get(tree.dir);
+        if (size !== undefined) measured++;
+        const bucket = buckets[worktreeBucket(tree)];
+        bucket.n++;
+        bucket.bytes += size ?? 0;
+        taken += size ?? 0;
+      }
+      count += group.trees.length;
+      bytes += taken;
+      return { projectId: group.projectId, project: group.project, repoId: group.repoId, repo: group.repo, n: group.trees.length, bytes: taken };
+    })
+    .sort((a, b) => b.bytes - a.bytes || b.n - a.n);
+  return { count, measured, bytes, buckets, repos };
+}
+
+/** Removes worktrees on the person's word, project by project; each comes back removed, or with what held it. */
+export function useRemoveWorktrees() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (asks: { projectId: string; dirs: string[] }[]) => {
+      const out: WorktreeRemoval[] = [];
+      for (const ask of asks) out.push(...(await invoke("codeLink.removeWorktrees", ask.projectId, ask.dirs)));
+      return out;
+    },
+    onSettled: (_removals, _error, asks) => {
+      void qc.invalidateQueries({ queryKey: keys.codeLink.worktreesAll });
+      for (const ask of asks) void qc.invalidateQueries({ queryKey: keys.codeLink.all(ask.projectId) });
+      // where an agent would run may have changed
+      void qc.invalidateQueries({ queryKey: keys.agent.workdirAll });
     }
   });
 }

@@ -170,6 +170,12 @@ export const keys = {
     proposals: (projectId: string, itemId?: string) => ["codeLink", projectId, "proposals", itemId ?? ""] as const,
     unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
     worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
+    /** Kept apart from `all`, as their sizes are: listing them asks git about each, and sizing one walks every file of an install. */
+    worktrees: (projectId: string) => ["codeLinkWorktrees", projectId] as const,
+    /** Every project's at once, for Settings; `worktreesAll` is this and each project's list. */
+    worktreeOverview: ["codeLinkWorktrees", "overview"] as const,
+    worktreesAll: ["codeLinkWorktrees"] as const,
+    worktreeSize: (projectId: string, dir: string) => ["codeLinkWorktreeSize", projectId, dir] as const,
     /** A ticket's diff, one read per code link, scope and whitespace choice; `changesAll` is every one of the project's. */
     changes: (projectId: string, itemId: string) => ["codeLink", projectId, "changes", itemId] as const,
     changesAll: (projectId: string) => ["codeLink", projectId, "changes"] as const,
