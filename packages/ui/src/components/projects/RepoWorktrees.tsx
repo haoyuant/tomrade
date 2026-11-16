@@ -21,19 +21,19 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   const trees = (listed.data ?? [])
     .filter((tree) => tree.repoId === repoId)
     .sort((a, b) => Number(!!a.hold) - Number(!!b.hold) || (a.tickets[0]?.key ?? "~").localeCompare(b.tickets[0]?.key ?? "~", undefined, { numeric: true }));
-  const sizes = useWorktreeSizes(projectId, trees.map((tree) => tree.dir), open);
-  const remove = useRemoveWorktrees(projectId);
+  const sizes = useWorktreeSizes(trees.map((tree) => ({ projectId, dir: tree.dir })), open);
+  const remove = useRemoveWorktrees();
   // Said even when there are none, so the list is found before a disk fills; nothing is said until git has answered.
   if (!listed.data) return null;
   const none = trees.length === 0;
 
-  const finished = trees.filter((tree) => tree.owner === "ticket" && !tree.hold);
+  const finished = trees.filter((tree) => !tree.hold);
   const known = trees.flatMap((tree) => sizes.get(tree.dir) ?? []);
   const when = new Intl.DateTimeFormat(intlTag(locale), { dateStyle: "medium", timeStyle: "short" });
   const now = Date.now();
 
   const take = (dirs: string[]) =>
-    remove.mutate(dirs, {
+    remove.mutate([{ projectId, dirs }], {
       onSuccess: (removals) => {
         const { removed, kept, reason } = removalSummary(removals);
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");

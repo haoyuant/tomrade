@@ -11,6 +11,7 @@ import { PushStatus } from "./PushStatus";
 import { ScopeTag } from "./ScopeTag";
 import { ShellApprovalField } from "./ShellApprovalField";
 import { GlobalHotkeyField } from "./GlobalHotkeyField";
+import { WorktreeOverview } from "./WorktreeOverview";
 
 /**
  * A plugin's settings pane. A typed field saves when it is left, a pick at
@@ -104,7 +105,9 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
 /** What one plugin field shows beyond its schema: words for some of its options, and a line under it. */
 /** Above a section's fields: code link's way to herdr while this machine has none, for the Terminal window's panes. */
 const SECTION_TOP: Record<string, () => ReactNode> = {
-  codeLink: () => (isWindows ? null : <HerdrRecommendation />)
+  codeLink: () => (isWindows ? null : <HerdrRecommendation />),
+  // What the worktrees take on this computer, above when a finished ticket's is removed.
+  worktrees: () => <WorktreeOverview />
 };
 
 const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode; shown?: (value: unknown) => unknown }> = {

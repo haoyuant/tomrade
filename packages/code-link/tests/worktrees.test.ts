@@ -101,7 +101,7 @@ async function machine() {
   bag.boards.update(projectId, bag.board.id, { repoId: row.id });
   await ctx.repos.setCheckout(repo.remote, repo.checkout);
   ctx.codeLink.pulls = async () => null;
-  const keep = (settings: { enabled?: boolean; keepDays?: number }) => ctx.settings.set({ ...ctx.settings.get(), worktreeCleanup: { enabled: true, keepDays: 0, ...settings } });
+  const keep = (settings: { enabled?: boolean; keepDays?: number }) => ctx.settings.set({ ...ctx.settings.get(), worktrees: { enabled: true, keepDays: 0, ...settings } });
   /** A ticket worked by the agent to its end of turn: a commit on its branch, in a worktree of its own. */
   const worked = async (title: string) => {
     const item = bag.items.create({ projectId, boardId: bag.board.id, title, workType: "coding", status: "todo", by: "human" });
@@ -202,7 +202,7 @@ it("never takes the worktree of a ticket that is still open, however clean and m
 });
 
 it("removes a cancelled ticket's worktree too, and none by itself with the setting off — a person still can", async () => {
-  const { codeLink, projectId, keep, worked, finish, view } = await machine();
+  const { codeLink, projectId, repo, keep, worked, finish, view } = await machine();
   keep({ enabled: false });
   const cancelled = await worked("Dropped");
   const done = await worked("Finished");
@@ -214,6 +214,13 @@ it("removes a cancelled ticket's worktree too, and none by itself with the setti
   expect(await view(cancelled.worktree)).toMatchObject({ hold: null, removeAt: null, tickets: [{ status: "cancelled" }] });
   expect(await codeLink.sweepWorktrees()).toBe(0);
   expect(fs.existsSync(done.worktree)).toBe(true);
+
+  // Across the open projects: this one's repository with its two, and the disk they are on.
+  const overview = await codeLink.worktreeOverview();
+  expect(overview.root).toBe(path.dirname(path.dirname(done.worktree)));
+  expect(overview.disk!.total).toBeGreaterThan(overview.disk!.free);
+  expect(overview.groups).toMatchObject([{ projectId, repoId: repo.id, repo: repo.name, trees: [{ hold: null }, { hold: null }] }]);
+  expect(overview.groups[0]!.trees.map((tree) => tree.dir).sort()).toEqual([cancelled.worktree, done.worktree].sort());
 
   // What it weighs: the installed dependencies count.
   expect(await codeLink.worktreeSize(projectId, done.worktree)).toBeGreaterThan(4000);

@@ -91,6 +91,19 @@
 .usage-purpose-fill, .usage-purpose-fail { height: 100%; }
 .usage-purpose-count { text-align: right; color: var(--fg); }
 
+/* Settings → Worktrees: the same marks, for what Tomrade's worktrees take of the disk. */
+.worktree-overview .usage-kpi { padding: var(--space-3) var(--space-4); }
+/* Files that are not Tomrade's recede; free space is the empty track. */
+.worktree-overview .worktree-other { opacity: 0.4; }
+.worktree-overview .usage-swatch.worktree-free { background: var(--surface-warm); border: 1px solid var(--border); }
+.worktree-overview .worktree-repos .usage-purpose-row { grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 9.5rem; }
+.worktree-overview .worktree-repo-project { color: var(--meta); }
+/* Each bar's key sits under it, three across, and the next bar keeps its distance. */
+.worktree-overview .usage-engine-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
+.worktree-overview .usage-engine-legend + .usage-share-label, .worktree-overview .usage-engine-legend + .usage-share-label + .usage-share { margin-top: var(--space-3); }
+.worktree-overview-foot { gap: var(--space-4); align-items: center; }
+.worktree-overview-foot .usage-chart-note { flex: 1; min-width: 0; }
+
 .usage-table-wrap { overflow-x: auto; }
 .usage-table-wide { min-width: 640px; font-size: var(--text-xs); }
 .usage-table-wide th, .usage-table-wide td { padding-left: var(--space-2); padding-right: var(--space-2); white-space: nowrap; }

@@ -84,7 +84,7 @@ const run = async () => {
   ctx.items.update(project.id, merged.item.id, { status: "done" }, "human");
   ctx.items.update(project.id, scratch.item.id, { status: "done" }, "human");
   check("each ticket got a worktree of its own", [merged, scratch, open].every((each) => fs.existsSync(each.worktree)));
-  check("Settings has the cleanup, on and keeping a day", JSON.stringify(ctx.settings.value("worktreeCleanup")) === JSON.stringify({ enabled: true, keepDays: 1 }), ctx.settings.value("worktreeCleanup"));
+  check("Settings has the cleanup, on and keeping a day", JSON.stringify(ctx.settings.value("worktrees")) === JSON.stringify({ enabled: true, keepDays: 1 }), ctx.settings.value("worktrees"));
 
   const win = new BrowserWindow({ width: 1500, height: 900, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   const base = process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/";
@@ -102,13 +102,32 @@ const run = async () => {
   };
   await sleep(2500);
 
+  // ── Settings › Worktrees: every project's, added up ───────────────────
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));true`);
+  await wait(() => $(`!!document.querySelector('.sheet-settings')`));
+  await press(`[...document.querySelectorAll('.sheet-settings .dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Worktrees')`);
+  const over = `document.querySelector('[data-testid="worktree-overview"]')`;
+  const kpi = (id) => $(`${over}?.querySelector('[data-kpi="${id}"]')?.textContent ?? ''`);
+  check("Settings has a Worktrees pane that counts them across repositories", await wait(async () => (await kpi("count")).includes("3") && (await kpi("count")).includes("Repositories: 1")), await kpi("count"));
+  check("it says what they take, once each is measured, as a share of the disk", await wait(async () => /They take\d+(\.\d)? MB.*of this disk/.test(await kpi("taken")), 80), await kpi("taken"));
+  check("how much of that can go now", await wait(async () => /Can be removed now\d+(\.\d)? MBWorktrees nothing holds: 1/.test(await kpi("free"))), await kpi("free"));
+  check("and what the disk has left", /Free on this disk\d+(\.\d)? (GB|MB)of \d/.test(await kpi("disk")), await kpi("disk"));
+  check("the space is split by whether each can go: one free, one held, one in use", (await $(`[...${over}.querySelectorAll('[data-bar="split"] .usage-share-seg')].map((seg) => seg.dataset.bucket).join()`)) === "free,held,open");
+  check("each part is named with its count and size", await $(`[...${over}.querySelectorAll('.usage-engine-key[data-bucket]')].every((key) => /1 · [0-9.]+ MB/.test(key.textContent))`));
+  check("the disk's own bar shows the worktrees in it", await $(`!!${over}.querySelector('[data-bar="disk"] .usage-share-seg')`));
+  check("and the repository that holds them is listed", (await $(`${over}.querySelector('.worktree-repos [data-repo="${repo.id}"]')?.textContent ?? ''`)).includes("app"));
+  check("below it, when a finished ticket's is removed", await $(`[...document.querySelectorAll('.sheet-settings label, .sheet-settings .field-label, .sheet-settings *')].some((n) => n.childElementCount === 0 && n.textContent === "Remove a finished ticket's worktree")`));
+  await shot("worktree-cleanup-00-settings");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await wait(async () => !(await $(`!!document.querySelector('.sheet-settings')`)));
+
   await press(`[...document.querySelectorAll('.side-name')].find((n) => n.textContent?.trim() === 'Project settings')?.closest('button,a')`);
   await sleep(600);
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Repositories')`);
   const head = `document.querySelector('[data-repo="${repo.id}"] [data-testid="repo-worktrees"]')`;
   const headText = () => $(`${head}?.textContent ?? ''`);
   check("the repository says how many worktrees are on this computer", (await ctx.codeLink.worktreesOf(project.id)).length === 3 && (await wait(async () => (await headText()).includes("Worktrees on this computer: 3"))), await headText());
-  check("and how many of them a finished ticket left", (await headText()).includes("1 from finished tickets can be removed"), await headText());
+  check("and how many of them a finished ticket left", (await headText()).includes("1 can be removed"), await headText());
 
   const quietHead = `document.querySelector('[data-repo="${quiet.id}"] [data-testid="repo-worktrees"]')`;
   check("a repository with none says so, with nothing to unfold or remove", await wait(() => $(`${quietHead}?.querySelector('.cfg-name')?.textContent === 'No worktrees on this computer' && !${quietHead}.querySelector('.fold-chev') && !${quietHead}.querySelector('.repo-worktrees-clear')`)), await $(`${quietHead}?.textContent ?? null`));
@@ -142,7 +161,7 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.side-name')].find((n) => n.textContent?.trim() === 'Project settings')?.closest('button,a')`);
   await sleep(600);
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Repositories')`);
-  await wait(async () => (await headText()).includes("1 from finished tickets can be removed"));
+  await wait(async () => (await headText()).includes("1 can be removed"));
   await press(`${head}.querySelector('.fold-chev')`);
   await wait(async () => (await rows()).length === 2);
   await press(`[...document.querySelectorAll('[data-repo="${repo.id}"] .repo-worktree')].find((each) => each.textContent.includes(${JSON.stringify(scratch.item.key)}))?.querySelector('.repo-worktree-remove')`);

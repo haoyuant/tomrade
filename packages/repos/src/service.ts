@@ -550,10 +550,11 @@ export class Repos extends Service implements ReposReader {
     return { repo, cwd, worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
-  /** Where this machine keeps the repository's worktrees, one folder per conversation; null with no Hub folder chosen. */
-  worktreesDir(repo: Pick<Repo, "name">): string | null {
+  /** Where this machine keeps a repository's worktrees, one folder per conversation — or, with none named, every repository's; null with no Hub folder chosen. */
+  worktreesDir(repo?: Pick<Repo, "name">): string | null {
     const hubDir = this.hub.dir;
-    return hubDir ? path.join(hubDir, "worktrees", slugOf(repo.name)) : null;
+    if (!hubDir) return null;
+    return repo ? path.join(hubDir, "worktrees", slugOf(repo.name)) : path.join(hubDir, "worktrees");
   }
 
   /**
@@ -562,8 +563,8 @@ export class Repos extends Service implements ReposReader {
    * said comes back, null once it is gone. A folder outside the Hub's worktrees is never removed.
    */
   async removeWorktree(checkout: string, worktree: string): Promise<string | null> {
-    const hubDir = this.hub.dir;
-    const inside = hubDir ? path.relative(path.join(hubDir, "worktrees"), worktree) : "";
+    const root = this.worktreesDir();
+    const inside = root ? path.relative(root, worktree) : "";
     if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) return `${worktree} is not a worktree Tomrade made`;
     const removed = await this.runGit(["worktree", "remove", worktree], { cwd: checkout, ok: true });
     if (removed.code !== 0) return (removed.stderr ?? "").trim().split("\n").pop() || "git worktree remove failed";

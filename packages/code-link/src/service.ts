@@ -35,7 +35,7 @@ import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelV
 import type { ChangedFile, ChangeFileOptions, ChangeReviewed, ChangesOptions, ChangesSummary, ChangesView } from "./changes.js";
 import { fileInside, findEditor, openInEditor, type EditorOpened } from "./editor.js";
 import { Changes } from "./changes-read.js";
-import { WORKTREE_SECTION, Worktrees, type WorktreeRemoval, type WorktreeView } from "./worktrees.js";
+import { WORKTREE_SECTION, Worktrees, type WorktreeOverview, type WorktreeRemoval, type WorktreeView } from "./worktrees.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult, type PrChecks } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -244,6 +244,8 @@ declare module "@tomradex/ipc" {
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** The worktrees Tomrade made for the project's repositories on this machine, with what holds each. */
     "codeLink.worktrees": (projectId: string) => WorktreeView[];
+    /** Every open project's worktrees by repository, and the disk the Hub keeps them on. */
+    "codeLink.worktreeOverview": () => WorktreeOverview;
     /** How much disk one of them takes, in bytes; reading it takes a while. */
     "codeLink.worktreeSize": (projectId: string, dir: string) => number | null;
     /** Remove these on the person's word; one that something holds stays, with the reason. */
@@ -861,6 +863,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.resolveMerge", (projectId, itemId, requestedBy) => ctx.codeLink.resolveMerge(projectId, itemId, requestedBy));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.worktrees", (projectId) => ctx.codeLink.worktreesOf(projectId));
+      ctx.ipc.handle("codeLink.worktreeOverview", () => ctx.codeLink.worktreeOverview());
       ctx.ipc.handle("codeLink.worktreeSize", (projectId, dir) => ctx.codeLink.worktreeSize(projectId, dir));
       ctx.ipc.handle("codeLink.removeWorktrees", (projectId, dirs) => ctx.codeLink.removeWorktrees(projectId, dirs));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
@@ -1420,6 +1423,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** The worktrees Tomrade made for the project's repositories on this machine, with what holds each. */
   worktreesOf(projectId: string): Promise<WorktreeView[]> {
     return this.worktreeCare.list(projectId);
+  }
+
+  /** Every open project's worktrees by repository, and the disk the Hub keeps them on. */
+  worktreeOverview(): Promise<WorktreeOverview> {
+    return this.worktreeCare.overview();
   }
 
   worktreeSize(projectId: string, dir: string): Promise<number | null> {

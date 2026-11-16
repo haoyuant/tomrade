@@ -58,7 +58,7 @@ export { Review, REVIEW_PAGE, cutByTicket, cutThread, mergePage, threadLines, ti
 export type { RawOutput } from "./service.js";
 export { isMergedPr, scorecardPrs, summarizeScorecard, type Scorecard, type ScorecardEngine, type ScorecardPr, type ScorecardRun, type ScorecardSource, type ScorecardTally } from "./scorecard.js";
 export { droppedPaste, dropsFolder, readableDrops } from "./drop.js";
-export type { WorktreeHold, WorktreeRemoval, WorktreeView } from "./worktrees.js";
+export type { WorktreeGroup, WorktreeHold, WorktreeOverview, WorktreeRemoval, WorktreeView } from "./worktrees.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";

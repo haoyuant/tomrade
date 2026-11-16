@@ -17,17 +17,17 @@ const WorktreeSettings = z.object({
 type WorktreeSettings = z.infer<typeof WorktreeSettings>;
 
 export const WORKTREE_SECTION: SettingsSection<WorktreeSettings> = {
-  id: "worktreeCleanup",
-  title: "Finished worktrees",
-  description: "Every ticket started from Tomrade gets a worktree under the Hub, with its own installed dependencies, and they fill the disk when left. A project's settings list the ones on this computer under Repositories.",
+  id: "worktrees",
+  title: "Worktrees",
+  description: "Every ticket started from Tomrade is worked in a worktree of its own under the Hub, with its own installed dependencies, and they fill the disk when left. What they take on this computer, and when a finished ticket's is removed.",
   schema: WorktreeSettings,
   defaults: WorktreeSettings.parse({}),
   scope: "machine",
   order: 31,
   words: {
     zh: {
-      title: "已结束工单的 worktree",
-      description: "从 Tomrade 开始的每张工单都在 Hub 下有一个 worktree，各带一份依赖安装，放着不管会占满磁盘。项目设置的“仓库”里能看到本机上有哪些。",
+      title: "Worktree",
+      description: "从 Tomrade 开始的每张工单都在 Hub 下自己的 worktree 里做，各带一份依赖安装，放着不管会占满磁盘。这里是它们在这台电脑上占了多少，以及已结束工单的 worktree 何时移除。",
       fields: {
         enabled: { title: "移除已结束工单的 worktree", description: "工单完成或取消后，Tomrade 为它建的 worktree 会从这台电脑上移除——只在不丢东西时：没有未提交改动和未跟踪文件，也没有会话还在里面。分支会保留，重新开始这张工单就能把 worktree 带回来。" },
         keepDays: { title: "保留天数", description: "已结束工单的 worktree 保留多久再移除。0 表示工单结束后很快移除。" }
@@ -58,6 +58,25 @@ export interface WorktreeView {
   hold: WorktreeHold | null;
   /** When cleanup removes it by itself; null when it will not: something holds it, cleanup is off, or it is not a ticket's. */
   removeAt: number | null;
+}
+
+/** One repository's worktrees, in one open project. */
+export interface WorktreeGroup {
+  projectId: string;
+  project: string;
+  repoId: string;
+  repo: string;
+  trees: WorktreeView[];
+}
+
+/** Every worktree Tomrade made on this machine, across the open projects, and the disk they are on. */
+export interface WorktreeOverview {
+  /** The Hub's folder of worktrees; null with no Hub folder chosen. */
+  root: string | null;
+  /** That folder's disk, in bytes: what is free to this user, and its size; null when it cannot be read. */
+  disk: { free: number; total: number } | null;
+  /** Repositories that have a worktree here; one with none is left out. */
+  groups: WorktreeGroup[];
 }
 
 export interface WorktreeRemoval {
@@ -133,6 +152,23 @@ export class Worktrees {
   /** Every worktree of the project's repositories that Tomrade made on this machine, with what holds each. */
   async list(projectId: string): Promise<WorktreeView[]> {
     return (await this.trees(projectId)).map(({ checkout: _checkout, ...view }) => view);
+  }
+
+  /** Every open project's worktrees by repository, each worktree once, with the disk the Hub keeps them on. */
+  async overview(): Promise<WorktreeOverview> {
+    const root = this.ctx.repos.worktreesDir();
+    const names = new Map(this.ctx.hub.catalog.projects().map((project) => [project.id, project.name]));
+    const seen = new Set<string>();
+    const groups: WorktreeGroup[] = [];
+    for (const projectId of this.ctx.db.openIds()) {
+      const repos = new Map(this.ctx.repos.list(projectId).map((repo) => [repo.id, repo.name]));
+      // A checkout two projects share lists a worktree nobody owns under both: it counts once.
+      const trees = (await this.list(projectId)).filter((tree) => !seen.has(tree.dir) && !!seen.add(tree.dir));
+      for (const repoId of new Set(trees.map((tree) => tree.repoId))) {
+        groups.push({ projectId, project: names.get(projectId) ?? "", repoId, repo: repos.get(repoId) ?? "", trees: trees.filter((tree) => tree.repoId === repoId) });
+      }
+    }
+    return { root, disk: root ? await diskOf(root) : null, groups };
   }
 
   /** Remove these on a person's word. One that something holds stays, with the reason: what holds it, or git's own words. */
@@ -326,6 +362,18 @@ export class Worktrees {
     if (head.code !== 0) return null;
     const held = await this.git(["for-each-ref", "--count=1", "--contains", "HEAD", "refs/heads", "refs/remotes"], { cwd: dir, ok: true });
     return held.code === 0 && held.stdout.trim() ? null : "loose";
+  }
+}
+
+/** The disk a folder is on — or, while the folder is not there yet, the nearest one above it that is. */
+async function diskOf(dir: string): Promise<{ free: number; total: number } | null> {
+  for (let at = dir; ; at = path.dirname(at)) {
+    try {
+      const disk = await fs.promises.statfs(at);
+      return { free: disk.bavail * disk.bsize, total: disk.blocks * disk.bsize };
+    } catch {
+      if (path.dirname(at) === at) return null;
+    }
   }
 }
 
