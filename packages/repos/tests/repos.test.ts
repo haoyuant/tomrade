@@ -114,7 +114,7 @@ describe("repositories", () => {
     git(["init", "-q", "-b", "main"], checkout);
     git(["remote", "add", "origin", "git@github.com:Acme/App.git"], checkout);
     const selected = await repos.selectCheckout("https://github.com/acme/app", checkout);
-    expect(selected).toEqual({ state: "ready", view: { remote: "https://github.com/acme/app", checkout, runInCheckout: false } });
+    expect(selected).toEqual({ state: "ready", view: { remote: "https://github.com/acme/app", checkout, runInCheckout: false, pullDefault: true } });
 
     const other = await repos.selectCheckout("https://github.com/acme/web", checkout);
     expect(other).toEqual({ state: "clone", remote: "https://github.com/acme/web", parent: checkout, dir: path.join(checkout, "web"), origin: "git@github.com:Acme/App" });
@@ -325,6 +325,6 @@ describe("repositories", () => {
     const copy = path.join(root, `copy-${n++}`);
     fs.mkdirSync(copy);
     git(["init", "-q", "-b", "main"], copy);
-    expect(await repos.selectCheckout(elsewhere, copy)).toEqual({ state: "ready", view: { remote: elsewhere, checkout: copy, runInCheckout: false } });
+    expect(await repos.selectCheckout(elsewhere, copy)).toEqual({ state: "ready", view: { remote: elsewhere, checkout: copy, runInCheckout: false, pullDefault: true } });
   });
 });

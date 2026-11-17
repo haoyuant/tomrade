@@ -1531,6 +1531,8 @@ export const zhHant: PartialMessages = {
     clonedToast: "已把 {{name}} clone 到 {{dir}}",
     runInCheckout: "讓代理直接在我的倉庫目錄裡改程式碼",
     runInCheckoutNote: "關閉時：每次執行都會在 Hub 目錄下取得倉庫的一份獨立副本（git worktree），代理在副本裡修改，你倉庫目錄裡的檔案完全不受影響。開啟後：代理直接在你的倉庫目錄裡工作——改的就是你正開啟的那些檔案，包括你還沒提交的變更。",
+    pullDefault: "自動更新我倉庫目錄裡的 {{branch}}",
+    pullDefaultNote: "開啟時：Tomrade 每次 fetch 之後（每隔幾分鐘一次，PR 合併後立刻一次），會把你倉庫目錄裡的 {{branch}} 快轉到遠端最新。只在它沒有自己的提交、沒有未提交的變更、也沒有代理正在裡面執行時才動，否則保持原樣。關閉後：Tomrade 不會動它，需要你自己 pull。",
     worktrees: "這台電腦上的 worktree：{{n}} 個",
     worktreesNone: "這台電腦上沒有 worktree",
     worktreesFinished: "其中 {{n}} 個可以移除",

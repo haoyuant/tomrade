@@ -29,6 +29,8 @@ export interface CheckoutView {
   remote: string;
   checkout: string | null;
   runInCheckout: boolean;
+  /** Tomrade may fast-forward the checkout's default branch after it fetches. */
+  pullDefault: boolean;
   /** The folder this machine names cannot be worked in: gone from disk, or no longer a git checkout. */
   problem?: CheckoutProblem;
 }
@@ -98,6 +100,7 @@ declare module "@tomradex/ipc" {
     "repos.selectCheckout": (remote: string, dir: string) => CheckoutSelection;
     "repos.clearCheckout": (remote: string) => void;
     "repos.setRunInCheckout": (remote: string, on: boolean) => CheckoutView;
+    "repos.setPullDefault": (remote: string, on: boolean) => CheckoutView;
     /** Clone as a named child of the folder the user chose, after explicit confirmation. */
     "repos.cloneInto": (remote: string, branch: string, parent: string) => CheckoutView;
   }
@@ -208,6 +211,7 @@ export class Repos extends Service implements ReposReader {
       ctx.ipc.handle("repos.selectCheckout", (remote, dir) => ctx.repos.selectCheckout(remote, dir));
       ctx.ipc.handle("repos.clearCheckout", (remote) => ctx.repos.clearCheckout(remote));
       ctx.ipc.handle("repos.setRunInCheckout", (remote, on) => ctx.repos.setRunInCheckout(remote, on));
+      ctx.ipc.handle("repos.setPullDefault", (remote, on) => ctx.repos.setPullDefault(remote, on));
       ctx.ipc.handle("repos.cloneInto", (remote, branch, dir) => ctx.repos.cloneInto(remote, branch, dir));
     });
     this.home.inject(["tools"], (ctx) => {
@@ -361,7 +365,7 @@ export class Repos extends Service implements ReposReader {
       if (taken) continue;
       const next = this.update(projectId, repo.id, { remote: origin });
       // The old key stays: another project naming the same folder adopts on its own pass.
-      this.hub.catalog.setRepo(normalizeRemote(next.remote), { checkout: placement.checkout, runInCheckout: placement.runInCheckout });
+      this.hub.catalog.setRepo(normalizeRemote(next.remote), { checkout: placement.checkout, runInCheckout: placement.runInCheckout, pullDefault: placement.pullDefault });
       adopted.push(next);
     }
     return adopted;
@@ -396,14 +400,14 @@ export class Repos extends Service implements ReposReader {
 
   checkouts(): CheckoutView[] {
     return Object.entries(this.hub.catalog.repos())
-      .map(([remote, r]) => withProblem({ remote, checkout: r.checkout, runInCheckout: r.runInCheckout }))
+      .map(([remote, r]) => withProblem({ remote, checkout: r.checkout, runInCheckout: r.runInCheckout, pullDefault: r.pullDefault }))
       .sort((a, b) => a.remote.localeCompare(b.remote));
   }
 
   checkout(remote: string): CheckoutView {
     const key = normalizeRemote(remote);
     const r = this.hub.catalog.repo(key);
-    return withProblem({ remote: key, checkout: r?.checkout ?? null, runInCheckout: r?.runInCheckout ?? false });
+    return withProblem({ remote: key, checkout: r?.checkout ?? null, runInCheckout: r?.runInCheckout ?? false, pullDefault: r?.pullDefault ?? true });
   }
 
   /** The folder must be a checkout of that very repository: its origin is compared, not trusted. */
@@ -457,6 +461,13 @@ export class Repos extends Service implements ReposReader {
   setRunInCheckout(remote: string, on: boolean): CheckoutView {
     const key = normalizeRemote(remote);
     this.hub.catalog.setRepo(key, { runInCheckout: on });
+    this.notify();
+    return this.checkout(key);
+  }
+
+  setPullDefault(remote: string, on: boolean): CheckoutView {
+    const key = normalizeRemote(remote);
+    this.hub.catalog.setRepo(key, { pullDefault: on });
     this.notify();
     return this.checkout(key);
   }

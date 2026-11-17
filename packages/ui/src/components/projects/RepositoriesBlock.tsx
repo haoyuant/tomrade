@@ -17,6 +17,7 @@ import {
   useRepoCheckouts,
   useRepos,
   useSelectCheckout,
+  useSetPullDefault,
   useSetRunInCheckout,
   useStorageProviders,
   useUpdateBoard,
@@ -165,6 +166,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const selectCheckout = useSelectCheckout();
   const clearCheckout = useClearCheckout();
   const setRun = useSetRunInCheckout();
+  const setPull = useSetPullDefault();
   const clone = useCloneRepoInto();
   const identity = useRemoteIdentity(repo.remote, !!checkout?.checkout);
   const account = useGithubCredentialAccount(projectId, repo.id, !!checkout?.checkout && remoteState?.remote === "unreachable");
@@ -395,6 +397,24 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         </div>
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
+      {checkout?.checkout && remoteState?.remote !== "none" && (
+        <>
+          <div className="cfg-row" style={{ marginTop: 0 }}>
+            <Icon name="i-sync" size={14} style={{ color: checkout.pullDefault ? "var(--accent)" : "var(--meta)" }} />
+            <span className="cfg-name">{t("repositories.pullDefault", { branch: repo.defaultBranch })}</span>
+            <button
+              type="button"
+              className="switch repo-pull-default"
+              role="switch"
+              aria-checked={checkout.pullDefault}
+              aria-label={t("repositories.pullDefault", { branch: repo.defaultBranch })}
+              disabled={busy}
+              onClick={() => setPull.mutate({ remote: repo.remote, on: !checkout.pullDefault }, { onError: fail })}
+            />
+          </div>
+          <p className="meta-txt dense">{t("repositories.pullDefaultNote", { branch: repo.defaultBranch })}</p>
+        </>
+      )}
       {checkout?.checkout && <RepoWorktrees projectId={projectId} repoId={repo.id} />}
       <AgentConnection projectId={projectId} repoId={repo.id} />
       <AgentMerge projectId={projectId} repoId={repo.id} policy={remoteState?.mergePolicy ?? "human"} local={remoteState?.remote === "none"} />

@@ -1455,6 +1455,8 @@ export const fr: PartialMessages = {
     clonedToast: "{{name}} cloné dans {{dir}}",
     runInCheckout: "Laisser les agents travailler dans ma copie locale",
     runInCheckoutNote: "Désactivé : chaque exécution reçoit sa propre copie du dépôt sous le Hub (un worktree git) ; les fichiers de votre copie locale ne sont jamais touchés pendant qu’un agent travaille. Activé : les agents travaillent directement dans votre copie locale — ils modifient les fichiers que vous avez ouverts, y compris vos changements non commités.",
+    pullDefault: "Garder {{branch}} à jour dans ma copie locale",
+    pullDefaultNote: "Activé : après chaque fetch — toutes les quelques minutes, et juste après la fusion d’une pull request — {{branch}} de votre copie locale est avancé (fast-forward) jusqu’à celui du dépôt distant. Seulement s’il n’a pas de commits propres, pas de changements non commités et aucun agent en cours dans ce dossier ; sinon il reste tel quel. Désactivé : Tomrade ne le déplace jamais ; faites le pull vous-même.",
     worktrees: "Worktrees sur cet ordinateur : {{n}}",
     worktreesNone: "Aucun worktree sur cet ordinateur",
     worktreesFinished: "{{n}} peuvent être supprimés",
