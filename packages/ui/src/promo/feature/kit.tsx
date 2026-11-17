@@ -71,8 +71,8 @@ export function Dot({ q, route, click }: { q: number; route: Stop[]; click?: num
 }
 
 /** A ticket's card in the board's own markup, for a scene that is not a board. */
-export function Ticket({ id, title, label, variant = "todo", lang }: { id: string; title: string; label: string; variant?: Variant; lang: Lang }) {
-  const plan: Plan = { key: id, agent: "Claude Code", priority: 2, start: variant === "waiting" ? "doing" : variant, pr: 0, moves: [], written: true };
+export function Ticket({ id, title, label, variant = "todo", lang, pr = 0 }: { id: string; title: string; label: string; variant?: Variant; lang: Lang; /** Its pull request's number, once it has one. */ pr?: number }) {
+  const plan: Plan = { key: id, agent: "Claude Code", priority: 2, start: variant === "waiting" ? "doing" : variant, pr, moves: [], written: true };
   return <TicketCard plan={plan} words={{ title, label }} variant={variant} t={0} lang={lang} clock={() => 600} age={3} />;
 }
 

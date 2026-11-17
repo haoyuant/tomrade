@@ -37,8 +37,8 @@ export const card = film<true>({
     const moved = movedAt(PLAN, t);
     const bump = moved < 0 ? 0 : Math.sin(Math.PI * span(t, moved, moved + 0.45));
     const lit = moved < 0 ? 0 : 1 - span(t, moved, moved + 1.1);
-    const size = lang === "zh" ? 116 : 104;
-    const verb = lang === "zh" ? 170 : 132;
+    const size = lang === "zh" ? 116 : 90;
+    const verb = lang === "zh" ? 170 : 104;
     return (
       <>
         {leave < 1 && (

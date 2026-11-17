@@ -26,7 +26,11 @@ export const SONGS = {
   themes: song(116, BANDS.zine.band),
   inbox: song(120, BANDS.clock.band),
   files: song(112, PHONE.band!),
-  routines: song(126, KEYS.band!)
+  routines: song(126, KEYS.band!),
+  archify: song(120, BANDS.keynote.band),
+  anywhere: song(124, BANDS.flyover.band),
+  takeover: song(116, BANDS.manual.band),
+  im: song(122, BANDS.zine.band)
 };
 export type FeatureId = keyof typeof SONGS;
 export const beatOf = (id: FeatureId): number => 60 / SONGS[id].bpm;
@@ -46,7 +50,15 @@ export const MOMENTS: Record<FeatureId, { clicks: number[]; lands: number[] }> =
   // a note is opened; its link, its backlinks, the ticket it is added to; the question, and the answer out of the note
   files: { clicks: [step(0) + 2, step(2) + 1.5], lands: [step(1) + 2, step(1) + 5, step(2) + 3.5] },
   // the routine switched on; eight o'clock and its three tickets; five on Friday and the assistant's answer
-  routines: { clicks: [step(0) + 4], lands: [step(1) + 2, step(1) + 2.8, step(1) + 3.4, step(1) + 4, step(2) + 2, step(2) + 3] }
+  routines: { clicks: [step(0) + 4], lands: [step(1) + 2, step(1) + 2.8, step(1) + 3.4, step(1) + 4, step(2) + 2, step(2) + 3] },
+  // the sentence sent, a node picked to trace its path, the change sent, Save to Files; the diagram, redrawn, and its two files
+  archify: { clicks: [step(0) + 2.5, step(1) + 3, step(2) + 2.4, step(2) + 5.6], lands: [step(0) + 4, step(2) + 3.6, step(2) + 6.2] },
+  // three places take the ticket up; the board's card says each; the ticket's three sessions, and what it delivered
+  anywhere: { clicks: [], lands: [step(0) + 0.8, step(0) + 2.8, step(0) + 4.8, step(1) + 1.5, step(1) + 3.5, step(1) + 5.5, step(2) + 1.2, step(2) + 2.4, step(2) + 3.6, step(2) + 5.2] },
+  // Scan a repository, then Scan; three entries ticked; Add to backlog; the draft, and the three tickets
+  takeover: { clicks: [step(0) + 2.6, step(0) + 6.4, step(1) + 2.6, step(1) + 3.8, step(1) + 5, step(2) + 1.6], lands: [step(1) + 0.6, step(2) + 2.6, step(2) + 3.2, step(2) + 3.8] },
+  // a pairing code made, the pairing confirmed; the code sent and the bot's welcome; a sentence, its ticket, /start and its answer; the ticket's topic and its news
+  im: { clicks: [step(0) + 2.5, step(0) + 6], lands: [step(0) + 4.2, step(0) + 6.8, step(1) + 1.2, step(1) + 3, step(1) + 3.6, step(1) + 5.2, step(1) + 6.4, step(2) + 1.2, step(2) + 3, step(2) + 4.8, step(2) + 6.2] }
 };
 
 /** What is heard besides the band: a thump as each step comes on, a click for each of the person's, a card for what lands. */

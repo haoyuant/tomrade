@@ -12,8 +12,8 @@ export const OUTRO = {
  * so the film keeps a copy of these few.
  */
 export const CODE_WORDS = {
-  en: { session: "{{agent}} at work · {{where}} · {{time}}", pane: "in a terminal pane", minutes: "{{n}} min", hours: "{{n}} h", waiting: "waiting", merged: "merged", branch: "branch", waitingForYou: "waiting for you" },
-  zh: { session: "{{agent}} 在做 · {{where}} · {{time}}", pane: "终端格子里", minutes: "{{n}} 分钟", hours: "{{n}} 小时", waiting: "在等你", merged: "已合并", branch: "分支", waitingForYou: "在等你" }
+  en: { session: "{{agent}} at work · {{where}} · {{time}}", pane: "in a terminal pane", terminal: "in {{app}}", minutes: "{{n}} min", hours: "{{n}} h", waiting: "waiting", merged: "merged", branch: "branch", waitingForYou: "waiting for you" },
+  zh: { session: "{{agent}} 在做 · {{where}} · {{time}}", pane: "终端格子里", terminal: "在 {{app}} 里", minutes: "{{n}} 分钟", hours: "{{n}} 小时", waiting: "在等你", merged: "已合并", branch: "分支", waitingForYou: "在等你" }
 } as const satisfies Record<Lang, Record<string, string>>;
 
 export interface TicketWords { title: string; label: string }

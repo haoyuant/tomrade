@@ -18,8 +18,9 @@ const two = (n: number): string => String(n).padStart(2, "0");
  * A ticket's card, in the markup the board's own Card draws (components/workspace/Card.tsx). `clock` is the film's
  * wall clock, in minutes, and `age` how long before the film the ticket was last touched.
  */
-export function TicketCard({ m, plan, words, variant, t, lang, clock, age }: {
+export function TicketCard({ m, plan, words, variant, t, lang, clock, age, where }: {
   /** Names the card for the pass that measures it. */ m?: string; plan: Plan; words: TicketWords; variant: Variant; t: number; lang: Lang; clock: (t: number) => number; age: number;
+  /** Where its session runs, when not a pane of the Terminal window: the terminal app's name. */ where?: string;
 }) {
   const code = CODE_WORDS[lang];
   const now = clock(t);
@@ -27,7 +28,7 @@ export function TicketCard({ m, plan, words, variant, t, lang, clock, age }: {
   const minutes = Math.max(1, Math.round(now - clock(claimedAt(plan))));
   const session = variant !== "doing" ? null : interpolate(code.session, {
     agent: plan.agent,
-    where: code.pane,
+    where: where ? interpolate(code.terminal, { app: where }) : code.pane,
     time: minutes < 60 ? interpolate(code.minutes, { n: minutes }) : interpolate(code.hours, { n: Math.round(minutes / 60) })
   });
   return (
