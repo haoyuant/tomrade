@@ -9,6 +9,8 @@ import { NUMBERS, NUMBERS_BEAT, NUMBERS_SECONDS, numbersCues } from "./scripts";
 import { NUMBER_WORDS } from "./words";
 
 const OUT = NUMBERS.marks.out;
+/** The slot that counts pull requests (NUMBER_WORDS). */
+const COUNTED = 6;
 
 /** "Tomrade, by the numbers.": one large number to a bar, what it counts, and a line under it. */
 export const numbers = film<true>({
@@ -29,8 +31,9 @@ export const numbers = film<true>({
     const slot = Math.floor((q - 4) / 4);
     const u = q - 4 - slot * 4;
     const now = q >= 4 && slot < words.slots.length ? words.slots[slot] : null;
-    // the eight pull requests are counted up, one to a half beat; every other number lands whole
-    const figure = now ? (now[0] === "8" ? String(clamp(Math.floor(u * 2.5) + 1, 1, 8)) : now[0]) : "";
+    // the pull requests are counted up, one to a half beat, until counting gives way to N; every other number lands whole
+    const counted = Math.floor(u * 2.5) + 1;
+    const figure = now ? (slot === COUNTED && counted < 8 ? String(counted) : now[0]) : "";
     const roll = ease.outQuint(clamp(u * 2.2));
     const zero = now?.[0] === "0";
     return (

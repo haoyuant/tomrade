@@ -45,11 +45,11 @@ export const TTY_WORDS = {
 /** The sequencer film's captions, each with the beats it is up from and until, and the machine's own labels. */
 export const SEQ_WORDS = {
   en: {
-    lines: [["Say one sentence.", -2, 3.8], ["It becomes *eight tickets.*", 4, 7.8], ["Agents *claim them* and branch.", 8, 15.8], ["Pull requests, checks. *The board keeps up.*", 16, 26.3], ["Only this beat *waits for you.*", 26.5, 27.9], ["One tap, and *it goes on.*", 28, 31.8], ["Go to bed. *Auto run* merges all night.", 32, 43.8], ["*Eight pull requests.* You watched none.", 44, 48]] as [string, number, number][],
+    lines: [["Say one sentence.", -2, 3.8], ["It becomes *eight tickets.*", 4, 7.8], ["Agents *claim them* and branch.", 8, 15.8], ["Pull requests, checks. *The board keeps up.*", 16, 26.3], ["Only this beat *waits for you.*", 26.5, 27.9], ["One tap, and *it goes on.*", 28, 31.8], ["Go to bed. *Auto run* merges all night.", 32, 43.8], ["*N pull requests.* You watched none.", 44, 48]] as [string, number, number][],
     rows: ["To Do", "Doing", "Verifying", "Done"], run: "AUTO RUN", merged: "merged", facts: "Local-first · No account · Free and open source"
   },
   zh: {
-    lines: [["说一句话。", -2, 3.8], ["它被拆成*八张工单*。", 4, 7.8], ["Agent *自己认领*，开分支。", 8, 15.8], ["提 PR，过检查。*看板自己跟上。*", 16, 26.3], ["只有这一拍，*等你*。", 26.5, 27.9], ["你点一下，*接着走*。", 28, 31.8], ["去睡吧。*自动运行*，一夜合并。", 32, 43.8], ["*8 个 PR*，一个没让你盯。", 44, 48]] as [string, number, number][],
+    lines: [["说一句话。", -2, 3.8], ["它被拆成*八张工单*。", 4, 7.8], ["Agent *自己认领*，开分支。", 8, 15.8], ["提 PR，过检查。*看板自己跟上。*", 16, 26.3], ["只有这一拍，*等你*。", 26.5, 27.9], ["你点一下，*接着走*。", 28, 31.8], ["去睡吧。*自动运行*，一夜合并。", 32, 43.8], ["*N 个 PR*，一个没让你盯。", 44, 48]] as [string, number, number][],
     rows: ["待办", "进行中", "验证中", "完成"], run: "自动运行", merged: "已合并", facts: "本地优先 · 不用注册 · 免费开源"
   }
 };
@@ -57,11 +57,11 @@ export const SEQ_WORDS = {
 /** The metro film: its captions by beat, its stations, and the map's small print. */
 export const METRO_WORDS = {
   en: {
-    lines: [["Every agent, *a line of its own.*", -2, 7.8], ["Claim, branch, pull request, checks: *stop by stop, on their own.*", 8, 19.8], ["The map *updates itself.*", 20, 23.8], ["One station is yours: *your call.*", 24, 31.5], ["Last train? There isn't one. *Auto run* goes all night.", 32, 41.3], ["Terminus: *eight pull requests, merged.*", 41.5, 48]] as [string, number, number][],
+    lines: [["Every agent, *a line of its own.*", -2, 7.8], ["Claim, branch, pull request, checks: *stop by stop, on their own.*", 8, 19.8], ["The map *updates itself.*", 20, 23.8], ["One station is yours: *your call.*", 24, 31.5], ["Last train? There isn't one. *Auto run* goes all night.", 32, 41.3], ["Terminus: *N pull requests, merged.*", 41.5, 48]] as [string, number, number][],
     stops: ["To Do", "Claim", "Branch", "PR", "Checks", "Merge", "Done"], you: "You", title: "Tomrade lines", any: "any MCP agent", night: "night service · auto run", merged: "merged", facts: "Local-first · No account · Free and open source"
   },
   zh: {
-    lines: [["每个 Agent，*一条线*。", -2, 7.8], ["认领、开分支、提 PR、过检查，*一站一站自己走*。", 8, 19.8], ["线路图*自己更新*，不用你报站。", 20, 23.8], ["只有一站要换乘：*等你拍板*。", 24, 31.5], ["末班车？没有。*自动运行*跑通宵。", 32, 41.3], ["终点站：*8 个 PR，已合并*。", 41.5, 48]] as [string, number, number][],
+    lines: [["每个 Agent，*一条线*。", -2, 7.8], ["认领、开分支、提 PR、过检查，*一站一站自己走*。", 8, 19.8], ["线路图*自己更新*，不用你报站。", 20, 23.8], ["只有一站要换乘：*等你拍板*。", 24, 31.5], ["末班车？没有。*自动运行*跑通宵。", 32, 41.3], ["终点站：*N 个 PR，已合并*。", 41.5, 48]] as [string, number, number][],
     stops: ["待办", "认领", "开分支", "提 PR", "检查", "合并", "完成"], you: "你", title: "Tomrade 线路图", any: "任何 MCP Agent", night: "夜间线路 · 自动运行", merged: "已合并", facts: "本地优先 · 不用注册 · 免费开源"
   }
 };
@@ -102,21 +102,22 @@ export const PHONE_WORDS = {
   }
 };
 
-/** The numbers film: a number to a bar, what it counts, and the line under it. */
+/** The numbers film: a number to a bar, what it counts, and the line under it. How many agents and pull requests is N:
+ * a figure there would read as a limit. */
 export const NUMBER_WORDS = {
   en: {
     hook: "Tomrade, by the numbers.",
     slots: [
-      ["1", "sentence", "Say it, and it's a ticket"], ["5", "tickets", "The assistant splits it, a pull request each"], ["3", "agents at once", "Claude Code · Codex · Cursor · any MCP agent"], ["1", "terminal window", "Split panes: who's running, who needs you"],
-      ["1", "question", "They only ask when it's your call"], ["1", "click back", "Every agent write is named; a whole run undone"], ["8", "pull requests", "Auto run merges overnight, once checks pass"], ["0", "babysitting", "The board keeps up on its own"],
+      ["1", "sentence", "Say it, and it's a ticket"], ["5", "tickets", "The assistant splits it, a pull request each"], ["N", "agents at once", "Claude Code · Codex · Cursor · any MCP agent"], ["1", "terminal window", "Split panes: who's running, who needs you"],
+      ["1", "question", "They only ask when it's your call"], ["1", "click back", "Every agent write is named; a whole run undone"], ["N", "pull requests", "Auto run merges overnight, once checks pass"], ["0", "babysitting", "The board keeps up on its own"],
       ["0", "accounts", "Local-first: it lives on your machine"], ["0", "to pay", "Free and open source"], ["3", "systems", "macOS · Windows · Linux"]
     ] as [string, string, string][]
   },
   zh: {
     hook: "Tomrade，用数字说。",
     slots: [
-      ["1", "句话", "说出来，就是一张工单"], ["5", "张工单", "助手拆好，每张刚好一个 PR"], ["3", "个 Agent 同时开工", "Claude Code · Codex · Cursor · 任何 MCP Agent"], ["1", "个终端窗口", "分屏看着它们：谁在跑，谁在等你"],
-      ["1", "个问题", "只在要你拍板时，才来找你"], ["1", "键撤回", "Agent 的每次修改都记名，整次撤回"], ["8", "个 PR", "自动运行，检查通过才合并，一夜做完"], ["0", "次盯着", "看板自己跟上进度"],
+      ["1", "句话", "说出来，就是一张工单"], ["5", "张工单", "助手拆好，每张刚好一个 PR"], ["N", "个 Agent 同时开工", "Claude Code · Codex · Cursor · 任何 MCP Agent"], ["1", "个终端窗口", "分屏看着它们：谁在跑，谁在等你"],
+      ["1", "个问题", "只在要你拍板时，才来找你"], ["1", "键撤回", "Agent 的每次修改都记名，整次撤回"], ["N", "个 PR", "自动运行，检查通过才合并，一夜做完"], ["0", "次盯着", "看板自己跟上进度"],
       ["0", "个账号", "本地优先，数据就在你电脑上"], ["0", "元", "免费，开源"], ["3", "个系统", "macOS · Windows · Linux"]
     ] as [string, string, string][]
   }
