@@ -577,6 +577,36 @@ describe("a ticket's changes, read from git", () => {
     }
   }, 60_000);
 
+  it("shows a squash merge whose branch was never seen by its commit, and nothing for a branch-less link without one", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine();
+    try {
+      const squashed = ticket("Squashed elsewhere");
+      write(checkout, "squashed.ts", "export const squashed = true;\n");
+      const sha = commit(checkout, `${squashed.key}: squash it (#7)`);
+      git(["push", "-q", "origin", "main"], checkout);
+      await codeLink.scan(project.id);
+      const [link] = codeLink.links(project.id, squashed.id);
+      expect([link.branch, link.mergedSha]).toEqual(["", sha]);
+
+      const view = (await codeLink.changes(project.id, squashed.id))!;
+      expect([view.base, view.head]).toEqual([git(["rev-parse", `${sha}^1`], checkout), sha]);
+      expect(view.files.map((f) => [f.path, f.status])).toEqual([["squashed.ts", "added"]]);
+      expect(view.links).toEqual([{ id: link.id, branch: sha.slice(0, 7), repoName: expect.any(String) }]);
+      expect(view.scopes).toEqual(["branch"]);
+      expect(view.commits.map((c) => c.sha)).toEqual([sha]);
+      expect(view.root).toBeNull();
+      expect(await codeLink.changesSummary(project.id, squashed.id)).toEqual({ files: 1, additions: 1, deletions: 0 });
+      expect((await codeLink.changeFile(project.id, squashed.id, { path: "squashed.ts" }))?.status).toBe("added");
+
+      const named = ticket("Named in passing");
+      const repoId = link.repoId;
+      codeLink.store.upsertLink(project.id, { itemId: named.id, repoId, branch: "" }, { headSha: sha, headAt: Date.now(), lastSeenAt: Date.now(), source: "scan" });
+      expect(await codeLink.changes(project.id, named.id)).toBeNull();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  }, 60_000);
+
   it("remembers what was reviewed, uncommitted work included, and shows only what changed since", async () => {
     const { codeLink, ctx, project, checkout, ticket } = await machine();
     try {

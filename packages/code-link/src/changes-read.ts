@@ -334,13 +334,14 @@ export class Changes {
   }
 
   private async target(projectId: string, itemId: string, opts: ChangesOptions): Promise<Target | null> {
-    const links = currentLinks(this.store, projectId, itemId).filter((l) => l.branch);
+    // A link with no branch is shown only by its merge: a squash on the default branch named the ticket.
+    const links = currentLinks(this.store, projectId, itemId).filter((l) => l.branch || l.mergedSha);
     const link = links.find((l) => l.id === opts.linkId) ?? primaryOf(links);
     const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
     if (!link || !repo) return null;
     const known = this.ctx.repos.checkout(repo.remote).checkout;
     const checkout = known && fs.existsSync(known) ? known : null;
-    const folder = await this.folderOf(projectId, itemId, link.branch, checkout);
+    const folder = link.branch ? await this.folderOf(projectId, itemId, link.branch, checkout) : null;
     const dir = checkout ?? folder;
     if (!dir) return null;
 
@@ -358,16 +359,16 @@ export class Changes {
     }
     if (!base || !head) return null;
 
-    const commits = await this.commits(dir, base, head);
+    const commits = (await this.commits(dir, base, head)).filter((c) => link.branch || c.sha === head);
     const mark = this.store.reviewed(projectId, link.id);
     const reviewed = mark && (await this.sha(dir, mark.sha)) ? mark : null;
     // Once merged, what came since a review is the default branch's work as much as the ticket's.
     const since = reviewed && !link.mergedSha;
-    const scopes: ChangeScopeKind[] = ["branch", ...(folder ? (["uncommitted"] as const) : []), ...(commits.length ? (["commit"] as const) : []), ...(since ? (["since"] as const) : [])];
+    const scopes: ChangeScopeKind[] = ["branch", ...(folder ? (["uncommitted"] as const) : []), ...(commits.length && link.branch ? (["commit"] as const) : []), ...(since ? (["since"] as const) : [])];
     const repos = new Map(links.map((l) => [l.id, this.ctx.repos.get(projectId, l.repoId)?.name ?? ""]));
     const runs = this.store.changeRuns(projectId, link.id);
     if (runs.length) scopes.push("run");
-    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch, repoName: repos.get(l.id) ?? "" })), scopes, reviewed, commits, root: folder, runs, report: this.report(projectId, itemId, link) };
+    const view = { linkId: link.id, links: links.map((l) => ({ id: l.id, branch: l.branch || l.mergedSha!.slice(0, 7), repoName: repos.get(l.id) ?? "" })), scopes, reviewed, commits, root: folder, runs, report: this.report(projectId, itemId, link) };
     const asked = opts.scope ?? { kind: "branch" };
 
     if (asked.kind === "run") {
