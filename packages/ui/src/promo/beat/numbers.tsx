@@ -17,7 +17,8 @@ export const numbers = film<true>({
   id: "numbers",
   shelf: "2-stories/numbers",
   seconds: NUMBERS_SECONDS,
-  poster: 29 * NUMBERS_BEAT,
+  // the pull requests once counting has given way to N: a figure on the poster would read as a limit
+  poster: 31.5 * NUMBERS_BEAT,
   formats: ["wide"],
   bare: true,
   song: NUMBERS,
