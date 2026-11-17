@@ -9,7 +9,8 @@ import { COLUMNS, columnsAt, liveAt, paths, place, statusAt, variantAt } from ".
 import { BOARD, CHANGES, KEYS, KEYS_SECONDS, LANTERN, LANTERN_SECONDS, METRO, METRO_SECONDS, NUMBERS, NUMBERS_SECONDS, PAD, PADS, PHONE, PHONE_SECONDS, POSTER, POSTER_SECONDS, RIVER, SEQUENCER, SEQUENCER_SECONDS, TRAINS, TTY, TTY_SECONDS, arrived, keysCues, lanternCues, metroCues, numbersCues, padRow, phoneCues, playhead, posterCues, sequencerCues, trainAt, ttyCues } from "../src/promo/beat/scripts";
 import { C, CARD_SECONDS, K, PANE_MOVES, TERMINAL_POINTER, TERMINAL_SECONDS, W, WALL_POINTER, WALL_SECONDS, cardCues, terminalCues, wallCues } from "../src/promo/free/scripts";
 import { BANDS, LONG, SHORT, featureAt, launchCues, secondsOf, songOf } from "../src/promo/launch/scripts";
-import { FPS } from "../src/promo/time";
+import { BEATS, MOMENTS, OUT, SONGS, STEPS, WHY, beatOf, cuesOf as featureCues, secondsOf as featureSeconds, step, stepAt, type FeatureId } from "../src/promo/feature/scripts";
+import { END_SECONDS, FPS } from "../src/promo/time";
 
 const HEIGHT = 70;
 const FRAMES = Math.round(T.total * FPS);
@@ -150,5 +151,24 @@ it("gives every launch film the same bars in both lengths: six features end to e
       // the end card has the seconds it needs
       expect(((bars.beats - bars.end) * 60) / song.bpm + 1.2).toBeGreaterThan(3.9);
     }
+  }
+});
+
+it("gives every feature film a hook, three steps, a line that says why and an end card, with what happens inside its steps", () => {
+  expect(stepAt(step(0) - 0.001)).toBeNull();
+  for (let n = 0; n < STEPS; n += 1) expect(stepAt(step(n))).toEqual({ index: n, u: 0 });
+  expect(stepAt(WHY)).toBeNull();
+  for (const id of Object.keys(SONGS) as FeatureId[]) {
+    const { clicks, lands } = MOMENTS[id];
+    // every click and everything that lands is inside a step, in order
+    for (const list of [clicks, lands]) {
+      expect(list.every((q) => q >= step(0) && q < WHY)).toBe(true);
+      expect(list.every((q, n) => n === 0 || q > list[n - 1])).toBe(true);
+    }
+    expect(featureCues(id).every((cue) => cue.at > 0 && cue.at < featureSeconds(id))).toBe(true);
+    // a film someone will watch to the end: between fifteen and twenty-five seconds, with the end card's seconds in it
+    expect(featureSeconds(id)).toBeGreaterThan(15);
+    expect(featureSeconds(id)).toBeLessThan(25);
+    expect((BEATS - OUT - 0.5) * beatOf(id) + 1.2).toBeGreaterThan(END_SECONDS);
   }
 });

@@ -612,3 +612,49 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .look-sunrise .tty-cursor { box-shadow: none; }
 .look-sunrise .man-option.is-on { color: #fdfbff; }
 .look-sunrise .man-pane { background: #fffdfd; }
+
+/* ─── the feature films: one thing the app does, on its own pieces drawn large ─ */
+.feat { position: absolute; inset: 0; overflow: hidden; color: var(--fg); font-family: var(--font-body); }
+.feat-themes { background: var(--bg); }
+.feat-stage { position: absolute; inset: 0; }
+.feat-sheet {
+  position: absolute; transform-origin: 0 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); box-shadow: 0 30px 70px -30px var(--film-window-shade, rgb(0 0 0 / 0.6)), 0 0 0 1px color-mix(in srgb, var(--fg) 6%, transparent);
+  font-size: var(--text-base); line-height: var(--leading-body);
+}
+.feat-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.feat-head .seg { margin: 0; }
+.feat-head .board-title { margin: 0; }
+.feat-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--fg); }
+.feat-pointer { z-index: 20; }
+.feat-clock { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-size: 56px; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--fg); transform-origin: 0 50%; }
+.feat-clock svg { color: var(--accent); }
+.feat-clock small { font-size: 28px; font-weight: 600; color: var(--muted); }
+.feat-note { position: absolute; margin: 0; max-width: 800px; font-size: 36px; line-height: 1.4; color: var(--muted); }
+.feat-column { position: absolute; width: 780px; }
+.feat-column-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 22px; padding-bottom: 12px; border-bottom: 3px solid var(--border); font-family: var(--font-display); font-size: 44px; color: var(--fg); }
+.feat-column-head b { color: var(--accent); font-weight: 600; }
+.feat-column-card { zoom: 2.3; width: 330px; margin-bottom: 8px; transform-origin: 0 50%; }
+.feat-piece .feat-column-card { zoom: 1.95; }
+.feat-piece { position: absolute; width: 720px; padding: 30px 34px 26px; border: 2px solid var(--border); border-radius: 26px; background: var(--bg); box-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.5); }
+.feat-toast { max-width: none; white-space: nowrap; }
+.feat-draft { min-height: 40px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+.feat-inbox { min-height: 318px; }
+.feat-files { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 18px; }
+.feat-files.is-alone { display: block; }
+.feat-files-side { padding-right: 10px; border-right: 1px solid var(--border-soft); }
+.feat-files-main { min-height: 310px; min-width: 0; }
+.feat-files.is-alone .feat-files-main { min-height: 0; }
+.feat-backlinks { margin-top: 10px; }
+.feat-note-page { padding: 12px 4px 14px; }
+.feat-note-page mark { padding: 2px 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; }
+.feat-attached { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; }
+.feat-tool { display: flex; align-items: center; gap: 8px; margin: 2px 0 12px 26px; font-size: 12px; color: var(--meta); }
+.feat-composer { margin-top: 14px; }
+.feat-cat { position: absolute; right: 40px; bottom: 0; z-index: 6; width: 330px; height: auto; transform-origin: 50% 100%; }
+.feat-routines { margin-bottom: 0; }
+.feat-picture-form { display: flex; flex-direction: column; gap: 12px; }
+.feat-picture-form .picture-slot-frame img { transform-origin: 50% 50%; }
+/* The default theme's choice, drawn as the field it is; narrower than the dialog gives it, to stay inside the sheet. */
+.feat-sheet .automation-detail-head > label { grid-template-columns: auto 116px; }
+.feat-choice { display: block; }
