@@ -3,7 +3,8 @@ import { request as httpRequest, type Server } from "node:http";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { endpoints, filters, loadDashboard, loadView, mergeReports, plan, type DashboardData, type View } from "../src/analytics-data.js";
+import { abCompare, abDownloads, abGroups, abRate } from "../src/analytics-ab.js";
+import { endpoints, filters, loadDashboard, loadView, mergeReports, plan, type AbRow, type DashboardData, type View } from "../src/analytics-data.js";
 import { AnalystUnavailable, checked, claudeAnalyst, insightsInput, insightsService, type Insights, type InsightsEntry, type InsightsService } from "../src/analytics-insights.js";
 import { renderDashboard } from "../src/analytics-page.js";
 import { dashboardServer } from "../src/analytics-server.js";
@@ -44,8 +45,23 @@ const sample = (uses = 3): DashboardData => ({
     first: { ...snapshotOf("2026-09-30", 10), referrers: [] },
     last: snapshotOf("2026-10-23", 25),
     synced_at: "2026-10-23T03:05:00Z"
+  },
+  // Desktop: A 40 downloads in 1,000 views, B 65 in 1,000. Mobile: too little to compare.
+  ab: {
+    tests: [{ test: "home-v2", first_day: "2026-10-20", last_day: "2026-10-23" }],
+    rows: [
+      abRow("a", "view", 600), abRow("a", "view", 400, "desktop", "zh"), abRow("a", "download", 30), abRow("a", "download-via-page", 10), abRow("a", "download-page", 50),
+      abRow("b", "view", 1000), abRow("b", "download", 55), abRow("b", "download-via-page", 10),
+      abRow("a", "view", 200, "mobile"), abRow("a", "download", 1, "mobile"), abRow("b", "view", 180, "mobile"),
+      abRow("a", "visitor", 40), abRow("a", "engaged", 20), abRow("a", "downloader", 4),
+      abRow("b", "visitor", 42), abRow("b", "engaged", 30), abRow("b", "downloader", 9)
+    ],
+    synced_at: "2026-10-23T03:10:00Z"
   }
 });
+function abRow(variant: string, event: string, n: number, device = "desktop", lang = "en", test = "home-v2"): AbRow {
+  return { test, variant, lang, device, event, n };
+}
 function snapshotOf(day: string, stars: number) {
   return { day, repo: "haoyuant/tomrade", stars, forks: 2, watchers: 3, views_14d: 52, view_uniques_14d: 11, clones_14d: 30, clone_uniques_14d: 2,
     referrers: [{ referrer: "news.ycombinator.com", count: 30, uniques: 8 }], paths: [{ path: "/haoyuant/tomrade", title: "<Tomrade>", count: 40, uniques: 9 }] };
@@ -105,8 +121,8 @@ describe("internal analytics dashboard", () => {
     expect(result.platforms).toEqual([{ platform: "macos", aai: 6, duration_ms: 180000 }, { platform: "linux", aai: 2, duration_ms: 60000 }]);
   });
   it("leaves the site and accounts empty where no deployment has them, and keeps the newest copy time", () => {
-    const old = { ...sample(), site: null, accounts: null, platforms: [], search: null, github: null };
-    expect(mergeReports([old])).toMatchObject({ site: null, accounts: null, platforms: [], search: null, github: null });
+    const old = { ...sample(), site: null, accounts: null, platforms: [], search: null, github: null, ab: null };
+    expect(mergeReports([old])).toMatchObject({ site: null, accounts: null, platforms: [], search: null, github: null, ab: null });
     const later = sample(); later.site!.synced_at = "2026-10-23T05:00:00Z";
     expect(mergeReports([old, sample(), later]).site?.synced_at).toBe("2026-10-23T05:00:00Z");
   });
@@ -123,15 +139,16 @@ describe("internal analytics dashboard", () => {
       calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
       const url = String(input);
       // The mainland deployment has not applied the site and accounts migrations.
-      if (url.startsWith("https://cn.example") && /tomrade_(site|accounts|search|github)_/.test(url)) return new Response("", { status: 404 });
+      if (url.startsWith("https://cn.example") && /tomrade_(site|accounts|search|github|ab)_/.test(url)) return new Response("", { status: 404 });
       const body = url.endsWith("feature_days") ? { days: sample().days } : url.endsWith("activation") ? sample().activation
         : url.endsWith("site_report") ? sample().site : url.endsWith("accounts_report") ? sample().accounts
-        : url.endsWith("search_report") ? sample().search : url.endsWith("github_report") ? sample().github
+        : url.endsWith("search_report") ? sample().search : url.endsWith("github_report") ? sample().github : url.endsWith("ab_report") ? sample().ab
         : url.endsWith("platforms") ? { platforms: sample().platforms } : sample().report;
       return Response.json(body);
     };
     const loaded = await loadDashboard([{ url: "https://global.example", key: "secret" }, { url: "https://cn.example", key: "secret-cn" }], { ...f, region: "cn" }, request);
-    expect(calls).toHaveLength(16);
+    expect(calls).toHaveLength(18);
+    expect(loaded.ab?.tests[0]?.test).toBe("home-v2");
     expect(loaded.search?.totals.clicks).toBe(12);
     expect(loaded.github?.last?.stars).toBe(25);
     expect(calls.filter((c) => c.url.endsWith("/rpc/tomrade_analytics_activation"))).toHaveLength(2);
@@ -139,8 +156,8 @@ describe("internal analytics dashboard", () => {
     expect(loaded.site?.totals.installs).toBe(40);
     expect(loaded.accounts?.total).toBe(120);
     expect(loaded.platforms[0]).toEqual({ platform: "macos", aai: 6, duration_ms: 180000 });
-    // Accounts, search and GitHub have no region: they get the range alone.
-    const accounts = calls.filter((c) => /\/rpc\/tomrade_(accounts|search|github)_report$/.test(c.url));
+    // Accounts, search, GitHub and the A/B test have no region: they get the range alone.
+    const accounts = calls.filter((c) => /\/rpc\/tomrade_(accounts|search|github|ab)_report$/.test(c.url));
     expect(accounts.every((c) => !("p_region" in (c.body as object)))).toBe(true);
     expect(calls.filter((c) => !accounts.includes(c)).every((c) => /\/rest\/v1\/rpc\/tomrade_(analytics|site)_/.test(c.url) && (c.body as { p_region: string }).p_region === "cn")).toBe(true);
     await expect(loadDashboard([{ url: "https://example.org", key: "secret" }], f, async () => new Response("secret", { status: 403 }))).rejects.toThrow(/^analytics query failed: tomrade_\w+ 403$/);
@@ -172,7 +189,7 @@ describe("internal analytics dashboard", () => {
     expect(html).toContain("25%");
     expect(payload.growth).toEqual([{ day: "2026-10-22", accounts: 7, installs: 40, updates: 6, pageviews: 900 }]);
     for (const text of ["账户与官网", "注册用户", "各平台使用占比", "官网安装包下载"]) expect(zh).toContain(text);
-    const bare = renderDashboard(f, one({ ...sample(), site: null, accounts: null, platforms: [], search: null, github: null }));
+    const bare = renderDashboard(f, one({ ...sample(), site: null, accounts: null, platforms: [], search: null, github: null, ab: null }));
     expect(bare).toContain("No Search Console data");
     expect(bare).toContain("No GitHub data");
     expect(bare).not.toContain('id="chart-seo"');
@@ -220,7 +237,7 @@ describe("internal analytics dashboard", () => {
     expect([...windows.keys()].sort((a, b) => a - b)).toEqual([7, 30, 365]);
     expect([...windows.get(365)!].sort()).toEqual(["accounts", "platforms", "site"]);
     expect([...windows.get(7)!]).toEqual(["report"]);
-    expect([...windows.get(30)!].sort()).toEqual(["activation", "days", "github", "report", "search", "site"]);
+    expect([...windows.get(30)!].sort()).toEqual(["ab", "activation", "days", "github", "report", "search", "site"]);
     const calls: { name: string; from: string }[] = [];
     const request: typeof fetch = async (input, init) => {
       const name = String(input).split("/rpc/")[1]!;
@@ -228,11 +245,11 @@ describe("internal analytics dashboard", () => {
       const body = name.endsWith("feature_days") ? { days: [] } : name.endsWith("activation") ? sample().activation
         : name.endsWith("site_report") ? sample().site : name.endsWith("accounts_report") ? sample().accounts
         : name.endsWith("platforms") ? { platforms: sample().platforms } : name.endsWith("search_report") ? sample().search
-        : name.endsWith("github_report") ? sample().github : sample().report;
+        : name.endsWith("github_report") ? sample().github : name.endsWith("ab_report") ? sample().ab : sample().report;
       return Response.json(body);
     };
     const view = await loadView([{ url: "https://global.example", key: "secret" }], custom, request);
-    expect(calls).toHaveLength(1 + 6 + 3);
+    expect(calls).toHaveLength(1 + 7 + 3);
     expect(calls.filter((c) => c.from === "2025-10-24").map((c) => c.name).sort()).toEqual(["tomrade_accounts_report", "tomrade_analytics_platforms", "tomrade_site_report"]);
     expect(calls.filter((c) => c.from === "2026-10-17").map((c) => c.name)).toEqual(["tomrade_analytics_report"]);
     // A part a window does not load is empty, not missing.
@@ -264,7 +281,7 @@ describe("internal analytics dashboard", () => {
     let release = () => {};
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const analyst = async (s: string, p: string) => { system = s; prompt = p; await gate; return { insights: answer, cost_usd: 0.012 }; };
-    const service = insightsService({ load: async (range) => { loads.push({ from: range.from, to: range.to }); return sample(); }, analyst, file, now: () => new Date("2026-10-23T10:00:00Z") });
+    const service = insightsService({ load: async (range, parts) => { expect([...parts].filter((p) => p === "days" || p === "ab")).toEqual([]); loads.push({ from: range.from, to: range.to }); return sample(); }, analyst, file, now: () => new Date("2026-10-23T10:00:00Z") });
     expect(await service.read(f)).toEqual({ entry: null, error: null, running: false });
     const first = service.generate(f);
     const second = service.generate(f);
@@ -446,5 +463,86 @@ process.stdin.on("data", (c) => { input += c; }).on("end", () => {
     expect(input.current.search).toMatchObject({ totals: { clicks: 12, impressions: 400, average_position: 8 }, top_queries: [{ query: "tomrade", clicks: 9, impressions: 30, average_position: 1.2 }, { query: "ai backlog" }] });
     expect(input.current.github).toMatchObject({ views: 52, stars_at_start: 10, stars_at_end: 25, last_14_days: { as_of: "2026-10-23" } });
     expect(input.previous.search).toBeNull();
+  });
+
+  describe("the site's A/B test", () => {
+    it("adds a test's rows up per version, by device and over all of them", () => {
+      const rows = [...sample().ab!.rows, abRow("b", "view", 999, "desktop", "en", "home-v3"), abRow("c", "view", 5), abRow("a", "scroll", 5), abRow("b", "view", 3, "tv")];
+      const groups = abGroups(rows, "home-v2");
+      expect(groups.desktop.a).toEqual({ views: 1000, downloads: 30, downloadPages: 50, downloadsViaPage: 10, visitors: 40, engaged: 20, downloaders: 4 });
+      expect(abDownloads(groups.desktop.b)).toBe(65);
+      expect(groups.mobile.b).toMatchObject({ views: 180, downloads: 0 });
+      // A device the dashboard does not know still counts in the whole.
+      expect(groups.all.b.views).toBe(1183);
+      expect(groups.all.a).toMatchObject({ views: 1200, downloads: 31, visitors: 40 });
+      expect(abGroups([], "home-v2").all.a.views).toBe(0);
+    });
+    it("gives a rate its Wilson interval and tells a real gap from chance, as the site's report does", () => {
+      const r = abRate(40, 1000)!;
+      expect(r.rate).toBe(0.04);
+      expect(r.low).toBeCloseTo(0.0295108, 6);
+      expect(r.high).toBeCloseTo(0.0540099, 6);
+      expect(abRate(0, 0)).toBeNull();
+      expect(abRate(0, 50)).toMatchObject({ rate: 0, low: 0 });
+      const gap = abCompare({ k: 40, n: 1000 }, { k: 65, n: 1000 });
+      expect(gap.lift).toBeCloseTo(0.625, 10);
+      expect(gap.p).toBeCloseTo(0.0121957, 6);
+      expect(gap.enough).toBe(true);
+      const people = abCompare({ k: 4, n: 40 }, { k: 9, n: 42 });
+      expect(people.p).toBeCloseTo(0.1566858, 6);
+      expect(people.enough).toBe(true);
+      // Too few views on a side, or too few downloads between them, is not enough to tell.
+      expect(abCompare({ k: 9, n: 29 }, { k: 9, n: 500 }).enough).toBe(false);
+      expect(abCompare({ k: 1, n: 200 }, { k: 0, n: 180 }).enough).toBe(false);
+      expect(abCompare({ k: 0, n: 100 }, { k: 12, n: 100 })).toMatchObject({ lift: null, enough: true });
+      expect(abCompare({ k: 0, n: 0 }, { k: 0, n: 0 })).toMatchObject({ lift: null, enough: false });
+      expect(abCompare({ k: 50, n: 1000 }, { k: 50, n: 1000 }).p).toBeCloseTo(1, 6);
+    });
+    it("merges deployments by test, version, language, device and event", () => {
+      const other = sample();
+      other.ab = { tests: [{ test: "home-v2", first_day: "2026-10-18", last_day: "2026-10-22" }, { test: "home-v3", first_day: "2026-10-23", last_day: "2026-10-24" }],
+        rows: [abRow("a", "view", 5), abRow("a", "view", 1, "desktop", "en", "home-v3")], synced_at: "2026-10-23T09:00:00Z" };
+      const merged = mergeReports([sample(), { ...sample(), ab: null }, other]).ab!;
+      expect(merged.tests).toEqual([{ test: "home-v3", first_day: "2026-10-23", last_day: "2026-10-24" }, { test: "home-v2", first_day: "2026-10-18", last_day: "2026-10-23" }]);
+      expect(merged.rows.find((r) => r.test === "home-v2" && r.variant === "a" && r.event === "view" && r.lang === "en" && r.device === "desktop")?.n).toBe(605);
+      expect(merged.rows).toHaveLength(sample().ab!.rows.length + 1);
+      expect(merged.synced_at).toBe("2026-10-23T09:00:00Z");
+    });
+    it("shows each version's page loads and people by device, and whether B's downloads differ by more than chance", () => {
+      const html = renderDashboard(f, one(sample()));
+      const card = /<section class="card s12" id="card-ab">.*?<\/section>/s.exec(html)![0];
+      for (const text of ["A/B test of the home page", "home-v2 · 2026-10-20 — 2026-10-23", "2026-10-23 03:10", "w_ab=7#card-ab",
+        "Desktop downloads per view · A", "40 downloads in 1,000 views", "4%", "Desktop downloads per view · B", "65 downloads in 1,000 views", "6.5%",
+        "+62.5%", "p = 0.012: unlikely to be chance", "+114.3%", "p = 0.157: could well be chance",
+        "Page loads (everyone)", "2.95% — 5.4%", "People (visitors who said yes to being counted)", "Read past the first screen", "71.43%", "21.43%",
+        "Mobile", "Too few to tell the two apart yet", "All devices", "1,200", "A · as it is", "B · second landing page"]) expect(card).toContain(text);
+      // Desktop is the first row of each table.
+      expect(card.indexOf("<td>Desktop</td>")).toBeLessThan(card.indexOf("<td>Mobile</td>"));
+      expect(card.indexOf("<td>Mobile</td>")).toBeLessThan(card.indexOf("<td>All devices</td>"));
+      const zh = renderDashboard({ ...f, lang: "zh" }, one(sample()));
+      for (const text of ["首页 A/B 测试", "桌面端每次浏览的下载 · B", "1,000 次浏览中有 65 次下载", "p = 0.012：不太可能是偶然", "数据太少，还分不出高下", "全部设备"]) expect(zh).toContain(text);
+      const none = sample(); none.ab!.rows = none.ab!.rows.filter((r) => r.variant === "b" || !r.event.startsWith("download"));
+      expect(renderDashboard(f, one(none))).toContain("A has none to compare with");
+      const hostile = sample(); hostile.ab!.tests[0]!.test = "<img src=x>"; hostile.ab!.rows = [abRow("a", "view", 1, "desktop", "en", "<img src=x>")];
+      expect(renderDashboard(f, one(hostile))).not.toContain("<img src=x>");
+    });
+    it("says the test has not started when there are no rows, and how to set it up where the migration is missing", () => {
+      const quiet = renderDashboard(f, one({ ...sample(), ab: { tests: [], rows: [], synced_at: null } }));
+      expect(quiet).toContain("No A/B test numbers in this window");
+      expect(quiet).toContain("Data copied · Not copied yet");
+      expect(quiet).not.toContain("Page loads (everyone)");
+      // Copied, but nothing in this window: the test is off for these days.
+      const copied = renderDashboard(f, one({ ...sample(), ab: { tests: [], rows: [], synced_at: "2026-10-23T03:10:00Z" } }));
+      expect(copied).toContain("No A/B test numbers in this window");
+      expect(copied).toContain("2026-10-23 03:10");
+      const missing = renderDashboard(f, one({ ...sample(), ab: null }));
+      expect(missing).toContain("No A/B test data: apply the A/B test migration (202611170001_ab_daily)");
+      expect(missing).not.toContain("No A/B test numbers");
+      expect(renderDashboard({ ...f, lang: "zh" }, one({ ...sample(), ab: null }))).toContain("暂无 A/B 测试数据");
+      // A window of its own for the card loads the A/B report for that window only.
+      const custom = filters(new URLSearchParams("days=30&w_ab=90"), new Date("2026-10-23T10:00:00Z"));
+      expect([...plan(custom).get(90)!]).toEqual(["ab"]);
+      expect(plan(custom).get(30)!.has("ab")).toBe(false);
+    });
   });
 });

@@ -172,8 +172,9 @@ export function insightsService(deps: {
   const run = async (f: Filters) => {
     const key = keyOf(f);
     try {
-      // Everything but the per-feature daily series, which is large and already summed in the features.
-      const parts = new Set(PARTS.filter((p) => p !== "days"));
+      // Everything but the per-feature daily series, which is large and already summed in the features, and the
+      // site's A/B test, which the analyst is not given.
+      const parts = new Set(PARTS.filter((p) => p !== "days" && p !== "ab"));
       const prevTo = new Date(Date.parse(f.from) - 86400000).toISOString().slice(0, 10);
       const [current, previous] = await Promise.all([
         deps.load(f, parts),

@@ -3,14 +3,14 @@ export const regions = ["all", "cn", "apac", "eu", "na", "other"] as const;
 export const WINDOWS = [7, 30, 90, 180, 365] as const;
 export type WindowDays = typeof WINDOWS[number];
 /** The cards that take a window of their own (URL `w_<card>`); the rest follow the page's. */
-export const CARDS = ["overview", "ranking", "detail", "retention", "growth", "activation", "seo", "github", "features", "platforms"] as const;
+export const CARDS = ["overview", "ranking", "detail", "retention", "growth", "activation", "seo", "github", "ab", "features", "platforms"] as const;
 export type Card = typeof CARDS[number];
 /** One aggregate query each; a window loads only the parts its cards draw. */
-export const PARTS = ["report", "days", "activation", "site", "accounts", "platforms", "search", "github"] as const;
+export const PARTS = ["report", "days", "activation", "site", "accounts", "platforms", "search", "github", "ab"] as const;
 export type Part = typeof PARTS[number];
 export const CARD_PARTS: Record<Card, Part[]> = {
   overview: ["report"], ranking: ["report"], detail: ["report", "days"], retention: ["report"],
-  growth: ["site", "accounts"], activation: ["activation", "site"], seo: ["search"], github: ["github"], features: ["report"], platforms: ["platforms"]
+  growth: ["site", "accounts"], activation: ["activation", "site"], seo: ["search"], github: ["github"], ab: ["ab"], features: ["report"], platforms: ["platforms"]
 };
 export interface Filters {
   days: WindowDays;
@@ -110,11 +110,19 @@ export interface GithubReport {
   first: GithubSnapshot | null; last: GithubSnapshot | null;
   synced_at: string | null;
 }
+/** tomrade_ab_report: the totals of the site's A/B tests (tomrade-site worker/ab.js), added up over the range (no region). */
+export interface AbRow { test: string; variant: string; lang: string; device: string; event: string; n: number }
+export interface AbReport {
+  /** The tests with rows in the range and the days those rows cover, the one that ran last first. */
+  tests: { test: string; first_day: string; last_day: string }[];
+  rows: AbRow[];
+  synced_at: string | null;
+}
 export interface DashboardData {
   report: Report; days: FeatureDay[]; activation: Activation;
   /** Null where a deployment has not applied the migration (or the sync never ran there). */
   site: SiteReport | null; accounts: Accounts | null; platforms: PlatformUse[];
-  search: SearchReport | null; github: GithubReport | null;
+  search: SearchReport | null; github: GithubReport | null; ab: AbReport | null;
 }
 export interface Endpoint { url: string; key: string }
 export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
@@ -141,8 +149,8 @@ export async function loadView(sources: Endpoint[], f: Filters, request: typeof 
 }
 export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from" | "to" | "region" | "internal">, request: typeof fetch = fetch, parts: ReadonlySet<Part> = new Set(PARTS)): Promise<DashboardData> {
   const range = { p_from: f.from, p_to: f.to };
-  // Only the install RPCs take the internal switch: the site has regions but no anonymous ids, and accounts, search
-  // and GitHub have neither.
+  // Only the install RPCs take the internal switch: the site has regions but no anonymous ids, and accounts, search,
+  // GitHub and the A/B test have neither.
   const region = { ...range, p_region: f.region === "all" ? null : f.region };
   const regional = { ...region, p_exclude_internal: f.internal === "exclude" };
   const call = (source: Endpoint, name: string, body: object) => request(`${source.url}/rest/v1/rpc/${name}`, {
@@ -164,7 +172,7 @@ export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from"
   const rows = await Promise.all(sources.map(async (source) => {
     // A part this window does not draw is left at its empty value, without a query.
     const when = <T>(part: Part, query: () => Promise<T>, empty: T) => (parts.has(part) ? query() : Promise.resolve(empty));
-    const [report, series, activation, site, accounts, platforms, search, github] = await Promise.all([
+    const [report, series, activation, site, accounts, platforms, search, github, ab] = await Promise.all([
       when("report", () => rpc<Report>(source, "tomrade_analytics_report"), emptyReport()),
       when("days", () => rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"), { days: [] }),
       when("activation", () => rpc<Activation>(source, "tomrade_analytics_activation"), emptyActivation()),
@@ -172,9 +180,10 @@ export async function loadDashboard(sources: Endpoint[], f: Pick<Filters, "from"
       when("accounts", () => optional<Accounts>(source, "tomrade_accounts_report", range), null),
       when("platforms", () => optional<{ platforms: PlatformUse[] }>(source, "tomrade_analytics_platforms"), null),
       when("search", () => optional<SearchReport>(source, "tomrade_search_report", range), null),
-      when("github", () => optional<GithubReport>(source, "tomrade_github_report", range), null)
+      when("github", () => optional<GithubReport>(source, "tomrade_github_report", range), null),
+      when("ab", () => optional<AbReport>(source, "tomrade_ab_report", range), null)
     ]);
-    return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [], search, github };
+    return { report, days: series.days, activation, site, accounts, platforms: platforms?.platforms ?? [], search, github, ab };
   }));
   return mergeReports(rows);
 }
@@ -264,7 +273,7 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
   return {
     report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)), activation, site, accounts,
     platforms: [...platforms.values()].sort((a, b) => b.aai - a.aai || a.platform.localeCompare(b.platform)),
-    search: mergeSearch(rows.map((r) => r.search)), github: mergeGithub(rows.map((r) => r.github))
+    search: mergeSearch(rows.map((r) => r.search)), github: mergeGithub(rows.map((r) => r.github)), ab: mergeAb(rows.map((r) => r.ab))
   };
 }
 const byDay = (a: { day: string }, b: { day: string }) => a.day.localeCompare(b.day);
@@ -303,5 +312,26 @@ function mergeGithub(reports: (GithubReport | null)[]): GithubReport | null {
     daily: [...days.values()].sort(byDay),
     first: snapshots("first")[0] ?? null, last: snapshots("last").at(-1) ?? null,
     synced_at: newest(present.map((r) => r.synced_at))
+  };
+}
+/** Totals add per test, version, language, device and event; a test's days are the widest any deployment has. */
+function mergeAb(reports: (AbReport | null)[]): AbReport | null {
+  const present = reports.filter((r): r is AbReport => r !== null);
+  if (!present.length) return null;
+  const rows = new Map<string, AbRow>();
+  for (const r of present.flatMap((p) => p.rows)) {
+    const key = [r.test, r.variant, r.lang, r.device, r.event].join("/");
+    const t = rows.get(key) ?? rows.set(key, { ...r, n: 0 }).get(key)!;
+    t.n += r.n;
+  }
+  const tests = new Map<string, AbReport["tests"][number]>();
+  for (const d of present.flatMap((p) => p.tests)) {
+    const t = tests.get(d.test) ?? tests.set(d.test, { ...d }).get(d.test)!;
+    if (d.first_day < t.first_day) t.first_day = d.first_day;
+    if (d.last_day > t.last_day) t.last_day = d.last_day;
+  }
+  return {
+    tests: [...tests.values()].sort((a, b) => b.last_day.localeCompare(a.last_day) || a.test.localeCompare(b.test)),
+    rows: [...rows.values()], synced_at: newest(present.map((r) => r.synced_at))
   };
 }

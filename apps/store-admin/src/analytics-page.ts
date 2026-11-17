@@ -1,6 +1,7 @@
 import { en, translator, type MessageKey } from "./analytics-messages.js";
 import { FUNNEL_STEPS, WINDOWS, regions, windowOf, windowStart, type Card, type DashboardData, type Filters, type View, type WindowDays } from "./analytics-data.js";
 import type { InsightsState } from "./analytics-insights.js";
+import { AB_SCOPES, abCompare, abDownloads, abGroups, abRate, type AbGap, type AbGroup } from "./analytics-ab.js";
 
 const escape = (value: unknown) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 // Inside <script type="application/json">: `<` could close the element, U+2028/9 break older parsers.
@@ -159,6 +160,42 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
           <div><h3>${escape(t("paths"))}</h3>${table([t("page"), t("count"), t("uniques")], last.paths.map((p) => [`<span title="${escape(p.title)}">${escape(p.path)}</span>`, n(p.count), n(p.uniques)]))}</div>
         </div>` : ""}` : `<p class="muted">${escape(t("githubMissing"))}</p>` });
 
+    // The site's A/B test, with no region either. Desktop comes first: Tomrade is a desktop app.
+    const ab = at("ab").ab;
+    const abTest = ab?.tests[0] ?? null;
+    const abBody = () => {
+      if (!ab) return `<p class="muted">${escape(t("abMissing"))}</p>`;
+      if (!abTest) return `<p class="muted">${escape(t("abEmpty"))}</p>`;
+      const groups = abGroups(ab.rows, abTest.test);
+      const rate2 = (x: number) => `${new Intl.NumberFormat(f.lang, { maximumFractionDigits: 2 }).format(x * 100)}%`;
+      const share = (k: number, of: number) => { const r = abRate(k, of); return r ? rate2(r.rate) : "—"; };
+      const interval = (k: number, of: number) => { const r = abRate(k, of); return r ? `${rate2(r.low)} — ${rate2(r.high)}` : "—"; };
+      const perView = (g: AbGroup) => abCompare({ k: abDownloads(g.a), n: g.a.views }, { k: abDownloads(g.b), n: g.b.views });
+      const perVisitor = (g: AbGroup) => abCompare({ k: g.a.downloaders, n: g.a.visitors }, { k: g.b.downloaders, n: g.b.visitors });
+      const gap = (g: AbGap) => !g.enough ? { value: "—", sub: t("abTooFew") } : g.lift === null ? { value: "—", sub: t("abNoBase") }
+        : { value: `${g.lift >= 0 ? "+" : ""}${n(g.lift * 100)}%`, sub: fill(t(g.p < 0.05 ? "abNotChance" : "abChance"), { p: g.p < 0.001 ? "< 0.001" : g.p.toFixed(3) }) };
+      const verdict = (g: AbGap) => { const v = gap(g); return escape(v.value === "—" ? v.sub : `${v.value} · ${v.sub}`); };
+      const scopeNames = { desktop: t("desktop"), mobile: t("mobile"), all: t("allDevices") };
+      const versions = [["a", t("abA")], ["b", t("abB")]] as const;
+      // The device is named on A's row; the gap between the two is on B's.
+      const rows = (cells: (g: AbGroup, v: "a" | "b") => string[]) => AB_SCOPES.flatMap((scope) => versions.map(([v, name]) => [v === "a" ? escape(scopeNames[scope]) : "", escape(name), ...cells(groups[scope], v)]));
+      const desktop = groups.desktop;
+      const viewGap = gap(perView(desktop));
+      const peopleGap = gap(perVisitor(desktop));
+      return `<div class="stats four">
+          ${versions.map(([v]) => stat(fill(t("abDesktopRate"), { version: v.toUpperCase() }), share(abDownloads(desktop[v]), desktop[v].views), fill(t("abRateSub"), { downloads: n(abDownloads(desktop[v])), views: n(desktop[v].views) }))).join("")}
+          ${stat(t("abDesktopGap"), viewGap.value, viewGap.sub)}
+          ${stat(t("abPeopleGap"), peopleGap.value, peopleGap.sub)}
+        </div>
+        <h3>${escape(t("abPageLoads"))}</h3>${table([t("device"), t("version"), t("abViews"), t("abDownloads"), t("abPerView"), t("abInterval"), t("abAgainstDownloads")],
+          rows((g, v) => [n(g[v].views), n(abDownloads(g[v])), share(abDownloads(g[v]), g[v].views), interval(abDownloads(g[v]), g[v].views), v === "b" ? verdict(perView(g)) : ""]), 2)}
+        <h3>${escape(t("abPeople"))}</h3>${table([t("device"), t("version"), t("abVisitors"), t("abEngaged"), t("abOfVisitors"), t("abDownloaders"), t("abOfVisitors"), t("abInterval"), t("abAgainstDownloads")],
+          rows((g, v) => [n(g[v].visitors), n(g[v].engaged), share(g[v].engaged, g[v].visitors), n(g[v].downloaders), share(g[v].downloaders, g[v].visitors), interval(g[v].downloaders, g[v].visitors), v === "b" ? verdict(perVisitor(g)) : ""]), 2)}
+        <p class="muted small">${escape(t("abNote"))}</p>`;
+    };
+    const abCard = card({ id: "ab", title: t("ab"), hint: t("abHint"), span: "s12", windowed: "ab", body: abBody(),
+      extra: ab ? `${abTest ? `<span class="pill">${escape(fill(t("abTest"), { test: abTest.test, from: abTest.first_day, to: abTest.last_day }))}</span>` : ""}${synced(ab.synced_at)}` : "" });
+
     // The platform card is left out where no deployment reports platforms, unless its window was chosen apart.
     const platforms = at("platforms").platforms;
     const showPlatforms = platforms.length > 0 || f.windows.platforms !== undefined;
@@ -199,6 +236,7 @@ export function renderDashboard(f: Filters, view?: View, error?: "failed" | "inv
       ${activationCard}
       ${seoCard}
       ${githubCard}
+      ${abCard}
       ${featureCard}
       ${platformCard}
       <details class="card s12"><summary>${escape(t("dailyData"))}</summary>

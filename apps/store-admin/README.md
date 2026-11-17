@@ -42,15 +42,28 @@ Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 ## Internal usage dashboard
 
 Apply the analytics migrations (`202610230001` onward, including
-`202611040003_site_daily`, `202611040004_accounts_platforms` and
-`202611060003_search_github_daily`) to each analytics database and schedule `tomrade_analytics_aggregate` from the
+`202611040003_site_daily`, `202611040004_accounts_platforms`,
+`202611060003_search_github_daily` and `202611170001_ab_daily`) to each analytics database and schedule `tomrade_analytics_aggregate` from the
 deployment's scheduler. The report RPCs are granted
 only to `service_role`; public and signed-in clients cannot read them. A
 deployment without the newest migrations still loads: its site, accounts,
-platform, SEO and GitHub sections are left empty. Site downloads and page views,
-Search Console's numbers and the repository's GitHub traffic arrive once
-tomrade-site's daily Analytics workflow runs with their secrets (its README,
-Analytics); SEO and GitHub have no region and show the same in every region.
+platform, SEO, GitHub and A/B test sections are left empty. Site downloads and page views,
+Search Console's numbers, the repository's GitHub traffic and the home page's
+A/B test arrive once tomrade-site's daily Analytics workflow runs with their
+secrets (its README, Analytics); SEO, GitHub and the A/B test have no region and
+show the same in every region.
+
+**A/B test of the home page** shows the test tomrade.com's Worker runs
+(tomrade-site `worker/ab.js`), for the card's window: for A and for B, home page
+views, downloads and downloads per view counted from page loads for everyone,
+and visitors, how many read past the first screen and how many started a
+download for the people who said yes to being counted, each rate with its 95%
+interval, by device and over all of them. "B against A" is the gap between the
+two download rates and whether it is more than chance (a two-proportion z test,
+as tomrade-site's `pnpm ab` prints); with fewer than 30 on a side or fewer than
+10 downloads between them it says there are too few to tell. Tomrade is a
+desktop app, so the desktop rows are the ones to judge by. The card is empty
+while the test is off. The AI analysis does not read it.
 
 ```sh
 # Supply these through your shell, a secret manager or the repository's
