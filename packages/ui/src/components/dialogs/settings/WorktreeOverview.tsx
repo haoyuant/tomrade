@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from "react";
 import type { WorktreeHold } from "@tomradex/code-link";
 import { WorktreeRow } from "~/components/projects/RepoWorktrees";
 import { Eyebrow, FoldChevron } from "~/components/ui/atoms";
-import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeOverview, useWorktreeSizes, worktreeTotals, type WorktreeBucket } from "~/lib/codeLink";
+import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeOverview, useWorktreeSizes, worktreeCanGo, worktreeTotals, type WorktreeBucket } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError, useToast } from "~/lib/toast";
 
@@ -12,18 +12,21 @@ const SERIES: Record<"worktrees" | "other" | WorktreeBucket, string> = {
   other: "var(--meta)",
   free: "var(--chart-2)",
   held: "var(--chart-3)",
-  open: "var(--chart-4)"
+  open: "var(--chart-4)",
+  // Outside what git can sort, so outside the colours: the grey of what is not Tomrade's to judge.
+  stray: "var(--meta)"
 };
 const series = (part: keyof typeof SERIES): CSSProperties => ({ "--series": SERIES[part] }) as CSSProperties;
 
 /** How many of the removable ones are named before the rest are asked for. */
 const FREE_SHOWN = 6;
 
-const BUCKETS: WorktreeBucket[] = ["free", "held", "open"];
+const BUCKETS: WorktreeBucket[] = ["free", "held", "open", "stray"];
 const BUCKET_KEY: Record<WorktreeBucket, MessageKey> = {
   free: "repositories.overviewBucket_free",
   held: "repositories.overviewBucket_held",
-  open: "repositories.overviewBucket_open"
+  open: "repositories.overviewBucket_open",
+  stray: "repositories.overviewBucket_stray"
 };
 
 const share = (value: number, total: number): number => (total > 0 ? (value / total) * 100 : 0);
@@ -69,14 +72,16 @@ export function WorktreeOverview() {
   const size = (bytes: number) => (totals.measured === 0 && totals.count > 0 ? "…" : diskSize(bytes));
   // The ones the button takes, named: the largest first once they are measured.
   const free = groups
-    .flatMap((group) => group.trees.filter((tree) => !tree.hold).map((tree) => ({ tree, projectId: group.projectId, where: `${group.repo} · ${group.project}` })))
+    .flatMap((group) => group.trees.filter(worktreeCanGo).map((tree) => ({ tree, projectId: group.projectId, where: `${group.repo} · ${group.project}` })))
     .sort((a, b) => (sizes.get(b.tree.dir) ?? 0) - (sizes.get(a.tree.dir) ?? 0));
   const shown = all ? free : free.slice(0, FREE_SHOWN);
-  const removable = groups.map((group) => ({ projectId: group.projectId, dirs: group.trees.filter((tree) => !tree.hold).map((tree) => tree.dir) })).filter((ask) => ask.dirs.length);
+  const removable = groups.map((group) => ({ projectId: group.projectId, dirs: group.trees.filter(worktreeCanGo).map((tree) => tree.dir) })).filter((ask) => ask.dirs.length);
+  // Said only where there is one: most machines have none.
+  const buckets = BUCKETS.filter((bucket) => bucket !== "stray" || totals.buckets.stray.n > 0);
   const most = Math.max(1, ...totals.repos.map((repo) => repo.bytes));
   const otherUsed = disk ? Math.max(0, disk.total - disk.free - totals.bytes) : 0;
 
-  const take = (asks: { projectId: string; dirs: string[] }[]) =>
+  const take = (asks: { projectId: string; dirs: string[]; strays?: boolean }[]) =>
     remove.mutate(asks, {
       onSuccess: (removals) => {
         const { removed, kept, reason } = removalSummary(removals);
@@ -133,11 +138,11 @@ export function WorktreeOverview() {
             )}
             <span className="usage-share-label">{t("repositories.overviewSplit")}</span>
             <div className="usage-share" data-bar="split">
-              {BUCKETS.map((bucket) =>
+              {buckets.map((bucket) =>
                 totals.buckets[bucket].bytes > 0 ? (
                   <span
                     key={bucket}
-                    className="usage-share-seg"
+                    className={bucket === "stray" ? "usage-share-seg worktree-other" : "usage-share-seg"}
                     data-bucket={bucket}
                     style={{ ...series(bucket), width: `${share(totals.buckets[bucket].bytes, totals.bytes)}%` }}
                     title={`${t(BUCKET_KEY[bucket])} · ${diskSize(totals.buckets[bucket].bytes)} · ${percent(totals.buckets[bucket].bytes, totals.bytes)}`}
@@ -145,10 +150,10 @@ export function WorktreeOverview() {
                 ) : null
               )}
             </div>
-            <div className="usage-engine-legend" data-legend="split">
-              {BUCKETS.map((bucket) => (
+            <div className="usage-engine-legend" data-legend="split" data-keys={buckets.length}>
+              {buckets.map((bucket) => (
                 <span key={bucket} className="usage-engine-key" data-bucket={bucket}>
-                  <i className="usage-swatch" style={series(bucket)} />
+                  <i className={bucket === "stray" ? "usage-swatch worktree-other" : "usage-swatch"} style={series(bucket)} />
                   <span className="usage-engine-name" title={t(BUCKET_KEY[bucket])}>{t(BUCKET_KEY[bucket])}</span>
                   <span className="usage-engine-values">{t("repositories.overviewBucketValue", { n: totals.buckets[bucket].n, size: size(totals.buckets[bucket].bytes) })}</span>
                 </span>
@@ -167,7 +172,7 @@ export function WorktreeOverview() {
                 // What can go first, then the largest: all of it already read for the totals above.
                 const trees = (groups.find((group) => group.projectId === repo.projectId && group.repoId === repo.repoId)?.trees ?? [])
                   .slice()
-                  .sort((x, y) => Number(!!x.hold) - Number(!!y.hold) || (sizes.get(y.dir) ?? 0) - (sizes.get(x.dir) ?? 0));
+                  .sort((x, y) => Number(!worktreeCanGo(x)) - Number(!worktreeCanGo(y)) || (sizes.get(y.dir) ?? 0) - (sizes.get(x.dir) ?? 0));
                 return (
                   <div key={key} className="worktree-repo" data-repo={repo.repoId}>
                     <div className="fold-row">
@@ -186,7 +191,7 @@ export function WorktreeOverview() {
                     {unfolded && (
                       <div className="fold-row-body stack-2 worktree-repo-trees">
                         {trees.map((tree) => (
-                          <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} busy={remove.isPending} onRemove={() => take([{ projectId: repo.projectId, dirs: [tree.dir] }])} />
+                          <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} busy={remove.isPending} onRemove={() => take([{ projectId: repo.projectId, dirs: [tree.dir], strays: tree.stray }])} />
                         ))}
                       </div>
                     )}

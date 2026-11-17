@@ -1,7 +1,8 @@
 /**
  * Worktree cleanup regression: under a repository in Project settings the worktrees Tomrade made on this machine are
  * listed with whose each is, what it takes on disk and why it is still there, and "Remove finished" takes the ones of
- * finished tickets that hold nothing — never one with uncommitted work, never an open ticket's.
+ * finished tickets that hold nothing — never one with uncommitted work, never an open ticket's. A folder git no longer
+ * knows is listed and counted too, and goes only on its own row, after it is asked.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:worktree-cleanup
@@ -174,6 +175,44 @@ const run = async () => {
   await press(`[...document.querySelectorAll('[data-repo="${repo.id}"] .repo-worktree')].find((each) => each.textContent.includes(${JSON.stringify(scratch.item.key)}))?.querySelector('.repo-worktree-remove')`);
   check("a row's own Remove takes that one", await wait(() => !fs.existsSync(scratch.worktree), 80));
   check("the open ticket's worktree is still there", fs.existsSync(open.worktree));
+
+  // ── A folder git no longer knows: its repository was moved or deleted ──
+  const stray = path.join(path.dirname(open.worktree), "left-over");
+  fs.mkdirSync(stray);
+  fs.writeFileSync(path.join(stray, ".git"), `gitdir: ${path.join(work, "code", "moved-away", ".git", "worktrees", "left-over")}\n`);
+  fs.writeFileSync(path.join(stray, "big.bin"), "x".repeat(2 * 1024 * 1024));
+  await win.webContents.reload();
+  await sleep(2500);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));true`);
+  await wait(() => $(`!!document.querySelector('.sheet-settings')`));
+  await press(`[...document.querySelectorAll('.sheet-settings .dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Worktrees')`);
+  check("Settings counts the folder git no longer knows", await wait(async () => (await kpi("count")).includes("2")), await kpi("count"));
+  check("as space of its own, not as something that can go", await wait(async () => (await $(`[...${over}.querySelectorAll('[data-bar="split"] .usage-share-seg')].map((seg) => seg.dataset.bucket).join()`)) === "open,stray" && /Left behind1 · [0-9.]+ MB/.test(await $(`${over}.querySelector('.usage-engine-key[data-bucket="stray"]')?.textContent ?? ''`)), 80), await $(`${over}.querySelector('[data-legend="split"]')?.textContent ?? null`));
+  check("nothing is offered to remove in one press", (await kpi("free")).includes("Worktrees nothing holds: 0") && (await $(`${over}.querySelector('.worktree-overview-clear')?.disabled === true && !${over}.querySelector('.worktree-free-list')`)), await kpi("free"));
+  await shot("worktree-cleanup-03-stray-settings");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await wait(async () => !(await $(`!!document.querySelector('.sheet-settings')`)));
+
+  await press(`[...document.querySelectorAll('.side-name')].find((n) => n.textContent?.trim() === 'Project settings')?.closest('button,a')`);
+  await sleep(600);
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Repositories')`);
+  check("the repository lists it with its worktrees, and none that can go", await wait(async () => (await headText()).includes("Worktrees on this computer: 2") && (await headText()).includes("0 can be removed")), await headText());
+  await press(`${head}.querySelector('.fold-chev')`);
+  const strayRow = `document.querySelector('[data-repo="${repo.id}"] .repo-worktree[data-stray]')`;
+  const strayText = () => $(`${strayRow}?.textContent ?? ''`);
+  check("its row says git no longer knows it, and that it goes only by hand", await wait(async () => (await strayText()).includes("Left behind: git no longer knows this folder · Removed only by hand")), await strayText());
+  check("with what it takes on disk", await wait(async () => /^[0-9.]+ MB$/.test(await $(`${strayRow}?.querySelector('.repo-worktree-size')?.textContent ?? ''`)), 80), await strayText());
+  check("Remove finished does not take it", await $(`${head}.querySelector('.repo-worktrees-clear')?.disabled === true`));
+  await $(`${head}?.scrollIntoView({ block: "start" });true`);
+  await sleep(300);
+  await shot("worktree-cleanup-04-stray-listed");
+  await press(`${strayRow}.querySelector('.repo-worktree-remove')`);
+  const asked = () => $(`document.querySelector('[data-testid="confirm-body"]')?.textContent ?? ''`);
+  check("its own Remove asks first, saying git cannot check it and naming the folder", (await wait(async () => (await asked()).includes("Git no longer knows this folder") && (await asked()).includes(stray))) && fs.existsSync(stray), await asked());
+  await shot("worktree-cleanup-05-stray-asked");
+  await press(`document.querySelector('[data-testid="confirm-yes"]')`);
+  check("and on yes the folder is deleted", await wait(() => !fs.existsSync(stray), 80));
+  check("the open ticket's worktree beside it stays", fs.existsSync(open.worktree) && (await wait(async () => (await headText()).includes("Worktrees on this computer: 1"))), await headText());
 
   check("harness reached the end", true);
 };

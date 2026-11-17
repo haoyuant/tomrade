@@ -147,10 +147,14 @@ export const WORKTREE_HOLD_KEY: Record<WorktreeHold, MessageKey> = {
   loose: "repositories.worktreeHold_loose"
 };
 
+/** Whether nothing would be lost with it, as far as git can tell: what "remove all" takes. A stray is never one. */
+export const worktreeCanGo = (tree: Pick<WorktreeView, "hold" | "stray">): boolean => !tree.hold && !tree.stray;
+
 /** Why a worktree is still there, or when it goes: one line under its name. */
-export function worktreeState(tree: Pick<WorktreeView, "owner" | "hold" | "removeAt">, now: number): { key: MessageKey; at?: number } {
+export function worktreeState(tree: Pick<WorktreeView, "owner" | "hold" | "removeAt" | "stray">, now: number): { key: MessageKey; at?: number } {
   if (tree.hold === "open" && tree.owner === "conversation") return { key: "repositories.worktreeHold_openConversation" };
   if (tree.hold) return { key: WORKTREE_HOLD_KEY[tree.hold] };
+  if (tree.stray) return { key: "repositories.worktreeStrayFree" };
   if (tree.removeAt === null) return { key: "repositories.worktreeFree" };
   return tree.removeAt <= now ? { key: "repositories.worktreeDueNow" } : { key: "repositories.worktreeDue", at: tree.removeAt };
 }
@@ -161,16 +165,16 @@ export function removalSummary(removals: WorktreeRemoval[]): { removed: number; 
   return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null };
 }
 
-/** Where a worktree's space counts: nothing holds it, it is finished but something does, or it is still in use. */
-export type WorktreeBucket = "free" | "held" | "open";
-export const worktreeBucket = (tree: Pick<WorktreeView, "hold">): WorktreeBucket => (!tree.hold ? "free" : tree.hold === "open" ? "open" : "held");
+/** Where a worktree's space counts: nothing holds it, it is finished but something does, it is still in use, or git no longer knows it. */
+export type WorktreeBucket = "free" | "held" | "open" | "stray";
+export const worktreeBucket = (tree: Pick<WorktreeView, "hold" | "stray">): WorktreeBucket => (tree.stray ? "stray" : !tree.hold ? "free" : tree.hold === "open" ? "open" : "held");
 
 /**
  * The worktrees of every repository added up, with the sizes read so far: how many, what they take, how that splits
  * by whether each can go, and the repositories from the one that takes most.
  */
 export function worktreeTotals(groups: WorktreeGroup[], sizes: ReadonlyMap<string, number | null>) {
-  const buckets: Record<WorktreeBucket, { n: number; bytes: number }> = { free: { n: 0, bytes: 0 }, held: { n: 0, bytes: 0 }, open: { n: 0, bytes: 0 } };
+  const buckets: Record<WorktreeBucket, { n: number; bytes: number }> = { free: { n: 0, bytes: 0 }, held: { n: 0, bytes: 0 }, open: { n: 0, bytes: 0 }, stray: { n: 0, bytes: 0 } };
   let count = 0;
   let measured = 0;
   let bytes = 0;
@@ -193,13 +197,13 @@ export function worktreeTotals(groups: WorktreeGroup[], sizes: ReadonlyMap<strin
   return { count, measured, bytes, buckets, repos };
 }
 
-/** Removes worktrees on the person's word, project by project; each comes back removed, or with what held it. */
+/** Removes worktrees on the person's word, project by project; each comes back removed, or with what held it. `strays`: the person agreed to lose what git cannot check. */
 export function useRemoveWorktrees() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (asks: { projectId: string; dirs: string[] }[]) => {
+    mutationFn: async (asks: { projectId: string; dirs: string[]; strays?: boolean }[]) => {
       const out: WorktreeRemoval[] = [];
-      for (const ask of asks) out.push(...(await invoke("codeLink.removeWorktrees", ask.projectId, ask.dirs)));
+      for (const ask of asks) out.push(...(await invoke("codeLink.removeWorktrees", ask.projectId, ask.dirs, ask.strays)));
       return out;
     },
     onSettled: (_removals, _error, asks) => {
