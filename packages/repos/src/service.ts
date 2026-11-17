@@ -571,9 +571,11 @@ export class Repos extends Service implements ReposReader {
   /**
    * Remove a worktree Tomrade made. Its branch stays in the checkout. git refuses one with uncommitted changes or
    * untracked files (ignored ones — installed dependencies, build output — go with it), and so does this: what git
-   * said comes back, null once it is gone. A folder outside the Hub's worktrees is never removed.
+   * said comes back, null once it is gone. A folder outside the Hub's worktrees is never removed, unless `outside`
+   * says it is a worktree made elsewhere that a person asked to remove.
    */
-  async removeWorktree(checkout: string, worktree: string): Promise<string | null> {
+  async removeWorktree(checkout: string, worktree: string, outside = false): Promise<string | null> {
+    if (outside) return this.removeOutsideWorktree(checkout, worktree);
     const root = this.worktreesDir();
     const inside = root ? path.relative(root, worktree) : "";
     if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) return `${worktree} is not a worktree Tomrade made`;
@@ -581,6 +583,26 @@ export class Repos extends Service implements ReposReader {
     if (removed.code !== 0) return (removed.stderr ?? "").trim().split("\n").pop() || "git worktree remove failed";
     fs.rmSync(worktree, { recursive: true, force: true });
     return null;
+  }
+
+  /**
+   * Remove a worktree made outside the Hub, on a person's word: only one this checkout lists, never the checkout
+   * itself, and only by git — which refuses uncommitted changes and untracked files. Nothing else is deleted.
+   */
+  private async removeOutsideWorktree(checkout: string, worktree: string): Promise<string | null> {
+    const real = (dir: string) => {
+      try {
+        return fs.realpathSync(dir);
+      } catch {
+        return path.resolve(dir);
+      }
+    };
+    const list = await this.runGit(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
+    // git names the repository's own folder first.
+    const linked = list.code === 0 ? list.stdout.split(/\r?\n\r?\n+/).slice(1).flatMap((block) => /^worktree (.+)$/m.exec(block)?.[1]?.trim() ?? []) : [];
+    if (real(worktree) === real(checkout) || !linked.some((dir) => real(dir) === real(worktree))) return `${worktree} is not a worktree of ${checkout}`;
+    const removed = await this.runGit(["worktree", "remove", worktree], { cwd: checkout, ok: true });
+    return removed.code === 0 ? null : (removed.stderr ?? "").trim().split("\n").pop() || "git worktree remove failed";
   }
 
   /**

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { WorktreeGroup, WorktreeView } from "@tomradex/code-link";
-import { diskSize, removalSummary, worktreeBucket, worktreeCanGo, worktreeState as stateOf, worktreeTotals } from "../src/lib/codeLink";
+import { diskSize, removalSummary, worktreeBucket, worktreeCanGo, worktreePlace, worktreeState as stateOf, worktreeTotals } from "../src/lib/codeLink";
 
 it("says why a worktree is still there, or when it goes", () => {
   const now = 1_000_000;
@@ -33,9 +33,13 @@ it("writes what an install weighs in gigabytes", () => {
 });
 
 it("adds every repository's worktrees up by whether each can go, with the sizes read so far", () => {
-  const tree = (dir: string, hold: WorktreeView["hold"], stray = false): WorktreeView => ({ repoId: "r", dir, threadId: dir, branch: "b", owner: "ticket", tickets: [], hold, removeAt: null, stray });
+  const tree = (dir: string, hold: WorktreeView["hold"], stray = false): WorktreeView => ({ repoId: "r", dir, threadId: dir, branch: "b", owner: "ticket", tickets: [], hold, removeAt: null, stray, outside: false });
   expect([null, "open", "busy", "dirty", "loose"].map((hold) => worktreeBucket({ hold: hold as WorktreeView["hold"], stray: false }))).toEqual(["free", "open", "held", "held", "held"]);
   expect([null, "open"].map((hold) => worktreeBucket({ hold: hold as WorktreeView["hold"], stray: true }))).toEqual(["stray", "stray"]);
+  // One on no ticket, made outside the Hub, is the person's own: it counts as in use, never as something that can go.
+  expect(worktreeBucket({ hold: "unticketed", stray: false })).toBe("open");
+  expect(worktreeCanGo({ hold: "unticketed", stray: false })).toBe(false);
+  expect([worktreePlace("/Users/dev/Projects/app-wt/tom-12"), worktreePlace("C:\\code\\app-wt\\tom-12"), worktreePlace("/solo")]).toEqual(["app-wt/tom-12", "app-wt/tom-12", "solo"]);
   const groups: WorktreeGroup[] = [
     { projectId: "p1", project: "Alpha", repoId: "small", repo: "site", trees: [tree("/a", null)] },
     { projectId: "p2", project: "Beta", repoId: "big", repo: "app", trees: [tree("/b", null), tree("/c", "dirty"), tree("/d", "open"), tree("/e", "open"), tree("/f", null, true)] }

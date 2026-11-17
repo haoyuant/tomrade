@@ -144,8 +144,12 @@ export const WORKTREE_HOLD_KEY: Record<WorktreeHold, MessageKey> = {
   open: "repositories.worktreeHold_open",
   busy: "repositories.worktreeHold_busy",
   dirty: "repositories.worktreeHold_dirty",
-  loose: "repositories.worktreeHold_loose"
+  loose: "repositories.worktreeHold_loose",
+  unticketed: "repositories.worktreeHold_unticketed"
 };
+
+/** Where a worktree outside the Hub is, short enough for a row: its folder and the one that holds it. */
+export const worktreePlace = (dir: string): string => dir.split(/[\\/]+/).filter(Boolean).slice(-2).join("/");
 
 /** Whether nothing would be lost with it, as far as git can tell: what "remove all" takes. A stray is never one. */
 export const worktreeCanGo = (tree: Pick<WorktreeView, "hold" | "stray">): boolean => !tree.hold && !tree.stray;
@@ -165,9 +169,9 @@ export function removalSummary(removals: WorktreeRemoval[]): { removed: number; 
   return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null };
 }
 
-/** Where a worktree's space counts: nothing holds it, it is finished but something does, it is still in use, or git no longer knows it. */
+/** Where a worktree's space counts: nothing holds it, it is finished but something does, it is still in use (or the person's own, on no ticket), or git no longer knows it. */
 export type WorktreeBucket = "free" | "held" | "open" | "stray";
-export const worktreeBucket = (tree: Pick<WorktreeView, "hold" | "stray">): WorktreeBucket => (tree.stray ? "stray" : !tree.hold ? "free" : tree.hold === "open" ? "open" : "held");
+export const worktreeBucket = (tree: Pick<WorktreeView, "hold" | "stray">): WorktreeBucket => (tree.stray ? "stray" : !tree.hold ? "free" : tree.hold === "open" || tree.hold === "unticketed" ? "open" : "held");
 
 /**
  * The worktrees of every repository added up, with the sizes read so far: how many, what they take, how that splits

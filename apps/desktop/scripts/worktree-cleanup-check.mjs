@@ -2,7 +2,8 @@
  * Worktree cleanup regression: under a repository in Project settings the worktrees Tomrade made on this machine are
  * listed with whose each is, what it takes on disk and why it is still there, and "Remove finished" takes the ones of
  * finished tickets that hold nothing — never one with uncommitted work, never an open ticket's. A folder git no longer
- * knows is listed and counted too, and goes only on its own row, after it is asked.
+ * knows is listed and counted too, and goes only on its own row, after it is asked. So is a worktree an agent in the
+ * person's terminal made outside the Hub: held while its ticket is open, removable by hand once it is finished.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:worktree-cleanup
@@ -213,6 +214,42 @@ const run = async () => {
   await press(`document.querySelector('[data-testid="confirm-yes"]')`);
   check("and on yes the folder is deleted", await wait(() => !fs.existsSync(stray), 80));
   check("the open ticket's worktree beside it stays", fs.existsSync(open.worktree) && (await wait(async () => (await headText()).includes("Worktrees on this computer: 1"))), await headText());
+
+  // ── A worktree made outside the Hub, as an agent in the person's terminal makes one for its ticket ──
+  const terminal = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Worked from a terminal", workType: "coding", status: "doing", by: "human" });
+  const outside = path.join(work, "elsewhere", "app-wt", terminal.key.toLowerCase());
+  fs.mkdirSync(path.dirname(outside), { recursive: true });
+  execSync(`git worktree add -q -b ${terminal.key.toLowerCase()}/from-a-terminal "${outside}"`, { cwd: repoDir, stdio: "ignore" });
+  fs.mkdirSync(path.join(outside, "node_modules", "dep"), { recursive: true });
+  fs.writeFileSync(path.join(outside, "node_modules", "dep", "index.js"), "x".repeat(2 * 1024 * 1024));
+  await win.webContents.reload();
+  await sleep(2500);
+  await press(`[...document.querySelectorAll('.side-name')].find((n) => n.textContent?.trim() === 'Project settings')?.closest('button,a')`);
+  await sleep(600);
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Repositories')`);
+  check("a worktree made outside the Hub is counted with the repository's", await wait(async () => (await headText()).includes("Worktrees on this computer: 2")), await headText());
+  await press(`${head}.querySelector('.fold-chev')`);
+  const outsideRow = `document.querySelector('[data-repo="${repo.id}"] .repo-worktree[data-outside]')`;
+  const outsideSeen = () => $(`(() => { const row = ${outsideRow}; return row && { text: row.textContent, hold: row.dataset.hold, size: row.querySelector('.repo-worktree-size')?.textContent ?? '', removable: !!row.querySelector('.repo-worktree-remove') }; })()`);
+  check("its row names the ticket its branch names, and where it is", await wait(async () => { const r = await outsideSeen(); return !!r && r.text.includes(terminal.key) && r.text.includes(`Outside the Hub, in app-wt/${terminal.key.toLowerCase()}`); }), await outsideSeen());
+  check("held while that ticket is open, with what it takes on disk", await wait(async () => { const r = await outsideSeen(); return r?.hold === "open" && r.text.includes("Its ticket is still open") && !r.removable && /^[0-9.]+ MB$/.test(r.size); }, 80), await outsideSeen());
+  check("and the page says such worktrees are removed only when asked", await $(`[...document.querySelectorAll('[data-repo="${repo.id}"] p')].some((p) => p.textContent.includes("Tomrade never removes those by itself"))`));
+  await $(`${head}?.scrollIntoView({ block: "start" });true`);
+  await sleep(300);
+  await shot("worktree-cleanup-06-outside");
+  ctx.items.update(project.id, terminal.id, { status: "done" }, "human");
+  await ctx.codeLink.sweepWorktrees();
+  check("the cleanup leaves it when its ticket finishes", fs.existsSync(outside));
+  await win.webContents.reload();
+  await sleep(2500);
+  await press(`[...document.querySelectorAll('.side-name')].find((n) => n.textContent?.trim() === 'Project settings')?.closest('button,a')`);
+  await sleep(600);
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((b) => b.textContent?.trim() === 'Repositories')`);
+  await wait(async () => (await headText()).includes("1 can be removed"));
+  await press(`${head}.querySelector('.fold-chev')`);
+  check("finished, its row offers Remove", await wait(async () => { const r = await outsideSeen(); return r?.hold === "none" && r.text.includes("Nothing in it would be lost") && r.removable; }, 80), await outsideSeen());
+  await press(`${outsideRow}.querySelector('.repo-worktree-remove')`);
+  check("which removes the folder and leaves its branch in the checkout", (await wait(() => !fs.existsSync(outside), 80)) && execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }).includes(`${terminal.key.toLowerCase()}/from-a-terminal`));
 
   check("harness reached the end", true);
 };
