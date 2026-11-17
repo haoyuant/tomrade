@@ -40,7 +40,7 @@ export const numbers = film<true>({
       <div className={`numbers${zero ? " is-zero" : ""}`} lang={lang}>
         {q < 4 && <Caption t={t} at={-1.5} until={4 * NUMBERS_BEAT} text={words.hook} lang={lang} x={0} y={440} size={150} width={WIDE.w} align="center" />}
         {now && (
-          <div className="numbers-slot" key={slot} style={{ transform: `scale(${1 + 0.012 * pulse(q)})` }}>
+          <div className={`numbers-slot${now[0] === "N" ? " is-n" : ""}`} key={slot} style={{ transform: `scale(${1 + 0.012 * pulse(q)})` }}>
             <b style={{ transform: `translate3d(0, ${(1 - roll) * 46}%, 0) scale(${1.12 - 0.12 * roll})`, opacity: clamp(u * 9) }}>{figure}</b>
             <div>
               <strong style={{ opacity: clamp((u - 0.7) * 6), transform: `translate3d(${(1 - ease.outQuint(clamp((u - 0.7) * 2))) * 50}px, 0, 0)` }}>{now[1]}</strong>

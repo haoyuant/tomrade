@@ -443,6 +443,10 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--film-b
 .numbers-slot strong { font-size: 136px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }
 .numbers:lang(zh) .numbers-slot strong { letter-spacing: 0; }
 .numbers-slot span { font-size: 46px; line-height: 1.35; opacity: 0.8; max-width: 900px; }
+/* N is wider than a digit: its slots give the figure a box N fits, so the count before it does not move the words, and set the words a size smaller so they stay on one line. */
+.numbers-slot.is-n > b { min-width: 540px; }
+.numbers-slot.is-n strong { font-size: 112px; white-space: nowrap; }
+.numbers-slot.is-n span { max-width: 1070px; }
 .numbers-ticks { position: absolute; left: 130px; right: 130px; bottom: 70px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--n-hot) calc(100% * var(--done)), color-mix(in srgb, var(--n-ink) 18%, transparent) 0); }
 
 /* ─── the launch films' small scenes: pieces of the app, larger than life ─ */
