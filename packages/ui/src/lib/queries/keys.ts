@@ -141,7 +141,8 @@ export const keys = {
   },
 
   changeReview: {
-    comments: (projectId: string, itemId: string) => ["changeReview", projectId, "comments", itemId] as const
+    comments: (projectId: string, itemId: string) => ["changeReview", projectId, "comments", itemId] as const,
+    prefs: (projectId: string, itemId: string) => ["changeReview", projectId, "prefs", itemId] as const
   },
   roles: {
     list: (projectId: string) => ["roles", projectId] as const

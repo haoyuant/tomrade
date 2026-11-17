@@ -52,14 +52,37 @@ CREATE INDEX IF NOT EXISTS idx_plugin_changereview_reviews_thread ON plugin_chan
 `
   },
   // The project's role a review was made as.
-  { version: 4, up: "ALTER TABLE plugin_changereview_reviews ADD COLUMN role TEXT" }
+  { version: 4, up: "ALTER TABLE plugin_changereview_reviews ADD COLUMN role TEXT" },
+  // A ticket's own word on reviews starting and findings going by themselves; NULL follows the machine's settings.
+  {
+    version: 5,
+    up: `
+CREATE TABLE IF NOT EXISTS plugin_changereview_prefs (
+  item_id        TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  auto_review    INTEGER,
+  auto_hand_back INTEGER,
+  updated_at     INTEGER NOT NULL
+);
+`
+  }
 ];
 
-/** This machine's review of a checkout that is here: another machine sees other lines, and has its own agent to tell. */
+/**
+ * This machine's review of a checkout that is here: another machine sees other lines, and has its own agent to tell.
+ * A ticket's prefs stay here too: what starts agents on a machine is that machine's to turn on.
+ */
 export const TABLES = {
   plugin_changereview_comments: { project: "project_id", export: false },
-  plugin_changereview_reviews: { project: "project_id", export: false }
+  plugin_changereview_reviews: { project: "project_id", export: false },
+  plugin_changereview_prefs: { project: "project_id", export: false }
 } as const;
+
+/** A ticket's own word on what happens after it is delivered; null on either follows this machine's settings. */
+export interface TicketReviewPrefs {
+  autoReview: boolean | null;
+  autoHandBack: boolean | null;
+}
 
 export type ReviewSide = "old" | "new";
 export type ReviewState = "open" | "resolved";
@@ -290,4 +313,39 @@ export class ReviewStore {
     if (!cols.length) return;
     this.db(projectId).prepare(`UPDATE plugin_changereview_reviews SET ${cols.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`).run(...cols.map(([, v]) => v), id);
   }
+
+  /** Every ticket of the project that has a word of its own, by item id. */
+  prefs(projectId: string): Map<string, TicketReviewPrefs> {
+    const rows = this.db(projectId).prepare("SELECT item_id, auto_review, auto_hand_back FROM plugin_changereview_prefs").all() as PrefsRow[];
+    return new Map(rows.map((row) => [row.item_id, toPrefs(row)]));
+  }
+
+  prefsOf(projectId: string, itemId: string): TicketReviewPrefs {
+    const row = this.db(projectId).prepare("SELECT item_id, auto_review, auto_hand_back FROM plugin_changereview_prefs WHERE item_id = ?").get(itemId) as PrefsRow | undefined;
+    return row ? toPrefs(row) : { autoReview: null, autoHandBack: null };
+  }
+
+  /** A ticket that follows the machine on both has no row. */
+  setPrefs(projectId: string, itemId: string, prefs: TicketReviewPrefs, now: number): void {
+    const db = this.db(projectId);
+    if (prefs.autoReview === null && prefs.autoHandBack === null) {
+      db.prepare("DELETE FROM plugin_changereview_prefs WHERE item_id = ?").run(itemId);
+      return;
+    }
+    const bit = (value: boolean | null) => (value === null ? null : value ? 1 : 0);
+    db.prepare(
+      "INSERT INTO plugin_changereview_prefs (item_id, project_id, auto_review, auto_hand_back, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(item_id) DO UPDATE SET auto_review = excluded.auto_review, auto_hand_back = excluded.auto_hand_back, updated_at = excluded.updated_at"
+    ).run(itemId, projectId, bit(prefs.autoReview), bit(prefs.autoHandBack), now);
+  }
 }
+
+interface PrefsRow {
+  item_id: string;
+  auto_review: number | null;
+  auto_hand_back: number | null;
+}
+
+const toPrefs = (r: PrefsRow): TicketReviewPrefs => ({
+  autoReview: r.auto_review === null ? null : r.auto_review === 1,
+  autoHandBack: r.auto_hand_back === null ? null : r.auto_hand_back === 1
+});
