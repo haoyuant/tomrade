@@ -249,7 +249,7 @@ declare module "@tomradex/ipc" {
     /** How much disk one of them takes, in bytes; reading it takes a while. */
     "codeLink.worktreeSize": (projectId: string, dir: string) => number | null;
     /** Remove these on the person's word; one that something holds stays, with the reason. */
-    "codeLink.removeWorktrees": (projectId: string, dirs: string[]) => WorktreeRemoval[];
+    "codeLink.removeWorktrees": (projectId: string, dirs: string[], strays?: boolean) => WorktreeRemoval[];
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
     /** Connection evidence on the default and connection branches of the local clone. */
@@ -865,7 +865,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.worktrees", (projectId) => ctx.codeLink.worktreesOf(projectId));
       ctx.ipc.handle("codeLink.worktreeOverview", () => ctx.codeLink.worktreeOverview());
       ctx.ipc.handle("codeLink.worktreeSize", (projectId, dir) => ctx.codeLink.worktreeSize(projectId, dir));
-      ctx.ipc.handle("codeLink.removeWorktrees", (projectId, dirs) => ctx.codeLink.removeWorktrees(projectId, dirs));
+      ctx.ipc.handle("codeLink.removeWorktrees", (projectId, dirs, strays) => ctx.codeLink.removeWorktrees(projectId, dirs, strays === true));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
       ctx.ipc.handle("codeLink.connect", (projectId, repoId, mode) => ctx.codeLink.connect(projectId, repoId, mode));
@@ -1434,9 +1434,9 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.worktreeCare.size(projectId, dir);
   }
 
-  /** On a person's word. Only the ones nothing would be lost with go; the rest come back with what holds them. */
-  removeWorktrees(projectId: string, dirs: string[]): Promise<WorktreeRemoval[]> {
-    return this.worktreeCare.remove(projectId, dirs);
+  /** On a person's word. Only the ones nothing would be lost with go; the rest come back with what holds them. `strays`: they were told git cannot check a folder it no longer knows. */
+  removeWorktrees(projectId: string, dirs: string[], strays = false): Promise<WorktreeRemoval[]> {
+    return this.worktreeCare.remove(projectId, dirs, strays);
   }
 
   /** One pass now over every open project's finished worktrees, as the timer makes; how many went. */

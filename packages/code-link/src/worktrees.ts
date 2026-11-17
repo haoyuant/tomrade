@@ -58,6 +58,11 @@ export interface WorktreeView {
   hold: WorktreeHold | null;
   /** When cleanup removes it by itself; null when it will not: something holds it, cleanup is off, or it is not a ticket's. */
   removeAt: number | null;
+  /**
+   * Git no longer knows the folder: its checkout was moved or deleted, or its record pruned. Nothing can tell what
+   * removing it loses, so cleanup leaves it and only a person removes it, one at a time.
+   */
+  stray: boolean;
 }
 
 /** One repository's worktrees, in one open project. */
@@ -122,7 +127,8 @@ const within = (dir: string, inner: string | null): boolean => {
   return !rel.startsWith("..") && !path.isAbsolute(rel);
 };
 
-type Tree = WorktreeView & { checkout: string };
+/** `checkout`: where git is asked about it; null for a stray, which no checkout has. */
+type Tree = WorktreeView & { checkout: string | null };
 
 /**
  * The worktrees Tomrade made under the Hub, and their end. A ticket's worktree goes once the ticket is done or
@@ -171,13 +177,16 @@ export class Worktrees {
     return { root, disk: root ? await diskOf(root) : null, groups };
   }
 
-  /** Remove these on a person's word. One that something holds stays, with the reason: what holds it, or git's own words. */
-  async remove(projectId: string, dirs: string[]): Promise<WorktreeRemoval[]> {
+  /**
+   * Remove these on a person's word. One that something holds stays, with the reason: what holds it, or git's own
+   * words. `strays`: the person was told git cannot check them; without it a stray stays.
+   */
+  async remove(projectId: string, dirs: string[], strays = false): Promise<WorktreeRemoval[]> {
     const trees = await this.trees(projectId);
     const out: WorktreeRemoval[] = [];
     for (const dir of dirs) {
       const tree = trees.find((each) => each.dir === dir);
-      out.push(tree ? await this.take(tree) : { dir, removed: false, reason: "not a worktree Tomrade made for this project" });
+      out.push(tree ? await this.take(tree, strays) : { dir, removed: false, reason: "not a worktree Tomrade made for this project" });
     }
     if (out.some((removal) => removal.removed)) this.host.notify(projectId);
     return out;
@@ -240,16 +249,17 @@ export class Worktrees {
     return removed;
   }
 
-  private async take(tree: Tree): Promise<WorktreeRemoval> {
+  private async take(tree: Tree, strays = false): Promise<WorktreeRemoval> {
     if (tree.hold) return { dir: tree.dir, removed: false, reason: tree.hold };
-    const refused = await this.ctx.repos.removeWorktree(tree.checkout, tree.dir);
+    if (!tree.checkout && !strays) return { dir: tree.dir, removed: false, reason: "git no longer knows this folder: it is removed only on its own row" };
+    const refused = tree.checkout ? await this.ctx.repos.removeWorktree(tree.checkout, tree.dir) : this.ctx.repos.removeStrayWorktree(tree.dir);
     if (refused) {
       this.ctx.logger.info(`worktree ${tree.dir} stays: ${refused}`);
       return { dir: tree.dir, removed: false, reason: refused };
     }
     this.sizes.delete(tree.dir);
     if (this.host.worktrees.get(tree.threadId) === tree.dir) this.host.worktrees.delete(tree.threadId);
-    this.ctx.logger.info(`removed worktree ${tree.dir}${tree.tickets.length ? ` (${tree.tickets.map((ticket) => ticket.key).join(", ")})` : ""}; its branch ${tree.branch ?? "(detached)"} stays`);
+    this.ctx.logger.info(`removed worktree ${tree.dir}${tree.tickets.length ? ` (${tree.tickets.map((ticket) => ticket.key).join(", ")})` : ""}; ${tree.checkout ? `its branch ${tree.branch ?? "(detached)"} stays` : "git no longer knew it"}`);
     return { dir: tree.dir, removed: true, reason: null };
   }
 
@@ -285,9 +295,13 @@ export class Worktrees {
     const panes = new Map<string, string[]>();
     for (const repo of this.ctx.repos.list(projectId)) {
       const root = this.ctx.repos.worktreesDir(repo);
+      if (!root) continue;
       const placed = this.ctx.repos.checkout(repo.remote);
-      if (!root || !placed.checkout || placed.problem) continue;
-      for (const found of await this.registered(placed.checkout, root)) {
+      const checkout = placed.problem ? null : placed.checkout;
+      const known: { dir: string; branch: string | null; checkout: string | null }[] = checkout ? (await this.registered(checkout, root)).map((found) => ({ ...found, checkout })) : [];
+      // Beside them, the folders git no longer knows: no checkout lists those.
+      const strays = this.ctx.repos.strayWorktrees(repo).filter((dir) => !known.some((found) => found.dir === dir));
+      for (const found of [...known, ...strays.map((dir) => ({ dir, branch: null, checkout: null }))]) {
         // Two repositories can share a name, and so a folder: a worktree is listed once, by the checkout it belongs to.
         if (out.some((tree) => tree.dir === found.dir)) continue;
         const threadId = path.basename(found.dir);
@@ -315,8 +329,9 @@ export class Worktrees {
           owner,
           tickets: tickets.map(({ updatedAt: _updatedAt, ...ticket }) => ticket),
           hold,
-          removeAt: owner === "ticket" && settings.enabled ? finishedAt + settings.keepDays * DAY_MS : null,
-          checkout: placed.checkout
+          removeAt: owner === "ticket" && found.checkout && settings.enabled ? finishedAt + settings.keepDays * DAY_MS : null,
+          stray: !found.checkout,
+          checkout: found.checkout
         });
         panes.set(found.dir, [...new Set(inside.flatMap((session) => (session.herdrPane ? [session.herdrPane] : [])))]);
       }
@@ -330,7 +345,7 @@ export class Worktrees {
           return;
         }
       }
-      tree.hold = await this.loses(tree.dir, tree.branch);
+      if (tree.checkout) tree.hold = await this.loses(tree.dir, tree.branch);
     };
     await Promise.all(Array.from({ length: Math.min(LOOKS_AT_ONCE, unheld.length) }, async () => {
       for (let tree = unheld.pop(); tree; tree = unheld.pop()) await look(tree);

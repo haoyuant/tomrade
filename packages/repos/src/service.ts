@@ -582,4 +582,53 @@ export class Repos extends Service implements ReposReader {
     fs.rmSync(worktree, { recursive: true, force: true });
     return null;
   }
+
+  /**
+   * Folders in a repository's worktrees that git can no longer work in: the checkout they belonged to was moved or
+   * deleted, or their record in it was pruned. No checkout lists them, so they are found by looking in the folder.
+   */
+  strayWorktrees(repo: Pick<Repo, "name">): string[] {
+    const root = this.worktreesDir(repo);
+    if (!root) return [];
+    try {
+      return fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(root, entry.name)).filter(cutOff);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Delete a stray worktree's folder, on a person's word: git cannot be asked, so nothing in it is checked. What
+   * stopped it comes back, null once it is gone. Never a folder git still works in, and only one that sits right in a
+   * repository's folder of the Hub's worktrees.
+   */
+  removeStrayWorktree(worktree: string): string | null {
+    const root = this.worktreesDir();
+    const inside = root ? path.relative(root, worktree) : "";
+    const parts = inside.split(path.sep);
+    if (path.isAbsolute(inside) || parts.length !== 2 || parts.some((part) => !part || part === "..")) return `${worktree} is not a worktree Tomrade made`;
+    if (!cutOff(worktree)) return `${worktree} is still a git worktree`;
+    try {
+      fs.rmSync(worktree, { recursive: true, force: true });
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    return null;
+  }
+}
+
+/** Whether git can no longer work in a worktree's folder: it has no `.git`, or one naming a git folder that is not there. A `.git` that is a folder is a repository of its own, which is not judged. */
+function cutOff(dir: string): boolean {
+  const link = path.join(dir, ".git");
+  try {
+    if (!fs.lstatSync(link).isFile()) return false;
+  } catch {
+    return true;
+  }
+  try {
+    const target = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(link, "utf8"))?.[1]?.trim();
+    return !target || !fs.existsSync(path.resolve(dir, target));
+  } catch {
+    return false;
+  }
 }

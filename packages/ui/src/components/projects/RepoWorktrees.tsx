@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { WorktreeHold, WorktreeView } from "@tomradex/code-link";
 import { Icon } from "~/components/icons";
 import { FoldChevron, FoldChevronSpace, StatusMark } from "~/components/ui/atoms";
-import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeSizes, useWorktrees, worktreeState } from "~/lib/codeLink";
+import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeSizes, useWorktrees, worktreeCanGo, worktreeState } from "~/lib/codeLink";
+import { useConfirm } from "~/lib/confirm";
 import { intlTag, useI18n } from "~/lib/i18n";
 import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
@@ -20,18 +21,18 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   const listed = useWorktrees(projectId);
   const trees = (listed.data ?? [])
     .filter((tree) => tree.repoId === repoId)
-    .sort((a, b) => Number(!!a.hold) - Number(!!b.hold) || (a.tickets[0]?.key ?? "~").localeCompare(b.tickets[0]?.key ?? "~", undefined, { numeric: true }));
+    .sort((a, b) => Number(!worktreeCanGo(a)) - Number(!worktreeCanGo(b)) || (a.tickets[0]?.key ?? "~").localeCompare(b.tickets[0]?.key ?? "~", undefined, { numeric: true }));
   const sizes = useWorktreeSizes(trees.map((tree) => ({ projectId, dir: tree.dir })), open);
   const remove = useRemoveWorktrees();
   // Said even when there are none, so the list is found before a disk fills; nothing is said until git has answered.
   if (!listed.data) return null;
   const none = trees.length === 0;
 
-  const finished = trees.filter((tree) => !tree.hold);
+  const finished = trees.filter(worktreeCanGo);
   const known = trees.flatMap((tree) => sizes.get(tree.dir) ?? []);
 
-  const take = (dirs: string[]) =>
-    remove.mutate([{ projectId, dirs }], {
+  const take = (dirs: string[], strays = false) =>
+    remove.mutate([{ projectId, dirs, strays }], {
       onSuccess: (removals) => {
         const { removed, kept, reason } = removalSummary(removals);
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");
@@ -65,7 +66,7 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
       {open && !none && (
         <div className="fold-row-body stack-2 repo-worktree-list">
           {trees.map((tree) => (
-            <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} busy={remove.isPending} onRemove={() => take([tree.dir])} />
+            <WorktreeRow key={tree.dir} tree={tree} size={sizes.get(tree.dir)} busy={remove.isPending} onRemove={() => take([tree.dir], tree.stray)} />
           ))}
         </div>
       )}
@@ -74,14 +75,19 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   );
 }
 
-/** One worktree: whose it is, its branch and why it is still there, what it takes, and Remove when nothing holds it. `where` names its repository where the list spans several. */
+/**
+ * One worktree: whose it is, its branch and why it is still there, what it takes, and Remove when nothing holds it.
+ * A stray — git no longer knows it — says so in place of a branch, and asks before it is removed. `where` names its
+ * repository where the list spans several.
+ */
 export function WorktreeRow({ tree, size, where, busy, onRemove }: { tree: WorktreeView; size: number | null | undefined; where?: string; busy: boolean; onRemove: () => void }) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const ticket = tree.tickets[0];
   const state = worktreeState(tree, Date.now());
   const when = new Intl.DateTimeFormat(intlTag(locale), { dateStyle: "medium", timeStyle: "short" });
   return (
-    <div className="cfg-row repo-worktree" data-hold={tree.hold ?? "none"} data-dir={tree.dir} style={{ marginTop: 0 }}>
+    <div className="cfg-row repo-worktree" data-hold={tree.hold ?? "none"} data-stray={tree.stray || undefined} data-dir={tree.dir} style={{ marginTop: 0 }}>
       <span className="repo-remote-copy">
         {ticket ? (
           <span className="cfg-name repo-worktree-ticket" title={`${ticket.key} ${ticket.title}`}>
@@ -97,7 +103,7 @@ export function WorktreeRow({ tree, size, where, busy, onRemove }: { tree: Workt
         )}
         <span className="meta-txt repo-worktree-state" title={tree.dir}>
           {where ? `${where} · ` : ""}
-          <span className="num">{tree.branch ?? t("repositories.worktreeDetached")}</span> · {t(state.key, state.at ? { when: when.format(state.at) } : undefined)}
+          {tree.stray ? t("repositories.worktreeStray") : <span className="num">{tree.branch ?? t("repositories.worktreeDetached")}</span>} · {t(state.key, state.at ? { when: when.format(state.at) } : undefined)}
         </span>
       </span>
       <span className="meta-txt num repo-worktree-size">{size === undefined ? "…" : size === null ? "" : diskSize(size)}</span>
@@ -105,7 +111,14 @@ export function WorktreeRow({ tree, size, where, busy, onRemove }: { tree: Workt
         {t(revealLabel())}
       </button>
       {!tree.hold && (
-        <button type="button" className="btn btn-ghost repo-worktree-remove" disabled={busy} onClick={onRemove}>
+        <button
+          type="button"
+          className="btn btn-ghost repo-worktree-remove"
+          disabled={busy}
+          onClick={async () => {
+            if (!tree.stray || (await confirm({ body: t("repositories.worktreeStrayConfirm", { dir: tree.dir }), yes: t("common.remove") }))) onRemove();
+          }}
+        >
           {t("common.remove")}
         </button>
       )}

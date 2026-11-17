@@ -239,3 +239,51 @@ it("removes a cancelled ticket's worktree too, and none by itself with the setti
   expect(await codeLink.sweepWorktrees()).toBe(1);
   expect(fs.existsSync(next.worktree)).toBe(false);
 });
+
+it("lists a folder git no longer knows as a stray: counted, never taken by itself, removed only on a person's word for it", async () => {
+  const { ctx, codeLink, projectId, repo, checkout, keep, worked, finish, view } = await machine();
+  keep({ keepDays: 0 });
+  // A finished ticket's worktree whose record in the checkout is gone, as after the repository's folder was moved or deleted.
+  const lost = await worked("Its repository moved away");
+  finish(lost.item.id);
+  fs.rmSync(path.join(checkout, ".git", "worktrees", lost.threadId), { recursive: true, force: true });
+  // A folder with nothing of git's in it, named for a conversation no project has.
+  const bare = path.join(path.dirname(lost.worktree), "left-over");
+  fs.mkdirSync(bare);
+  fs.writeFileSync(path.join(bare, "notes.txt"), "kept by nobody\n");
+  // A working worktree of some other checkout, in the same folder: git still knows it, so it is not called a stray.
+  const foreign = path.join(path.dirname(lost.worktree), "foreign");
+  git(["worktree", "add", "-q", "-b", "elsewhere", foreign], codeRepo().checkout);
+
+  expect(await view(lost.worktree)).toMatchObject({ stray: true, hold: null, removeAt: null, branch: null, owner: "ticket", tickets: [{ key: lost.item.key, status: "done" }] });
+  expect(await view(bare)).toMatchObject({ repoId: repo.id, stray: true, hold: null, removeAt: null, branch: null, owner: "none", tickets: [] });
+  expect(await view(foreign)).toBeUndefined();
+  expect(await codeLink.worktreeSize(projectId, bare)).toBeGreaterThan(0);
+  expect((await codeLink.worktreeOverview()).groups[0]!.trees.map((tree) => tree.dir).sort()).toEqual([lost.worktree, bare].sort());
+
+  // Cleanup leaves them, and so does a removal that was not told they are strays: "remove all" is one.
+  expect(await codeLink.sweepWorktrees()).toBe(0);
+  expect(await codeLink.removeWorktrees(projectId, [lost.worktree, bare])).toMatchObject([{ dir: lost.worktree, removed: false }, { dir: bare, removed: false }]);
+  expect([lost.worktree, bare].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
+
+  // A session in one holds it, as it holds any worktree.
+  const visitor = codeLink.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: bare });
+  expect(await view(bare)).toMatchObject({ stray: true, hold: "busy" });
+  expect(await codeLink.removeWorktrees(projectId, [bare], true)).toEqual([{ dir: bare, removed: false, reason: "busy" }]);
+  codeLink.sessions.end(projectId, visitor.id, "ended", true, "left");
+
+  expect(await codeLink.removeWorktrees(projectId, [lost.worktree, bare], true)).toEqual([
+    { dir: lost.worktree, removed: true, reason: null },
+    { dir: bare, removed: true, reason: null }
+  ]);
+  expect([lost.worktree, bare, foreign].map((dir) => fs.existsSync(dir))).toEqual([false, false, true]);
+  // The ticket's commits were in the checkout all along.
+  expect(git(["log", "--format=%s", "-1", lost.branch], checkout)).toBe(`${lost.item.key}: work`);
+
+  // Only a folder git cannot work in, right inside a repository's folder of the Hub's worktrees, is ever deleted this way.
+  expect(ctx.repos.removeStrayWorktree(foreign)).toMatch(/still a git worktree/);
+  expect(ctx.repos.removeStrayWorktree(path.dirname(foreign))).toMatch(/not a worktree Tomrade made/);
+  expect(ctx.repos.removeStrayWorktree(path.join(foreign, "node_modules"))).toMatch(/not a worktree Tomrade made/);
+  expect(ctx.repos.removeStrayWorktree(checkout)).toMatch(/not a worktree Tomrade made/);
+  expect([foreign, checkout].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
+});
