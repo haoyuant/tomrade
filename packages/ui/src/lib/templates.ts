@@ -5,6 +5,7 @@ import { invoke, subscribe } from "./api";
 import { intlTag } from "./domain";
 import { say, type MessageKey } from "./dicts";
 import { keys } from "./queries/keys";
+import { reportAction } from "./analytics";
 
 /** Anything a template, a schedule or a run changes refetches the lot: they are few. */
 function useLive(projectId: string) {
@@ -32,11 +33,29 @@ export function useTemplateActions(projectId: string) {
   const qc = useQueryClient();
   const done = () => void qc.invalidateQueries({ queryKey: keys.schedules.all(projectId) });
   return {
-    create: useMutation({ mutationFn: (input: TemplateInput) => invoke("schedules.createTemplate", projectId, input), onSuccess: done }),
+    create: useMutation({
+      mutationFn: (input: TemplateInput) => invoke("schedules.createTemplate", projectId, input),
+      onSuccess: () => {
+        reportAction("routines.list", "create");
+        done();
+      }
+    }),
     update: useMutation({ mutationFn: ({ id, input }: { id: string; input: TemplateInput }) => invoke("schedules.updateTemplate", projectId, id, input), onSuccess: done }),
     remove: useMutation({ mutationFn: (id: string) => invoke("schedules.removeTemplate", projectId, id), onSuccess: done }),
-    run: useMutation({ mutationFn: (id: string) => invoke("schedules.run", projectId, id), onSuccess: done }),
-    addSuggestion: useMutation({ mutationFn: ({ id, withSchedule }: { id: string; withSchedule: boolean }) => invoke("schedules.addSuggestion", projectId, id, withSchedule), onSuccess: done }),
+    run: useMutation({
+      mutationFn: (id: string) => invoke("schedules.run", projectId, id),
+      onSuccess: (run) => {
+        if (run.ok) reportAction("routines.list", "run_now");
+        done();
+      }
+    }),
+    addSuggestion: useMutation({
+      mutationFn: ({ id, withSchedule }: { id: string; withSchedule: boolean }) => invoke("schedules.addSuggestion", projectId, id, withSchedule),
+      onSuccess: () => {
+        reportAction("routines.list", "create");
+        done();
+      }
+    }),
     schedule: useMutation({ mutationFn: (input: ScheduleInput) => invoke("schedules.create", projectId, input), onSuccess: done }),
     reschedule: useMutation({ mutationFn: ({ id, input }: { id: string; input: ScheduleInput }) => invoke("schedules.update", projectId, id, input), onSuccess: done }),
     unschedule: useMutation({ mutationFn: (id: string) => invoke("schedules.remove", projectId, id), onSuccess: done })

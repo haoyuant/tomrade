@@ -315,7 +315,10 @@ function ProjectsHome({ setupCard }: { setupCard: boolean }) {
                   className="btn btn-icon proj-gear proj-sample-hide"
                   title={t("onboarding.sampleTileHide")}
                   aria-label={t("onboarding.sampleTileHide")}
-                  onClick={() => markSeen("sample-tile")}
+                  onClick={() => {
+                    reportAction("onboarding", "hint_dismiss");
+                    markSeen("sample-tile");
+                  }}
                 >
                   <Icon name="i-close" size={15} />
                 </button>
@@ -326,7 +329,12 @@ function ProjectsHome({ setupCard }: { setupCard: boolean }) {
           {!!projects.data && showsOnHome(list) && !seen(CAPABILITIES_SEEN) && (
             <>
               <hr className="rule" />
-              <CapabilitiesSection onHide={() => markSeen(CAPABILITIES_SEEN)} />
+              <CapabilitiesSection
+                onHide={() => {
+                  reportAction("onboarding", "hint_dismiss");
+                  markSeen(CAPABILITIES_SEEN);
+                }}
+              />
             </>
           )}
 

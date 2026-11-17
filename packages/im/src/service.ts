@@ -278,7 +278,11 @@ export class Im extends Service {
     this.home.on("codeLink/changed", (projectId, session) => { if (session !== "doing") this.onCode(projectId); });
     this.home.on("schedules/ran", (projectId, run, name) => this.onRoutine(projectId, run, name));
     // After the write that appended it has committed.
-    this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId, statusMove(entry))); });
+    this.home.on("oplog/appended", (projectId, entry) => {
+      if (entry.entity !== "item") return;
+      if (entry.op === "create" && entry.runId) this.countTicket(entry.entityId, entry.runId);
+      queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId, statusMove(entry)));
+    });
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
       ctx.ipc.handle("im.adapters", () => this.adapterViews());
@@ -572,6 +576,24 @@ export class Im extends Service {
       engine?.steering ? this.w("helpSteers") : this.w("helpNoSteer"),
       this.w("helpMention")
     ].join("\n");
+  }
+
+  /** The usage statistics' closed set of channels: the adapter's family, never which workspace or chat. */
+  private channelOf(connectionId: string): string {
+    const adapterId = this.settings.connections.find(c => c.id === connectionId)?.adapterId ?? "";
+    if (adapterId === "feishu" || adapterId === "feishu-lark") return "feishu";
+    return ["dingtalk", "wecom", "slack", "discord"].includes(adapterId) ? adapterId : "other";
+  }
+
+  private readonly counted = new Set<string>();
+
+  /** A ticket made by a turn an IM message started; a redo of the same create is not another. */
+  private countTicket(itemId: string, runId: string): void {
+    if (this.counted.has(itemId)) return;
+    const from = this.store.get<{ connection_id: string }>("SELECT b.connection_id FROM plugin_im_inbox i JOIN plugin_im_bindings b ON b.id = i.binding_id WHERE i.run_id = ? LIMIT 1", runId);
+    if (!from) return;
+    this.counted.add(itemId);
+    contract(this.home, "analytics")?.activate("im", "ticket_created", this.channelOf(from.connection_id));
   }
 
   private capsOf(b: Binding): ResolvedImCapabilities | undefined {
@@ -2917,6 +2939,7 @@ export class Im extends Service {
         const trigger = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ? ORDER BY seq LIMIT 1", b.id, event.run.id);
         const e = trigger && JSON.parse(trigger.event_json) as ImInbound;
         if (e?.kind === "message" && (event.run.status === "error" || event.run.status === "done")) this.react(b, e.messageId, event.run.status === "error" ? "failed" : "done");
+        if (trigger && event.run.status === "done") contract(this.home, "analytics")?.activate("im", "reply", this.channelOf(b.connection_id));
       }
     }
   }

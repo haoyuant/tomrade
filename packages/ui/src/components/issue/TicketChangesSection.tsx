@@ -8,6 +8,7 @@ import { ticketChanges, useAgentReviews, useChangeComments, useChangesSummary, u
 import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 /** What a coding ticket's branch changes, and the way into its diff. Nothing for a ticket with no branch git can show here. */
 export function TicketChangesSection({ item, variant = "pane" }: { item: Item; variant?: "pane" | "sheet" }) {
@@ -28,7 +29,10 @@ export function TicketChangesSection({ item, variant = "pane" }: { item: Item; v
   const askReview = () => {
     setAsking(true);
     source.startReview().then(
-      (started) => toast({ body: t("diff.reviewStarted", { agent: started.engineTitle }) }),
+      (started) => {
+        reportAction("code.review", "request_review");
+        toast({ body: t("diff.reviewStarted", { agent: started.engineTitle }) });
+      },
       (error: unknown) => toast({ body: messageOf(error) })
     ).finally(() => setAsking(false));
   };

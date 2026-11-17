@@ -17,6 +17,7 @@ import { NotesSearch } from "./NotesSearch";
 import { useNoteActions } from "./useNoteActions";
 import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, useAgentActions } from "./AgentPolicy";
+import { reportAction } from "~/lib/analytics";
 
 const CHANGE_LETTER: Record<FileChange, string> = { added: "A", modified: "M", deleted: "D", renamed: "R", conflicted: "!" };
 const CHANGE_KEY: Record<FileChange, MessageKey> = {
@@ -205,7 +206,14 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
         toast({
           body: t("files.deletedToast", { name: entry.name }),
           onUndo: ref
-            ? () => revert.mutate(ref, { onSuccess: () => toast({ body: t("files.restoredToast", { name: entry.name }) }), onError: (error) => toast(errorSpec(error)) })
+            ? () =>
+                revert.mutate(ref, {
+                  onSuccess: () => {
+                    reportAction("files.browse", "restore");
+                    toast({ body: t("files.restoredToast", { name: entry.name }) });
+                  },
+                  onError: (error) => toast(errorSpec(error))
+                })
             : undefined
         }),
       onError: (error) => toast(errorSpec(error))

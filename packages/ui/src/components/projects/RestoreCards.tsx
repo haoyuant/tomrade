@@ -9,6 +9,7 @@ import { useHubInfo, useLocateProject, useRemoveFromHub, useRestores, useRetryRe
 import { pickDirectory } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { ConnectionPanel, message } from "./destination";
+import { reportAction } from "~/lib/analytics";
 
 type IconName = Parameters<typeof Icon>[0]["name"];
 
@@ -77,7 +78,14 @@ function RestoreActions({ entry, compact = false }: { entry: RestoreEntry; compa
     if (!dir) return;
     locate.mutate(
       { projectId: entry.projectId, dir },
-      { onSuccess: () => toast({ body: t("restore.locatedToast", { name: entry.name }) }), onError: (error) => toast({ body: message(error) }) }
+      {
+        // The one way to bring a project that already exists onto this computer by hand.
+        onSuccess: () => {
+          reportAction("project.list", "import");
+          toast({ body: t("restore.locatedToast", { name: entry.name }) });
+        },
+        onError: (error) => toast({ body: message(error) })
+      }
     );
   };
   const again = () => retry.mutate(entry.projectId, { onError: (error) => toast({ body: message(error) }) });

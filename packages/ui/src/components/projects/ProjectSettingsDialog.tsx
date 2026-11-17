@@ -17,6 +17,7 @@ import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 import { isCommitKey } from "~/lib/keys";
+import { useReportOpen } from "~/lib/analytics";
 
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -87,6 +88,7 @@ export function ProjectSettingsDialog({
   /** Opens scrolled to one block — the assistant sends you to Repositories when a workstream has no checkout here. */
   section?: ProjectSettingsPane;
 }) {
+  useReportOpen("project.settings", project !== null);
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
 

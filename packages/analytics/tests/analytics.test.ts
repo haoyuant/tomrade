@@ -68,18 +68,21 @@ describe("feature registry", () => {
       expect(feature.actions.length).toBeGreaterThan(0);
       for (const action of feature.actions) expect(action.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
-    expect(featureIds()).toHaveLength(27);
+    expect(featureIds()).toHaveLength(37);
     expect(isCounted("backlog.create", "create")).toBe(true);
     expect(isCounted("backlog.board", "open")).toBe(true);
     expect(dimAllowed(featureById("backlog.create")!, "quick")).toBe(true);
     expect(dimAllowed(featureById("backlog.create")!, "paste")).toBe(false);
     expect(dimAllowed(featureById("agent.chat")!, "acp-antigravity")).toBe(true);
     expect(dimAllowed(featureById("backlog.board")!, "anything")).toBe(false);
+    // A settings section outside the list is a plugin's: its id would name the plugin.
+    expect(dimAllowed(featureById("settings")!, "worktrees")).toBe(true);
+    expect(dimAllowed(featureById("settings")!, "someCommunityPlugin")).toBe(false);
     expect(registrySnapshot().version).toBe(FEATURE_REGISTRY_VERSION);
   });
 
   it("adds registry 2's activation steps where they belong, never as a use", () => {
-    expect(FEATURE_REGISTRY_VERSION).toBe(3);
+    expect(FEATURE_REGISTRY_VERSION).toBe(4);
     const added = FEATURES.flatMap((feature) => feature.actions.filter((action) => action.sinceRegistry === 2).map((action) => `${feature.id}/${action.name}`));
     expect(added.sort()).toEqual(
       ["agent.chat/plan_applied", "agent.chat/run_reverted", "code.link/claim_external", "code.link/project_repo_linked", "onboarding/setup_done"].sort()
@@ -93,7 +96,62 @@ describe("feature registry", () => {
     expect(added.filter((entry) => isOnce(...(entry.split("/") as [string, string])))).toEqual(["onboarding/setup_done"]);
     // Registry 2 added no feature; registry 3 added the plugin layout surface alone.
     expect(FEATURES.filter((feature) => feature.sinceRegistry === 3).map((feature) => feature.id)).toEqual(["backlog.plugin"]);
-    expect(featureIds()).toHaveLength(27);
+  });
+
+  it("adds registry 4's features and two later steps, ids never reused", () => {
+    expect(FEATURES.filter((feature) => feature.sinceRegistry === 4).map((feature) => feature.id)).toEqual([
+      "agent.nightshift",
+      "code.dispatch",
+      "code.review",
+      "backlog.delivery",
+      "code.worktrees",
+      "project.takeover",
+      "project.settings",
+      "backlog.history",
+      "project.page",
+      "agent.playbook"
+    ]);
+    const later = FEATURES.flatMap((feature) => feature.actions.filter((action) => action.sinceRegistry === 4).map((action) => `${feature.id}/${action.name}`));
+    expect(later.sort()).toEqual(["code.link/repo_connected", "doctor/send_feedback"]);
+    // A sub is adoption only, never a use.
+    for (const feature of FEATURES.filter((f) => f.kind === "sub")) for (const action of feature.actions) expect(action.counted).toBeFalsy();
+  });
+
+  // Every action the registry names is reported somewhere, so the dashboard never shows a zero
+  // that only means nobody wired it (TOM-1117). A surface's `open` comes from its <Surface>, a dialog's from useReportOpen.
+  it("has a place in the app that reports each action", () => {
+    const root = new URL("../../../", import.meta.url).pathname;
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "tests") continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(ts|tsx)$/.test(entry.name)) files.push(full);
+      }
+    };
+    for (const pkg of fs.readdirSync(path.join(root, "packages"))) {
+      if (pkg !== "analytics" && fs.existsSync(path.join(root, "packages", pkg, "src"))) walk(path.join(root, "packages", pkg, "src"));
+    }
+    const sources = files.map((file) => fs.readFileSync(file, "utf8"));
+    // Reported through a variable: code-link's store names the step its pull request reached.
+    const indirect = new Set(["code.link/open_pr", "code.link/merge"]);
+    // Nothing in the app can see it happen (a focus ending is the pomodoro plugin's own knowledge).
+    const unwired = new Set(["plugin.pomodoro/complete"]);
+    const missing: string[] = [];
+    for (const feature of FEATURES) {
+      if (feature.retiredIn) continue;
+      for (const action of feature.actions) {
+        const key = `${feature.id}/${action.name}`;
+        if (indirect.has(key) || unwired.has(key)) continue;
+        const named = (text: string) => text.includes(`"${feature.id}"`);
+        const surfaced =
+          action.name === "open" &&
+          sources.some((text) => (feature.kind === "surface" && named(text) && text.includes("<Surface")) || text.includes(`useReportOpen("${feature.id}"`));
+        if (!surfaced && !sources.some((text) => named(text) && text.includes(`"${action.name}"`))) missing.push(key);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
 
@@ -579,11 +637,11 @@ describe("the service's switch", () => {
     fromRenderer("onboarding", "setup_done");
     h.analytics.activate("onboarding", "setup_done");
     expect(queued()).toEqual([
-      "3 agent.chat/plan_applied",
-      "3 agent.chat/run_reverted",
-      "3 code.link/project_repo_linked",
-      "3 code.link/claim_external",
-      "3 onboarding/setup_done"
+      "4 agent.chat/plan_applied",
+      "4 agent.chat/run_reverted",
+      "4 code.link/project_repo_linked",
+      "4 code.link/claim_external",
+      "4 onboarding/setup_done"
     ]);
     // Every step but the milestone repeats.
     h.analytics.activate("agent.chat", "plan_applied");
@@ -605,7 +663,7 @@ describe("the service's switch", () => {
     setEnabled(true);
     await new Promise((resolve) => setTimeout(resolve, 5));
     h.analytics.activate("onboarding", "setup_done");
-    expect(queued()).toEqual(["3 onboarding/setup_done"]);
+    expect(queued()).toEqual(["4 onboarding/setup_done"]);
     fs.rmSync(h.root, { recursive: true, force: true });
   });
 });

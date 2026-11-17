@@ -71,6 +71,8 @@ const counted = (name: string): FeatureAction => ({ name, counted: true });
 const seen = (name: string): FeatureAction => ({ name });
 /** An activation step (TOM-749): adoption and the funnel only, never a use, never content. */
 const step = (name: string, extra: Partial<FeatureAction> = {}): FeatureAction => ({ name, sinceRegistry: 2, ...extra });
+/** Added to an older feature by registry 4 (TOM-1117). */
+const later = (action: FeatureAction): FeatureAction => ({ ...action, sinceRegistry: 4 });
 
 export const FEATURES: readonly FeatureDefinition[] = [
   {
@@ -169,7 +171,9 @@ export const FEATURES: readonly FeatureDefinition[] = [
       // A repository added to a project: what code links need first.
       step("project_repo_linked"),
       // An agent in the person's own terminal took a ticket with claim_ticket.
-      step("claim_external")
+      step("claim_external"),
+      // A repository connected so agents in the person's own terminal reach Tomrade: the step before claim_external.
+      later(seen("repo_connected"))
     ],
     sinceRegistry: 1
   },
@@ -269,10 +273,41 @@ export const FEATURES: readonly FeatureDefinition[] = [
     titleZh: "设置",
     kind: "action",
     actions: [counted("open"), seen("change")],
-    // Settings sections register themselves; the closed set is whatever the
-    // running app registers. The server keeps only ids it knows from the
-    // registry snapshot it was built with.
-    dims: ["theme", "language", "customThemes", "themeAutomation", "notifications", "updates", "account", "agent", "mcp", "plugins", "im", "analytics"],
+    // The built-in settings sections, by id. A section a plugin registers is
+    // not listed, so its change goes without a dim on the client already.
+    dims: [
+      "theme",
+      "language",
+      "customThemes",
+      "themeAutomation",
+      "notifications",
+      "updates",
+      "account",
+      "agent",
+      "mcp",
+      "plugins",
+      "im",
+      "analytics",
+      // Registry 4: the built-in sections the app registers since.
+      "acpRegistry",
+      "changeReview",
+      "dispatch",
+      "files",
+      "keybindings",
+      "mcpServers",
+      "models",
+      "notes",
+      "onboarding",
+      "performanceMode",
+      "pet",
+      "prFeedback",
+      "shell",
+      "terminalIdle",
+      "terminalRecording",
+      "unifiedSky",
+      "watchdog",
+      "worktrees"
+    ],
     dimAction: "change",
     sinceRegistry: 1
   },
@@ -289,7 +324,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     title: "Troubleshooting",
     titleZh: "故障排查",
     kind: "action",
-    actions: [counted("open"), counted("run_check"), seen("send_report")],
+    actions: [counted("open"), counted("run_check"), seen("send_report"), later(seen("send_feedback"))],
     sinceRegistry: 1
   },
   {
@@ -321,11 +356,93 @@ export const FEATURES: readonly FeatureDefinition[] = [
       step("setup_done", { once: true })
     ],
     sinceRegistry: 1
+  },
+  // Registry 4 (TOM-1117): what shipped after the October registry.
+  {
+    id: "agent.nightshift",
+    title: "Auto run",
+    titleZh: "自动运行（夜班）",
+    kind: "action",
+    actions: [counted("open"), counted("start"), seen("stop")],
+    sinceRegistry: 4
+  },
+  {
+    id: "code.dispatch",
+    title: "Run on another computer",
+    titleZh: "派发到其他电脑",
+    kind: "action",
+    actions: [counted("send"), seen("take_back")],
+    sinceRegistry: 4
+  },
+  {
+    id: "code.review",
+    title: "Change review",
+    titleZh: "改动评审",
+    kind: "action",
+    actions: [counted("open"), seen("comment"), counted("send_comments"), seen("mark_reviewed"), counted("request_review")],
+    sinceRegistry: 4
+  },
+  {
+    id: "backlog.delivery",
+    title: "Delivery review",
+    titleZh: "交付评审",
+    kind: "sub",
+    timedIn: "backlog.issue",
+    actions: [seen("submit"), seen("accept"), seen("request_changes")],
+    sinceRegistry: 4
+  },
+  {
+    id: "code.worktrees",
+    title: "Worktrees",
+    titleZh: "Worktree 管理",
+    kind: "sub",
+    actions: [seen("remove")],
+    sinceRegistry: 4
+  },
+  {
+    id: "project.takeover",
+    title: "Take over existing work",
+    titleZh: "接管现有工作",
+    kind: "action",
+    actions: [counted("open"), counted("apply")],
+    sinceRegistry: 4
+  },
+  {
+    id: "project.settings",
+    title: "Project settings",
+    titleZh: "项目设置",
+    kind: "action",
+    actions: [counted("open"), seen("rules_save"), seen("brief_save"), seen("role_save")],
+    sinceRegistry: 4
+  },
+  {
+    id: "backlog.history",
+    title: "History",
+    titleZh: "历史与回滚",
+    kind: "action",
+    actions: [counted("open"), counted("rollback")],
+    sinceRegistry: 4
+  },
+  {
+    id: "project.page",
+    title: "Build page",
+    titleZh: "生成页面",
+    kind: "action",
+    actions: [counted("open"), counted("publish")],
+    sinceRegistry: 4
+  },
+  {
+    id: "agent.playbook",
+    title: "Playbooks",
+    titleZh: "剧本",
+    kind: "action",
+    actions: [counted("save"), counted("import")],
+    sinceRegistry: 4
   }
 ];
 
 /** Bumped whenever any row, action or `counted` flag changes. */
-export const FEATURE_REGISTRY_VERSION = 3;
+export const FEATURE_REGISTRY_VERSION = 4;
 
 const BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
 
@@ -352,13 +469,13 @@ export const isCounted = (featureId: string, action: string): boolean => {
 /**
  * `dim` is dropped, never the event, when it is outside the feature's closed
  * set. `acp-*` engines are the one prefix the registry admits without a row of
- * their own, because the ACP registry adds engines by id.
+ * their own, because the ACP registry adds engines by id. A settings section
+ * outside the list (a plugin's own) goes without its id: that would name the plugin.
  */
 export function dimAllowed(feature: FeatureDefinition, dim: string | null | undefined): boolean {
   if (dim == null || dim === "") return true;
   if (!feature.dims) return false;
   if (feature.id === "agent.chat" && /^acp-[a-z0-9-]+$/.test(dim)) return true;
-  if (feature.id === "settings" && /^[a-z][a-zA-Z0-9-]*$/.test(dim)) return true;
   return feature.dims.includes(dim);
 }
 

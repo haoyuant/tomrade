@@ -5,6 +5,7 @@ import { Eyebrow, FoldChevron } from "~/components/ui/atoms";
 import { WORKTREE_HOLD_KEY, diskSize, removalSummary, useRemoveWorktrees, useWorktreeOverview, useWorktreeSizes, worktreeCanGo, worktreeTotals, type WorktreeBucket } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 /** Each part keeps its colour wherever it is drawn: the disk's bar, the split, their keys. */
 const SERIES: Record<"worktrees" | "other" | WorktreeBucket, string> = {
@@ -85,6 +86,7 @@ export function WorktreeOverview() {
     remove.mutate(asks, {
       onSuccess: (removals) => {
         const { removed, kept, reason, branches } = removalSummary(removals);
+        if (removed) reportAction("code.worktrees", "remove");
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");
         const said = [
           kept ? t("repositories.worktreesKeptToast", { n: removed, kept, reason: why }) : t("repositories.worktreesRemovedToast", { n: removed }),

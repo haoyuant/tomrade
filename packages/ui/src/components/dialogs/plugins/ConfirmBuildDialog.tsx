@@ -7,6 +7,7 @@ import { useBuildReview, useStudioConfirm, useWorkspaces } from "~/lib/plugins";
 import { readableError, useToast } from "~/lib/toast";
 import { isLeadWindow } from "~/lib/window-chrome";
 import { Findings, Reach, TrustTags } from "./parts";
+import { reportAction } from "~/lib/analytics";
 
 type Grants = { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean; renderer?: boolean }; inject: string[] };
 const wider = (before: Grants | null, after: Grants) => {
@@ -75,6 +76,7 @@ export function ConfirmBuildDialog({ name, title, onClose }: { name: string; tit
               { name, digest: r.digest },
               {
                 onSuccess: (result) => {
+                  reportAction("plugins.studio", "test");
                   toast({ body: `${t("plugins.loaded", { title })}${result.snapshot ? ` · ${t("plugins.snapshotSaved")}` : ""}` });
                   onClose();
                 },

@@ -317,6 +317,7 @@ export class Doctor extends Service implements DoctorChecks {
     const what = engine?.title ?? topic.engineId;
     const thread = this.ctx.agent.newThread(projectId, ENGINE_ID, null, { surface: "doctor", title: words("threadTitle", { what: what ?? words("general") }), options: { topic } });
     this.ctx.agent.send(projectId, thread.id, { kind: "text", text: what ? words("askFailure", { engine: what }) : words("askGeneral") });
+    contract(this.ctx, "analytics")?.activate("doctor", "open");
     return thread;
   }
 
@@ -363,6 +364,8 @@ export class Doctor extends Service implements DoctorChecks {
         if (investigator && said !== doctor.words()("recheckSay") && doctor.latest(input.threadId)) return doctor.delegate(input, io, investigator);
         const diagnosis = await doctor.runChecks(input.projectId, input.threadId, io.run.id, topic, io.signal);
         if (io.signal.aborted) return { stop: "cancelled" };
+        // A turn is the person asking (the start, "check again", a question); doctor_check_again goes around it.
+        contract(doctor.ctx, "analytics")?.activate("doctor", "run_check");
         diagnosis.findings.forEach((finding, i) => io.emit({ type: "card", id: `finding-${io.run.id}-${i}`, schema: "finding", title: finding.headline, data: finding }));
         return { stop: "end" };
       }

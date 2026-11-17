@@ -21,7 +21,7 @@ import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useSettingsHost } from "~/lib/settingsHost";
-import { Surface } from "~/lib/analytics";
+import { reportAction, Surface } from "~/lib/analytics";
 import { useCreateView, useHeldItem, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast, useSeen } from "~/lib/onboarding";
@@ -93,6 +93,7 @@ function FirstLesson() {
   useEffect(() => {
     if (!first || seen(FIRST_LESSON)) return;
     markSeen(FIRST_LESSON);
+    reportAction("onboarding", "tour_start");
     // Narrower, opening it would close the assistant, and the setup card with it.
     if (window.innerWidth >= THREE_PANE_FLOOR) selectTicket(first);
   }, [first, seen, markSeen, selectTicket]);

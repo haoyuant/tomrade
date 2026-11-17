@@ -8,6 +8,7 @@ import { useRedo, useRollback, useTimeline, useUndo } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { keyLabel } from "~/lib/keybindings";
+import { reportAction, useReportOpen } from "~/lib/analytics";
 
 const OP_KEY: Record<string, MessageKey> = {
   create: "history.opCreate",
@@ -36,6 +37,7 @@ const iconOf = (r: UndoRecord): IconId => (r.op === "mkdir" ? "i-folder" : (ENTI
  * row, redoing to an undone row replays the stack down to it.
  */
 export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  useReportOpen("backlog.history", open);
   const { t, tx } = useI18n();
   const toast = useToast();
   const timeline = useTimeline(projectId, open);
@@ -53,6 +55,7 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
     rollback.mutate(record.ref, {
       onSuccess: (result) => {
         const n = result.steps.length;
+        if (n) reportAction("backlog.history", "rollback");
         if (result.stopped) toast({ body: t("history.stopped", { n, reason: result.stopped }) });
         else if (!n) toast({ body: t("history.nothingToDo") });
         else if (n === 1) toast({ body: result.steps[0]!.summary });

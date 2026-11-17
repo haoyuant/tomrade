@@ -6,6 +6,7 @@ import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
 import { keys } from "~/lib/queries";
+import { reportAction } from "~/lib/analytics";
 
 type Include = { environment: boolean; checks: boolean; error: boolean; logs: boolean; conversation: boolean };
 const SECTIONS: (keyof Include)[] = ["error", "checks", "environment", "logs", "conversation"];
@@ -40,7 +41,7 @@ function ReportSheet({ projectId, threadId, onOpenChange }: { projectId: string;
     enabled: !!threadId,
     placeholderData: (previous) => previous
   });
-  const send = useMutation({ mutationFn: () => invoke("doctor.send", projectId, threadId!, include, note) });
+  const send = useMutation({ mutationFn: () => invoke("doctor.send", projectId, threadId!, include, note), onSuccess: () => reportAction("doctor", "send_report") });
   const text = (preview.data?.sections ?? []).map((s) => `── ${s.title} ──\n${s.text}`).join("\n\n");
   const copy = () => void navigator.clipboard?.writeText(text).then(() => {
     setCopied(true);

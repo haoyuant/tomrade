@@ -8,6 +8,7 @@ import { isCommitKey } from "~/lib/keys";
 import { useCreateProject } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
 import { readableError } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 type StepState = "done" | "active" | "failed" | "pending";
 type Failure = { at: "project" | "repo" | "link" | "send"; message: string };
@@ -47,6 +48,7 @@ export function RepoTask({ agents, onBack, onOpened }: { agents: string | null; 
     let at: Failure["at"] = "project";
     try {
       let project = "project" in from ? from.project : await create.mutateAsync({ input: { name: folderName(from.dir), locale } });
+      if (!("project" in from)) reportAction("project.list", "create");
       // A folder refused before left its project behind: it takes the new folder's name.
       if ("project" in from && !from.added && project.name !== folderName(from.dir)) project = (await invoke("projects.update", project.id, { name: folderName(from.dir) })) ?? project;
       let step: Ready = { ...("project" in from ? from : {}), project, dir: from.dir };

@@ -25,6 +25,7 @@ import { askPanel } from "~/lib/panelRequests";
 import { openCapabilities } from "~/lib/capabilities";
 import { paletteFilter } from "~/lib/paletteFilter";
 import { PaletteSessions, PaletteStart, useLooseStart } from "./PaletteSessions";
+import { reportAction, reportSettled } from "~/lib/analytics";
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -147,14 +148,16 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
       kb: undefined,
       run: () =>
         templateActions.run.mutate(tpl.id, {
-          onSuccess: (r) =>
+          onSuccess: (r) => {
+            if (r.itemIds.length) reportAction("backlog.create", "create", "template");
             toast({
               body: r.ok
                 ? r.itemIds.length
                   ? t(r.itemIds.length === 1 ? "templates.ranTicket" : "templates.ranTickets", { name: tpl.name, n: r.itemIds.length })
                   : t("templates.ran", { name: tpl.name })
                 : t("templates.failed", { name: tpl.name, error: r.error ?? "" })
-            })
+            });
+          }
         })
     })),
     { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
@@ -249,7 +252,10 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
               placeholder={t("commandPalette.searchPlaceholder")}
               aria-label={t("commandPalette.searchAria")}
               value={search}
-              onValueChange={setSearch}
+              onValueChange={(next) => {
+                setSearch(next);
+                if (next.trim()) reportSettled("backlog.search", "search_query");
+              }}
             />
             <Command.List className="palette-list" ref={list}>
               {startMode && dock && <PaletteStart start={looseStart} words={search.trim()} fresh run={run} />}
@@ -286,7 +292,10 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
 
               <Command.Group heading={t("commandPalette.actionsGroup")} className="eyebrow palette-group">
                 {actionRows.map((action) => (
-                  <Command.Item key={action.label} value={action.label} className="palette-row" onSelect={() => run(action.run)}>
+                  <Command.Item key={action.label} value={action.label} className="palette-row" onSelect={() => run(() => {
+                    reportAction("backlog.search", "command_run");
+                    action.run();
+                  })}>
                     <Icon name="i-chev" size={14} style={{ color: "var(--meta)" }} />
                     <span className="p-label">{action.label}</span>
                     {action.kb && <Kbd>{action.kb}</Kbd>}
@@ -297,7 +306,10 @@ function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps
               {[...pluginGroups].map(([group, list]) => (
                 <Command.Group key={group} heading={group} className="eyebrow palette-group">
                   {list.map((c) => (
-                    <Command.Item key={c.id} value={c.title} className="palette-row" onSelect={() => run(() => runPlugin(c.id))}>
+                    <Command.Item key={c.id} value={c.title} className="palette-row" onSelect={() => run(() => {
+                      reportAction("backlog.search", "command_run");
+                      runPlugin(c.id);
+                    })}>
                       <Icon name="i-plug" size={14} style={{ color: "var(--meta)" }} />
                       <span className="p-label">{c.title}</span>
                       {c.shortcut && <Kbd>{c.shortcut}</Kbd>}

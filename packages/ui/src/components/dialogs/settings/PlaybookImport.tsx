@@ -5,6 +5,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { keys, useProjects } from "~/lib/queries";
 import { reportError } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 type Found = SkillPreview & { problem?: string };
 
@@ -45,6 +46,7 @@ export function PlaybookImport() {
         projectId: into === "user" ? undefined : into,
         pick: [...picked]
       });
+      if (result.imported.length) reportAction("agent.playbook", "import");
       await qc.invalidateQueries({ queryKey: keys.agent.playbooksAll });
       setDone(t("playbooks.importDone", { n: result.imported.length }));
       setFound(null);

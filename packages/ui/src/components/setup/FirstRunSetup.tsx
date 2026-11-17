@@ -14,6 +14,7 @@ import { useSetup } from "~/lib/setup";
 import { builtinProblem } from "~/lib/setupState";
 import { RepoTask } from "./RepoTask";
 import { SetupOptions } from "./SetupOptions";
+import { reportAction } from "~/lib/analytics";
 
 /**
  * First run, before the projects: connect a model or a local agent — either
@@ -39,6 +40,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   // Picked here to work in the Terminal window: it opens once setup steps aside, not over it.
   const [cli, setCli] = useState(false);
   const done = () => {
+    reportAction("onboarding", "tour_finish");
     onDone();
     if (cli)
       void invoke("contributions.run", "code-sessions.open", {}).catch((error: unknown) =>

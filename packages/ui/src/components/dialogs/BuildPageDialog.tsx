@@ -7,6 +7,7 @@ import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction, useReportOpen } from "~/lib/analytics";
 
 function Group({ title, rows, picks, onToggle }: { title: string; rows: Candidate[]; picks: ReadonlySet<string>; onToggle: (id: string) => void }) {
   const { t } = useI18n();
@@ -104,6 +105,7 @@ function Preview({ projectId, preview, onBack, onDone }: { projectId: string; pr
   const submit = () =>
     publish.mutate(preview.id, {
       onSuccess: (r) => {
+        reportAction("project.page", "publish");
         toast({ body: r.warning ?? (r.url ? t("buildPage.publishedAt", { url: r.url }) : t("buildPage.published")) });
         onDone();
       },
@@ -126,6 +128,7 @@ function Preview({ projectId, preview, onBack, onDone }: { projectId: string; pr
 }
 
 export function BuildPageDialog({ projectId, open, onOpenChange }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  useReportOpen("project.page", open);
   const { t } = useI18n();
   const toast = useToast();
   const state = useBuildPageState(projectId, open);

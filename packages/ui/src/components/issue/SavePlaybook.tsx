@@ -7,6 +7,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 /**
  * On accepted work an agent did: draft its method as a playbook. The draft is
@@ -45,6 +46,7 @@ export function SavePlaybook({ item }: { item: Item }) {
     setBusy(true);
     try {
       const saved = await invoke("agent.savePlaybookDraft", { projectId: item.projectId, itemId: item.id, text, scope, id: id.trim() || undefined, runId: draft.runId });
+      reportAction("agent.playbook", "save");
       await qc.invalidateQueries({ queryKey: keys.agent.playbooksAll });
       toast({ body: t("playbooks.savedFromTicket", { id: saved.id, n: saved.version }) });
       setDraft(null);

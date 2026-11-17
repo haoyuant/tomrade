@@ -10,6 +10,7 @@ import { nameOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { useNoteLinks } from "~/lib/notes";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 /** The first unlinked mention of `name` on a line, as a link to `target`; the words as written stay as the alias when they differ. */
 function linkMention(body: string, line: number, name: string, target: string): string | null {
@@ -79,7 +80,10 @@ export function Backlinks({ projectId, path, paths }: { projectId: string; path:
       {backlinks.length ? (
         <div className="mention-list" data-kind="linked">
           {backlinks.map((m) => (
-            <MentionRow key={`${m.path}:${m.line}`} mention={m} onOpen={() => openFile(m.path)} />
+            <MentionRow key={`${m.path}:${m.line}`} mention={m} onOpen={() => {
+                  reportAction("notes.editor", "follow_link");
+                  openFile(m.path);
+                }} />
           ))}
         </div>
       ) : (
@@ -97,7 +101,10 @@ export function Backlinks({ projectId, path, paths }: { projectId: string; path:
               <MentionRow
                 key={`${m.path}:${m.line}`}
                 mention={m}
-                onOpen={() => openFile(m.path)}
+                onOpen={() => {
+                  reportAction("notes.editor", "follow_link");
+                  openFile(m.path);
+                }}
                 action={
                   <button type="button" className="btn btn-ghost mention-link" onClick={() => void link(m)}>
                     {t("notes.linkIt")}

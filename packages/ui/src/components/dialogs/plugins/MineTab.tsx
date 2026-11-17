@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Workspace } from "@tomradex/plugin-studio";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { Icon } from "~/components/icons";
@@ -25,6 +25,7 @@ import { openExternal, reveal } from "~/lib/shell";
 import { readableError, useToast } from "~/lib/toast";
 import { ConfirmBuildDialog } from "./ConfirmBuildDialog";
 import { Field, TrustTags, useCurrentProject } from "./parts";
+import { reportAction } from "~/lib/analytics";
 
 const STATE: Record<string, MessageKey> = {
   active: "pluginsPanel.stateRunning",
@@ -34,6 +35,7 @@ const STATE: Record<string, MessageKey> = {
 };
 
 export function MineTab({ onLeave }: { onLeave?: () => void }) {
+  useEffect(() => reportAction("plugins.studio", "open"), []);
   const { t } = useI18n();
   const projectId = useCurrentProject();
   const workspaces = useWorkspaces();
@@ -130,6 +132,7 @@ function WorkspaceRow({ workspace: w, onLeave }: { workspace: Workspace; onLeave
               pack.mutate(w.name, {
                 onSuccess: ({ file, report }) => {
                   if (file) {
+                    reportAction("plugins.studio", "build");
                     toast({ body: t("plugins.packed", { file: file.split(/[\\/]/).at(-1) ?? file }), actions: [{ label: t("plugins.reveal"), run: () => reveal(file) }] });
                   } else setError(t("plugins.packBlocked", { problems: report.problems.join("; ") }));
                 },
