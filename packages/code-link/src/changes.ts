@@ -101,7 +101,7 @@ export interface ChangeRun {
 /** What a ticket changed, for one code link and one scope. */
 export interface ChangesView {
   linkId: string;
-  /** Every current code link of the ticket that has a branch; more than one means a picker. */
+  /** Every current code link of the ticket that has a branch, or a merge (named by its short sha); more than one means a picker. */
   links: ChangeLinkChoice[];
   /** The scopes this machine can show for the link: `uncommitted` only with a worktree here, `since` only after a review, `run` only with a run kept. */
   scopes: ChangeScopeKind[];
