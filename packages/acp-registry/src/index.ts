@@ -45,7 +45,7 @@ declare module "@tomradex/ipc" {
 
 const SECTION: SettingsSection<{ added: AddedAgent[] }> = {
   id: "acpRegistry",
-  title: "ACP registry agents",
+  title: "ACP",
   description: "Agents added from the ACP registry; each runs over ACP through npx, like an agent a plugin declares.",
   schema: z.object({ added: z.array(AddedAgent).default([]) }),
   defaults: { added: [] },
