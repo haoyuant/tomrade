@@ -163,10 +163,12 @@ export function worktreeState(tree: Pick<WorktreeView, "owner" | "hold" | "remov
   return tree.removeAt <= now ? { key: "repositories.worktreeDueNow" } : { key: "repositories.worktreeDue", at: tree.removeAt };
 }
 
-/** What a removal that left some behind says: how many went, and why the first that stayed did. */
-export function removalSummary(removals: WorktreeRemoval[]): { removed: number; kept: number; reason: string | null } {
+/** What a removal says: how many went, why the first that stayed did, and what became of the branches of those that went. */
+export function removalSummary(removals: WorktreeRemoval[]): { removed: number; kept: number; reason: string | null; branches: { deleted: number; kept: number; remoteDeleted: number } } {
   const kept = removals.filter((removal) => !removal.removed);
-  return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null };
+  const count = (is: (removal: WorktreeRemoval) => boolean) => removals.filter(is).length;
+  const branches = { deleted: count((removal) => removal.branch === "deleted"), kept: count((removal) => removal.branch === "kept"), remoteDeleted: count((removal) => removal.remoteBranch === "deleted") };
+  return { removed: removals.length - kept.length, kept: kept.length, reason: kept[0]?.reason ?? null, branches };
 }
 
 /** Where a worktree's space counts: nothing holds it, it is finished but something does, it is still in use (or the person's own, on no ticket), or git no longer knows it. */

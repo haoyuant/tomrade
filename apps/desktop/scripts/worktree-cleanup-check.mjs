@@ -86,7 +86,7 @@ const run = async () => {
   ctx.items.update(project.id, merged.item.id, { status: "done" }, "human");
   ctx.items.update(project.id, scratch.item.id, { status: "done" }, "human");
   check("each ticket got a worktree of its own", [merged, scratch, open].every((each) => fs.existsSync(each.worktree)));
-  check("Settings has the cleanup, on and keeping a day", JSON.stringify(ctx.settings.value("worktrees")) === JSON.stringify({ enabled: true, keepDays: 1 }), ctx.settings.value("worktrees"));
+  check("Settings has the cleanup, on and keeping a day, and takes a branch with its worktree here and on the remote", JSON.stringify(ctx.settings.value("worktrees")) === JSON.stringify({ enabled: true, keepDays: 1, dropBranch: true, dropRemoteBranch: true }), ctx.settings.value("worktrees"));
 
   const win = new BrowserWindow({ width: 1500, height: 900, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   const base = process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/";
@@ -156,7 +156,7 @@ const run = async () => {
 
   await press(`${head}.querySelector('.repo-worktrees-clear')`);
   check("Remove finished takes the finished ticket's worktree", await wait(() => !fs.existsSync(merged.worktree), 80));
-  check("its branch stays in the checkout", execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }).split("\n").filter((line) => line.trim()).length === 4);
+  check("its branch, whose commit is nowhere else, stays in the checkout", execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }).split("\n").filter((line) => line.trim()).length === 4);
   check("the one with uncommitted work and the open ticket's stay", fs.existsSync(scratch.worktree) && fs.existsSync(open.worktree));
   check("the list follows", await wait(async () => (await rows()).length === 2 && (await headText()).includes("Worktrees on this computer: 2")), await headText());
   check("with nothing finished left, the button rests", await wait(() => $(`${head}.querySelector('.repo-worktrees-clear')?.disabled === true`)));
@@ -249,7 +249,8 @@ const run = async () => {
   await press(`${head}.querySelector('.fold-chev')`);
   check("finished, its row offers Remove", await wait(async () => { const r = await outsideSeen(); return r?.hold === "none" && r.text.includes("Nothing in it would be lost") && r.removable; }, 80), await outsideSeen());
   await press(`${outsideRow}.querySelector('.repo-worktree-remove')`);
-  check("which removes the folder and leaves its branch in the checkout", (await wait(() => !fs.existsSync(outside), 80)) && execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }).includes(`${terminal.key.toLowerCase()}/from-a-terminal`));
+  check("which removes the folder, and its branch with it: nothing was committed on it that main does not have", (await wait(() => !fs.existsSync(outside), 80)) && (await wait(() => !execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }).includes(`${terminal.key.toLowerCase()}/from-a-terminal`), 40)), execSync("git branch --list", { cwd: repoDir, encoding: "utf8" }));
+  check("and says so", await wait(() => $(`[...document.querySelectorAll('[role="status"], .toast, [data-testid="toast"]')].some((n) => n.textContent.includes("Branches deleted with them: 1."))`), 40), await $(`[...document.querySelectorAll('[role="status"], .toast, [data-testid="toast"]')].map((n) => n.textContent).join(" | ")`));
 
   check("harness reached the end", true);
 };
