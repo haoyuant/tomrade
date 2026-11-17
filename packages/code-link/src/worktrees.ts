@@ -12,8 +12,10 @@ import { parseBranch } from "./keys.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
 const WorktreeSettings = z.object({
-  enabled: z.boolean().default(true).meta({ title: "Remove a finished ticket's worktree" }).describe("Once a ticket is Done or Cancelled, the worktree Tomrade made for it is removed from this computer — only when nothing would be lost: no uncommitted or untracked files, no session still in it. Its branch stays, and starting the ticket again brings the worktree back."),
-  keepDays: z.number().int().min(0).max(365).default(1).meta({ title: "Keep for (days)" }).describe("How long a finished ticket's worktree stays before it is removed. 0 removes it soon after the ticket finishes.")
+  enabled: z.boolean().default(true).meta({ title: "Remove a finished ticket's worktree" }).describe("Once a ticket is Done or Cancelled, the worktree Tomrade made for it is removed from this computer — only when nothing would be lost: no uncommitted or untracked files, no session still in it. Starting the ticket again brings the worktree back."),
+  keepDays: z.number().int().min(0).max(365).default(1).meta({ title: "Keep for (days)" }).describe("How long a finished ticket's worktree stays before it is removed. 0 removes it soon after the ticket finishes."),
+  dropBranch: z.boolean().default(true).meta({ title: "Delete its local branch too" }).describe("When a worktree is removed — by this cleanup, or by you — its local branch is deleted with it, only when every commit on it is kept elsewhere: merged into the default branch, squash-merged into it, or on the remote. Otherwise the branch stays."),
+  dropRemoteBranch: z.boolean().default(true).meta({ title: "Delete its branch on the remote too" }).describe("The branch of the same name on the remote is deleted as well — only when the remote's default branch already has everything on it (merged, or squash-merged), and only where pushing from Tomrade is on for the repository. A branch that was pushed but never merged stays on the remote.")
 });
 type WorktreeSettings = z.infer<typeof WorktreeSettings>;
 
@@ -30,8 +32,10 @@ export const WORKTREE_SECTION: SettingsSection<WorktreeSettings> = {
       title: "Worktree",
       description: "从 Tomrade 开始的每张工单都在 Hub 下自己的 worktree 里做，各带一份依赖安装，放着不管会占满磁盘。这里是它们在这台电脑上占了多少，以及已结束工单的 worktree 何时移除。",
       fields: {
-        enabled: { title: "移除已结束工单的 worktree", description: "工单完成或取消后，Tomrade 为它建的 worktree 会从这台电脑上移除——只在不丢东西时：没有未提交改动和未跟踪文件，也没有会话还在里面。分支会保留，重新开始这张工单就能把 worktree 带回来。" },
-        keepDays: { title: "保留天数", description: "已结束工单的 worktree 保留多久再移除。0 表示工单结束后很快移除。" }
+        enabled: { title: "移除已结束工单的 worktree", description: "工单完成或取消后，Tomrade 为它建的 worktree 会从这台电脑上移除——只在不丢东西时：没有未提交改动和未跟踪文件，也没有会话还在里面。重新开始这张工单就能把 worktree 带回来。" },
+        keepDays: { title: "保留天数", description: "已结束工单的 worktree 保留多久再移除。0 表示工单结束后很快移除。" },
+        dropBranch: { title: "同时删除本地分支", description: "移除 worktree 时（自动清理，或你手动移除），它的本地分支会一起删除——只在分支上的每个提交都在别处还有时：已合并进默认分支、已 squash 合并进去，或远端有这条分支。否则分支保留。" },
+        dropRemoteBranch: { title: "同时删除远端分支", description: "远端的同名分支也会一起删除——只在远端的默认分支已经包含它的全部内容时（已合并，或已 squash 合并），并且这个仓库允许 Tomrade 推送。只推送过、没有合并的分支会留在远端。" }
       }
     }
   }
@@ -97,7 +101,14 @@ export interface WorktreeRemoval {
   removed: boolean;
   /** Why it stayed, in git's words when git refused. */
   reason: string | null;
+  /** What became of its local branch: deleted with it, or kept because commits on it are nowhere else; null when it had none, or the worktree stayed. */
+  branch: "deleted" | "kept" | null;
+  /** The same for the branch of that name on the remote; null when the remote has none, or could not be asked. */
+  remoteBranch: "deleted" | "kept" | null;
 }
+
+/** Asks a checkout's remote what it has now, once for a whole removal; false when it could not be asked. */
+type Freshen = (checkout: string) => Promise<boolean>;
 
 export interface WorktreesDeps {
   ctx: Context;
@@ -196,10 +207,11 @@ export class Worktrees {
    */
   async remove(projectId: string, dirs: string[], strays = false): Promise<WorktreeRemoval[]> {
     const trees = await this.trees(projectId);
+    const fresh = this.freshen();
     const out: WorktreeRemoval[] = [];
     for (const dir of dirs) {
       const tree = trees.find((each) => each.dir === dir);
-      out.push(tree ? await this.take(tree, strays) : { dir, removed: false, reason: "not a worktree Tomrade made for this project" });
+      out.push(tree ? await this.take(projectId, tree, fresh, strays) : { dir, removed: false, reason: "not a worktree Tomrade made for this project", branch: null, remoteBranch: null });
     }
     if (out.some((removal) => removal.removed)) this.host.notify(projectId);
     return out;
@@ -254,7 +266,8 @@ export class Worktrees {
         const now = Date.now();
         const due = (await this.trees(projectId)).filter((tree) => tree.removeAt !== null && tree.removeAt <= now);
         let gone = 0;
-        for (const tree of due) if ((await this.take(tree)).removed) gone++;
+        const fresh = this.freshen();
+        for (const tree of due) if ((await this.take(projectId, tree, fresh)).removed) gone++;
         if (gone) this.host.notify(projectId);
         removed += gone;
       } catch (error) {
@@ -264,18 +277,106 @@ export class Worktrees {
     return removed;
   }
 
-  private async take(tree: Tree, strays = false): Promise<WorktreeRemoval> {
-    if (tree.hold) return { dir: tree.dir, removed: false, reason: tree.hold };
-    if (!tree.checkout && !strays) return { dir: tree.dir, removed: false, reason: "git no longer knows this folder: it is removed only on its own row" };
+  private freshen(): Freshen {
+    const asked = new Map<string, Promise<boolean>>();
+    return (checkout) => {
+      let answer = asked.get(checkout);
+      if (!answer) {
+        answer = this.git(["fetch", "-q", "--prune", "origin"], { cwd: checkout, ok: true }).then((fetched) => fetched.code === 0, () => false);
+        asked.set(checkout, answer);
+      }
+      return answer;
+    };
+  }
+
+  private async take(projectId: string, tree: Tree, fresh: Freshen, strays = false): Promise<WorktreeRemoval> {
+    const stays = (reason: string): WorktreeRemoval => ({ dir: tree.dir, removed: false, reason, branch: null, remoteBranch: null });
+    if (tree.hold) return stays(tree.hold);
+    if (!tree.checkout && !strays) return stays("git no longer knows this folder: it is removed only on its own row");
     const refused = tree.checkout ? await this.ctx.repos.removeWorktree(tree.checkout, tree.dir, tree.outside) : this.ctx.repos.removeStrayWorktree(tree.dir);
     if (refused) {
       this.ctx.logger.info(`worktree ${tree.dir} stays: ${refused}`);
-      return { dir: tree.dir, removed: false, reason: refused };
+      return stays(refused);
     }
     this.sizes.delete(tree.dir);
     if (this.host.worktrees.get(tree.threadId) === tree.dir) this.host.worktrees.delete(tree.threadId);
-    this.ctx.logger.info(`removed worktree ${tree.dir}${tree.tickets.length ? ` (${tree.tickets.map((ticket) => ticket.key).join(", ")})` : ""}; ${tree.checkout ? `its branch ${tree.branch ?? "(detached)"} stays` : "git no longer knew it"}`);
-    return { dir: tree.dir, removed: true, reason: null };
+    const branches = await this.dropBranches(projectId, tree, fresh);
+    this.ctx.logger.info(`removed worktree ${tree.dir}${tree.tickets.length ? ` (${tree.tickets.map((ticket) => ticket.key).join(", ")})` : ""}; ${!tree.checkout ? "git no longer knew it" : !tree.branch ? "it was on no branch" : `its branch ${tree.branch} ${branches.branch === "deleted" ? "went with it" : "stays"}`}`);
+    return { dir: tree.dir, removed: true, reason: null, ...branches };
+  }
+
+  /**
+   * What goes with a removed worktree: its local branch, and the branch of the same name on the remote, each only when
+   * nothing on it would be lost and its setting says so. Never the default branch.
+   */
+  private async dropBranches(projectId: string, tree: Tree, fresh: Freshen): Promise<Pick<WorktreeRemoval, "branch" | "remoteBranch">> {
+    const repo = this.ctx.repos.get(projectId, tree.repoId);
+    const { checkout, branch } = tree;
+    if (!checkout || !branch || !repo) return { branch: null, remoteBranch: null };
+    const settings = this.settings();
+    const base = repo.defaultBranch;
+    if (branch === base || (!settings.dropBranch && !settings.dropRemoteBranch)) return { branch: "kept", remoteBranch: null };
+    const run = (args: string[]) => this.git(args, { cwd: checkout, ok: true });
+    const tipOf = async (ref: string) => {
+      const found = await run(["rev-parse", "--verify", "--quiet", ref]);
+      return found.code === 0 ? found.stdout.trim() : null;
+    };
+    const local = `refs/heads/${branch}`;
+    const remote = `refs/remotes/origin/${branch}`;
+    const remoteBase = `refs/remotes/origin/${base}`;
+    // What the remote has is only known once it has just been asked: a branch deleted there since would still look kept.
+    const asked = await fresh(checkout);
+    const localTip = await tipOf(local);
+    const remoteTip = asked ? await tipOf(remote) : null;
+
+    let dropped: "deleted" | "kept" = "kept";
+    if (settings.dropBranch && localTip) {
+      const merged = await this.landedIn(checkout, local, [remoteBase, `refs/heads/${base}`]);
+      const pushed = !merged && !!remoteTip && (await run(["merge-base", "--is-ancestor", local, remote])).code === 0;
+      // -D, since git's own -d knows nothing of a squash: the checks above are the ones that decide. It still refuses a branch another worktree has checked out.
+      if ((merged || pushed) && (await run(["branch", "-D", branch])).code === 0) {
+        dropped = "deleted";
+        this.ctx.logger.info(`deleted branch ${branch} (was ${localTip}): ${merged ? `${base} has all of it` : "the remote has it"}`);
+      }
+    }
+
+    let remoteDropped: "deleted" | "kept" | null = null;
+    if (remoteTip) {
+      remoteDropped = "kept";
+      // Once this one is gone nothing else has its commits, so only what the remote's own default branch already took; and only where Tomrade may push at all.
+      const may = settings.dropRemoteBranch && this.store.repoState(projectId, tree.repoId)?.agentPush !== false;
+      if (may && (await this.landedIn(checkout, remote, [remoteBase]))) {
+        // Deleted only if it is still the commit that was judged.
+        const pushed = await run(["push", "-q", `--force-with-lease=refs/heads/${branch}:${remoteTip}`, "origin", `:refs/heads/${branch}`]);
+        if (pushed.code === 0) {
+          remoteDropped = "deleted";
+          this.ctx.logger.info(`deleted branch ${branch} on the remote (was ${remoteTip}): ${base} there has all of it`);
+        }
+      }
+    }
+    return { branch: dropped, remoteBranch: remoteDropped };
+  }
+
+  /**
+   * Whether everything on a branch has landed in one of these: it contains the branch (merged), or already has the
+   * branch's whole change as one commit (squash-merged) — which git judges from the patch itself, so a change that had
+   * to be altered to land does not count.
+   */
+  private async landedIn(checkout: string, ref: string, bases: string[]): Promise<boolean> {
+    const run = (args: string[]) => this.git(args, { cwd: checkout, ok: true });
+    const there: string[] = [];
+    for (const base of bases) if ((await run(["rev-parse", "--verify", "--quiet", base])).code === 0) there.push(base);
+    for (const base of there) if ((await run(["merge-base", "--is-ancestor", ref, base])).code === 0) return true;
+    for (const base of there) {
+      const fork = (await run(["merge-base", base, ref])).stdout.trim();
+      if (!fork) continue;
+      // The branch as the one commit a squash would have made of it, compared by patch with what the base took since they parted.
+      const squashed = (await run(["-c", "user.name=Tomrade", "-c", "user.email=tomrade@localhost", "commit-tree", `${ref}^{tree}`, "-p", fork, "-m", "squash"])).stdout.trim();
+      if (!squashed) continue;
+      const cherry = await run(["cherry", base, squashed]);
+      if (cherry.code === 0 && cherry.stdout.trim().startsWith("-")) return true;
+    }
+    return false;
   }
 
   private async trees(projectId: string): Promise<Tree[]> {

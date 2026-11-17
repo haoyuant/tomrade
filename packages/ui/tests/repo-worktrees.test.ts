@@ -20,9 +20,11 @@ it("says why a worktree is still there, or when it goes", () => {
   expect([{ hold: null, stray: false }, { hold: null, stray: true }, { hold: "dirty" as const, stray: false }].map(worktreeCanGo)).toEqual([true, false, false]);
 });
 
-it("sums up a removal by how many went and why the first that stayed did", () => {
-  expect(removalSummary([{ dir: "/a", removed: true, reason: null }, { dir: "/b", removed: true, reason: null }])).toEqual({ removed: 2, kept: 0, reason: null });
-  expect(removalSummary([{ dir: "/a", removed: true, reason: null }, { dir: "/b", removed: false, reason: "dirty" }, { dir: "/c", removed: false, reason: "busy" }])).toEqual({ removed: 1, kept: 2, reason: "dirty" });
+it("sums up a removal by how many went, why the first that stayed did, and what became of the branches", () => {
+  const went = (dir: string, branch: "deleted" | "kept" | null, remoteBranch: "deleted" | "kept" | null = null) => ({ dir, removed: true, reason: null, branch, remoteBranch });
+  const stayed = (dir: string, reason: string) => ({ dir, removed: false, reason, branch: null, remoteBranch: null });
+  expect(removalSummary([went("/a", "deleted", "deleted"), went("/b", "kept", "kept"), went("/c", null)])).toEqual({ removed: 3, kept: 0, reason: null, branches: { deleted: 1, kept: 1, remoteDeleted: 1 } });
+  expect(removalSummary([went("/a", "deleted"), stayed("/b", "dirty"), stayed("/c", "busy")])).toEqual({ removed: 1, kept: 2, reason: "dirty", branches: { deleted: 1, kept: 0, remoteDeleted: 0 } });
 });
 
 it("writes what an install weighs in gigabytes", () => {

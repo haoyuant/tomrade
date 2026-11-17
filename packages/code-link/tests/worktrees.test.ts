@@ -101,7 +101,7 @@ async function machine() {
   bag.boards.update(projectId, bag.board.id, { repoId: row.id });
   await ctx.repos.setCheckout(repo.remote, repo.checkout);
   ctx.codeLink.pulls = async () => null;
-  const keep = (settings: { enabled?: boolean; keepDays?: number }) => ctx.settings.set({ ...ctx.settings.get(), worktrees: { enabled: true, keepDays: 0, ...settings } });
+  const keep = (settings: { enabled?: boolean; keepDays?: number; dropBranch?: boolean; dropRemoteBranch?: boolean }) => ctx.settings.set({ ...ctx.settings.get(), worktrees: { enabled: true, keepDays: 0, ...settings } });
   /** A ticket worked by the agent to its end of turn: a commit on its branch, in a worktree of its own. */
   const worked = async (title: string) => {
     const item = bag.items.create({ projectId, boardId: bag.board.id, title, workType: "coding", status: "todo", by: "human" });
@@ -175,9 +175,9 @@ it("leaves a worktree that still holds something: files git does not have, commi
   expect([dirty, loose, busy, detached].map((each) => fs.existsSync(each.worktree))).toEqual([true, true, true, false]);
   // Asking by hand gets the same answer, with the reason.
   expect(await codeLink.removeWorktrees(projectId, [dirty.worktree, busy.worktree, ctx.repos.checkout(repo.remote).checkout!])).toEqual([
-    { dir: dirty.worktree, removed: false, reason: "dirty" },
-    { dir: busy.worktree, removed: false, reason: "busy" },
-    { dir: ctx.repos.checkout(repo.remote).checkout!, removed: false, reason: "not a worktree Tomrade made for this project" }
+    { dir: dirty.worktree, removed: false, reason: "dirty", branch: null, remoteBranch: null },
+    { dir: busy.worktree, removed: false, reason: "busy", branch: null, remoteBranch: null },
+    { dir: ctx.repos.checkout(repo.remote).checkout!, removed: false, reason: "not a worktree Tomrade made for this project", branch: null, remoteBranch: null }
   ]);
   expect(fs.existsSync(ctx.repos.checkout(repo.remote).checkout!)).toBe(true);
 
@@ -197,7 +197,7 @@ it("never takes the worktree of a ticket that is still open, however clean and m
   expect(git(["status", "--porcelain"], worktree)).toBe("");
   expect(await view(worktree)).toMatchObject({ hold: "open", tickets: [{ key: item.key }] });
   expect(await codeLink.sweepWorktrees()).toBe(0);
-  expect(await codeLink.removeWorktrees(projectId, [worktree])).toEqual([{ dir: worktree, removed: false, reason: "open" }]);
+  expect(await codeLink.removeWorktrees(projectId, [worktree])).toEqual([{ dir: worktree, removed: false, reason: "open", branch: null, remoteBranch: null }]);
   expect(fs.existsSync(worktree)).toBe(true);
 });
 
@@ -227,8 +227,8 @@ it("removes a cancelled ticket's worktree too, and none by itself with the setti
   expect(await codeLink.worktreeSize(projectId, path.dirname(done.worktree))).toBeNull();
 
   expect(await codeLink.removeWorktrees(projectId, [cancelled.worktree, done.worktree])).toEqual([
-    { dir: cancelled.worktree, removed: true, reason: null },
-    { dir: done.worktree, removed: true, reason: null }
+    { dir: cancelled.worktree, removed: true, reason: null, branch: "kept", remoteBranch: null },
+    { dir: done.worktree, removed: true, reason: null, branch: "kept", remoteBranch: null }
   ]);
   expect([cancelled, done].map((each) => fs.existsSync(each.worktree))).toEqual([false, false]);
 
@@ -269,12 +269,12 @@ it("lists a folder git no longer knows as a stray: counted, never taken by itsel
   // A session in one holds it, as it holds any worktree.
   const visitor = codeLink.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: bare });
   expect(await view(bare)).toMatchObject({ stray: true, hold: "busy" });
-  expect(await codeLink.removeWorktrees(projectId, [bare], true)).toEqual([{ dir: bare, removed: false, reason: "busy" }]);
+  expect(await codeLink.removeWorktrees(projectId, [bare], true)).toEqual([{ dir: bare, removed: false, reason: "busy", branch: null, remoteBranch: null }]);
   codeLink.sessions.end(projectId, visitor.id, "ended", true, "left");
 
   expect(await codeLink.removeWorktrees(projectId, [lost.worktree, bare], true)).toEqual([
-    { dir: lost.worktree, removed: true, reason: null },
-    { dir: bare, removed: true, reason: null }
+    { dir: lost.worktree, removed: true, reason: null, branch: null, remoteBranch: null },
+    { dir: bare, removed: true, reason: null, branch: null, remoteBranch: null }
   ]);
   expect([lost.worktree, bare, foreign].map((dir) => fs.existsSync(dir))).toEqual([false, false, true]);
   // The ticket's commits were in the checkout all along.
@@ -333,25 +333,98 @@ it("lists a worktree made outside the Hub with the ticket it was worked for, and
   fs.writeFileSync(path.join(one, "scratch.txt"), "half done\n");
   expect(await view(one)).toMatchObject({ hold: "dirty" });
   expect(await codeLink.removeWorktrees(projectId, [one, two, own, checkout])).toEqual([
-    { dir: one, removed: false, reason: "dirty" },
-    { dir: two, removed: false, reason: "busy" },
-    { dir: own, removed: false, reason: "unticketed" },
-    { dir: checkout, removed: false, reason: "not a worktree Tomrade made for this project" }
+    { dir: one, removed: false, reason: "dirty", branch: null, remoteBranch: null },
+    { dir: two, removed: false, reason: "busy", branch: null, remoteBranch: null },
+    { dir: own, removed: false, reason: "unticketed", branch: null, remoteBranch: null },
+    { dir: checkout, removed: false, reason: "not a worktree Tomrade made for this project", branch: null, remoteBranch: null }
   ]);
   expect([one, two, own, checkout].map((dir) => fs.existsSync(dir))).toEqual([true, true, true, true]);
 
   fs.rmSync(path.join(one, "scratch.txt"));
   codeLink.sessions.end(projectId, visitor.id, "ended", true, "left");
   expect(await codeLink.removeWorktrees(projectId, [one, two])).toEqual([
-    { dir: one, removed: true, reason: null },
-    { dir: two, removed: true, reason: null }
+    { dir: one, removed: true, reason: null, branch: "deleted", remoteBranch: null },
+    { dir: two, removed: true, reason: null, branch: "deleted", remoteBranch: null }
   ]);
   expect([one, two, own].map((dir) => fs.existsSync(dir))).toEqual([false, false, true]);
-  // Their branches, and what was committed on them, stay in the checkout.
-  expect(git(["branch", "--list", "spike", `${byBranch.key.toLowerCase()}/from-a-terminal`], checkout).split("\n")).toHaveLength(2);
+  // Nothing was committed on their branches that main does not have: they went with the folders.
+  expect(git(["branch", "--list", "spike", `${byBranch.key.toLowerCase()}/from-a-terminal`], checkout)).toBe("");
 
   // Asked for by itself, the removal still takes only a worktree the checkout lists.
   expect(await ctx.repos.removeWorktree(checkout, checkout, true)).toMatch(/is not a worktree of/);
   expect(await ctx.repos.removeWorktree(checkout, elsewhere, true)).toMatch(/is not a worktree of/);
   expect([checkout, elsewhere].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
+});
+
+it("deletes a removed worktree's branch, here and on the remote, only when nothing on it would be lost", async () => {
+  const { ctx, codeLink, projectId, repo, checkout, keep, worked, finish } = await machine();
+  keep({ keepDays: 0 });
+  const here = () => git(["branch", "--format=%(refname:short)"], checkout).split("\n").sort();
+  const there = () => git(["ls-remote", "--heads", "origin"], checkout).split("\n").map((line) => line.replace(/^.*refs\/heads\//, "")).sort();
+  const push = (branch: string) => git(["push", "-q", "origin", branch], checkout);
+  const merge = (branch: string) => git(["merge", "-q", "--no-ff", "-m", "merge", branch], checkout);
+
+  const merged = await worked("Pushed, and merged into main");
+  push(merged.branch);
+  merge(merged.branch);
+  // As a squash merge lands: one new commit on main with the branch's whole change, and no line back to the branch.
+  const squashed = await worked("Pushed, and squash-merged into main");
+  push(squashed.branch);
+  git(["merge", "-q", "--squash", squashed.branch], checkout);
+  git(["commit", "-q", "-m", "squashed"], checkout);
+  const pushed = await worked("Pushed, never merged");
+  push(pushed.branch);
+  const local = await worked("Committed here and nowhere else");
+  const unpushed = await worked("Merged here, its branch never pushed");
+  merge(unpushed.branch);
+  push("main");
+  for (const each of [merged, squashed, pushed, local, unpushed]) finish(each.item.id);
+  expect(here()).toEqual(["main", merged.branch, squashed.branch, pushed.branch, local.branch, unpushed.branch].sort());
+  expect(there()).toEqual(["main", merged.branch, squashed.branch, pushed.branch].sort());
+
+  expect(await codeLink.removeWorktrees(projectId, [merged, squashed, pushed, local, unpushed].map((each) => each.worktree))).toEqual([
+    // Main has all of it, here and on the remote: both go.
+    { dir: merged.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: "deleted" },
+    { dir: squashed.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: "deleted" },
+    // Only the remote's branch has it: the local one goes, and that one stays to keep it.
+    { dir: pushed.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: "kept" },
+    // Its commit is on its branch alone.
+    { dir: local.worktree, removed: true, reason: null, branch: "kept", remoteBranch: null },
+    { dir: unpushed.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: null }
+  ]);
+  expect(here()).toEqual(["main", local.branch].sort());
+  expect(there()).toEqual(["main", pushed.branch].sort());
+  expect(git(["log", "--format=%s", "-1", local.branch], checkout)).toBe(`${local.item.key}: work`);
+
+  // Each has its own setting, and the cleanup follows them as a person's removal does.
+  const again = async (title: string) => {
+    const each = await worked(title);
+    push(each.branch);
+    merge(each.branch);
+    push("main");
+    finish(each.item.id);
+    return each;
+  };
+  keep({ keepDays: 0, dropRemoteBranch: false });
+  const localOnly = await again("Local branch only");
+  expect(await codeLink.sweepWorktrees()).toBe(1);
+  expect([here().includes(localOnly.branch), there().includes(localOnly.branch)]).toEqual([false, true]);
+
+  keep({ keepDays: 0, dropBranch: false });
+  const remoteOnly = await again("Remote branch only");
+  expect(await codeLink.sweepWorktrees()).toBe(1);
+  expect([here().includes(remoteOnly.branch), there().includes(remoteOnly.branch)]).toEqual([true, false]);
+
+  keep({ keepDays: 0, dropBranch: false, dropRemoteBranch: false });
+  const neither = await again("Neither");
+  expect(await codeLink.removeWorktrees(projectId, [neither.worktree])).toEqual([{ dir: neither.worktree, removed: true, reason: null, branch: "kept", remoteBranch: null }]);
+  expect([here().includes(neither.branch), there().includes(neither.branch)]).toEqual([true, true]);
+
+  // Where Tomrade may not push for the repository, nothing on the remote is touched.
+  keep({ keepDays: 0 });
+  codeLink.setRepoPolicy(projectId, repo.id, { agentPush: false });
+  const noPush = await again("Pushing from Tomrade is off");
+  expect(await codeLink.removeWorktrees(projectId, [noPush.worktree])).toEqual([{ dir: noPush.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: "kept" }]);
+  expect(there()).toContain(noPush.branch);
+  expect(ctx.repos.checkout(repo.remote).checkout).toBe(checkout);
 });

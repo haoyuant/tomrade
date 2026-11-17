@@ -34,9 +34,15 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
   const take = (dirs: string[], strays = false) =>
     remove.mutate([{ projectId, dirs, strays }], {
       onSuccess: (removals) => {
-        const { removed, kept, reason } = removalSummary(removals);
+        const { removed, kept, reason, branches } = removalSummary(removals);
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");
-        toast({ body: kept ? t("repositories.worktreesKeptToast", { n: removed, kept, reason: why }) : t("repositories.worktreesRemovedToast", { n: removed }) });
+        const said = [
+          kept ? t("repositories.worktreesKeptToast", { n: removed, kept, reason: why }) : t("repositories.worktreesRemovedToast", { n: removed }),
+          branches.deleted ? t("repositories.worktreesBranchesDeleted", { n: branches.deleted }) : "",
+          branches.remoteDeleted ? t("repositories.worktreesRemoteBranchesDeleted", { n: branches.remoteDeleted }) : "",
+          branches.kept ? t("repositories.worktreesBranchesKept", { n: branches.kept }) : ""
+        ];
+        toast({ body: said.filter(Boolean).join(" ") });
       },
       onError: (error) => toast({ body: message(error) })
     });
