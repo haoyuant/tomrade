@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { notesFileFor } from "./release-notes.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.resolve(here, "..");
@@ -27,4 +28,7 @@ fs.cpSync(path.join(root, "packages/ui/dist"), path.join(desktop, "ui"), { recur
 // The About pane names the build; extraMetadata lands in the packaged package.json.
 const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const stamp = [`-c.extraMetadata.commit=${commit}`, `-c.extraMetadata.builtAt=${new Date().toISOString()}`];
-run("pnpm", ["exec", "electron-builder", ...stamp, ...process.argv.slice(2).filter((a) => a !== "--")], desktop);
+// What changed in this version, for the update manifests: the app shows it where it offers the update.
+const notes = notesFileFor(JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).version);
+const releaseInfo = notes ? [`-c.releaseInfo.releaseNotesFile=${notes}`] : [];
+run("pnpm", ["exec", "electron-builder", ...stamp, ...releaseInfo, ...process.argv.slice(2).filter((a) => a !== "--")], desktop);

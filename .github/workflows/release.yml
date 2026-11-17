@@ -29,6 +29,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Before any build: the app shows these where it offers the update (apps/desktop/release-notes/README.md).
+      - name: Release notes for this version
+        run: node apps/desktop/scripts/release-notes.mjs "${GITHUB_REF_NAME#v}"
       # A re-run finds the draft its first run made.
       - name: Draft release
         env:

@@ -33,8 +33,10 @@ const stable = `/latest${suffix}.yml`;
 const beta = `/beta${suffix}.yml`;
 const running = app.getVersion();
 const newer = `${Number(running.split(".")[0]) + 1}.0.0`;
-const manifest = (version) => `version: ${version}\nfiles:\n  - url: ${version}/Tomrade-${version}.zip\n    sha512: AAAA\n    size: 1\npath: ${version}/Tomrade-${version}.zip\nsha512: AAAA\nreleaseDate: '2026-11-01T08:00:00.000Z'\n`;
-const feed = new Map([[stable, manifest(newer)]]);
+const manifest = (version, notes = "") => `version: ${version}\nfiles:\n  - url: ${version}/Tomrade-${version}.zip\n    sha512: AAAA\n    size: 1\npath: ${version}/Tomrade-${version}.zip\nsha512: AAAA\nreleaseDate: '2026-11-01T08:00:00.000Z'\n${notes}`;
+// What a release writes of itself (apps/desktop/release-notes), as electron-builder puts it in the manifest.
+const NOTES = "releaseNotes: |-\n  ## en\n  - Worktrees of finished tickets are removed by themselves.\n  - Fixed a crash on quit.\n\n  ## zh\n  - 已结束工单的 worktree 会自动移除。\n  - 修复了退出时的崩溃。\n";
+const feed = new Map([[stable, manifest(newer, NOTES)]]);
 const asked = [];
 /** Every request's headers: a check must carry nothing that tells one install from another. */
 const heard = [];
@@ -102,6 +104,9 @@ const run = async () => {
   await shot("updates-notice");
   check("a sheet says so, with Download and Later", ((await notice()) ?? "").includes(`Tomrade ${newer}`) && !!(await $(`!!(${noticeAction("Download")}) && !!(${noticeAction("Later")})`)), await notice());
   const placed = await $(`(() => { const r = document.querySelector('.update-notice').getBoundingClientRect(); return { dx: Math.abs(r.left + r.width / 2 - innerWidth / 2), dy: Math.abs(r.top + r.height / 2 - innerHeight / 2) }; })()`);
+  const notesIn = (within) => $(`(() => { const n = document.querySelector('${within} [data-testid="update-notes"]'); return n && { title: n.querySelector('.update-notes-title')?.textContent, lines: [...n.querySelectorAll('li')].map((li) => li.textContent) }; })()`);
+  const said = await notesIn(".update-notice");
+  check("and what changed in it, in the app's language only", s.notes?.includes("## zh") && said?.title === "What's new" && JSON.stringify(said.lines) === JSON.stringify(["Worktrees of finished tickets are removed by themselves.", "Fixed a crash on quit."]), { said, notes: s.notes });
   check("in the middle of the window, over a scrim", placed.dx < 2 && placed.dy < 40 && !!(await $(`!!document.querySelector('.scrim')`)), placed);
   check("with Download holding the focus", (await $(`document.activeElement?.textContent.trim()`)) === "Download");
   check("nothing was downloaded", !asked.some((p) => p.endsWith(".zip")), asked);
@@ -121,6 +126,7 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.palette-row')].find(r => r.textContent.trim() === 'About Tomrade')`);
   await sleep(1000);
   check("the About pane says which version is out", ((await line()) ?? "").includes(`Tomrade ${newer} is available`), await line());
+  check("with what changed in it under that line", JSON.stringify((await notesIn(".about-update"))?.lines) === JSON.stringify(["Worktrees of finished tickets are removed by themselves.", "Fixed a crash on quit."]), await notesIn(".about-update"));
   check("and offers Download instead of another check", !!(await $(`!!(${button("Download")})`)) && !(await $(`!!(${button("Check for updates")})`)));
   check("and shows both settings as they are", (await switchOn()) === "true" && (await channelShown()) === "Stable", { on: await switchOn(), channel: await channelShown() });
   const sourceRow = () => $(`(() => { const row = document.querySelector('.about-update-pref[data-pref="source"]'); return row && { pressed: row.querySelector('button[aria-pressed="true"]')?.textContent.trim(), locked: [...row.querySelectorAll('button')].every((b) => b.disabled), note: row.querySelector('.meta-txt')?.textContent }; })()`);

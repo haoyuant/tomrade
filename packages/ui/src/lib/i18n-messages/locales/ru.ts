@@ -276,6 +276,7 @@ export const ru: PartialMessages = {
     upToDateAhead: "Обновлений нет — эта сборка новее {{version}}, последнего релиза на этом канале.",
     updateAvailable: "Доступен Tomrade {{version}}.",
     updateDate: "Выпущен {{date}}.",
+    whatsNew: "Что нового",
     download: "Скачать",
     downloading: "Загрузка Tomrade {{version}}… {{percent}}%",
     preparing: "Подготовка Tomrade {{version}}…",
