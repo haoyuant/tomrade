@@ -8,6 +8,7 @@ import { errorMessage } from "@tomradex/contracts";
 import type { ItemStatus } from "@tomradex/domain";
 import type { Git } from "@tomradex/git";
 import type { SettingsSection } from "@tomradex/settings";
+import { parseBranch } from "./keys.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
 const WorktreeSettings = z.object({
@@ -38,15 +39,16 @@ export const WORKTREE_SECTION: SettingsSection<WorktreeSettings> = {
 
 /**
  * Why a worktree stays: its ticket or conversation is not finished, a session or run is still in it, it has
- * uncommitted or untracked files, or it sits on commits no branch holds.
+ * uncommitted or untracked files, it sits on commits no branch holds, or — made outside the Hub — it is on no ticket,
+ * and so the person's own to keep or remove.
  */
-export type WorktreeHold = "open" | "busy" | "dirty" | "loose";
+export type WorktreeHold = "open" | "busy" | "dirty" | "loose" | "unticketed";
 
-/** A worktree Tomrade made for a conversation, as it stands on this machine. */
+/** A worktree of one of the project's checkouts, as it stands on this machine: one Tomrade made for a conversation, or one made elsewhere. */
 export interface WorktreeView {
   repoId: string;
   dir: string;
-  /** The conversation it was made for; the folder is named for it. */
+  /** The conversation it was made for; the folder is named for it. Empty for one made outside the Hub. */
   threadId: string;
   /** The branch checked out in it; null when it is detached. */
   branch: string | null;
@@ -63,6 +65,12 @@ export interface WorktreeView {
    * removing it loses, so cleanup leaves it and only a person removes it, one at a time.
    */
   stray: boolean;
+  /**
+   * Made outside the Hub's folder, by an agent in the person's own terminal or by the person: its tickets are those
+   * of the sessions that worked in it and the one its branch names. Cleanup never removes it; a person may, once its
+   * tickets are finished and nothing holds it.
+   */
+  outside: boolean;
 }
 
 /** One repository's worktrees, in one open project. */
@@ -100,6 +108,8 @@ export interface WorktreesDeps {
   /** Machine-local: each thread's worktree. A removed one is forgotten. */
   worktrees: Map<string, string>;
   notify: (projectId: string) => void;
+  /** The project's ticket key prefix, by which a branch names its ticket. */
+  prefixOf: (projectId: string) => string;
 }
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -131,10 +141,11 @@ const within = (dir: string, inner: string | null): boolean => {
 type Tree = WorktreeView & { checkout: string | null };
 
 /**
- * The worktrees Tomrade made under the Hub, and their end. A ticket's worktree goes once the ticket is done or
- * cancelled and nothing would be lost with it; everything else stays until a person removes it, and a worktree
- * anyone still works in is never touched. Only folders in the Hub's worktrees are looked at: the person's own
- * checkout, and a folder an outside session named, are not Tomrade's to remove.
+ * The worktrees of the project's checkouts, and their end. One Tomrade made under the Hub for a ticket goes once the
+ * ticket is done or cancelled and nothing would be lost with it; everything else stays until a person removes it, and
+ * a worktree anyone still works in is never touched. One made outside the Hub — by an agent in the person's terminal,
+ * or by the person — is listed and counted with the rest, and removed only on a person's word. The person's own
+ * checkout is never one of them.
  */
 export class Worktrees {
   private readonly ctx: Context;
@@ -142,6 +153,8 @@ export class Worktrees {
   private readonly git: Git;
   private readonly sizes = new Map<string, { bytes: number | null; at: number }>();
   private sizing: Promise<unknown> = Promise.resolve();
+  /** Per project, the worktrees its last listing named: the folders a size may be asked of. */
+  private readonly listed = new Map<string, Set<string>>();
   private timer: NodeJS.Timeout | null = null;
   private sweeping: Promise<number> | null = null;
 
@@ -216,7 +229,9 @@ export class Worktrees {
   /** How much disk a worktree takes, in bytes; null when it cannot be read or is not one of the project's. */
   size(projectId: string, dir: string): Promise<number | null> {
     const roots = this.ctx.repos.list(projectId).map((repo) => this.ctx.repos.worktreesDir(repo)).filter((root): root is string => !!root);
-    if (!roots.some((root) => path.dirname(path.resolve(dir)) === path.resolve(root)) || !fs.existsSync(dir)) return Promise.resolve(null);
+    // Under the Hub by where it is; anywhere else only as the listing named it.
+    const ours = roots.some((root) => path.dirname(path.resolve(dir)) === path.resolve(root)) || !!this.listed.get(projectId)?.has(dir);
+    if (!ours || !fs.existsSync(dir)) return Promise.resolve(null);
     const known = this.sizes.get(dir);
     if (known && Date.now() - known.at < SIZE_FRESH_MS) return Promise.resolve(known.bytes);
     // One at a time: several installs read at once only slow each other down.
@@ -252,7 +267,7 @@ export class Worktrees {
   private async take(tree: Tree, strays = false): Promise<WorktreeRemoval> {
     if (tree.hold) return { dir: tree.dir, removed: false, reason: tree.hold };
     if (!tree.checkout && !strays) return { dir: tree.dir, removed: false, reason: "git no longer knows this folder: it is removed only on its own row" };
-    const refused = tree.checkout ? await this.ctx.repos.removeWorktree(tree.checkout, tree.dir) : this.ctx.repos.removeStrayWorktree(tree.dir);
+    const refused = tree.checkout ? await this.ctx.repos.removeWorktree(tree.checkout, tree.dir, tree.outside) : this.ctx.repos.removeStrayWorktree(tree.dir);
     if (refused) {
       this.ctx.logger.info(`worktree ${tree.dir} stays: ${refused}`);
       return { dir: tree.dir, removed: false, reason: refused };
@@ -298,12 +313,35 @@ export class Worktrees {
       if (!root) continue;
       const placed = this.ctx.repos.checkout(repo.remote);
       const checkout = placed.problem ? null : placed.checkout;
-      const known: { dir: string; branch: string | null; checkout: string | null }[] = checkout ? (await this.registered(checkout, root)).map((found) => ({ ...found, checkout })) : [];
+      const known: { dir: string; branch: string | null; outside: boolean; checkout: string | null }[] = checkout ? (await this.registered(checkout, root)).map((found) => ({ ...found, checkout })) : [];
       // Beside them, the folders git no longer knows: no checkout lists those.
       const strays = this.ctx.repos.strayWorktrees(repo).filter((dir) => !known.some((found) => found.dir === dir));
-      for (const found of [...known, ...strays.map((dir) => ({ dir, branch: null, checkout: null }))]) {
+      for (const found of [...known, ...strays.map((dir) => ({ dir, branch: null, outside: false, checkout: null }))]) {
         // Two repositories can share a name, and so a folder: a worktree is listed once, by the checkout it belongs to.
         if (out.some((tree) => tree.dir === found.dir)) continue;
+        if (found.outside) {
+          // No conversation of Tomrade's made it: whose it is, is read from who worked in it and what its branch says.
+          const here = real(found.dir);
+          const inside = sessions.filter((session) => within(here, session.worktree) || within(here, session.cwd));
+          const tickets = this.ticketsAt(projectId, inside, found.branch);
+          // On no ticket here, and on one of another open project that shares the checkout: that project lists it.
+          if (!tickets.length && openIds.some((id) => id !== projectId && this.ticketsAt(id, this.store.sessions(id).filter((session) => within(here, session.worktree) || within(here, session.cwd)), found.branch).length)) continue;
+          out.push({
+            repoId: repo.id,
+            dir: found.dir,
+            threadId: "",
+            branch: found.branch,
+            owner: tickets.length ? "ticket" : "none",
+            tickets: tickets.map(({ updatedAt: _updatedAt, ...ticket }) => ticket),
+            hold: tickets.some((ticket) => !FINISHED.has(ticket.status)) ? "open" : inside.some(live) ? "busy" : tickets.length ? null : "unticketed",
+            removeAt: null,
+            stray: false,
+            outside: true,
+            checkout: found.checkout
+          });
+          panes.set(found.dir, [...new Set(inside.flatMap((session) => (session.herdrPane ? [session.herdrPane] : [])))]);
+          continue;
+        }
         const threadId = path.basename(found.dir);
         const thread = agent?.store.thread(projectId, threadId) ?? null;
         // Another open project's conversation: that project lists it.
@@ -331,6 +369,7 @@ export class Worktrees {
           hold,
           removeAt: owner === "ticket" && found.checkout && settings.enabled ? finishedAt + settings.keepDays * DAY_MS : null,
           stray: !found.checkout,
+          outside: false,
           checkout: found.checkout
         });
         panes.set(found.dir, [...new Set(inside.flatMap((session) => (session.herdrPane ? [session.herdrPane] : [])))]);
@@ -351,19 +390,37 @@ export class Worktrees {
       for (let tree = unheld.pop(); tree; tree = unheld.pop()) await look(tree);
     }));
     for (const tree of out) if (tree.hold) tree.removeAt = null;
+    this.listed.set(projectId, new Set(out.map((tree) => tree.dir)));
     return out;
   }
 
-  /** The checkout's worktrees that sit right in the Hub's folder for it, as git lists them. */
-  private async registered(checkout: string, root: string): Promise<{ dir: string; branch: string | null }[]> {
+  /** The project's tickets a worktree outside the Hub was worked for: those of the sessions in it, and the one its branch names. */
+  private ticketsAt(projectId: string, inside: SessionView[], branch: string | null): { id: string; key: string; title: string; status: ItemStatus; updatedAt: number }[] {
+    const prefix = this.host.prefixOf(projectId);
+    const named = branch ? parseBranch(branch, prefix) : null;
+    const items = [...inside.flatMap((session) => session.itemIds.map((id) => this.ctx.items.get(projectId, id))), named === null ? null : this.ctx.items.getByKey(projectId, `${prefix}-${named}`)];
+    const seen = new Set<string>();
+    return items.flatMap((item) => (item && !seen.has(item.id) && seen.add(item.id) ? [{ id: item.id, key: item.key, title: item.title, status: item.status, updatedAt: item.updatedAt }] : []));
+  }
+
+  /**
+   * The checkout's worktrees as git lists them: those right in the Hub's folder for it, and those made anywhere else.
+   * The checkout itself is not one, nor the folder a merge Tomrade is making stands in for a moment.
+   */
+  private async registered(checkout: string, root: string): Promise<{ dir: string; branch: string | null; outside: boolean }[]> {
     const list = await this.git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
     if (list.code !== 0) return [];
     const under = real(root);
-    return list.stdout.split(/\r?\n\r?\n+/).flatMap((block) => {
+    const main = real(checkout);
+    // git names the repository's own folder first.
+    return list.stdout.split(/\r?\n\r?\n+/).slice(1).flatMap((block) => {
       const dir = /^worktree (.+)$/m.exec(block)?.[1]?.trim();
-      if (!dir || !fs.existsSync(dir) || path.dirname(real(dir)) !== under) return [];
-      // Named as the Hub names it, which is how Start and the sessions know it; git gives the path with links resolved.
-      return [{ dir: path.join(root, path.basename(dir)), branch: /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]?.trim() ?? null }];
+      if (!dir || !fs.existsSync(dir)) return [];
+      const at = real(dir);
+      if (at === main || path.basename(path.dirname(at)).startsWith("tomrade-merge-")) return [];
+      const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]?.trim() ?? null;
+      // Under the Hub it is named as the Hub names it, which is how Start and the sessions know it; git gives the path with links resolved.
+      return [path.dirname(at) === under ? { dir: path.join(root, path.basename(dir)), branch, outside: false } : { dir, branch, outside: true }];
     });
   }
 

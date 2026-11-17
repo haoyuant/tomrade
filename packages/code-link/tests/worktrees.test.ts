@@ -287,3 +287,71 @@ it("lists a folder git no longer knows as a stray: counted, never taken by itsel
   expect(ctx.repos.removeStrayWorktree(checkout)).toMatch(/not a worktree Tomrade made/);
   expect([foreign, checkout].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
 });
+
+it("lists a worktree made outside the Hub with the ticket it was worked for, and removes it only on a person's word", async () => {
+  const { ctx, codeLink, projectId, repo, checkout, keep, finish, view, items, board } = await machine();
+  keep({ keepDays: 0 });
+  // Named as git names them: with links in the path resolved, which is how one made outside the Hub is listed.
+  const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(root, "elsewhere-")));
+  const ticket = (title: string) => items.create({ projectId, boardId: board.id, title, workType: "coding", status: "doing", by: "human" });
+  const outside = (name: string, branch: string) => {
+    const dir = path.join(elsewhere, name);
+    git(["worktree", "add", "-q", "-b", branch, dir], checkout);
+    return dir;
+  };
+
+  // Named by its branch, as an agent in a terminal names the one it makes for a ticket.
+  const byBranch = ticket("Worked from a terminal");
+  const one = outside("one", `${byBranch.key.toLowerCase()}/from-a-terminal`);
+  // Named by the session that said it works there, whatever the branch is called.
+  const bySession = ticket("Worked in a folder a session named");
+  const two = outside("two", "spike");
+  codeLink.store.createSession(projectId, { repoId: repo.id, branch: "spike", itemIds: [bySession.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: two });
+  // The person's own, on no ticket.
+  const own = outside("own", "scratch");
+
+  expect(await view(one)).toMatchObject({ repoId: repo.id, outside: true, stray: false, threadId: "", branch: `${byBranch.key.toLowerCase()}/from-a-terminal`, owner: "ticket", hold: "open", removeAt: null, tickets: [{ key: byBranch.key, status: "doing" }] });
+  expect(await view(two)).toMatchObject({ outside: true, owner: "ticket", hold: "open", tickets: [{ key: bySession.key }] });
+  expect(await view(own)).toMatchObject({ outside: true, owner: "none", hold: "unticketed", removeAt: null, tickets: [] });
+  // The person's checkout is never one of them.
+  expect(await view(checkout)).toBeUndefined();
+  expect((await codeLink.worktreesOf(projectId)).map((tree) => tree.dir).sort()).toEqual([one, two, own].sort());
+  expect(await codeLink.worktreeSize(projectId, one)).toBeGreaterThan(0);
+  expect((await codeLink.worktreeOverview()).groups[0]!.trees).toHaveLength(3);
+
+  finish(byBranch.id);
+  finish(bySession.id);
+  // A finished ticket's own session is put away with it, and the folder is still that ticket's. Someone else in it holds it.
+  const visitor = codeLink.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: two });
+  expect(await view(two)).toMatchObject({ hold: "busy", tickets: [{ key: bySession.key, status: "done" }] });
+  expect(await view(one)).toMatchObject({ hold: null, removeAt: null, tickets: [{ status: "done" }] });
+  // Cleanup never takes one made elsewhere, whatever the keeping time.
+  expect(await codeLink.sweepWorktrees()).toBe(0);
+  expect(fs.existsSync(one)).toBe(true);
+
+  // Uncommitted work holds it as it holds any, and so does git itself.
+  fs.writeFileSync(path.join(one, "scratch.txt"), "half done\n");
+  expect(await view(one)).toMatchObject({ hold: "dirty" });
+  expect(await codeLink.removeWorktrees(projectId, [one, two, own, checkout])).toEqual([
+    { dir: one, removed: false, reason: "dirty" },
+    { dir: two, removed: false, reason: "busy" },
+    { dir: own, removed: false, reason: "unticketed" },
+    { dir: checkout, removed: false, reason: "not a worktree Tomrade made for this project" }
+  ]);
+  expect([one, two, own, checkout].map((dir) => fs.existsSync(dir))).toEqual([true, true, true, true]);
+
+  fs.rmSync(path.join(one, "scratch.txt"));
+  codeLink.sessions.end(projectId, visitor.id, "ended", true, "left");
+  expect(await codeLink.removeWorktrees(projectId, [one, two])).toEqual([
+    { dir: one, removed: true, reason: null },
+    { dir: two, removed: true, reason: null }
+  ]);
+  expect([one, two, own].map((dir) => fs.existsSync(dir))).toEqual([false, false, true]);
+  // Their branches, and what was committed on them, stay in the checkout.
+  expect(git(["branch", "--list", "spike", `${byBranch.key.toLowerCase()}/from-a-terminal`], checkout).split("\n")).toHaveLength(2);
+
+  // Asked for by itself, the removal still takes only a worktree the checkout lists.
+  expect(await ctx.repos.removeWorktree(checkout, checkout, true)).toMatch(/is not a worktree of/);
+  expect(await ctx.repos.removeWorktree(checkout, elsewhere, true)).toMatch(/is not a worktree of/);
+  expect([checkout, elsewhere].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
+});
