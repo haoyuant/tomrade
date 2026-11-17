@@ -29,6 +29,9 @@ export const CUTS: Cut[] = [
   },
   // Short films, each one stretch of the same day with its own words.
   { id: "idea", from: 0, to: 9.9, poster: 9, lines: [["open", -0.3, D.send + 0.9], ["ideaTicket", D.send + 1, D.tidy - 0.3], ["ideaSplit", D.tidy - 0.2, 9.9]] },
+  // The site's four steps each loop one clip: say and split halve "idea" where the second message starts being typed, and split goes on to take the run back.
+  { id: "say", from: 0, to: 5.9, poster: 5, lines: [["open", -0.3, D.send + 0.9], ["ideaTicket", D.send + 1, 5.9]] },
+  { id: "split", from: 5.9, to: 13.8, poster: 9, lines: [["ideaSplit", 5.6, D.revert - 1.3], ["back", D.revert - 1.2, D.redo - 0.3], ["undoForth", D.redo - 0.2, 13.8]] },
   { id: "undo", from: 6.3, to: 13.8, poster: 9, lines: [["undoRewrote", 6, D.revert - 1.3], ["undoBack", D.revert - 1.2, D.redo - 0.3], ["undoForth", D.redo - 0.2, 13.8]] },
   { id: "handsfree", from: 14.5, to: 21.1, poster: 19, lines: [["boardNobody", 14.1, 16.3], ["boardAgents", 16.4, 18.7], ["keeps", 18.8, 21.1]] },
   { id: "overnight", from: 27, to: 40.9, poster: 34, lines: [["nightBed", 26.7, D.run + 1.1], ["graph", D.run + 1.2, 32.4], ["checks", 32.5, D.dawn + 1.9], ["morning", D.morning, 40.9]] }

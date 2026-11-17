@@ -4,9 +4,9 @@ import { End } from "../Outro";
 import { Caption } from "../parts";
 import { WIDE } from "../stage";
 import { clamp, ease, lerp, span } from "../time";
-import { Ask } from "../Window";
 import { CELL, Cell } from "./Cell";
 import { Ready } from "./Ready";
+import { Sessions, askOf } from "./Sessions";
 import { W, WAITED, WALL_POINTER, WALL_SECONDS, wallCues } from "./scripts";
 import { CAPTIONS, PANES, WAIT } from "./words";
 
@@ -23,7 +23,8 @@ const OVER: { x: number; y: number; w: number; h: number; at: number; from: [num
 
 /**
  * "An agent asked. You didn't see it. 47 minutes, wasted.": a question waits in a terminal behind the windows the
- * person is in; in Tomrade the pane and the status bar say at once that it waits, and one click sends it on.
+ * person is in; in Tomrade the pane, its card in the session bar and the status bar say at once that it waits, and
+ * one click on the card's Allow sends it on.
  */
 export const waiting = film<true>({
   id: "waiting",
@@ -44,6 +45,10 @@ export const waiting = film<true>({
     // The minutes go by faster and faster while nobody looks.
     const unseen = ease.in(span(t, 0.5, 3.5)) * WAITED.unseen;
     const answered = t >= W.answered;
+    const told = t >= W.told;
+    // Allow stays under the click for a moment before its card is at work again
+    const allowed = t >= W.answered + 0.1;
+    const pane = PANES[lang][1];
     const seen = Math.min(WAITED.seen, Math.max(0, (t - W.told) / (W.answered - W.told)) * WAITED.seen);
     const after = wait.after.filter((_, i) => t >= W.answered + 0.05 + i * 0.45);
     const caption = { lang, x: WIDE.caption.x, y: WIDE.caption.y, size: WIDE.caption.size, width: WIDE.caption.width, flat: true };
@@ -92,19 +97,21 @@ export const waiting = film<true>({
             </div>
             {/* the status bar's own line: how many wait for the person */}
             {t >= W.told && (
-              <footer className="statusbar film-strip" style={{ ...side, top: 392, opacity: clamp(span(t, W.told, W.told + 0.25)), transform: `scale(${2.4 * (0.94 + 0.06 * ease.back(span(t, W.told, W.told + 0.4)))})` }}>
+              <footer className="statusbar film-strip" style={{ ...side, top: 372, opacity: clamp(span(t, W.told, W.told + 0.25)), transform: `scale(${2.4 * (0.94 + 0.06 * ease.back(span(t, W.told, W.told + 0.4)))})` }}>
                 <span className="status-item"><span className="live-dot" />MCP <span className="num">127.0.0.1:19090</span></span>
                 {answered
                   ? <span className="status-item">{say(lang, "waitQueue.none")}</span>
                   : <span className="status-item status-link status-needs" data-cursor="needs"><span className="needs-dot" aria-hidden="true" /> {say(lang, "statusBar.needsYou", { n: 1 })}</span>}
               </footer>
             )}
-            {t >= W.open && t <= W.answered + 0.4 && (
-              <div className="film-ask-big" style={{ ...side, top: 506 }}>
-                <Ask lang={lang} question={wait.question} show={ease.back(span(t, W.open, W.open + 0.4)) * (1 - ease.in(span(t, W.answered + 0.08, W.answered + 0.3)))} picked={t >= W.picked} x={0} y={0} />
-              </div>
-            )}
-            <div className={`film-waited is-side${answered ? " is-done" : ""}`} style={{ left: 1060, top: lerp(820, 560, ease.inOut(span(t, W.answered + 0.3, W.answered + 0.9))), opacity: clamp(span(t, W.told + 0.1, W.told + 0.4)) }}>
+            {/* the session bar: its card says what the agent wants, and answers in place */}
+            <div className="vg-put" style={{ left: side.left, top: 466, opacity: span(turn, 0.3, 0.7), transform: "scale(2)" }}>
+              <Sessions lang={lang} rows={[{
+                key: pane.key, title: pane.title, agent: pane.agent, cell: 2, status: told && !allowed ? "wait" : "run", minutes: told && !allowed ? 1 : 12, asks: askOf(lang, "run", "pnpm test"), doing: after.at(-1),
+                flash: told ? 1 - span(t, W.told, W.told + 0.9) : 0, press: 1 - 0.08 * Math.sin(Math.PI * span(t, W.answered - 0.14, W.answered + 0.1))
+              }]} />
+            </div>
+            <div className={`film-waited is-side${answered ? " is-done" : ""}`} style={{ left: 1060, top: lerp(866, 790, ease.inOut(span(t, W.answered + 0.3, W.answered + 0.9))), opacity: clamp(span(t, W.told + 0.1, W.told + 0.4)) }}>
               <span>{wait.waited}</span><b className="num">{clockOf(seen)}</b>
               <s className="num" style={{ opacity: saved, transform: `translate3d(${(1 - saved) * 30}px, 0, 0)` }}>{clockOf(WAITED.unseen)}</s>
             </div>

@@ -7,14 +7,17 @@ import { clamp, ease, lerp, span } from "../time";
 import { TicketCard } from "../Window";
 import { CELL, Cell, Working, type CellState } from "./Cell";
 import { Ready } from "./Ready";
+import { SIDE, Sessions, askOf, type SessionCard } from "./Sessions";
 import { K, PANE_MOVES, PILE_AT, TERMINAL_POINTER, TERMINAL_SECONDS, terminalCues } from "./scripts";
 import { CAPTIONS, LOG, PANES } from "./words";
 
-/** The Terminal window on the frame: its box, its bar's height, the gap around its panes and their scale. */
-const WIN = { x: 120, y: 250, w: 1680, h: 772, bar: 51, gap: 12, k: 1.5 };
+/** The Terminal window on the frame: its box, its bar's height, the gap around its panes and their scale, and its session bar's. */
+const WIN = { x: 120, y: 250, w: 1680, h: 772, bar: 51, gap: 12, k: 1.2, side: 1.17 };
+/** A pane's height in its own pixels: two rows of them fill the window beside the session bar. */
+const PANE_H = 285;
 const slot = (i: number) => ({
   x: WIN.x + WIN.gap + (i % 3) * (CELL.w * WIN.k + WIN.gap) + (CELL.w * WIN.k) / 2,
-  y: WIN.y + WIN.bar + WIN.gap + Math.floor(i / 3) * (CELL.h * WIN.k + WIN.gap) + (CELL.h * WIN.k) / 2
+  y: WIN.y + WIN.bar + WIN.gap + Math.floor(i / 3) * (PANE_H * WIN.k + WIN.gap) + (PANE_H * WIN.k) / 2
 });
 /** The pile: each stray terminal's middle and tilt, and the pane it ends up as. */
 const PILE: [number, number, number][] = [[1290, 196, -4], [1650, 262, 3], [1240, 398, 2], [1600, 474, -3], [1370, 590, 5], [1690, 668, -2], [1250, 764, -1.5], [1560, 858, 2.5], [1440, 318, -6]];
@@ -22,6 +25,9 @@ const PANE_W = 480;
 const INTO = [0, 1, 2, 3, 4, 5, 1, 3, 4];
 /** The pane that needs the person. */
 const NEEDY = 4;
+/** Where that pane's card sits in the docked bar, and where the bar's close-up of it stands beside the pane brought forward. */
+const DOCK = { x: WIN.x + WIN.w - SIDE.w * WIN.side, y: WIN.y + WIN.bar + NEEDY * 80 * WIN.side };
+const CLOSE = { x: 1215, y: 430, k: 2.1 };
 
 const plans: Plan[] = PANE_MOVES.slice(0, 5).map(([pr, done], i) => ({
   key: PANES.en[i].key, agent: PANES.en[i].agent as Plan["agent"], priority: 2, start: "doing", pr: 231 + i, written: true,
@@ -32,7 +38,8 @@ const stateOf = (i: number, t: number): CellState | undefined => (i === 5 ? unde
 
 /**
  * "Terminals pile up. Which one needs you?": stray terminals snap into the panes of Tomrade's Terminal window, where
- * each says whether it runs or needs the person, knows its ticket, and works on while the app is closed.
+ * each says whether it runs or needs the person, as its card in the window's session bar does, knows its ticket, and
+ * works on while the app is closed.
  */
 export const terminal = film<true>({
   id: "terminal",
@@ -52,6 +59,15 @@ export const terminal = film<true>({
     const closed = ease.inOut(span(t, K.quit + 0.1, K.quit + 0.7)) * (1 - ease.inOut(span(t, K.reopen, K.reopen + 0.6)));
     const hero = ease.inOut(span(t, K.zoom, K.zoom + 0.55)) * (1 - ease.inOut(span(t, K.back, K.back + 0.5)));
     const framed = ease.out(span(t, K.snap + 0.25, K.snap + 0.85));
+    const rows: SessionCard[] = PANES[lang].map((pane, i) => {
+      if (i === 5) return { key: "zsh", title: "", agent: "", cell: 6, status: "run", minutes: 0, cwd: "~/paperplane" };
+      const state = stateOf(i, t);
+      return {
+        key: pane.key, title: pane.title, agent: pane.agent, cell: i + 1, minutes: state === "needs" ? 1 : 6 + i * 4,
+        status: state === "needs" ? "wait" : state === "done" ? "done" : "run", asks: i === NEEDY ? askOf(lang, "edit", "invoice.ts") : undefined,
+        flash: i === NEEDY && t >= K.need ? 1 - span(t, K.need, K.need + 0.9) : 0
+      };
+    });
     return (
       <>
         {t < K.snap + 1.4 && PILE.map(([x, y, tilt], n) => {
@@ -82,6 +98,10 @@ export const terminal = film<true>({
                 <span className="film-lights" aria-hidden="true"><i data-cursor="close" /><i /><i /></span>
                 <span className="cs-project">{LOG[lang].window}</span>
               </div>
+              {/* the window's session bar: a card for each pane, the one that needs the person lit */}
+              <div className="vg-put" style={{ right: 0, top: WIN.bar, transformOrigin: "100% 0", transform: `scale(${WIN.side})`, opacity: 1 - 0.72 * hero }}>
+                <Sessions lang={lang} className="is-docked" rows={rows} />
+              </div>
             </div>
             {PANES[lang].map((pane, i) => {
               const at = slot(i);
@@ -92,10 +112,10 @@ export const terminal = film<true>({
               const flash = i === NEEDY && t >= K.need ? 1 - span(t, K.need, K.need + 0.9) : 0;
               return (
                 <div className="film-cell-spot" key={i} style={{
-                  left: lerp(at.x, 960, mine), top: lerp(at.y, 640, mine), zIndex: mine > 0 ? 8 : 2, opacity: span(e, 0.3, 0.7) * (1 - 0.72 * (i === NEEDY ? 0 : hero)),
-                  transform: `translate(-50%, -50%) scale(${WIN.k * lerp(1, 1.75, mine)})`, ["--ghost" as string]: closed, ["--flash" as string]: flash
+                  left: lerp(at.x, 760, mine), top: lerp(at.y, 640, mine), zIndex: mine > 0 ? 8 : 2, opacity: span(e, 0.3, 0.7) * (1 - 0.72 * (i === NEEDY ? 0 : hero)),
+                  transform: `translate(-50%, -50%) scale(${WIN.k * lerp(1, 2, mine)})`, ["--ghost" as string]: closed, ["--flash" as string]: flash
                 }}>
-                  <Cell lang={lang} no={i + 1} pane={pane} state={state} style={{ width: CELL.w, height: CELL.h }}>
+                  <Cell lang={lang} no={i + 1} pane={pane} state={state} style={{ width: CELL.w, height: PANE_H }}>
                     {i === NEEDY && t >= K.need ? (
                       <>
                         <div className="film-term-line"><b>⏺</b>{LOG[lang].work[0]}</div>
@@ -108,6 +128,12 @@ export const terminal = film<true>({
                 </div>
               );
             })}
+            {/* the bar's card for that pane, close up beside it: what it asks, and Allow */}
+            {hero > 0 && (
+              <div className="vg-put" style={{ left: lerp(DOCK.x, CLOSE.x, hero), top: lerp(DOCK.y, CLOSE.y, hero), zIndex: 8, opacity: clamp(hero * 3), transform: `scale(${lerp(WIN.side, CLOSE.k, hero)})` }}>
+                <Sessions lang={lang} rows={[rows[NEEDY]]} />
+              </div>
+            )}
             {t >= K.ticket && plans.map((plan, i) => {
               const at = slot(i);
               const e = ease.back(span(t, K.ticket + i * 0.09, K.ticket + 0.45 + i * 0.09));
@@ -115,8 +141,8 @@ export const terminal = film<true>({
               const bump = moved < 0 ? 0 : Math.sin(Math.PI * span(t, moved, moved + 0.4));
               return (
                 <div className={`film-card${bump > 0.02 ? " is-lifted" : ""}`} key={plan.key} style={{
-                  left: at.x + (CELL.w * WIN.k) / 2 - 318, top: at.y + (CELL.h * WIN.k) / 2 - 96, zIndex: 5, opacity: clamp(e * 1.6) * (1 - 0.92 * closed),
-                  transformOrigin: "100% 100%", transform: `translate3d(0, ${(1 - e) * -50}px, 0) scale(${(0.7 + 0.55 * e) * (1 + 0.06 * bump)})`
+                  left: at.x + (CELL.w * WIN.k) / 2 - 318, top: at.y + (PANE_H * WIN.k) / 2 - 96, zIndex: 5, opacity: clamp(e * 1.6) * (1 - 0.92 * closed),
+                  transformOrigin: "100% 100%", transform: `translate3d(0, ${(1 - e) * -50}px, 0) scale(${(0.56 + 0.44 * e) * (1 + 0.06 * bump)})`
                 }}>
                   <TicketCard plan={plan} words={PANES[lang][i]} variant={moved < 0 ? "doing" : plan.moves.filter((move) => move.at <= t).at(-1)!.to} t={t} lang={lang} clock={clock} age={0} />
                 </div>

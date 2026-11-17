@@ -42,7 +42,8 @@ export const TERMINAL_POINTER: Pointer = { route: [{ at: K.quit - 0.9, to: [0.3,
 
 /**
  * "An agent asked. You didn't see it.": a terminal waits behind other windows while the minutes run; then the same
- * question in Tomrade, where the pane and the status bar say so at once and one click answers it.
+ * question in Tomrade, where the pane, the session bar and the status bar say so at once, and one click on its card's
+ * Allow answers it (`open` and `picked` are where the words change and the pointer arrives).
  */
 export const W = { covered: 1.1, turn: 4.3, told: 5.3, open: 6.5, picked: 7.6, answered: 8.3, saved: 10.3, end: 12.5 };
 /** How long the agent waits unseen, and with Tomrade, in seconds of its own time. */
@@ -56,8 +57,6 @@ export function wallCues(): Cue[] {
     { at: 2.6, kind: "you" as const, n: 0 },
     { at: W.turn, kind: "turn" as const, n: 0 },
     { at: W.told, kind: "ask" as const, n: 0 },
-    { at: W.open, kind: "click" as const, n: 0 },
-    { at: W.picked, kind: "click" as const, n: 0 },
     { at: W.answered, kind: "click" as const, n: 1 },
     ...[0.5, 0.95, 1.4].map((after, n) => ({ at: W.answered + after, kind: "line" as const, n: n % 2 })),
     { at: W.answered + 1.4, kind: "hop" as const, n: 7 },
@@ -65,7 +64,7 @@ export function wallCues(): Cue[] {
     { at: W.end, kind: "end" as const, n: 0 }
   ].sort((a, b) => a.at - b.at);
 }
-export const WALL_POINTER: Pointer = { route: [{ at: W.told + 0.3, to: [0.75, 1.08] }, { at: W.open - 0.06, to: "needs" }, { at: W.open + 0.3, to: "needs" }, { at: W.picked - 0.08, to: "chip" }, { at: W.picked + 0.2, to: "chip" }, { at: W.answered - 0.06, to: "confirm" }, { at: W.answered + 0.3, to: "confirm" }, { at: W.answered + 1.1, to: [1.06, 0.75] }], clicks: [W.open, W.picked, W.answered] };
+export const WALL_POINTER: Pointer = { route: [{ at: W.open, to: [0.75, 1.08] }, { at: W.picked + 0.2, to: "allow" }, { at: W.answered + 0.3, to: "allow" }, { at: W.answered + 1.1, to: [1.06, 0.75] }], clicks: [W.answered] };
 
 /** "Nobody touched this card": when each of its agent's lines is written, and when the last words come. */
 export const C = { steps: [2.3, 3.5, 4.7, 5.9, 7.2], own: 8.6, end: 10.4 };

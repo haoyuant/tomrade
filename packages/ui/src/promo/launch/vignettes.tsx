@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { say } from "~/lib/dicts";
-import { CELL, Cell, Working, type CellState } from "../free/Cell";
+import { CELL, Cell, Working } from "../free/Cell";
+import { Sessions, askOf, type SessionCard } from "../free/Sessions";
 import type { Plan, Status, Variant } from "../sim";
 import { clamp, ease, lerp, span } from "../time";
 import { Ask, TicketCard } from "../Window";
@@ -18,6 +19,8 @@ function Put({ x, y, k = 1, w, children, style }: { x: number; y: number; k?: nu
 }
 const card = (n: number, variant: Variant, lang: Lang, title?: string) => <TicketCard plan={plan(n, "todo")} words={{ title: title ?? SCENE[lang].tickets[n], label: SCENE[lang].label }} variant={variant} t={0} lang={lang} clock={clock} age={3} />;
 const pop = (u: number, at: number): number => ease.back(span(u, at, at + 0.6));
+/** Watch's session bar: where it stands and how large, and where Allow is on its waiting card. */
+const BAR = { x: 452, y: 8, k: 1.44, allow: [512, 356] as [number, number] };
 
 /** Say: a sentence typed into the assistant's composer becomes a ticket, and the ticket five. */
 function Say({ u, lang }: { u: number; lang: Lang }) {
@@ -58,29 +61,44 @@ function Build({ u, lang }: { u: number; lang: Lang }) {
   );
 }
 
-/** Watch: four panes of the Terminal window; one comes to need the person, and is answered. */
+/** The pane that comes to need the person in Watch, and when: it asks at 3 and is answered from its card at 5.5. */
+const NEEDS = { pane: 1, at: 3, answered: 5.5 };
+
+/**
+ * Watch: two panes of the Terminal window and its session bar. One agent stops to ask; its card in the bar says what
+ * it wants and carries Allow, and one click there sends it on.
+ */
 function Watch({ u, lang }: { u: number; lang: Lang }) {
-  const needs = u >= 3 && u < 5.5;
-  const k = 1.17;
+  const needs = u >= NEEDS.at && u < NEEDS.answered;
+  const k = 1.13;
+  const flash = u >= NEEDS.at ? 1 - span(u, NEEDS.at, NEEDS.at + 1) : 0;
+  const rows: SessionCard[] = [0, 1, 2].map((i) => ({
+    key: `APP-${53 + i}`, title: SCENE[lang].tickets[i], agent: i % 2 ? "Codex" : "Claude Code", cell: i < 2 ? i + 1 : undefined, minutes: [12, 4, 7][i],
+    status: i === NEEDS.pane && needs ? "wait" : "run", asks: i === NEEDS.pane ? askOf(lang, "run", "pnpm test") : undefined, flash: i === NEEDS.pane ? flash : 0,
+    press: 1 - 0.08 * Math.sin(Math.PI * span(u, NEEDS.answered - 0.2, NEEDS.answered + 0.1))
+  }));
+  // the pointer comes to Allow on the waiting card, in the scene's own pixels
+  const to = ease.inOut(span(u, 3.7, 4.9));
   return (
     <>
-      {[0, 1, 2, 3].map((i) => {
-        const state: CellState | undefined = i === 3 ? undefined : i === 2 && needs ? "needs" : "running";
-        const pane = i === 3 ? { key: "", agent: "", title: "zsh · ~/paperplane" } : { key: `APP-${53 + i}`, agent: i % 2 ? "Codex" : "Claude Code", title: "" };
+      {[0, 1].map((i) => {
+        const asks = i === NEEDS.pane && u >= NEEDS.at;
         return (
-          <Put key={i} x={14 + (i % 2) * (CELL.w * k + 12)} y={8 + Math.floor(i / 2) * (CELL.h * k + 10)} k={k * (0.9 + 0.1 * pop(u, i * 0.25))} style={{ ["--flash" as string]: i === 2 && u >= 3 ? 1 - span(u, 3, 4) : 0 }}>
-            <Cell lang={lang} no={i + 1} pane={pane} state={state} style={{ width: CELL.w, height: CELL.h }}>
-              {i === 2 && u >= 3 ? (
+          <Put key={i} x={14} y={8 + i * (CELL.h * k + 8)} k={k * (0.9 + 0.1 * pop(u, i * 0.25))} style={{ ["--flash" as string]: i === NEEDS.pane ? flash : 0 }}>
+            <Cell lang={lang} no={i + 1} pane={{ key: `APP-${53 + i}`, agent: i % 2 ? "Codex" : "Claude Code", title: "" }} state={i === NEEDS.pane && needs ? "needs" : "running"} style={{ width: CELL.w, height: CELL.h }}>
+              {asks ? (
                 <>
                   <div className="film-term-line"><b>⏺</b>pnpm install</div>
-                  <div className="film-term-line is-typed">{SCENE[lang].prompt}{u >= 5.5 ? " y" : ""}</div>
+                  <div className="film-term-line is-typed">{SCENE[lang].prompt}{u >= NEEDS.answered ? " y" : ""}</div>
                   {u >= 5.8 && <Working lang={lang} t={u} from={5.8} pace={0.5} shift={2} most={4} />}
                 </>
-              ) : <Working lang={lang} t={u} from={-3 + i * 0.4} pace={0.55 + i * 0.1} shift={i * 3} shell={i === 3} />}
+              ) : <Working lang={lang} t={u} from={-3 + i * 0.4} pace={0.55 + i * 0.1} shift={i * 3} />}
             </Cell>
           </Put>
         );
       })}
+      <Put x={BAR.x} y={BAR.y} k={BAR.k * (0.9 + 0.1 * pop(u, 0.5))}><Sessions lang={lang} rows={rows} /></Put>
+      {u >= 3.7 && u < NEEDS.answered + 0.5 && <i className="vg-pointer" style={{ left: lerp(760, BAR.allow[0], to), top: lerp(540, BAR.allow[1], to), opacity: 1 - span(u, NEEDS.answered + 0.2, NEEDS.answered + 0.5) }} />}
     </>
   );
 }
