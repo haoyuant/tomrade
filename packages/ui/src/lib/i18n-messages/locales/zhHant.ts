@@ -294,6 +294,7 @@ export const zhHant: PartialMessages = {
     upToDateAhead: "已是最新——目前版本比這個通道最新發布的 {{version}} 還新。",
     updateAvailable: "Tomrade {{version}} 已發布。",
     updateDate: "發布於 {{date}}。",
+    whatsNew: "更新內容",
     download: "下載",
     downloading: "正在下載 Tomrade {{version}}… {{percent}}%",
     preparing: "正在準備 Tomrade {{version}}…",

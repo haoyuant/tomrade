@@ -7,6 +7,7 @@ import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, revealLabel, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateSourceChoice, type UpdateStatus } from "~/lib/updates";
+import { UpdateNotes } from "./UpdateNotes";
 import { RestartOnboardingDialog } from "~/components/projects/RestartOnboardingDialog";
 import { useAbout, useSettingsSections } from "~/lib/queries";
 import { MyReports } from "./MyReports";
@@ -246,6 +247,7 @@ function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
         </div>
       )}
       {phase.kind === "ready" && isWindows && <p className="meta-txt">{t("about.windowsInstallNote")}</p>}
+      <UpdateNotes text={status.notes} />
       {phase.kind === "failed" && <p className="meta-txt about-update-error">{phase.message.split("\n")[0]}</p>}
       {prefs && (
         <div className="about-update-prefs">

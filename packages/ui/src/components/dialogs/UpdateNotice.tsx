@@ -6,6 +6,7 @@ import { isWindows } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { updatesOnScreen, useUpdateActions, useUpdateStatus } from "~/lib/updates";
 import { SettingsDialog } from "~/components/onDemand";
+import { UpdateNotes } from "./UpdateNotes";
 
 /**
  * Says so once per version and step: a newer release is out, then it is
@@ -56,6 +57,7 @@ export function UpdateNotice() {
                   {t("about.noticeCurrent", { version: status.data?.version ?? "" })}
                   {date && ` ${t("about.updateDate", { date })}`}
                 </p>
+                <UpdateNotes text={status.data?.notes} />
                 <p className="update-notice-note">{t(phase.kind === "ready" ? "about.noticeReadyNote" : "about.noticeAvailableNote")}</p>
                 {phase.kind === "ready" && isWindows && <p className="update-notice-note">{t("about.windowsInstallNote")}</p>}
               </div>

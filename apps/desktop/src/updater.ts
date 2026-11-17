@@ -74,7 +74,12 @@ export interface UpdateStatus {
   checkedAt: number | null;
   /** The feed in use: the one that last answered, or else the one the next check asks first. */
   feed: { name: UpdateFeedName; url: string } | null;
+  /** What changed in the version on offer, as its release wrote it (release-notes/README.md); null when it says nothing. */
+  notes: string | null;
 }
+
+/** Longer than any release's notes should be; a feed that sends more is cut here. */
+const NOTES_MAX = 8000;
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -156,6 +161,8 @@ export class Updates {
   private inflight: Promise<unknown> | null = null;
   /** The feed that last answered a check, whose announced update a download fetches. */
   private answered: UpdateFeedName | null = null;
+  /** What the feed said changed in the version it announced. */
+  private notes: { version: string; text: string } | null = null;
   private readonly listeners: [Emitter, string, (...args: never[]) => void][];
 
   constructor(
@@ -176,7 +183,8 @@ export class Updates {
 
   status(): UpdateStatus {
     const name = this.opts.feeds ? (this.answered ?? this.order()[0]) : null;
-    return { version: this.opts.version, blocked: this.opts.blocked, phase: this.phase, checkedAt: this.checkedAt, feed: name ? { name, url: this.url(name) } : null };
+    const notes = "version" in this.phase && this.notes?.version === this.phase.version ? this.notes.text : null;
+    return { version: this.opts.version, blocked: this.opts.blocked, phase: this.phase, checkedAt: this.checkedAt, feed: name ? { name, url: this.url(name) } : null, notes };
   }
 
   private order(): UpdateFeedName[] {
@@ -249,7 +257,12 @@ export class Updates {
       if (generation !== this.generation || this.fetching()) return this.status();
       this.checkedAt = Date.now();
       if (!result) this.set({ kind: "idle" });
-      else if (result.isUpdateAvailable) this.set({ kind: "available", version: result.updateInfo.version, date: result.updateInfo.releaseDate ?? null });
+      else if (result.isUpdateAvailable) {
+        // A generic feed's notes are the manifest's own text; anything else is not ours to show.
+        const text = typeof result.updateInfo.releaseNotes === "string" ? result.updateInfo.releaseNotes.trim().slice(0, NOTES_MAX) : "";
+        this.notes = text ? { version: result.updateInfo.version, text } : null;
+        this.set({ kind: "available", version: result.updateInfo.version, date: result.updateInfo.releaseDate ?? null });
+      }
       else this.set({ kind: "current", latest: result.updateInfo.version });
     } catch (error) {
       // A check nobody asked for fails quietly: offline for an hour is not news.

@@ -32,6 +32,33 @@ export interface UpdateStatus {
   checkedAt: number | null;
   /** The feed in use; custom is TOMRADE_UPDATE_URL. */
   feed: { name: "international" | "china" | "custom"; url: string } | null;
+  /** What changed in the version on offer, as its release wrote it; null when it says nothing. */
+  notes: string | null;
+}
+
+/**
+ * A release's notes for one reader: the lines under the `## <language>` heading for their language — Chinese for both
+ * Chinese scripts — else English's, else the first there is. Notes with no such heading are read whole. List marks go.
+ */
+export function releaseNotes(text: string | null | undefined, locale: string): string[] {
+  if (!text) return [];
+  const key = (name: string) => name.toLowerCase().replace(/[^a-z]/g, "");
+  const sections = new Map<string, string[]>();
+  const loose: string[] = [];
+  let at: string[] | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const head = /^##\s+([A-Za-z_-]+)\s*$/.exec(raw);
+    if (head) {
+      at = sections.get(key(head[1]!)) ?? [];
+      sections.set(key(head[1]!), at);
+      continue;
+    }
+    const line = raw.replace(/^\s*[-*•]\s+/, "").trim();
+    if (line) (at ?? loose).push(line);
+  }
+  if (!sections.size) return loose;
+  const wanted = key(locale);
+  return sections.get(wanted) ?? (wanted.startsWith("zh") ? sections.get("zh") : undefined) ?? sections.get("en") ?? [...sections.values()][0] ?? [];
 }
 
 /** Implemented by `apps/desktop/src/updater.ts`; declared here for the same reason as the shell's channels. */

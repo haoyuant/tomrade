@@ -8,7 +8,7 @@ import { feedOrder, inMainlandChina, UPDATE_FEEDS, Updates, updatesSection, with
 class FakeFeed extends EventEmitter {
   channel: string | null = null;
   allowDowngrade = true;
-  latest = { version: "0.3.0", releaseDate: "2026-11-01T08:00:00.000Z" };
+  latest: { version: string; releaseDate: string; releaseNotes?: unknown } = { version: "0.3.0", releaseDate: "2026-11-01T08:00:00.000Z" };
   running = "0.2.0";
   checkError: Error | null = null;
   downloadError: Error | null = null;
@@ -63,6 +63,27 @@ describe("updates", () => {
     expect(status.phase).toEqual({ kind: "available", version: "0.3.0", date: "2026-11-01T08:00:00.000Z" });
     expect(status.checkedAt).not.toBeNull();
     expect(feed.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("passes on what the release says changed, for as long as that version is on offer", async () => {
+    const { feed, updates } = setup();
+    // Nothing said: nothing shown.
+    expect((await updates.check()).notes).toBeNull();
+    feed.latest = { version: "0.3.0", releaseDate: "2026-11-01T08:00:00.000Z", releaseNotes: "\n## en\n- Faster starts\n\n## zh\n- 启动更快\n" };
+    expect((await updates.check()).notes).toBe("## en\n- Faster starts\n\n## zh\n- 启动更快");
+    // Through the download and until the restart.
+    expect(await updates.download()).toMatchObject({ phase: { kind: "ready", version: "0.3.0" }, notes: "## en\n- Faster starts\n\n## zh\n- 启动更快" });
+  });
+
+  it("shows no notes that are not the manifest's own text, or once the build is current", async () => {
+    const { feed, updates } = setup();
+    // Another provider's shape: a list per version, which is not what a release of ours writes.
+    feed.latest = { version: "0.3.0", releaseDate: "2026-11-01T08:00:00.000Z", releaseNotes: [{ version: "0.3.0", note: "<p>html</p>" }] };
+    expect((await updates.check()).notes).toBeNull();
+    feed.latest = { version: "0.3.0", releaseDate: "2026-11-01T08:00:00.000Z", releaseNotes: "- Faster starts" };
+    expect((await updates.check()).notes).toBe("- Faster starts");
+    feed.latest = { version: "0.2.0", releaseDate: "2026-10-11T08:00:00.000Z", releaseNotes: "- What this build already has" };
+    expect(await updates.check()).toMatchObject({ phase: { kind: "current" }, notes: null });
   });
 
   it("says the build is current when the feed names it", async () => {

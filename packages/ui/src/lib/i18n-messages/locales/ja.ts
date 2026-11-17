@@ -292,6 +292,7 @@ export const ja: PartialMessages = {
     upToDateAhead: "最新の状態です。このビルドは、このチャンネルの最新リリース {{version}} より新しいバージョンです。",
     updateAvailable: "Tomrade {{version}} が利用可能です。",
     updateDate: "{{date}} リリース。",
+    whatsNew: "更新内容",
     download: "ダウンロード",
     downloading: "Tomrade {{version}} をダウンロード中… {{percent}}%",
     preparing: "Tomrade {{version}} を準備中…",

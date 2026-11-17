@@ -29,6 +29,12 @@
 .update-notice-body { display: flex; align-items: flex-start; gap: var(--space-5); }
 .update-notice-body .meta-txt { margin: 0; }
 .update-notice-note { margin: var(--space-2) 0 0; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); }
+/* What changed in the version on offer: a short list, scrolled within itself if a release wrote a long one. */
+.update-notes { font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); }
+.update-notes-title { color: var(--fg); margin-bottom: var(--space-1); }
+.update-notes ul { margin: 0; padding-left: 1.2em; max-height: 11.5em; overflow-y: auto; list-style: disc; }
+.update-notes li + li { margin-top: 2px; }
+.update-notice-body .update-notes { margin-top: var(--space-3); }
 
 .about-facts { margin: var(--space-3) 0 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
 .about-facts .field-row { grid-template-columns: 112px 1fr; }

@@ -268,6 +268,7 @@ export const de: PartialMessages = {
     upToDateAhead: "Du bist auf dem neuesten Stand – dieser Build ist neuer als {{version}}, das aktuelle Release in diesem Kanal.",
     updateAvailable: "Tomrade {{version}} ist verfügbar.",
     updateDate: "Veröffentlicht am {{date}}.",
+    whatsNew: "Was ist neu",
     download: "Herunterladen",
     downloading: "Tomrade {{version}} wird heruntergeladen… {{percent}} %",
     preparing: "Tomrade {{version}} wird vorbereitet…",
