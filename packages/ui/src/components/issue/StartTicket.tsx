@@ -11,6 +11,7 @@ import { doingText } from "~/lib/terminalSession";
 import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, type StartWay, type WayKind } from "~/lib/startWays";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
+import { StartReviewPrefs } from "./StartReviewPrefs";
 import { RunOn } from "./RunOn";
 import { asksElsewhere, labelMiss, runOnState, targetOf, takers, useDevices } from "~/lib/devices";
 import { useI18n } from "~/lib/i18n";
@@ -568,6 +569,8 @@ function StartTicketDialog({
               )}
             </Field>
           )}
+
+          {!general && <StartReviewPrefs projectId={projectId} itemId={item.id} disabled={busy} />}
 
           {general && (
             <Field label={t("codeLink.methodHead")} htmlFor="stMethod">

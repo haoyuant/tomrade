@@ -21,7 +21,7 @@ export const CHANGE_REVIEW_WORDS = defineWords("change-review", {
     settingsTitle: "Agent review",
     settingsDescription: "Another agent reads a ticket's changes in a session of its own and leaves findings on the diff. It never edits code.",
     autoReviewTitle: "Review a ticket's changes when it is delivered",
-    autoReviewDescription: "When a ticket moves to Verifying, a review starts by itself. One review per commit.",
+    autoReviewDescription: "When a ticket moves to Verifying, a review starts by itself. One review per commit. A ticket can say otherwise for itself when it is started.",
     autoHandBackTitle: "Send findings to the agent working the ticket",
     autoHandBackDescription: "Off, findings wait for you to read and send them. On, they go by themselves, at most three rounds per ticket; after that they wait for you."
   },
@@ -45,7 +45,7 @@ export const CHANGE_REVIEW_WORDS = defineWords("change-review", {
     settingsTitle: "Agent 审查",
     settingsDescription: "另一个 Agent在单独的会话里读工单的改动，把意见写在 diff 上。它从不改代码。",
     autoReviewTitle: "工单交付后自动审查改动",
-    autoReviewDescription: "工单进入 Verifying 时自动发起一次审查。同一个提交只审一次。",
+    autoReviewDescription: "工单进入 Verifying 时自动发起一次审查。同一个提交只审一次。单张工单可以在开工时另行设置。",
     autoHandBackTitle: "把意见自动交给做工单的 Agent",
     autoHandBackDescription: "关闭时，意见等你看过再发送。打开后自动发送，每张工单最多三轮，之后等你处理。"
   }

@@ -15,7 +15,7 @@ import type {} from "@tomradex/items";
 import type { Role } from "@tomradex/roles";
 import type { SettingsSection } from "@tomradex/settings";
 import { reviewPrompt, reviewerPrompt } from "./prompt.js";
-import { MIGRATIONS, ReviewStore, TABLES, type AgentReview, type ReviewComment, type ReviewDraft, type ReviewFinding, type ReviewSeverity, type ReviewState } from "./store.js";
+import { MIGRATIONS, ReviewStore, TABLES, type AgentReview, type ReviewComment, type ReviewDraft, type ReviewFinding, type ReviewSeverity, type ReviewState, type TicketReviewPrefs } from "./store.js";
 import { registerReviewTools } from "./tools.js";
 import { CHANGE_REVIEW_WORDS } from "./words.js";
 
@@ -59,6 +59,12 @@ export interface ReviewNotice {
 interface Prefs {
   autoReview: boolean;
   autoHandBack: boolean;
+}
+
+/** A ticket's own word, and what this machine's settings say where it has none. */
+export interface TicketReviewPrefsView {
+  own: TicketReviewPrefs;
+  machine: Prefs;
 }
 
 const en = CHANGE_REVIEW_WORDS("en");
@@ -136,6 +142,9 @@ declare module "@tomradex/ipc" {
     "changeReview.reviews": (projectId: string, itemId: string) => AgentReviewView[];
     /** The person has seen findings that waited on them: the reminder goes. */
     "changeReview.release": (projectId: string, itemId: string) => void;
+    "changeReview.prefs": (projectId: string, itemId: string) => TicketReviewPrefsView;
+    /** A person's word for one ticket: null goes back to following this machine's settings. Never an agent's. */
+    "changeReview.setPrefs": (projectId: string, itemId: string, patch: Partial<TicketReviewPrefs>) => TicketReviewPrefsView;
   }
   interface Broadcasts {
     "changeReview.changed": (projectId: string, itemId: string) => void;
@@ -199,6 +208,8 @@ export class ChangeReview extends Service {
       ctx.ipc.handle("changeReview.review", (projectId, itemId, opts) => ctx.changeReview.review(projectId, itemId, opts));
       ctx.ipc.handle("changeReview.reviews", (projectId, itemId) => ctx.changeReview.reviews(projectId, itemId));
       ctx.ipc.handle("changeReview.release", (projectId, itemId) => ctx.changeReview.release(projectId, itemId));
+      ctx.ipc.handle("changeReview.prefs", (projectId, itemId) => ctx.changeReview.ticketPrefs(projectId, itemId));
+      ctx.ipc.handle("changeReview.setPrefs", (projectId, itemId, patch) => ctx.changeReview.setTicketPrefs(projectId, itemId, patch));
       ctx.on("changeReview/changed", (projectId, itemId) => ctx.ipc.send("changeReview.changed", projectId, itemId));
     });
   }
@@ -370,6 +381,37 @@ export class ChangeReview extends Service {
     return { ...SECTION.defaults, ...(this.home.get("settings")?.get().changeReview as Partial<Prefs> | undefined) };
   }
 
+  /** What holds for one ticket: its own word where it has one, else this machine's settings. */
+  private prefsFor(projectId: string, itemId: string): Prefs {
+    const machine = this.prefs();
+    const own = this.store.prefsOf(projectId, itemId);
+    return { autoReview: own.autoReview ?? machine.autoReview, autoHandBack: own.autoHandBack ?? machine.autoHandBack };
+  }
+
+  ticketPrefs(projectId: string, itemId: string): TicketReviewPrefsView {
+    if (!this.home.items.get(projectId, itemId)) throw new Error(`unknown ticket ${itemId}`);
+    return { own: this.store.prefsOf(projectId, itemId), machine: this.prefs() };
+  }
+
+  /**
+   * A person's word for one ticket, given before it starts or while it is worked: it holds from the next delivery on.
+   * Only the app's own channel calls this, so an agent never turns on what starts or wakes agents.
+   */
+  setTicketPrefs(projectId: string, itemId: string, patch: Partial<TicketReviewPrefs>): TicketReviewPrefsView {
+    const item = this.home.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown ticket ${itemId}`);
+    const valid = (value: unknown) => value === undefined || value === null || typeof value === "boolean";
+    if (!valid(patch.autoReview) || !valid(patch.autoHandBack)) throw new Error("a ticket's review prefs are on, off, or null to follow this machine");
+    const next = { ...this.store.prefsOf(projectId, itemId) };
+    if (patch.autoReview !== undefined) next.autoReview = patch.autoReview;
+    if (patch.autoHandBack !== undefined) next.autoHandBack = patch.autoHandBack;
+    this.store.setPrefs(projectId, itemId, next, Date.now());
+    this.home.emit("changeReview/changed", projectId, itemId);
+    // Turned on for a ticket already delivered: it is looked at now, not on its next change.
+    this.schedule(projectId);
+    return this.ticketPrefs(projectId, itemId);
+  }
+
   /** The code links of the ticket's newest delivery that have a branch still unmerged: what a review reads. */
   private current(projectId: string, itemId: string): CodeLinkView[] {
     const links = this.home.codeLink.links(projectId, itemId).filter((link) => link.branch && !link.mergedSha);
@@ -501,7 +543,7 @@ export class ChangeReview extends Service {
     const state = run.status === "done" ? "done" : run.status === "cancelled" ? "cancelled" : "failed";
     this.store.patchReview(projectId, review.id, { state, findings, error: state === "failed" ? (run.error ?? run.stop) : null, endedAt: Date.now() });
     this.home.emit("changeReview/changed", projectId, review.itemId);
-    if (state === "done" && findings > 0 && this.prefs().autoHandBack) await this.handBack(projectId, this.store.review(projectId, review.id)!);
+    if (state === "done" && findings > 0 && this.prefsFor(projectId, review.itemId).autoHandBack) await this.handBack(projectId, this.store.review(projectId, review.id)!);
     this.schedule(projectId);
   }
 
@@ -569,8 +611,16 @@ export class ChangeReview extends Service {
     }
   }
 
+  /** Whether reviews may start by themselves in the project at all: this machine says so, or one of its tickets does. */
+  private reviewsItself(projectId: string): boolean {
+    if (!this.home.db.has(projectId)) return false;
+    if (this.prefs().autoReview) return true;
+    for (const own of this.store.prefs(projectId).values()) if (own.autoReview) return true;
+    return false;
+  }
+
   private schedule(projectId: string): void {
-    if (!this.prefs().autoReview || this.looks.has(projectId)) return;
+    if (this.looks.has(projectId) || !this.reviewsItself(projectId)) return;
     const timer = setTimeout(() => {
       this.looks.delete(projectId);
       void this.look(projectId);
@@ -581,15 +631,19 @@ export class ChangeReview extends Service {
 
   /**
    * Where reviews start by themselves: the project's delivered tickets are looked through, and the first whose current
-   * commit no agent has reviewed gets one. One at a time: the next look comes when that review ends.
+   * commit no agent has reviewed gets one — each ticket by its own word, else this machine's. One at a time: the next
+   * look comes when that review ends.
    */
   look(projectId: string): Promise<void> {
     const going = this.looking.get(projectId);
     if (going) return going;
     const run = (async () => {
-      if (!this.prefs().autoReview || !this.home.db.has(projectId)) return;
+      if (!this.reviewsItself(projectId)) return;
       if (this.store.runningReviews(projectId).length) return;
+      const machine = this.prefs().autoReview;
+      const own = this.store.prefs(projectId);
       for (const item of this.home.items.list({ projectId, status: "verifying", workType: "coding" })) {
+        if (!(own.get(item.id)?.autoReview ?? machine)) continue;
         if (await this.reviewDue(projectId, item)) {
           await this.review(projectId, item.id, { askedBy: "auto" }).catch((error: unknown) => this.home.logger("change-review").warn("%s was not reviewed: %s", item.key, errorMessage(error)));
           return;

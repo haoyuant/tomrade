@@ -1,5 +1,5 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { AgentReviewView, ReviewComment, ReviewDraft, ReviewEdit, ReviewSent, ReviewTarget, ReviewerChoices } from "@tomradex/change-review";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AgentReviewView, ReviewComment, ReviewDraft, ReviewEdit, ReviewSent, ReviewTarget, ReviewerChoices, TicketReviewPrefs } from "@tomradex/change-review";
 import type { ChangedFile, ChangeFileOptions, ChangeReviewed, ChangeScope, ChangesOptions, ChangesView, Editor } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { keys } from "./queries";
@@ -104,3 +104,15 @@ export const useAgentReviews = (source: Pick<ChangesSource, "commentsKey" | "rev
 /** Who could review here. Asked again each time the window is looked at: an agent may have been signed in meanwhile. */
 export const useReviewers = (source: Pick<ChangesSource, "key" | "reviewers">, enabled = true, role?: string) =>
   useQuery({ queryKey: [...source.key, "reviewers", role ?? ""], queryFn: () => source.reviewers(role), enabled, staleTime: 30_000, placeholderData: keepPreviousData });
+
+/** A ticket's own word on reviews after it is delivered, and this machine's where it has none. */
+export const useTicketReviewPrefs = (projectId: string, itemId: string) =>
+  useQuery({ queryKey: keys.changeReview.prefs(projectId, itemId), queryFn: () => invoke("changeReview.prefs", projectId, itemId) });
+
+export function useSetTicketReviewPrefs(projectId: string, itemId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<TicketReviewPrefs>) => invoke("changeReview.setPrefs", projectId, itemId, patch),
+    onSuccess: (view) => qc.setQueryData(keys.changeReview.prefs(projectId, itemId), view)
+  });
+}

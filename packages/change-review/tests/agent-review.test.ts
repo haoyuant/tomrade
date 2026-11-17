@@ -366,6 +366,53 @@ it("reviews a delivered ticket by itself only where that is turned on, once per 
   await t.ctx.fiber.dispose();
 });
 
+it("reviews a delivered ticket by its own word first, and by this machine's where it has none", async () => {
+  const t = await machine({ status: "verifying" });
+  expect(t.s.ticketPrefs(t.projectId, t.item.id)).toEqual({ own: { autoReview: null, autoHandBack: null }, machine: { autoReview: false, autoHandBack: false } });
+
+  // off on this machine, on for this ticket
+  t.s.setTicketPrefs(t.projectId, t.item.id, { autoReview: true });
+  await t.s.look(t.projectId);
+  const [first] = t.s.reviews(t.projectId, t.item.id);
+  expect(first).toMatchObject({ askedBy: "auto" });
+  await t.over(first!.id);
+
+  // on on this machine, off for this ticket: its next commit waits for a person to ask
+  t.setPrefs({ autoReview: true });
+  t.s.setTicketPrefs(t.projectId, t.item.id, { autoReview: false });
+  t.moveTo("c2");
+  await t.s.look(t.projectId);
+  expect(t.s.reviews(t.projectId, t.item.id)).toHaveLength(1);
+
+  // back to following this machine: the row goes, and the commit is reviewed
+  expect(t.s.setTicketPrefs(t.projectId, t.item.id, { autoReview: null }).own).toEqual({ autoReview: null, autoHandBack: null });
+  expect(t.dbFor(t.projectId).prepare("SELECT COUNT(*) AS n FROM plugin_changereview_prefs").get()).toEqual({ n: 0 });
+  await t.s.look(t.projectId);
+  expect(t.s.reviews(t.projectId, t.item.id)).toHaveLength(2);
+  await t.over(t.s.reviews(t.projectId, t.item.id)[0]!.id);
+  await t.ctx.fiber.dispose();
+});
+
+it("hands findings on by the ticket's own word over this machine's", async () => {
+  const t = await machine();
+  t.working("writer");
+  t.finds("checker", 1);
+  t.s.setTicketPrefs(t.projectId, t.item.id, { autoHandBack: true });
+  const loud = await t.s.review(t.projectId, t.item.id);
+  await t.over(loud.id);
+  await until(() => t.s.reviews(t.projectId, t.item.id)[0]!.handedAt !== null);
+  expect(t.told.filter((told) => told.engine === "writer")).toHaveLength(1);
+
+  t.setPrefs({ autoHandBack: true });
+  t.s.setTicketPrefs(t.projectId, t.item.id, { autoHandBack: false });
+  const quiet = await t.s.review(t.projectId, t.item.id);
+  await t.over(quiet.id);
+  expect(t.s.reviews(t.projectId, t.item.id)[0]).toMatchObject({ id: quiet.id, handedAt: null });
+  expect(t.told.filter((told) => told.engine === "writer")).toHaveLength(1);
+  expect(() => t.s.setTicketPrefs(t.projectId, "nope", { autoReview: true })).toThrow("unknown ticket nope");
+  await t.ctx.fiber.dispose();
+});
+
 it("reviews no ticket by itself that is not delivered", async () => {
   const t = await machine({ status: "doing", prefs: { autoReview: true } });
   await t.s.look(t.projectId);
