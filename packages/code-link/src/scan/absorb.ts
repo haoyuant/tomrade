@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import type { Context } from "cordis";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import type { Git } from "@tomradex/git";
@@ -9,6 +10,7 @@ import { GitMemo, scanRepo, uncommittedBranches, type MergedCommit, type ScanRes
 import type { Sessions } from "../sessions.js";
 import type { CodeLinkStore, CodeLinkView, ProposalView, SessionView } from "../store.js";
 import { errorMessage } from "@tomradex/contracts";
+import { followDefault } from "./follow.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
 export const AUTHOR: Author = "sync:git";
@@ -17,6 +19,14 @@ export const AUTHOR: Author = "sync:git";
 export const LANDED_ELSEWHERE = "commits landed through ";
 
 const BEFORE_DONE: ReadonlySet<string> = new Set(["backlog", "todo", "doing", "verifying"]);
+
+const realPath = (dir: string): string => {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+};
 
 const hasLiveSession = (sessions: SessionView[]): boolean =>
   sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
@@ -264,6 +274,15 @@ export class GitScan {
       summary.links += outcome.links;
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
+      // What was just fetched reaches the person's own checkout too, where they said it may and nothing is lost.
+      if (result.remote === "ok" && placement.pullDefault) {
+        try {
+          const followed = await followDefault(this.git, placement.checkout, repo.defaultBranch, (dir) => this.atWork(dir));
+          if (followed === "moved") this.ctx.logger.info(`${repo.name}: ${repo.defaultBranch} in ${placement.checkout} fast-forwarded to origin/${repo.defaultBranch}`);
+        } catch (err) {
+          this.ctx.logger.warn(`${repo.name}: ${repo.defaultBranch} could not follow origin: ${errorMessage(err)}`);
+        }
+      }
     }
     for (const item of this.closable(projectId)) this.closeEmptyScannedDelivery(projectId, item, now);
     this.unlinkedByProject.set(projectId, unlinked);
@@ -272,6 +291,19 @@ export class GitScan {
     // A pass that found nothing new tells no one: every window would read the project's tickets and threads again.
     if (firstScan || this.footprint(projectId) !== before || JSON.stringify(unlinked) !== unlinkedBefore) this.notify(projectId);
     return summary;
+  }
+
+  /** Whether an agent is running in that folder right now, in any open project: a session only open there is not. */
+  private atWork(dir: string): boolean {
+    const here = realPath(dir);
+    return this.ctx.db.openIds().some((projectId) =>
+      this.store.sessions(projectId, { live: true }).some((session) => {
+        const where = session.worktree ?? session.cwd;
+        if (session.state !== "running" || !where) return false;
+        const inside = path.relative(here, realPath(where));
+        return !inside.startsWith("..") && !path.isAbsolute(inside);
+      })
+    );
   }
 
   /** Turn one repository's scan into links, then judge every ticket the repository touches. */

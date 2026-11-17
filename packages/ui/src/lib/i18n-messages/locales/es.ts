@@ -1455,6 +1455,8 @@ export const es: PartialMessages = {
     clonedToast: "Se clonó {{name}} en {{dir}}",
     runInCheckout: "Dejar que los agentes trabajen en mi checkout",
     runInCheckoutNote: "Desactivado: cada ejecución recibe su propia copia del repositorio dentro del Hub (un worktree de git), así que los archivos de tu checkout no se tocan mientras un agente trabaja. Activado: los agentes trabajan directamente en tu checkout: editan los archivos que tienes abiertos, incluidos tus cambios sin confirmar.",
+    pullDefault: "Mantener {{branch}} al día en mi checkout",
+    pullDefaultNote: "Activado: después de cada fetch —cada pocos minutos y justo tras fusionar un pull request— {{branch}} de tu checkout avanza (fast-forward) hasta el del remoto. Solo si no tiene commits propios, ni cambios sin confirmar, ni un agente trabajando en él; si no, se deja como está. Desactivado: Tomrade nunca lo mueve; haz pull tú.",
     worktrees: "Worktrees en este equipo: {{n}}",
     worktreesNone: "No hay worktrees en este equipo",
     worktreesFinished: "{{n}} se pueden quitar",

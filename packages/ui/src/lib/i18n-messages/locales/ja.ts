@@ -1479,6 +1479,8 @@ export const ja: PartialMessages = {
     clonedToast: "{{name}} を {{dir}} にクローンしました",
     runInCheckout: "エージェントに自分のチェックアウト内で作業させる",
     runInCheckoutNote: "オフ：実行ごとにハブ配下へリポジトリの独立したコピー（git worktree）が作られ、エージェントが作業中もあなたのチェックアウト内のファイルには一切触れません。オン：エージェントはあなたのチェックアウトで直接作業します。開いているファイルそのもの（未コミットの変更を含む）が書き換えられます。",
+    pullDefault: "自分のチェックアウトの {{branch}} を最新に保つ",
+    pullDefaultNote: "オン：Tomrade がフェッチするたび（数分おき、およびプルリクエストのマージ直後）に、チェックアウトの {{branch}} をリモートの最新まで早送り（fast-forward）します。独自のコミットがなく、未コミットの変更もなく、エージェントがそこで実行中でない場合に限ります。それ以外はそのままです。オフ：Tomrade は動かしません。自分で pull してください。",
     worktrees: "このコンピューター上の worktree：{{n}} 個",
     worktreesNone: "このコンピューターに worktree はありません",
     worktreesFinished: "うち {{n}} 個は削除できます",

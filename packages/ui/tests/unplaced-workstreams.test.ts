@@ -9,9 +9,9 @@ it("names the workstreams whose repository has no usable folder on this machine"
   const repos = [repo("app", "https://github.com/acme/app"), repo("web", "https://github.com/acme/web"), repo("api", "https://github.com/acme/api"), repo("cli", "https://github.com/acme/cli")];
   const boards = [board("ui", "app"), board("site", "web"), board("server", "api"), board("tools", "cli"), board("notes", null)];
   const checkouts = [
-    { remote: "https://github.com/acme/app", checkout: "C:\\code\\app", runInCheckout: false },
-    { remote: "https://github.com/acme/api", checkout: "C:\\code\\api", runInCheckout: false, problem: "missing" as const },
-    { remote: "https://github.com/acme/cli", checkout: "C:\\code\\cli", runInCheckout: false, problem: "not-git" as const }
+    { remote: "https://github.com/acme/app", checkout: "C:\\code\\app", runInCheckout: false, pullDefault: true },
+    { remote: "https://github.com/acme/api", checkout: "C:\\code\\api", runInCheckout: false, pullDefault: true, problem: "missing" as const },
+    { remote: "https://github.com/acme/cli", checkout: "C:\\code\\cli", runInCheckout: false, pullDefault: true, problem: "not-git" as const }
   ];
   expect(unplacedWorkstreams(boards, repos, checkouts).map((u) => u.board.id)).toEqual(["site", "server", "tools"]);
   // Another spelling of the same remote still finds its folder.

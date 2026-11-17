@@ -32,4 +32,5 @@ export const useRemoveRepo = (projectId: string) => useRepoMutation(projectId, (
 export const useSelectCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }): Promise<CheckoutSelection> => invoke("repos.selectCheckout", args.remote, args.dir));
 export const useClearCheckout = () => useRepoMutation(null, (remote: string) => invoke("repos.clearCheckout", remote));
 export const useSetRunInCheckout = () => useRepoMutation(null, (args: { remote: string; on: boolean }) => invoke("repos.setRunInCheckout", args.remote, args.on));
+export const useSetPullDefault = () => useRepoMutation(null, (args: { remote: string; on: boolean }) => invoke("repos.setPullDefault", args.remote, args.on));
 export const useCloneRepoInto = () => useRepoMutation(null, (args: { remote: string; branch: string; parent: string }) => invoke("repos.cloneInto", args.remote, args.branch, args.parent));

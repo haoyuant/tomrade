@@ -57,7 +57,9 @@ export const CatalogRepo = z.object({
   /** The local checkout Tomrade fetches from and adds worktrees to. Null until the user names one. */
   checkout: z.string().nullable().default(null),
   /** The workstream runs directly in the checkout instead of a worktree. The user's decision and risk. */
-  runInCheckout: z.boolean().default(false)
+  runInCheckout: z.boolean().default(false),
+  /** After a fetch, the checkout's default branch is fast-forwarded to the remote's when that loses nothing. */
+  pullDefault: z.boolean().default(true)
 });
 export type CatalogRepo = z.infer<typeof CatalogRepo>;
 
