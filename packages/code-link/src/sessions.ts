@@ -213,6 +213,7 @@ const OUT_OF_SCOPE_TOOLS = new Set([
   "plan_and_apply",
   "update_project_brief",
   "start_night_shift",
+  "edit_night_shift",
   "stop_night_shift"
 ]);
 
