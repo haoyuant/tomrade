@@ -81,13 +81,16 @@ async function boot() {
   const gh = fakeGitHub();
   let connected = true;
   const links: LandedLink[] = [];
+  /** A ticket's own links; one not in it has `links`. */
+  const linksOf = new Map<string, LandedLink[]>();
   const repos = new Map([["repo-1", REPO]]);
   const source: InboxSource = githubSource({
     api: gh.api,
     inbox: f.ctx.inbox,
     repos: async () => new Map(repos),
     item: (projectId, itemId) => f.items.get(projectId, itemId),
-    links: () => links,
+    descendants: (projectId, itemId) => f.items.listAll(projectId).filter((i) => i.parentId === itemId),
+    links: (_projectId, itemId) => linksOf.get(itemId) ?? links,
     connected: async () => connected,
     words: () => ({
       source: "GitHub issues",
@@ -104,7 +107,7 @@ async function boot() {
   });
   f.ctx.inbox.source(source);
   await settle();
-  return { ...f, ...gh, inbox: f.ctx.inbox, p: f.project.id, links, repos, disconnect: () => (connected = false) };
+  return { ...f, ...gh, inbox: f.ctx.inbox, p: f.project.id, links, linksOf, repos, disconnect: () => (connected = false) };
 }
 
 const id = (n: number) => entryId("github", `${REPO}#${n}`);
@@ -235,6 +238,48 @@ describe("the GitHub inbox source", () => {
     expect(t.state.writes.map((w) => [w.method, w.route, w.body])).toEqual([
       ["PATCH", `/repos/${REPO}/issues/1`, { state: "closed", state_reason: "completed" }],
       ["POST", `/repos/${REPO}/issues/1/comments`, { body: "Fixed in v1.2.0." }]
+    ]);
+  });
+
+  it("waits for every ticket split from the issue's ticket, and names the release the last of them went out in", async () => {
+    const t = await boot();
+    t.state.issues.push(issue(1));
+    await t.inbox.setSource(t.p, "github", true);
+    await t.inbox.setSourceOption(t.p, "github", "close", true);
+    const { item } = await t.inbox.accept(t.p, id(1));
+    const board = t.items.get(t.p, item.id)!.boardId;
+    const split = t.items.create({ projectId: t.p, boardId: board, parentId: item.id, title: "The other half", by: "human" });
+    const dropped = t.items.create({ projectId: t.p, boardId: board, parentId: item.id, title: "Not needed after all", status: "cancelled", by: "human" });
+    t.linksOf.set(item.id, [{ repoId: "repo-1", mergedSha: "abc123", prNumber: null, prState: "merged" }]);
+    t.linksOf.set(split.id, [{ repoId: "repo-1", mergedSha: "fed789", prNumber: null, prState: "merged" }]);
+    t.linksOf.set(dropped.id, []);
+    t.state.releases.push(
+      { tag_name: "v1.3.0", draft: false, prerelease: false, published_at: "2026-10-10T00:00:00Z" },
+      { tag_name: "v1.2.0", draft: false, prerelease: false, published_at: "2026-10-05T00:00:00Z" }
+    );
+    t.state.tags.set("v1.2.0", ["abc123"]);
+    t.state.tags.set("v1.3.0", ["abc123"]);
+    await t.inbox.flush(t.p);
+    t.state.writes.length = 0;
+
+    // the first ticket done and released, the split one still open
+    t.items.update(t.p, item.id, { status: "done" }, "human");
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id(1))!.shippedIn).toBeNull();
+    // done too, but its merge in no release yet
+    t.items.update(t.p, split.id, { status: "done" }, "human");
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id(1))!.shippedIn).toBeNull();
+    expect(t.state.writes).toEqual([]);
+
+    t.state.releases.unshift({ tag_name: "v1.4.0", draft: false, prerelease: false, published_at: "2026-10-20T00:00:00Z" });
+    t.state.tags.set("v1.4.0", ["abc123", "fed789"]);
+    await t.inbox.refresh(t.p);
+    await t.inbox.flush(t.p);
+    expect(t.inbox.get(t.p, id(1))!.shippedIn).toBe("v1.4.0");
+    expect(t.state.writes.map((w) => [w.method, w.route, w.body])).toEqual([
+      ["PATCH", `/repos/${REPO}/issues/1`, { state: "closed", state_reason: "completed" }],
+      ["POST", `/repos/${REPO}/issues/1/comments`, { body: "Fixed in v1.4.0." }]
     ]);
   });
 
