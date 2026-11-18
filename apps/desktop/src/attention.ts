@@ -424,6 +424,11 @@ export const attention = {
           who: engineTitle(notice.agent), text: clip(notice.text), sessionId: notice.sessionId
         });
       }
+      // a merge the person asked for that Tomrade could not make by itself
+      for (const notice of codeLink?.mergeNotices() ?? []) {
+        const key = `merge:${notice.key}`;
+        out.set(key, { key, projectId: notice.projectId, threadId: notice.threadId, itemId: notice.itemId, itemKey: itemKeyOf(notice.projectId, notice.itemId), kind: "waiting", who: "Tomrade", text: clip(notice.text) });
+      }
       // an agent review's findings that wait on the person: nobody could be told, or the back and forth had its rounds
       for (const notice of ctx.get("changeReview")?.notices() ?? []) {
         const key = `review:${notice.key}`;

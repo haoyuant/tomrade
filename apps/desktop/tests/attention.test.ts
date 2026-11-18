@@ -238,13 +238,14 @@ describe("the attention row", () => {
   const start = () => {
     const state = {
       sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined, interrupted: [] as { id: string; itemId: string | null; engine: string; error: string }[],
-      suspected: [] as { projectId: string; threadId: string; itemId: string | null; engine: string; text: string }[]
+      suspected: [] as { projectId: string; threadId: string; itemId: string | null; engine: string; text: string }[],
+      merges: [] as { key: string; projectId: string; itemId: string; threadId: string | null; text: string }[]
     };
     const listeners = new Map<string, Listener>();
     const sent: unknown[][] = [];
     const revealed: unknown[][] = [];
     const services: Record<string, unknown> = {
-      codeLink: { sessionsOf: () => state.sessions, showSession: async (...args: unknown[]) => (revealed.push(args), true) },
+      codeLink: { sessionsOf: () => state.sessions, mergeNotices: () => state.merges, showSession: async (...args: unknown[]) => (revealed.push(args), true) },
       db: { openIds: () => ["p"] },
       terminals: { kind: "herdr" },
       herdr: { clientAttached: async () => state.client },
@@ -287,6 +288,21 @@ describe("the attention row", () => {
     listeners.get("codeLink/changed")!("p");
     await vi.advanceTimersByTimeAsync(300);
     expect(shown).toEqual(["Claude Code is waiting for you"]);
+  });
+
+  it("lists a merge Tomrade could not make as waiting on the person, until it is no longer", async () => {
+    const { state, listeners, sent } = start();
+    const listed = () => (sent.filter(([channel]) => channel === "attention.changed").at(-1)?.[1] ?? []) as AttentionEntry[];
+    await vi.advanceTimersByTimeAsync(300);
+    state.merges = [{ key: "i1", projectId: "p", itemId: "i1", threadId: "t", text: "TOM-1 was not merged: it conflicts with main" }];
+    listeners.get("codeLink/changed")!("p");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([expect.objectContaining({ key: "merge:i1", threadId: "t", itemId: "i1", kind: "waiting", who: "Tomrade", text: "TOM-1 was not merged: it conflicts with main" })]);
+    expect(shown).toEqual(["Tomrade is waiting for you"]);
+    state.merges = [];
+    listeners.get("codeLink/changed")!("p");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([]);
   });
 
   it("lists a conversation the app's closing interrupted as stopped, in what its note said, until it is no longer", async () => {
