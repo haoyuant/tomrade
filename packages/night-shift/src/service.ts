@@ -20,7 +20,7 @@ import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
 import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
 import { match, type MatchDevice } from "@tomradex/dispatch";
 import { PlanReply, placed, planCandidates, planSystem, planUser, readPlan, type Placer, type PlannerDevice, type ShiftPlan } from "./plan.js";
-import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
+import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type Action, type NightShift, type NodeConfig, type ShiftMode, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
 import { WorkRules, keptFrom, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
@@ -495,16 +495,12 @@ export class NightShifts extends Service {
 
   start(projectId: string, input: NightShiftInput, now = Date.now()): NightShiftView {
     const { parsed, tickets } = this.checked(projectId, input);
-    const remembered = this.home.codeLink.startDefaults();
     // The person took these on the plan, so they are the person's writes, and undo takes them back.
     for (const { from, to } of parsed.dependencies) {
       const item = this.home.items.get(projectId, from);
       if (item && !item.blocks.includes(to)) this.home.items.update(projectId, from, { blocks: [...item.blocks, to] }, "human");
     }
-    const mode = parsed.mode ?? remembered?.mode ?? "run";
-    const engine = parsed.engine ?? remembered?.engine;
-    const options = parsed.options ?? (parsed.engine ? undefined : remembered?.options);
-    const permissionMode = mode === "run" ? (parsed.permissionMode ?? (parsed.engine ? undefined : remembered?.permissionMode)) : undefined;
+    const { mode, engine, options, permissionMode } = this.runsAs(parsed);
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
@@ -621,13 +617,24 @@ export class NightShifts extends Service {
     return [...this.going].some((projectId) => this.running(projectId)?.settings.keepAwake);
   }
 
+  /**
+   * Where a run's agents work, and which: terminal panes, where the person can watch them and step in, unless
+   * sessions are asked for; Start's last agent, unless the run names one or it cannot go where the run goes.
+   */
+  private runsAs(parsed: z.output<typeof NightShiftInput>): { mode: ShiftMode; engine?: string; options?: Record<string, unknown>; permissionMode?: string } {
+    const mode = parsed.mode ?? "terminal";
+    const remembered = parsed.engine ? null : this.home.codeLink.startDefaults();
+    const kept = remembered?.engine && (mode !== "terminal" || this.home.agent.engineOf(remembered.engine)?.terminal?.mode !== "none") ? remembered : null;
+    const engine = parsed.engine ?? kept?.engine;
+    const options = parsed.options ?? kept?.options;
+    const permissionMode = mode === "run" ? (parsed.permissionMode ?? kept?.permissionMode) : undefined;
+    return { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}) };
+  }
+
   /** A run in the words the person answers: which tickets, and everything that decides how they go. */
   private describe(projectId: string, parsed: z.output<typeof NightShiftInput>, tickets: ShiftTicket[]): { config: string[]; text: string } {
     const w = NIGHT_SHIFT_WORDS(this.locale());
-    const remembered = this.home.codeLink.startDefaults();
-    const mode = parsed.mode ?? remembered?.mode ?? "run";
-    const engine = parsed.engine ?? remembered?.engine;
-    const permission = mode === "run" ? (parsed.permissionMode ?? (parsed.engine ? undefined : remembered?.permissionMode)) : undefined;
+    const { mode, engine, permissionMode: permission } = this.runsAs(parsed);
     const config = [
       w(mode === "terminal" ? "whereTerminal" : "whereRun"),
       w("configAgent", { agent: engine ? this.engineTitle(engine) : w("configAgentDefault") }),
@@ -1037,7 +1044,7 @@ export class NightShifts extends Service {
           "Asks the person to start an auto run: this does not start one by itself, and you cannot answer for them. They see the tickets and every setting and press Start, in the app or in their direct chat. Calling again replaces what they were asked. Once started it works through these tickets unattended, each with its own coding agent on its own branch, in dependency order, within the limits given. A ticket starts only when nothing it waits on is open. Upstream tickets must merge before what depends on them can start, so a chain runs only with autoMerge; without it the dependants are left waiting, not failed. autoMerge merges a delivery only once its pull request's checks pass; on a conflict its agent is sent back once to resolve it.",
         input: z.object({
           keys: z.array(z.string().min(1)).min(1).max(50).describe('Ticket keys in the order to try them, e.g. ["TOM-42", "TOM-43"]'),
-          where: z.enum(["terminal", "session"]).optional().describe("terminal: each agent in a pane of the Terminal window. session: background sessions in the assistant panel. Absent goes as Start last went. Ask the user when you do not know which they want."),
+          where: z.enum(["terminal", "session"]).optional().describe("terminal: each agent in a pane of the Terminal window. session: background sessions in the assistant panel. Absent: terminal, which is the default."),
           engine: z.string().min(1).optional().describe("The coding agent's engine id; absent goes as Start last went"),
           permissionMode: z.string().min(1).optional().describe("Sessions only. A mode that asks before acting stalls the ticket until morning."),
           concurrency: z.number().int().min(1).max(8).optional().describe("Tickets at work at once; 2 by default. plan_night_shift suggests a number"),
