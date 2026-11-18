@@ -807,7 +807,7 @@ describe("a run an agent asks for", () => {
       const a = t.make("A");
       await ask(t, [a.key]);
       const names = t.ctx.tools.list().map((tool) => tool.name).filter((name) => /night_shift/.test(name));
-      expect(names.sort()).toEqual(["night_shift_status", "plan_night_shift", "start_night_shift", "stop_night_shift"]);
+      expect(names.sort()).toEqual(["edit_night_shift", "night_shift_status", "plan_night_shift", "start_night_shift", "stop_night_shift"]);
       // asking again is only asking
       await ask(t, [a.key]);
       expect(t.s.current(t.project.id)).toBeNull();
@@ -906,6 +906,82 @@ describe("a run an agent asks for", () => {
 describe("changing a run while it goes", () => {
   const keys = (t: Awaited<ReturnType<typeof boot>>) => t.s.current(t.project.id)?.tickets.map((x) => x.key) ?? [];
   const stepsOf = (t: Awaited<ReturnType<typeof boot>>, kind: string) => (t.s.current(t.project.id)?.steps ?? []).filter((step) => step.kind === kind);
+
+  describe("on an agent's ask", () => {
+    const by = "ai:test" as const;
+    const started = async (t: Awaited<ReturnType<typeof boot>>) => {
+      const [a, b, c] = [t.make("A"), t.make("B"), t.make("C")];
+      t.s.start(t.project.id, { itemIds: [a.id, b.id], concurrency: 1 });
+      await t.s.tick();
+      return { a, b, c };
+    };
+
+    it("puts the change to the person, and makes it only on their word", async () => {
+      const t = await boot();
+      try {
+        const { a, b, c } = await started(t);
+        const questions: string[] = [];
+        const inRun = (said: string | null) => ({ by, projectId: t.project.id, ask: async (text: string) => (questions.push(text), said) });
+        const change = { add: [c.key], remove: [b.key] };
+        expect(await t.ctx.tools.execute("edit_night_shift", change, inRun("Don't"))).toMatchObject({ changed: false });
+        expect(await t.ctx.tools.execute("edit_night_shift", change, inRun(null))).toMatchObject({ changed: false });
+        await t.s.tick();
+        expect(keys(t)).toEqual([a.key, b.key]);
+        expect(questions[0]).toContain(`+ ${c.key} C`);
+        expect(questions[0]).toContain(`− ${b.key} B`);
+        expect(await t.ctx.tools.execute("edit_night_shift", change, inRun("Change it"))).toMatchObject({ changed: true, added: [c.key], removed: [b.key] });
+        await t.s.tick();
+        expect(keys(t)).toEqual([a.key, c.key]);
+      } finally {
+        await t.ctx.fiber.dispose();
+      }
+    });
+
+    it("says an agent at work stops, and refuses before asking what cannot be", async () => {
+      const t = await boot();
+      try {
+        const { a, c } = await started(t);
+        const questions: string[] = [];
+        const inRun = { by, projectId: t.project.id, ask: async (text: string) => (questions.push(text), "Change it") };
+        await expect(t.ctx.tools.execute("edit_night_shift", { remove: [a.key] }, inRun)).rejects.toThrow(/has an agent at work/);
+        await expect(t.ctx.tools.execute("edit_night_shift", { add: [a.key] }, inRun)).rejects.toThrow(/already in this run/);
+        await expect(t.ctx.tools.execute("edit_night_shift", {}, inRun)).rejects.toThrow(/name a ticket/);
+        expect(questions).toEqual([]);
+        await t.ctx.tools.execute("edit_night_shift", { add: [c.key], remove: [a.key], stop: true }, inRun);
+        expect(questions[0]).toContain(`− ${a.key} A, and its agent stops`);
+        await t.s.tick();
+        expect(t.s.current(t.project.id)?.tickets.find((x) => x.key === a.key)).toMatchObject({ state: "skipped" });
+      } finally {
+        await t.ctx.fiber.dispose();
+      }
+    });
+
+    it("where nobody can be asked, lets tickets leave but not join", async () => {
+      const t = await boot();
+      try {
+        const { a, b, c } = await started(t);
+        const bare = { by, projectId: t.project.id };
+        expect(await t.ctx.tools.execute("edit_night_shift", { add: [c.key], remove: [b.key] }, bare)).toMatchObject({ changed: false });
+        await t.s.tick();
+        expect(keys(t)).toEqual([a.key, b.key]);
+        expect(await t.ctx.tools.execute("edit_night_shift", { remove: [b.key] }, bare)).toMatchObject({ changed: true, removed: [b.key] });
+        await t.s.tick();
+        expect(keys(t)).toEqual([a.key]);
+      } finally {
+        await t.ctx.fiber.dispose();
+      }
+    });
+
+    it("has nothing to change when no run goes", async () => {
+      const t = await boot();
+      try {
+        const a = t.make("A");
+        await expect(t.ctx.tools.execute("edit_night_shift", { add: [a.key] }, { by, projectId: t.project.id })).rejects.toThrow(/No auto run is going/);
+      } finally {
+        await t.ctx.fiber.dispose();
+      }
+    });
+  });
 
   it("takes a ticket in and leaves one out at the next pass, and starts what fits", async () => {
     const t = await boot();
