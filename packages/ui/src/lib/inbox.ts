@@ -50,6 +50,8 @@ export function useInboxActions(projectId: string) {
     seen: useMutation({ mutationFn: (id: string) => invoke("inbox.seen", projectId, id), onSuccess: done }),
     reopen: useMutation({ mutationFn: (id: string) => invoke("inbox.reopen", projectId, id), onSuccess: done }),
     reply: useMutation({ mutationFn: ({ id, text }: { id: string; text: string }) => invoke("inbox.reply", projectId, id, text), onSuccess: done }),
+    retrySend: useMutation({ mutationFn: (id: string) => invoke("inbox.retrySend", projectId, id), onSuccess: done }),
+    dropSend: useMutation({ mutationFn: (id: string) => invoke("inbox.dropSend", projectId, id), onSuccess: done }),
     suggest: useMutation({ mutationFn: (id: string) => invoke("inbox.suggest", projectId, id), onSuccess: done, onError: done }),
     adopt: useMutation({ mutationFn: ({ id, opts }: { id: string; opts: AdoptOptions }) => invoke("inbox.adopt", projectId, id, opts), onSuccess: done })
   };

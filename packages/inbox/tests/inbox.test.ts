@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Contributions } from "@tomradex/contributions";
 import { fresh, settle } from "@tomradex/testkit";
 import { Inbox, entryId, type InboxEntry, type InboxEntryInput, type InboxSource, type TriageChange, type TriageSuggestion } from "@tomradex/inbox";
@@ -156,6 +156,57 @@ describe("triage", () => {
     expect((await t.inbox.reply(t.p, id, "  Thanks, looking into it  ")).reply).toBe("Thanks, looking into it");
     expect(t.replies).toEqual(["Thanks, looking into it"]);
     await expect(t.inbox.reply(t.p, id, " ")).rejects.toThrow();
+  });
+
+  describe("a source that keeps refusing", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("says why on the entry and counts it, tries further apart and then only when asked, and can be let go", async () => {
+      vi.useFakeTimers({ toFake: ["Date"], now: 10 * DAY });
+      let tries = 0;
+      const t = await boot({
+        setStatus: async () => {
+          tries += 1;
+          throw new Error("Resource not accessible by integration");
+        }
+      });
+      t.feed.push(report("R-AAAAAA", 1 * DAY), report("R-BBBBBB", 2 * DAY));
+      await t.inbox.setSource(t.p, "app", true);
+      const id = entryId("app", "R-AAAAAA");
+      await t.inbox.close(t.p, id, "wontfix");
+      await t.inbox.flush(t.p);
+      expect(tries).toBe(2);
+      expect(t.inbox.get(t.p, id)!.sendError).toBe("Resource not accessible by integration");
+      expect(t.inbox.list(t.p, "unsent").map((e) => e.id)).toEqual([id]);
+      expect(t.inbox.count(t.p)).toBe(2);
+      expect((await t.inbox.sources(t.p))[0]).toMatchObject({ pending: 1, sendError: "Resource not accessible by integration" });
+
+      // the next pull tries at once; then a pull's interval, then twice that
+      await t.inbox.flush(t.p);
+      expect(tries).toBe(3);
+      await t.inbox.flush(t.p);
+      expect(tries).toBe(3);
+      vi.setSystemTime(Date.now() + 3_600_000);
+      await t.inbox.flush(t.p);
+      expect(tries).toBe(4);
+      vi.setSystemTime(Date.now() + 3_600_000);
+      await t.inbox.flush(t.p);
+      expect(tries).toBe(4);
+      // after ten tries, time alone brings no more
+      for (let i = 0; i < 20; i++) {
+        vi.setSystemTime(Date.now() + 6 * 3_600_000);
+        await t.inbox.flush(t.p);
+      }
+      expect(tries).toBe(10);
+
+      // a person tries again, and lets it go
+      await t.inbox.retrySend(t.p, id);
+      expect(tries).toBe(11);
+      expect(t.inbox.dropSend(t.p, id).sendError).toBeNull();
+      expect(t.inbox.list(t.p, "unsent")).toEqual([]);
+      expect(t.inbox.count(t.p)).toBe(1);
+      expect((await t.inbox.sources(t.p))[0]).toMatchObject({ pending: 0, sendError: null });
+    });
   });
 
   it("refuses a reply a source cannot carry", async () => {
