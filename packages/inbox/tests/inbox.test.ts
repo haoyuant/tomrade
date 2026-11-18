@@ -165,12 +165,12 @@ describe("triage", () => {
     await expect(t.inbox.reply(t.p, entryId("app", "R-AAAAAA"), "hi")).rejects.toThrow("In-app takes no replies");
   });
 
-  it("shows a sidebar door to the inbox, with what waits", async () => {
+  it("shows a sidebar door to the inbox, with what waits as an unread badge", async () => {
     const t = await boot();
     t.feed.push(report("R-AAAAAA", 1 * DAY), report("R-BBBBBB", 2 * DAY));
-    expect(await t.ctx.contributions.sidebarModules(t.p)).toEqual([{ id: "inbox", title: "Inbox", icon: "i-inbox", opens: "inbox" }]);
+    expect(await t.ctx.contributions.sidebarModules(t.p)).toEqual([{ id: "inbox", title: "Inbox", icon: "i-inbox", opens: "inbox", badge: true }]);
     await t.inbox.setSource(t.p, "app", true);
-    expect((await t.ctx.contributions.sidebarModules(t.p))[0]).toMatchObject({ count: 2 });
+    expect((await t.ctx.contributions.sidebarModules(t.p))[0]).toMatchObject({ count: 2, badge: true });
   });
 });
 

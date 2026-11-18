@@ -476,7 +476,7 @@ export class Inbox extends Service {
       ctx.on("inbox/changed", (projectId) => ctx.ipc.send("inbox.changed", projectId));
     });
     ctx.inject(["contributions"], (ctx) => {
-      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words()("module"), icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId) });
+      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words()("module"), icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId), badge: true });
       ctx.contributions.section({ id: "inbox", title: () => this.words()("section"), render: (item) => this.section(item) });
       ctx.on("inbox/changed", () => ctx.contributions.changed());
     });

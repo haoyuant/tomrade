@@ -1830,6 +1830,7 @@ export const ja: PartialMessages = {
     deletedViewToast: "{{name}} を削除しました"
   },
   sidebar: {
+    unreadBadge: "未読 {{n}} 件",
     newView: "新規ビュー",
     createdViewToast: "ビュー {{name}} を作成しました",
     newViewNameAria: "新しいビューの名前",
