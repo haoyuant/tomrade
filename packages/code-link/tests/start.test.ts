@@ -1777,6 +1777,17 @@ describe("starting a ticket", () => {
     const prUrl = "https://github.com/acme/app/pull/7";
     const link = codeLink.links(project.id, item.id)[0]!;
     codeLink.store.patchLink(project.id, link.id, { prUrl, prNumber: 7, prState: "open" });
+    // a conflict is the agent's to settle: the session goes on, told how
+    const conflicted = codeLink.sessions.event(project.id, started.sessionId, {
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: `gh pr merge ${prUrl} --squash` },
+      tool_error: "X Pull request acme/app#7 is not mergeable: the merge commit cannot be cleanly created."
+    });
+    expect(conflicted).toMatchObject({ additionalContext: expect.stringContaining("That is yours to settle") });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]?.blocked).toBeNull();
+    expect(brief(started.threadId)).toContain("conflicts with or is behind the default branch, that is yours to settle");
+
     const response = codeLink.sessions.event(project.id, started.sessionId, {
       hook_event_name: "PostToolUseFailure",
       tool_name: "Bash",
@@ -2504,7 +2515,7 @@ it("puts the repository setup back in the conversation when the project has no c
 
 describe("starting tickets from a conversation", () => {
   /** A conversation engine that can code: asked in chat, it starts tickets; on a ticket, it commits like the fake coding agent. */
-  function chatty(id: string, say: (text: string, io: Parameters<Engine["turn"]>[1]) => Promise<unknown>, outcomes: unknown[]): Engine {
+  function chatty(id: string, say: (text: string, io: Parameters<Engine["turn"]>[1]) => Promise<unknown>, outcomes: unknown[], opts: { resolves?: boolean } = {}): Engine {
     return {
       id,
       title: id,
@@ -2515,7 +2526,7 @@ describe("starting tickets from a conversation", () => {
         if (input.cwd && input.purpose === "code") {
           // Sent back for a conflict, it brings the branch up to date and hands over again, as the brief says.
           if (input.input.kind === "text" && /no longer merges/.test(input.input.text)) {
-            git(["merge", "-q", "-X", "ours", "main"], input.cwd);
+            if (opts.resolves !== false) git(["merge", "-q", "-X", "ours", "main"], input.cwd);
             await io.tools.execute("link_code", { scopeChecked: true });
             return { stop: "end" };
           }
@@ -2630,6 +2641,50 @@ describe("starting tickets from a conversation", () => {
     await sessionContext.run({ projectId: project.id, sessionId: sessionC.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
     await expect.poll(() => ctx.items.get(project.id, c.id)!.status).toBe("done");
     expect(agent.store.cards(project.id, thread.id).find((c2) => c2.id === `merge-${c.id}-1`)?.data).toMatchObject({ state: "merged" });
+  });
+
+  async function deliveredAndClashing(resolves: boolean) {
+    const folder = localRepo();
+    const world = await machine(null);
+    const { codeLink, ctx, agent, project, board, ticket } = world;
+    const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+    world.boards.update(project.id, board.id, { repoId: repo.id });
+    codeLink.setRepoPolicy(project.id, repo.id, { mergePolicy: "ask" });
+    const a = ticket("Clashing thing");
+    agent.engine(chatty("chatty", (_text, io) => io.tools.execute("start_ticket", { keys: [a.key] }), [], { resolves }));
+    const thread = agent.newThread(project.id, "chatty");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: `do ${a.key}` });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    await untilRunsSettle(agent);
+    const session = codeLink.store.sessions(project.id).find((s) => s.itemIds.includes(a.id))!;
+    await sessionContext.run({ projectId: project.id, sessionId: session.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
+    fs.writeFileSync(path.join(folder, `${a.key}.ts`), "export const clash = 1;\n");
+    git(["add", "-A"], folder);
+    git(["commit", "-q", "-m", "clash on main"], folder);
+    return { ...world, a, thread };
+  }
+
+  it("sends a conflict back to the ticket's session by itself once the person said to merge, and merges after its hand-over", { timeout: 30_000 }, async () => {
+    const { codeLink, ctx, agent, project, a, thread } = await deliveredAndClashing(true);
+    expect(await codeLink.land(project.id, a.id)).toMatchObject({ merged: false, cause: "conflict", resolving: true });
+    await untilRunsSettle(agent);
+    await expect.poll(() => ctx.items.get(project.id, a.id)!.status).toBe("done");
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "merged" });
+    expect(codeLink.mergeNotices()).toEqual([]);
+  });
+
+  it("leaves a conflict its session could not settle to the person, waiting on them, after sending it back twice", { timeout: 30_000 }, async () => {
+    const { codeLink, ctx, agent, project, a, thread } = await deliveredAndClashing(false);
+    expect(await codeLink.land(project.id, a.id)).toMatchObject({ resolving: true });
+    await untilRunsSettle(agent);
+    await expect.poll(() => codeLink.mergeNotices().map((n) => n.itemId)).toEqual([a.id]);
+    expect(codeLink.mergeNotices()[0]).toMatchObject({ threadId: thread.id, text: expect.stringContaining(`${a.key} was not merged`) });
+    expect(ctx.items.get(project.id, a.id)!.status).toBe("verifying");
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "refused", cause: "conflict" });
+    // past the limit a conflict stays the person's: nothing more is sent back
+    expect(await codeLink.land(project.id, a.id)).toMatchObject({ merged: false, cause: "conflict" });
+    expect((await codeLink.land(project.id, a.id)).resolving).toBeUndefined();
+    expect(codeLink.mergeNotices()).toHaveLength(1);
   });
 
   it("asks on a card before starting a ticket the assistant just filed, and starts it from that card with the settled configuration", { timeout: 30_000 }, async () => {
