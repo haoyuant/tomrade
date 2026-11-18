@@ -3,7 +3,8 @@
   position: relative; display: flex; flex-direction: column;
   flex: 1; min-width: 0; min-height: 0;
 }
-.board-scroll-area[data-has-more="true"] { padding-bottom: 48px; }
+/* the hint floats over the board; each scroll gets room at its end to move cards clear of it */
+.board-scroll-area[data-has-more="true"] > .col-track .col-body { padding-bottom: 40px; }
 .board-scroll-fade {
   position: absolute; top: 0; right: 0; bottom: 0; width: 32px;
   background: linear-gradient(to right, transparent, var(--bg));

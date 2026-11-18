@@ -11,6 +11,8 @@
   padding: 0 var(--space-4) var(--space-4);
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
+/* room to scroll the last lane clear of the floating "scroll right" hint */
+.board-scroll-area[data-has-more="true"] > .lanes { padding-bottom: 56px; }
 .lane-cols { display: flex; gap: var(--space-4); min-width: max-content; }
 .lane-cols-head {
   position: sticky; top: 0; z-index: 2;
