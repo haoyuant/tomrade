@@ -1,6 +1,7 @@
 import { Context, Service } from "cordis";
-import { createClient, type Session, type SupabaseClient, type SupportedStorage, type User } from "@supabase/supabase-js";
+import { createClient, type Session, type SupabaseClient, type SupportedStorage, type User, type VerifyPasskeyAuthenticationParams } from "@supabase/supabase-js";
 import { z } from "zod";
+import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
@@ -10,6 +11,7 @@ import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord, type Muta
 import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
 import { Devices, type DeviceView, type DevicesInfo } from "./devices.js";
 import { SUBSCRIBE_PATH } from "./plans.js";
+import { inBrowser, PASSKEY_MS } from "./passkey.js";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -64,6 +66,12 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
     "account.signIn": (email: string, password: string, agreed?: boolean) => AccountInfo;
+    /** Signs in with a passkey in the person's browser; see `inBrowser`. */
+    "account.signInWithPasskey": (agreed?: boolean, lang?: string) => AccountInfo;
+    /** Adds a passkey to the signed-in account, made in the person's browser. */
+    "account.addPasskey": (lang?: string) => void;
+    /** Gives up the passkey step waiting in the browser. */
+    "account.cancelPasskey": () => void;
     "account.signUp": (email: string, password: string, lang?: string, agreed?: boolean, marketingEmails?: boolean) => { confirmationRequired: boolean };
     "account.acceptTerms": () => AccountInfo;
     "account.resendConfirmation": (email: string, lang?: string) => void;
@@ -90,7 +98,7 @@ export const CloudConfig = z.object({
   /** How often the Hub is read while no window of the app shows. */
   hiddenSyncMs: z.number().int().min(1000).default(300_000),
   accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional(),
-  /** Where email links land: `/auth/confirmed/` and `/auth/reset/` on this site, under `/zh/` in Chinese. */
+  /** Where email links land, `/auth/confirmed/` and `/auth/reset/`, and the passkey relay `/auth/passkey/`: on this site, under `/zh/` in Chinese. */
   site: z.url().default("https://tomrade.com"),
   /** This build, as the account's other machines read it. */
   appVersion: z.string().default("dev"),
@@ -135,6 +143,8 @@ function credentials(email: string, password: string, min = 1) {
   throw new Error(`[weak_password] Use a password of ${min} to 1024 characters.`);
 }
 const address = (email: string) => credentials(email, "-").email;
+/** What the relay page sent back, checked by Supabase itself. */
+type Credential = VerifyPasskeyAuthenticationParams["credential"];
 
 /** Supabase owns Hub metadata. The immutable outbox survives failed requests and process exits. */
 export class CloudHub extends Service implements CloudHubReader {
@@ -167,6 +177,8 @@ export class CloudHub extends Service implements CloudHubReader {
   private readonly origin: string;
   private readonly fetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) });
   private machines!: Devices;
+  /** The passkey step waiting in the browser, if any. */
+  private ceremony: AbortController | null = null;
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, "cloudHub");
@@ -184,7 +196,7 @@ export class CloudHub extends Service implements CloudHubReader {
     // supabase-js's own default, named so sign-out can forget the session without the server.
     this.sessionKey = `sb-${endpoint.hostname.split(".")[0]}-auth-token`;
     this.client = createClient(endpoint.origin, config.publishableKey, {
-      auth: { storage: config.sessionStorage, storageKey: this.sessionKey, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      auth: { storage: config.sessionStorage, storageKey: this.sessionKey, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, experimental: { passkey: true } },
       global: { fetch: this.fetch }
     });
   }
@@ -229,6 +241,9 @@ export class CloudHub extends Service implements CloudHubReader {
         return this.info();
       });
       ctx.ipc.handle("account.signIn", (email, password, agreed) => this.signIn(email, password, agreed));
+      ctx.ipc.handle("account.signInWithPasskey", (agreed, lang) => this.signInWithPasskey(agreed, lang));
+      ctx.ipc.handle("account.addPasskey", lang => this.addPasskey(lang));
+      ctx.ipc.handle("account.cancelPasskey", () => { this.ceremony?.abort(); });
       ctx.ipc.handle("account.signUp", (email, password, lang, agreed, marketingEmails) => this.signUp(email, password, lang, agreed, marketingEmails === true));
       ctx.ipc.handle("account.acceptTerms", () => this.acceptTerms());
       ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
@@ -288,6 +303,7 @@ export class CloudHub extends Service implements CloudHubReader {
     this.home.on("projects/removed", () => this.schedule());
     return () => {
       this.closed = true;
+      this.ceremony?.abort();
       if (this.timer) clearTimeout(this.timer);
       clearInterval(interval);
       this.machines.close();
@@ -504,7 +520,7 @@ export class CloudHub extends Service implements CloudHubReader {
    */
   private scratch(): SupabaseClient {
     return createClient(this.origin, this.config.publishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, experimental: { passkey: true } },
       global: { fetch: this.fetch }
     });
   }
@@ -532,10 +548,45 @@ export class CloudHub extends Service implements CloudHubReader {
   async signIn(email: string, password: string, agreed = false): Promise<AccountInfo> {
     const { data, error } = await this.scratch().auth.signInWithPassword(credentials(email, password));
     if (error) throw failure(error);
-    if (await this.handOff(data.user, data.session)) return this.info();
-    const { error: adopted } = await this.client.auth.setSession(data.session);
+    return this.adopt(data.user, data.session, agreed);
+  }
+  /** Beside the password, which stays the fallback; the passkey says whose account it is. */
+  async signInWithPasskey(agreed = false, lang?: string): Promise<AccountInfo> {
+    const scratch = this.scratch();
+    const { data: challenge, error } = await scratch.auth.passkey.startAuthentication();
+    if (error) throw failure(error);
+    const credential = await this.inBrowser("get", challenge.options, lang);
+    const { data, error: refused } = await scratch.auth.passkey.verifyAuthentication({ challengeId: challenge.challenge_id, credential: credential as Credential });
+    if (refused) throw failure(refused);
+    if (!data.session || !data.user) throw new Error("[passkey_failed] The passkey did not sign in.");
+    return this.adopt(data.user, data.session, agreed);
+  }
+  async addPasskey(lang?: string): Promise<void> {
+    if (!this.user) throw new Error("[not_signed_in] Sign in to add a passkey.");
+    const { data: challenge, error } = await this.client.auth.passkey.startRegistration();
+    if (error) throw failure(error);
+    const credential = await this.inBrowser("create", challenge.options, lang);
+    const { error: refused } = await this.client.auth.passkey.verifyRegistration({ challengeId: challenge.challenge_id, credential: credential as Credential });
+    if (refused) throw failure(refused);
+  }
+  /** One step at a time: starting another gives up the one before. */
+  private async inBrowser(kind: "create" | "get", options: unknown, lang?: string): Promise<unknown> {
+    this.ceremony?.abort();
+    const ceremony = this.ceremony = new AbortController();
+    try {
+      return await inBrowser({
+        kind, options, page: this.page("passkey", lang), open: url => this.home.emit("desktop/open-external", url),
+        signal: AbortSignal.any([ceremony.signal, AbortSignal.timeout(PASSKEY_MS)])
+      });
+    } finally {
+      if (this.ceremony === ceremony) this.ceremony = null;
+    }
+  }
+  private async adopt(user: User, session: Session, agreed: boolean): Promise<AccountInfo> {
+    if (await this.handOff(user, session)) return this.info();
+    const { error: adopted } = await this.client.auth.setSession(session);
     if (adopted) throw failure(adopted);
-    this.user = data.user;
+    this.user = user;
     if (agreed) this.agree();
     this.machines.signedIn();
     await this.sync(); this.notify();
@@ -590,7 +641,7 @@ export class CloudHub extends Service implements CloudHubReader {
     const { error } = await this.scratch().auth.resetPasswordForEmail(address(email), { redirectTo: this.page("reset", lang) });
     if (error) throw failure(error);
   }
-  private page(name: "confirmed" | "reset", lang?: string): string {
+  private page(name: "confirmed" | "reset" | "passkey", lang?: string): string {
     return new URL(`${lang === "zh" ? "/zh" : ""}/auth/${name}/`, this.config.site).href;
   }
   /**
