@@ -3,7 +3,7 @@
   "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["node"] },
   "include": ["src"],
   "references": [
-    { "path": "../contracts" },
+    { "path": "../contracts" }, { "path": "../desktop-surface" },
     { "path": "../hub" }, { "path": "../ipc" },
     { "path": "../settings" }, { "path": "../storage" }, { "path": "../projects" }
   ]
