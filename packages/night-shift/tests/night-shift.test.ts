@@ -121,16 +121,35 @@ it("waits for a dependency at work outside the run, then starts what it blocks",
   }
 });
 
-it("takes Start's last choice when none is given; a background shift keeps its permission mode, a terminal one has none to keep", async () => {
+it("runs in terminal panes unless sessions are asked for, with Start's last agent; a background shift keeps its permission mode, a terminal one has none to keep", async () => {
   const t = await boot();
   try {
     t.code.defaults = { mode: "run", engine: "codex", permissionMode: "full-access" };
+    const first = t.s.start(t.project.id, { itemIds: [t.make("Z").id] });
+    expect(first.settings).toMatchObject({ mode: "terminal", engine: "codex" });
+    expect(first.settings.permissionMode).toBeUndefined();
+    t.s.stop(t.project.id, first.id);
+    await t.s.tick();
     const a = t.make("A");
-    expect(t.s.start(t.project.id, { itemIds: [a.id] }).settings).toMatchObject({ mode: "run", engine: "codex", permissionMode: "full-access" });
+    expect(t.s.start(t.project.id, { itemIds: [a.id], mode: "run" }).settings).toMatchObject({ mode: "run", engine: "codex", permissionMode: "full-access" });
     t.s.stop(t.project.id, t.s.current(t.project.id)!.id);
     await t.s.tick();
     expect(t.s.current(t.project.id)).toBeNull();
     expect(t.s.start(t.project.id, { itemIds: [t.make("B").id], mode: "terminal", permissionMode: "full-access" }).settings.permissionMode).toBeUndefined();
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
+it("does not take Start's last agent into terminal panes when it runs only inside Tomrade", async () => {
+  const t = await boot();
+  try {
+    t.ctx.agent.engine({ id: "inside", title: "Inside", author: "ai:inside" as const, capabilities: ["code" as const], terminal: { mode: "none" as const }, available: async () => ({ ok: true }), async turn() { return { stop: "end" as const }; } });
+    t.code.defaults = { mode: "run", engine: "inside", options: { model: "m" } };
+    const shift = t.s.start(t.project.id, { itemIds: [t.make("A").id] });
+    expect(shift.settings.mode).toBe("terminal");
+    expect(shift.settings.engine).toBeUndefined();
+    expect(shift.settings.options).toBeUndefined();
   } finally {
     await t.ctx.fiber.dispose();
   }

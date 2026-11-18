@@ -390,8 +390,9 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
   const [judge, setJudge] = useState(true);
   const onBattery = useOnBattery();
 
-  const mode = chosenMode ?? defaults.data?.mode ?? "run";
-  const ready = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && (mode === "terminal" || !e.terminalOnly));
+  // Terminal panes unless the person picks sessions: there they can watch each agent and step in.
+  const mode = chosenMode ?? "terminal";
+  const ready = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && (mode === "terminal" ? e.terminal !== false : !e.terminalOnly));
   const remembered = defaults.data?.engine;
   const engine = ready.find((e) => e.id === (chosenEngine ?? remembered)) ?? ready[0];
   const permissionModes = mode === "run" ? engine?.permissionModes : undefined;
