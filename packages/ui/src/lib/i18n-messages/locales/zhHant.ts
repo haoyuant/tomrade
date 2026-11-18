@@ -1882,6 +1882,7 @@ export const zhHant: PartialMessages = {
     deletedViewToast: "已刪除 {{name}}"
   },
   sidebar: {
+    unreadBadge: "{{n}} 則未讀",
     newView: "新增檢視",
     createdViewToast: "已建立檢視 {{name}}",
     newViewNameAria: "新檢視名稱",

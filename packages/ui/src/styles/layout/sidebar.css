@@ -48,6 +48,12 @@
    labels above the 4.5 floor in the hovered and current rows */
 .side-row:hover .side-count,
 .side-row[aria-current="true"] .side-count { color: var(--muted); }
+/* unread news, unlike a count of what is there, should catch the eye */
+.side-badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--accent); color: var(--accent-on);
+  font-size: 11px; font-weight: 600; line-height: 18px; text-align: center;
+}
 .side-add { color: var(--muted); font-size: var(--text-sm); }
 .side-add:hover { color: var(--fg); }
 .side-presets { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }

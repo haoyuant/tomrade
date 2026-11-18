@@ -247,6 +247,8 @@ export interface SidebarModule {
   opens?: string;
   /** A number at the head's end — what waits there — computed per project; null or 0 shows none. */
   count?(scope: { projectId: string }): number | null | Promise<number | null>;
+  /** The count is news unread: drawn as a badge that catches the eye, and on the folded sidebar too when the head `opens` a surface. */
+  badge?: boolean;
   /** The rows under the head, computed per project. Without it the module is a single door; null hides it in that project. */
   rows?(scope: { projectId: string }): SidebarRow[] | null | Promise<SidebarRow[] | null>;
 }
@@ -258,6 +260,7 @@ export interface SidebarModuleView {
   command?: string;
   opens?: string;
   count?: number;
+  badge?: boolean;
   /** Absent: a door with nothing to fold. */
   rows?: SidebarRow[];
 }
@@ -460,7 +463,7 @@ export class Contributions extends Service {
       // a module whose rows failed or said null is not shown in this project
       if (m.rows && !rows[i]) return [];
       const count = counts[i];
-      return [{ id: m.id, title: said(m.title)!, ...(m.icon ? { icon: m.icon } : {}), ...(m.command ? { command: m.command } : {}), ...(m.opens ? { opens: m.opens } : {}), ...(count ? { count } : {}), ...(m.rows ? { rows: rows[i]! } : {}) }];
+      return [{ id: m.id, title: said(m.title)!, ...(m.icon ? { icon: m.icon } : {}), ...(m.command ? { command: m.command } : {}), ...(m.opens ? { opens: m.opens } : {}), ...(count ? { count } : {}), ...(m.badge ? { badge: true } : {}), ...(m.rows ? { rows: rows[i]! } : {}) }];
     });
   }
 

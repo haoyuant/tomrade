@@ -1806,6 +1806,7 @@ export const de: PartialMessages = {
     deletedViewToast: "{{name}} gelöscht"
   },
   sidebar: {
+    unreadBadge: "{{n}} ungelesen",
     newView: "Neue Ansicht",
     createdViewToast: "Ansicht {{name}} erstellt",
     newViewNameAria: "Name der neuen Ansicht",

@@ -41,7 +41,8 @@ export const sidebar = {
     workstreamsHelpWhat: "A workstream is one line of work in this backlog — the app, the website, the docs. Every ticket belongs to exactly one, and each workstream has its own page. Click one to switch to it.",
     workstreamsHelpRepo: "Each workstream can point at its own repository, and a folder inside it. Start runs a ticket's coding agent there — so one project can span several repositories.",
     workstreamsHelpExample: "For example: App → acme/app, Website → acme/site, Docs → acme/app in docs/.",
-    workstreamsHint: "Split the backlog into workstreams when the work spans several parts or repositories — each workstream can have a repository of its own."
+    workstreamsHint: "Split the backlog into workstreams when the work spans several parts or repositories — each workstream can have a repository of its own.",
+    unreadBadge: "{{n}} unread"
   },
   zh: {
     newView: "新建视图",
@@ -84,6 +85,7 @@ export const sidebar = {
     workstreamsHelpWhat: "工作流是项目里的一条工作线——比如应用、官网、文档。每个工单都恰好属于一个工作流，每个工作流都有自己的页面，点一下就能切换过去。",
     workstreamsHelpRepo: "每个工作流都可以指向自己的代码仓库，以及仓库里的某个文件夹。点 Start 时，工单的编码智能体就在那里运行——所以一个项目可以横跨多个仓库。",
     workstreamsHelpExample: "例如：应用 → acme/app，官网 → acme/site，文档 → acme/app 的 docs/。",
-    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把工单分到几个工作流里——每个工作流都能连接自己的仓库。"
+    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把工单分到几个工作流里——每个工作流都能连接自己的仓库。",
+    unreadBadge: "{{n}} 条未读"
   }
 };

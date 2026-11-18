@@ -9,7 +9,7 @@ import { Collapse } from "~/components/ui/collapse";
 import { Hint } from "~/components/ui/hint";
 import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
-import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
+import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, RailBadges, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
 import { viewIcon } from "~/lib/domain";
 import { GROUPED_TABLE_PRESETS, groupedTableQuery } from "~/lib/viewPresets";
 import { useI18n } from "~/lib/i18n";
@@ -477,6 +477,7 @@ export function Sidebar({
   onOpenSurface: (surface: string) => void;
 }) {
   const { t } = useI18n();
+  const { project } = useWorkspace();
   const sidebar = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem(sidebarWidthKey);
@@ -520,6 +521,7 @@ export function Sidebar({
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
         <span className="rail-label">{t("sidebar.projectRailLabel")}</span>
+        <RailBadges projectId={project.id} onOpen={onOpenSurface} />
         <button type="button" className="btn btn-icon rail-project-settings" aria-haspopup="dialog" title={t("sidebar.projectSettings")} aria-label={t("sidebar.projectSettings")} onClick={onOpenProjectSettings}>
           <Icon name="i-gear" size={17} />
         </button>
