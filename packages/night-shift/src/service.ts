@@ -340,6 +340,7 @@ export class NightShifts extends Service {
       case "waits-merge": return w("waitsMerge", { keys: why.keys.join(", ") });
       case "waits-upstream": return w("waitsUpstream", { keys: why.keys.join(", ") });
       case "upstream-stuck": return w("upstreamStuck", { keys: why.keys.join(", ") });
+      case "waits-person": return w("waitsPerson", { keys: why.keys.join(", ") });
       case "waits-outside": return w("waitsOutside", { keys: why.keys.join(", ") });
       case "waits-elsewhere": return w("waitsElsewhere", { keys: why.keys.join(", ") });
       case "halted": return w(why.halt === "stopped" ? "haltedStopped" : why.halt === "deadline" ? "haltedDeadline" : why.halt === "budget" ? "haltedBudget" : "haltedFailures");
