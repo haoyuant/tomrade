@@ -2,3 +2,14 @@ project_id = "tomrade"
 
 [db]
 major_version = 17
+
+# Mirrors the hosted project's dashboard setting (Authentication → Passkeys). Passkeys belong to
+# tomrade.com: the app runs the ceremony on the site's /auth/passkey/ page. Changing rp_id voids
+# every passkey made so far. Nothing else of auth is set here, so don't `supabase config push`.
+[auth.passkey]
+enabled = true
+
+[auth.webauthn]
+rp_display_name = "Tomrade"
+rp_id = "tomrade.com"
+rp_origins = ["https://tomrade.com", "https://www.tomrade.com"]
