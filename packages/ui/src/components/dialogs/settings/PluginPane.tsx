@@ -55,7 +55,10 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
     const payload = name === null ? next : { ...record(value), ...others, [name]: next };
     if (JSON.stringify(payload) === JSON.stringify(stored)) return setProblem(key, null);
     onSave(payload).then(
-      () => setProblem(key, null),
+      () => {
+        if (section.id === "pet" && name === "enabled") reportAction("pet.companion", "toggle");
+        setProblem(key, null);
+      },
       (err: unknown) => setProblem(key, t("common.notSaved", { reason: readableError(err) }))
     );
   };
@@ -121,6 +124,7 @@ const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below
 };
 
 import { AnalyticsIdentity } from "./AnalyticsIdentity";
+import { reportAction } from "~/lib/analytics";
 
 /** What a plugin's pane shows beyond its schema, for the plugins whose settings are more than fields. */
 export const PANE_EXTRAS: Record<string, () => ReactNode> = {

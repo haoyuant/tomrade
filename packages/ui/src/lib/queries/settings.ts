@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import type { AppSettings } from "@tomradex/domain";
 import { invoke } from "../api";
 import { keys } from "./keys";
+import { reportSettled } from "../analytics";
 
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: () => invoke("settings.get") });
 /** The cards' words come back in the renderer's language, so a language switch fetches them again. */
@@ -19,7 +20,17 @@ export const useSecretStorage = () =>
 
 /** A failed save says so as a toast, unless `reportErrors: false` because the caller shows it in place. */
 export const saveSettingsOptions = (qc: QueryClient, reportErrors = true) => ({
-  mutationFn: (next: AppSettings) => invoke("settings.set", next),
+  mutationFn: async (next: AppSettings) => {
+    const before = qc.getQueryData<AppSettings>(keys.settings);
+    const saved = await invoke("settings.set", next);
+    // One change per section the person touched; the section's id, never a key or a value. A first-run
+    // flag written to the cache ahead of its save differs from nothing, so it is not a change.
+    if (before) {
+      const was = before as unknown as Record<string, unknown>;
+      for (const [section, value] of Object.entries(next)) if (JSON.stringify(value) !== JSON.stringify(was[section])) reportSettled("settings", "change", section);
+    }
+    return saved;
+  },
   meta: { reportErrors },
   onSuccess: (saved: AppSettings) => qc.setQueryData(keys.settings, saved),
   // Whatever showed the new value goes back to what is saved.

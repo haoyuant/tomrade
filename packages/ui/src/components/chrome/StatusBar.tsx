@@ -11,6 +11,7 @@ import { useMcpUrl, useOplog, useProjects, useRunCommand, useStatusItems } from 
 import { useErrorToast, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "./ProjectShell";
 import { openSettingsPane } from "~/lib/settingsHost";
+import { reportAction } from "~/lib/analytics";
 
 /** How many of the account's computers are on, once there is a second one: a way to the Devices pane from every screen. */
 function DevicesItem() {
@@ -143,9 +144,10 @@ export function StatusBar({
   const toast = useToast();
   const reportError = useErrorToast();
   // An item that names a command runs it here; a conversation it opens shows in its own project, from home too.
-  const run = (id: string) =>
+  const run = (id: string, done?: () => void) =>
     runCommand.mutate({ id, scope: projectId ? { projectId } : {} }, {
       onSuccess: (r) => {
+        done?.();
         if (r.toast) toast({ body: r.toast });
         if (r.settingsPane) openSettingsPane(r.settingsPane);
         if (!r.showThread) return;
@@ -163,6 +165,8 @@ export function StatusBar({
       return (
         <Menu
           key={s.id}
+          // The pomodoro is an official plugin, counted by its own id; others stay anonymous.
+          onOpenChange={(open) => open && s.id === "pomodoro.status" && reportAction("plugin.pomodoro", "open")}
           label={s.title ?? s.text}
           align={s.align === "end" ? "end" : "start"}
           trigger={
@@ -175,7 +179,7 @@ export function StatusBar({
           {s.title && <MenuHead title={s.title} />}
           {s.menu.map((entry) => {
             const mark = iconOf(entry.icon);
-            return <MenuActionItem key={entry.command} icon={mark && <Icon name={mark} size={14} />} name={entry.title} onSelect={() => run(entry.command)} />;
+            return <MenuActionItem key={entry.command} icon={mark && <Icon name={mark} size={14} />} name={entry.title} onSelect={() => run(entry.command, entry.command === "pomodoro.toggle" && !s.until ? () => reportAction("plugin.pomodoro", "start") : undefined)} />;
           })}
         </Menu>
       );

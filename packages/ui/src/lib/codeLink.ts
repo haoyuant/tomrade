@@ -4,6 +4,7 @@ import type {} from "@tomradex/code-link";
 import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions, WorktreeGroup, WorktreeHold, WorktreeRemoval, WorktreeView } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
+import { reportAction } from "./analytics";
 
 export const useHerdrStatus = (enabled: boolean) =>
   useQuery({ queryKey: keys.codeLink.herdrStatus, queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
@@ -427,6 +428,8 @@ export function useConnectRepository(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (mode: ConnectMode = "team") => invoke("codeLink.connect", projectId, repoId, mode),
+    // What claim_external needs first: an agent in the person's own terminal can reach Tomrade.
+    onSuccess: () => reportAction("code.link", "repo_connected"),
     onSettled: () => void qc.invalidateQueries({ queryKey: keys.codeLink.connection(projectId, repoId) })
   });
 }

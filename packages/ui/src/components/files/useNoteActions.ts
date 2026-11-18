@@ -9,6 +9,7 @@ import { filePaths, freeNoteName, notesSearch, requestEdit, today } from "~/lib/
 import { errorSpec, useToast } from "~/lib/toast";
 import type { NoteLinking } from "./FileViewer";
 import { keys } from "~/lib/queries";
+import { reportAction } from "~/lib/analytics";
 
 /** Making notes and following links, the same from the tree, the region, the palette and a note's own text. */
 export function useNoteActions() {
@@ -23,7 +24,10 @@ export function useNoteActions() {
     async (path: string, body: string) => {
       const saved = await invoke("files.save", project.id, path, body, { expect: null, message: `Created ${nameOf(path)}` });
       // Somebody made it first: open theirs rather than writing over it.
-      if (saved.ok) toast({ body: t("notes.createdToast", { name: nameOf(path) }) });
+      if (saved.ok) {
+        reportAction("notes.editor", "create");
+        toast({ body: t("notes.createdToast", { name: nameOf(path) }) });
+      }
       requestEdit(path);
       openFile(path);
     },
@@ -53,7 +57,10 @@ export function useNoteActions() {
       open: (target, kind) => {
         if (!target) return;
         const hit = resolveLink({ target, kind }, from, paths);
-        if (hit) return openFile(hit);
+        if (hit) {
+          reportAction("notes.editor", "follow_link");
+          return openFile(hit);
+        }
         const fresh = kind === "wiki" ? newNotePath(target, from) : null;
         if (!fresh || !isNotePath(fresh)) return toast({ body: t("notes.noSuchFile", { name: target }) });
         void openNew(fresh, "").catch((error: Error) => toast(errorSpec(error)));

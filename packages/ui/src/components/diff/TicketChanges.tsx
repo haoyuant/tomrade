@@ -10,6 +10,7 @@ import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { AgentReviewBar } from "./AgentReviewBar";
 import { DiffView, type DiffComment, type DiffCommentDraft } from "./DiffView";
+import { reportAction, useReportOpen } from "~/lib/analytics";
 
 const BRANCH: ChangeScope = { kind: "branch" };
 
@@ -72,6 +73,7 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
   const addComment = async (draft: DiffCommentDraft) => {
     if (!shownLink) return;
     await writing(() => source.addComment({ ...draft, linkId: shownLink }));
+    reportAction("code.review", "comment");
   };
   const editComment = async (id: string, patch: { body?: string; state?: DiffComment["state"] }) => void (await writing(() => source.editComment(id, patch)));
   const removeComment = async (id: string) => void (await writing(() => source.removeComment(id)));
@@ -89,6 +91,7 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
       const links = unsent.map((c) => c.linkId);
       const sent = await writing(() => source.sendComments(reach ? undefined : { deliver: false }));
       if (!sent.sent) return;
+      reportAction("code.review", "send_comments");
       // Nowhere to send them: the person passes them on.
       const copied = sent.to !== null || (await navigator.clipboard?.writeText(sent.text).then(() => true, () => false));
       await markReviewed([...links, shownLink]);
@@ -103,7 +106,9 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
     if (busy) return;
     setBusy(true);
     try {
-      onNotice((await markReviewed([shownLink])) ? t("diff.markedReviewed") : t("diff.markReviewedNone"));
+      const marked = await markReviewed([shownLink]);
+      if (marked) reportAction("code.review", "mark_reviewed");
+      onNotice(marked ? t("diff.markedReviewed") : t("diff.markReviewedNone"));
     } finally {
       setBusy(false);
     }
@@ -198,6 +203,7 @@ export function TicketChanges({ source, viewedKey, onNotice }: { source: Changes
 
 /** A ticket's changes in a sheet wide enough to read a diff side by side. */
 export function ChangesDialog({ open, onOpenChange, title, source, viewedKey, onNotice }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; source: ChangesSource; viewedKey: string; onNotice: (text: string) => void }) {
+  useReportOpen("code.review", open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange} label={title} className="sheet-changes" resizable="changes" movable>
       <DialogHead title={title} />

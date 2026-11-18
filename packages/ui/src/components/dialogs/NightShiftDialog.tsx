@@ -15,6 +15,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { invoke } from "~/lib/api";
 import { NodeConfigPanel, WorkRulesPanel } from "./PlanConfig";
 import { PlanGraph, type PlanDraft } from "./PlanGraph";
+import { reportAction } from "~/lib/analytics";
 
 const HALT_WORD: Record<string, MessageKey> = { stopped: "nightShift.lastStopped", deadline: "nightShift.lastDeadline", budget: "nightShift.lastBudget", failures: "nightShift.lastFailures" };
 const usd = (amount: number) => `$${amount.toFixed(2)}`;
@@ -25,6 +26,7 @@ export function NightShiftDialog({ projectId, onClose, onOpenIssue }: { projectI
   const { t } = useI18n();
   const current = useNightShift(projectId);
   const proposal = useShiftProposal(projectId);
+  useEffect(() => reportAction("agent.nightshift", "open"), []);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()} label={t("nightShift.title")} className="sheet-plan" resizable="plan">
       <DialogHead title={t("nightShift.title")} />
@@ -454,7 +456,14 @@ function SetUp({ projectId, onClose }: { projectId: string; onClose: () => void 
     if (away.length) {
       setSending(true);
       const failed: string[] = [];
-      for (const node of away) await invoke("dispatch.send", { projectId, itemId: node.itemId, to: node.device.id }).catch((err: unknown) => { failed.push(node.key); toast(errorSpec(err)); });
+      for (const node of away)
+        await invoke("dispatch.send", { projectId, itemId: node.itemId, to: node.device.id }).then(
+          () => reportAction("code.dispatch", "send"),
+          (err: unknown) => {
+            failed.push(node.key);
+            toast(errorSpec(err));
+          }
+        );
       setSending(false);
       const sent = away.filter((n) => !failed.includes(n.key));
       if (sent.length) toast({ body: t("nightShift.sentAway", { keys: sent.map((n) => n.key).join(", ") }) });

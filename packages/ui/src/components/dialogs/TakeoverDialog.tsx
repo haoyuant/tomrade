@@ -9,6 +9,7 @@ import { keys } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { useTakeoverApply, useTakeoverOffer, useTakeoverScan } from "~/lib/takeover";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction, useReportOpen } from "~/lib/analytics";
 
 /** Before anything is read: what will be, and to whom it would go. Sessions and the model each wait for their own tick. */
 function Consent({ projectId, scanning, onScan }: { projectId: string; scanning: boolean; onScan: (input: { sessions: boolean; model: string | null }) => void }) {
@@ -121,6 +122,7 @@ function Draft({ draft, projectId, onBack, onDone }: { draft: TakeoverDraft; pro
       { draftId: draft.id, entryIds: [...ticked] },
       {
         onSuccess: (r) => {
+          if (r.created.length) reportAction("project.takeover", "apply");
           toast({ body: r.failed.length ? t("takeover.appliedSome", { n: r.created.length, failed: r.failed.length, reason: r.failed[0]!.reason }) : t("takeover.applied", { n: r.created.length }) });
           onDone();
         },
@@ -163,6 +165,7 @@ function Draft({ draft, projectId, onBack, onDone }: { draft: TakeoverDraft; pro
 }
 
 export function TakeoverDialog({ projectId, open, onOpenChange }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  useReportOpen("project.takeover", open);
   const { t } = useI18n();
   const toast = useToast();
   const scan = useTakeoverScan(projectId);

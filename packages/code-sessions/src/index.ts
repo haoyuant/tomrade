@@ -24,7 +24,7 @@ import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type R
 import { IDLE_SECTION, IDLE_SWEEP_MS, IDLE_TAIL_LINES, IdleSettings, IdleTracker } from "./idle.js";
 import type { ChangeReviewAsk, ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage } from "@tomradex/contracts";
 
 export type * from "./protocol.js";
 export { IDLE_SECTION, IDLE_SWEEP_MS, IdleSettings, IdleTracker } from "./idle.js";
@@ -1636,8 +1636,12 @@ function apply(ctx: Context, config: Config) {
           return post(win, { type: "toast", text: words()("outsideFailed", { reason: errorMessage(error) }) });
         }
       }
-      case "newTerminal":
-        return newTerminal(projectId, win, m.terminalId, m.cwd, m.resume, typeof m.from === "string" ? m.from : undefined);
+      case "newTerminal": {
+        const before = savedTerminals(projectId).length;
+        await newTerminal(projectId, win, m.terminalId, m.cwd, m.resume, typeof m.from === "string" ? m.from : undefined);
+        if (savedTerminals(projectId).length > before) contract(ctx, "analytics")?.activate("code.terminal", "session_new");
+        return;
+      }
       case "conversation": {
         const before = typeof m.before === "number" && Number.isSafeInteger(m.before) && m.before >= 0 ? m.before : undefined;
         const read = ctx.codeLink.conversation?.(projectId, m.sessionId, before) ?? null;
@@ -1846,7 +1850,10 @@ function apply(ctx: Context, config: Config) {
       case "openWorktree": {
         const s = sessionOf(projectId, m.sessionId);
         const where = s?.worktree ?? (s?.itemIds[0] ? ctx.codeLink.worktreeOf(projectId, s.itemIds[0]) : null);
-        if (where) return void ctx.emit("desktop/reveal", where);
+        if (where) {
+          contract(ctx, "analytics")?.activate("code.link", "open_worktree");
+          return void ctx.emit("desktop/reveal", where);
+        }
         return post(win, { type: "toast", text: words()("noWorktree") });
       }
       case "changes": {
@@ -2122,6 +2129,8 @@ function apply(ctx: Context, config: Config) {
       const target = projectId ?? (last && open.includes(last) ? last : open[0]);
       if (!target) return { toast: words()("openProject") };
       await show(target);
+      // The person's way in (menu, dock, palette, sidebar); a start showing its session goes through show() alone.
+      contract(ctx, "analytics")?.activate("code.terminal", "open");
       return {};
     }
   });

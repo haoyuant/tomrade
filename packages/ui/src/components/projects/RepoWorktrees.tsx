@@ -8,6 +8,7 @@ import { intlTag, useI18n } from "~/lib/i18n";
 import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { message } from "./destination";
+import { reportAction } from "~/lib/analytics";
 
 /**
  * The worktrees Tomrade made for this repository on this machine: whose each is, what it takes on disk, and why it
@@ -35,6 +36,7 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
     remove.mutate([{ projectId, dirs, strays }], {
       onSuccess: (removals) => {
         const { removed, kept, reason, branches } = removalSummary(removals);
+        if (removed) reportAction("code.worktrees", "remove");
         const why = reason && reason in WORKTREE_HOLD_KEY ? t(WORKTREE_HOLD_KEY[reason as WorktreeHold]) : (reason ?? "");
         const said = [
           kept ? t("repositories.worktreesKeptToast", { n: removed, kept, reason: why }) : t("repositories.worktreesRemovedToast", { n: removed }),

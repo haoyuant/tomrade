@@ -1,6 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { invoke } from "~/lib/api";
-import { logQuietly } from "~/lib/api";
+import { invoke, logQuietly } from "./api";
 
 /**
  * What the person is using, for the anonymous usage statistics. A surface is
@@ -22,6 +21,31 @@ export function reportSurface(feature: string | null): void {
 /** A counted action (or one the registry keeps for adoption only). */
 export function reportAction(feature: string, action: string, dim?: string): void {
   void Promise.resolve(invoke("analytics.activate", feature, action, dim ?? null)).catch(logQuietly("analytics"));
+}
+
+const settling = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * For an action a person repeats while typing or tuning (a search, a filter):
+ * one report once they have paused for a second.
+ */
+export function reportSettled(feature: string, action: string, dim?: string): void {
+  const key = `${feature}/${action}/${dim ?? ""}`;
+  clearTimeout(settling.get(key));
+  settling.set(
+    key,
+    setTimeout(() => {
+      settling.delete(key);
+      reportAction(feature, action, dim);
+    }, 1000)
+  );
+}
+
+/** A dialog's `open`, each time it comes up. */
+export function useReportOpen(feature: string, open: boolean): void {
+  useEffect(() => {
+    if (open) reportAction(feature, "open");
+  }, [feature, open]);
 }
 
 /** Once: any interaction anywhere belongs to the nearest surface around it. */

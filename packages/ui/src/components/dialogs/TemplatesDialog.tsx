@@ -8,6 +8,7 @@ import { agoLabel, PRIORITIES, PRIORITY_LABEL } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { cadenceLabel, dayNames, nextLabel, useSchedules, useSuggestions, useTemplateActions, useTemplateRuns, useTemplates } from "~/lib/templates";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 type Draft = { name: string; description: string; action: TemplateInput["action"] };
 type TicketDraft = Partial<TicketSpec> & { title: string };
@@ -170,12 +171,14 @@ function TemplateEditor({
   const run = () =>
     template &&
     actions.run.mutate(template.id, {
-      onSuccess: (r) =>
+      onSuccess: (r) => {
+        if (r.itemIds.length) reportAction("backlog.create", "create", "template");
         toast(
           r.ok
             ? { body: r.itemIds.length ? t(r.itemIds.length === 1 ? "templates.ranTicket" : "templates.ranTickets", { name: template.name, n: r.itemIds.length }) : t("templates.ran", { name: template.name }) }
             : { body: t("templates.failed", { name: template.name, error: r.error ?? "" }) }
-        ),
+        );
+      },
       onError: (err) => toast(errorSpec(err))
     });
 

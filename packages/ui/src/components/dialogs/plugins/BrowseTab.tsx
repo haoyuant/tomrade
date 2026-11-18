@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Listing, SourceName } from "@tomradex/community";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
@@ -9,10 +9,12 @@ import { useBrowse, useCommunityAccount, useCommunityPlugin, useInspect, useRepo
 import { openExternal } from "~/lib/shell";
 import { readableError, useToast } from "~/lib/toast";
 import { Field, Findings, Reach, TrustTags } from "./parts";
+import { reportAction } from "~/lib/analytics";
 
 type Sort = "downloads" | "updated" | "title";
 
 export function BrowseTab() {
+  useEffect(() => reportAction("plugins.store", "open"), []);
   const { t } = useI18n();
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");

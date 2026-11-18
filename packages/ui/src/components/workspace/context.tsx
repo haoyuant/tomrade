@@ -26,6 +26,7 @@ import {
 import { PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_KEYS, checkedLabel, emptyGroupLabel, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { hiddenCount, mergeById, pageSize } from "~/lib/closedWindow";
+import { reportAction, reportSettled } from "~/lib/analytics";
 import {
   useBadges,
   useBoards,
@@ -235,6 +236,7 @@ export const ticketSearch = {
   set: (projectId: string, text: string) => {
     if (text === ticketSearch.get(projectId)) return;
     searches.set(projectId, text);
+    if (text.trim()) reportSettled("backlog.search", "search_query");
     for (const listener of searchListeners) listener();
   }
 };
@@ -457,11 +459,17 @@ export function WorkspaceProvider({
   const settled = !failed.length && !projects.isLoading && !views.isLoading && !boards.isLoading;
 
   const openView = useCallback(
-    (nextViewId: string) => void navigate({ to: "/p/$projectId/v/$viewId", params: { projectId, viewId: nextViewId } }),
+    (nextViewId: string) => {
+      reportAction("backlog.view", "view_switch");
+      void navigate({ to: "/p/$projectId/v/$viewId", params: { projectId, viewId: nextViewId } });
+    },
     [navigate, projectId]
   );
   const openWorkstream = useCallback(
-    (nextBoardId: string) => void navigate({ to: "/p/$projectId/w/$boardId", params: { projectId, boardId: nextBoardId } }),
+    (nextBoardId: string) => {
+      reportAction("backlog.view", "view_switch");
+      void navigate({ to: "/p/$projectId/w/$boardId", params: { projectId, boardId: nextBoardId } });
+    },
     [navigate, projectId]
   );
   const openFile = useCallback((path: string) => void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }), [navigate, projectId]);
@@ -490,13 +498,18 @@ export function WorkspaceProvider({
     const columnBy = live.query.columnBy ?? "status";
     const space = groupSpace(columnBy);
     const chosen = live.query.columns.filter((k) => space.includes(k));
-    const setQuery = (next: ViewQuery) => setDraft({ layout: live.layout, query: normalizeQuery(next) });
+    const setQuery = (next: ViewQuery) => {
+      if (live.layout === "board" && !live.query.groupBy !== !next.groupBy) reportAction("backlog.lane", next.groupBy ? "lane_on" : "lane_off");
+      reportSettled("backlog.view", "query_change");
+      setDraft({ layout: live.layout, query: normalizeQuery(next) });
+    };
     const setLayout = (next: Layout) => setDraft({ layout: next, query: live.query });
     const saveAsNewView = (name: string) =>
       createView.mutate(
         { name, icon: view.icon, layout: live.layout, query: live.query },
         {
           onSuccess: (created) => {
+            reportAction("backlog.view", "view_save");
             setDraft(null);
             openView(created.id);
           },
@@ -533,7 +546,16 @@ export function WorkspaceProvider({
         if (!dirty) return;
         // A workstream page has nothing saved to write back to; saving it makes a view.
         if (virtual) return saveAsNewView(view.name);
-        updateView.mutate({ id: view.id, patch: { layout: live.layout, query: live.query } }, { onSuccess: () => setDraft(null), onError: (err) => toast(errorSpec(err)) });
+        updateView.mutate(
+          { id: view.id, patch: { layout: live.layout, query: live.query } },
+          {
+            onSuccess: () => {
+              reportAction("backlog.view", "view_save");
+              setDraft(null);
+            },
+            onError: (err) => toast(errorSpec(err))
+          }
+        );
       },
       discardChanges: () => setDraft(null),
       saveAsNewView,

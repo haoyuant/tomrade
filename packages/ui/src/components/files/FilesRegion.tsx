@@ -42,6 +42,8 @@ import { stepLabel } from "~/components/ui/SyncActivity";
 import { useSyncProgress } from "~/lib/syncProgress";
 import { useNoteActions } from "./useNoteActions";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
+import { reportAction, Surface } from "~/lib/analytics";
+import { isNotePath } from "@tomradex/notes/syntax";
 
 /** One line under the head that takes a name: a rename, or a new folder. */
 function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCancel }: { initial?: string; ariaLabel: string; placeholder?: string; busy: boolean; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -293,6 +295,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
       // Undo takes back exactly these records, newest first, whatever else has happened since.
       const undoAll = async () => {
         for (const ref of [...refs].reverse()) await revert.mutateAsync(ref);
+        reportAction("files.browse", "restore");
         toast({ body: n === 1 ? t("files.restoredToast", { name }) : t("files.restoredManyToast", { n }) });
       };
       toast({
@@ -521,6 +524,11 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             syncActions={syncActions}
             agentActions={agentActions}
           />
+        ) : isNotePath(path) ? (
+          // Outside the keyed view, so moving from note to note is one stretch of note time.
+          <Surface feature="notes.editor">
+            <FileView key={path} projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />
+          </Surface>
         ) : (
           <FileView key={path} projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />
         )}

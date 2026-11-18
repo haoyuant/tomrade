@@ -9,6 +9,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRoles } from "~/lib/roles";
 import { keys } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 const PLATFORM_WORDS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 /** The reasons a machine gives for turning a ticket away, as it names them. */
@@ -85,7 +86,10 @@ function TakeBack({ id }: { id: string }) {
   const qc = useQueryClient();
   const cancel = useMutation({
     mutationFn: () => invoke("dispatch.cancel", id),
-    onSuccess: (list) => qc.setQueryData(keys.dispatches, list),
+    onSuccess: (list) => {
+      reportAction("code.dispatch", "take_back");
+      qc.setQueryData(keys.dispatches, list);
+    },
     onError: (error) => toast(errorSpec(error))
   });
   return (

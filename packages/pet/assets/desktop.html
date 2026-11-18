@@ -105,7 +105,7 @@
         };
         canvas.addEventListener("pointerdown", (event) => {
           if (event.button !== 0 || state.placeable === false || !opaqueAt(event)) return;
-          drag = { dx: event.clientX, dy: event.clientY };
+          drag = { dx: event.clientX, dy: event.clientY, moved: false };
           canvas.setPointerCapture(event.pointerId);
           canvas.style.cursor = "grabbing";
         });
@@ -118,9 +118,14 @@
           if (!drag) return;
           // A release we never saw (outside the window) must not leave the pet glued to the pointer.
           if (event.buttons === 0) return endDrag(event);
+          drag.moved = true;
           window.tomradeSurface.send({ type: "move", x: Math.round(event.screenX - drag.dx), y: Math.round(event.screenY - drag.dy) });
         });
-        canvas.addEventListener("pointerup", endDrag);
+        // A press that never moved is a pat, not a drag.
+        canvas.addEventListener("pointerup", (event) => {
+          if (drag && !drag.moved) window.tomradeSurface.send({ type: "pet" });
+          endDrag(event);
+        });
         canvas.addEventListener("pointercancel", endDrag);
         addEventListener("mousemove", hit);
         addEventListener("mouseleave", () => {

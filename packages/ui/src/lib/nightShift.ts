@@ -5,6 +5,7 @@ import type { NightShiftEdit, NightShiftInput, TicketState, WorkRule } from "@to
 import { invoke, subscribe } from "./api";
 import { useRepos } from "./queries";
 import { keys } from "./queries/keys";
+import { reportAction } from "./analytics";
 
 function useLive(projectId: string) {
   const qc = useQueryClient();
@@ -74,9 +75,28 @@ export function useNightShiftActions(projectId: string) {
   const qc = useQueryClient();
   const done = () => void qc.invalidateQueries({ queryKey: keys.nightShift.all(projectId) });
   return {
-    start: useMutation({ mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input), onSuccess: done }),
-    stop: useMutation({ mutationFn: (id: string) => invoke("nightShift.stop", projectId, id), onSuccess: done }),
-    decide: useMutation({ mutationFn: ({ id, yes }: { id: string; yes: boolean }) => invoke("nightShift.decide", projectId, id, yes), onSuccess: done }),
+    start: useMutation({
+      mutationFn: (input: NightShiftInput) => invoke("nightShift.start", projectId, input),
+      onSuccess: () => {
+        reportAction("agent.nightshift", "start");
+        done();
+      }
+    }),
+    stop: useMutation({
+      mutationFn: (id: string) => invoke("nightShift.stop", projectId, id),
+      onSuccess: () => {
+        reportAction("agent.nightshift", "stop");
+        done();
+      }
+    }),
+    // Yes to a run an agent proposed: the person's start, all the same.
+    decide: useMutation({
+      mutationFn: ({ id, yes }: { id: string; yes: boolean }) => invoke("nightShift.decide", projectId, id, yes),
+      onSuccess: (started) => {
+        if (started) reportAction("agent.nightshift", "start");
+        done();
+      }
+    }),
     edit: useMutation({ mutationFn: ({ id, change }: { id: string; change: NightShiftEdit }) => invoke("nightShift.edit", projectId, id, change), onSuccess: done })
   };
 }

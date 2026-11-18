@@ -5,6 +5,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keys } from "~/lib/queries";
+import { reportAction } from "~/lib/analytics";
 
 const MAX = 8000;
 
@@ -22,6 +23,7 @@ export function RulesBlock({ projectId }: { projectId: string }) {
     onSuccess: (saved) => {
       qc.setQueryData(key, saved);
       setDraft(null);
+      reportAction("project.settings", "rules_save");
       toast({ body: t("projectRules.saved") });
     },
     onError: (err) => toast(errorSpec(err))

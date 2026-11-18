@@ -7,6 +7,7 @@ import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
 import { keys } from "~/lib/queries";
+import { reportAction } from "~/lib/analytics";
 
 const KINDS: ReportKind[] = ["bug", "feedback", "idea"];
 export const REPORT_KIND_KEY: Record<ReportKind, MessageKey> = { bug: "feedback.kind_bug", feedback: "feedback.kind_feedback", idea: "feedback.kind_idea" };
@@ -28,7 +29,7 @@ function FeedbackSheet({ open, onOpenChange, onTroubleshoot }: { open: boolean; 
   const [kind, setKind] = useState<ReportKind>("feedback");
   const [text, setText] = useState("");
   const typed = useDeferredValue(text.trim());
-  const send = useMutation({ mutationFn: () => invoke("doctor.sendFeedback", kind, text) });
+  const send = useMutation({ mutationFn: () => invoke("doctor.sendFeedback", kind, text), onSuccess: () => reportAction("doctor", "send_feedback") });
   // what goes besides the text, read from the report as it would be sent
   const preview = useQuery({ queryKey: keys.doctor.feedbackPreview(kind, typed), queryFn: () => invoke("doctor.feedbackPreview", kind, typed), enabled: open && !!typed, placeholderData: (previous) => previous });
   const app = preview.data?.app;

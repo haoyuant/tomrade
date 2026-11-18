@@ -564,7 +564,13 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.takeOver", (projectId, threadId) => ctx.agent.takeOver(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
-      ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
+      ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => {
+        const sent = ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments });
+        // Only the window sends through here: starts, routines and IM call send() themselves. The engine is the run's, which a fallback may have chosen.
+        const engine = ctx.agent.store.runs(projectId, threadId).find((run) => run.id === sent.runId)?.engine ?? null;
+        contract(ctx, "analytics")?.activate("agent.chat", "message_sent", engine);
+        return sent;
+      });
       ctx.ipc.handle("agent.toBackground", (projectId, threadId) => ctx.agent.toBackground(projectId, threadId));
       ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
       ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));

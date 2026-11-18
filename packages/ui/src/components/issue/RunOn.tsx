@@ -9,6 +9,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { invalidateWorkspace, keys, useHubInfo } from "~/lib/queries";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 const PLATFORM_WORDS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 /** What is missing while this computer is the only place to run, and the Settings pane that mends it. */
@@ -52,6 +53,7 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, sendSlot,
       return sent;
     },
     onSuccess: () => {
+      reportAction("code.dispatch", "send");
       void qc.invalidateQueries({ queryKey: keys.dispatches });
       invalidateWorkspace(qc, projectId);
       toast({ body: t("devices.sentTo", { name: borrowed ? lentName(borrowed) : (chosen?.name ?? t("devices.anyOf", { platform: platform ? t(PLATFORM_WORDS[platform]!) : "" })) }) });

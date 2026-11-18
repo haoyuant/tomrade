@@ -6,6 +6,7 @@ import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keys } from "~/lib/queries";
+import { reportAction } from "~/lib/analytics";
 
 /** The agent-maintained project brief, shown as every run reads it and edited in place; it saves on its own, apart from the sheet's Save. */
 export function BriefBlock({ projectId }: { projectId: string }) {
@@ -22,6 +23,7 @@ export function BriefBlock({ projectId }: { projectId: string }) {
     onSuccess: (saved) => {
       qc.setQueryData(key, saved);
       setDraft(null);
+      reportAction("project.settings", "brief_save");
       toast({ body: t("projectBrief.saved") });
     },
     onError: (err) => toast(errorSpec(err))

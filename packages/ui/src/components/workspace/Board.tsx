@@ -19,6 +19,7 @@ import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, type EpicProgress
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
+import { reportAction } from "~/lib/analytics";
 
 /** One drop target is one lane × column pair; the lane key is "" when there are no swimlanes. Keys are ids, words or digits, never "|". */
 const SEP = "|";
@@ -70,6 +71,7 @@ function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
     if (!input) return onDone();
     create.mutate(input, {
       onSuccess: (item) => {
+        reportAction("backlog.create", "create", "quick");
         onDone();
         toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },
@@ -378,7 +380,8 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   }, [cells]);
 
   const isShut = (lane: string, n: number) => (n === 0 ? !toggled.has(`!${lane}`) : toggled.has(lane));
-  const toggleLane = (lane: string, n: number) =>
+  const toggleLane = (lane: string, n: number) => {
+    if (!isShut(lane, n)) reportAction("backlog.lane", "lane_collapse");
     setToggled((current) => {
       const next = new Set(current);
       const key = n === 0 ? `!${lane}` : lane;
@@ -386,6 +389,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
       else next.add(key);
       return next;
     });
+  };
 
   const seedFor = (lane: string, col: string): Patch | null => {
     const colPatch = patchFor(cb, col);

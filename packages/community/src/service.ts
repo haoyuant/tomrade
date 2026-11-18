@@ -272,10 +272,20 @@ export class Community extends Service implements CommunityReader {
       ctx.ipc.handle("community.browse", (q) => this.browse(q));
       ctx.ipc.handle("community.plugin", (id) => this.plugin(id));
       ctx.ipc.handle("community.inspect", (id, version) => this.inspect(id, version));
-      ctx.ipc.handle("community.install", (id, version) => this.install(id, version));
+      // Only the window installs through here; starters and automatic updates call installVersion themselves.
+      ctx.ipc.handle("community.install", async (id, version) => {
+        const had = !!this.plugins.extensions?.has(id);
+        const installed = await this.install(id, version);
+        contract(this.home, "analytics")?.activate("plugins.store", had ? "update" : "install");
+        return installed;
+      });
       ctx.ipc.handle("community.providing", (kind) => this.providing(kind));
       ctx.ipc.handle("community.updates", () => this.updates());
-      ctx.ipc.handle("community.update", (id) => this.update(id));
+      ctx.ipc.handle("community.update", async (id) => {
+        const updated = await this.update(id);
+        contract(this.home, "analytics")?.activate("plugins.store", "update");
+        return updated;
+      });
       ctx.ipc.handle("community.revoked", () => [...this.revokedNow].map(([id, reason]) => ({ id, reason })));
       ctx.ipc.handle("community.report", (id, version, reason, details) => this.report(id, version, reason, details));
       ctx.ipc.handle("community.account", () => this.account());

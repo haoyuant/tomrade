@@ -7,6 +7,7 @@ import { useDevices } from "~/lib/devices";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { ROLE_LIMITS, useRemoveRole, useRoles, useSaveRole } from "~/lib/roles";
 import { errorSpec, useToast } from "~/lib/toast";
+import { reportAction } from "~/lib/analytics";
 
 const INSTRUCTIONS_MAX = 8000;
 
@@ -58,6 +59,7 @@ export function RolesBlock({ projectId }: { projectId: string }) {
     if (!draft) return;
     save.mutate(draft, {
       onSuccess: (saved) => {
+        reportAction("project.settings", "role_save");
         toast({ body: t("roles.saved") });
         edit(saved);
       },

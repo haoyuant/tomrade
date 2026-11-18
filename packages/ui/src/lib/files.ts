@@ -6,6 +6,7 @@ import type { FileReference } from "@tomradex/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
 import { renameTabs } from "./tabs";
+import { reportAction } from "./analytics";
 
 /** The drag payload for moving a file or folder within the tree/table — never set for a drag out to the OS. */
 export const FILES_DRAG_MIME = "application/x-tomrade-paths";
@@ -124,14 +125,15 @@ export const useBrowseFiles = () => useMutation({ mutationFn: (backendId: string
 export const useDraftFiles = () => useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("files.draft", args.providerId, args.name) });
 
 /** Every mutation already lands through a service call that broadcasts `files.changed` on success — the app-wide listener in main.tsx invalidates from that. Invalidating again here would only race a second, redundant refetch against it, and do it needlessly on failure too. */
-function useFilesMutation<A, R>(_projectId: string, fn: (args: A) => Promise<R>) {
-  return useMutation({ mutationFn: fn });
+function useFilesMutation<A, R>(_projectId: string, fn: (args: A) => Promise<R>, onSuccess?: () => void) {
+  return useMutation({ mutationFn: fn, onSuccess });
 }
 
 export const useSyncFiles = (projectId: string) => useFilesMutation(projectId, () => invoke("files.sync", projectId));
 export const useBindFiles = (projectId: string) => useFilesMutation(projectId, (args: { backendId: string; config: Record<string, unknown> }) => invoke("files.bind", projectId, args.backendId, args.config));
 export const useUnbindFiles = (projectId: string) => useFilesMutation(projectId, () => invoke("files.unbind", projectId));
-export const useMakeFolder = (projectId: string) => useFilesMutation(projectId, (path: string) => invoke("files.mkdir", projectId, path));
+export const useMakeFolder = (projectId: string) =>
+  useFilesMutation(projectId, (path: string) => invoke("files.mkdir", projectId, path), () => reportAction("files.browse", "create"));
 // An open tab follows its file, whichever screen moved it.
 export const useMoveFile = (projectId: string) =>
   useFilesMutation(projectId, async (args: { from: string; to: string }) => {
@@ -141,7 +143,8 @@ export const useMoveFile = (projectId: string) =>
   });
 export const useCopyFile = (projectId: string) => useFilesMutation(projectId, (args: { from: string; to: string }) => invoke("files.copy", projectId, args.from, args.to));
 export const useRemoveFile = (projectId: string) => useFilesMutation(projectId, (path: string) => invoke("files.remove", projectId, path));
-export const useImportFiles = (projectId: string) => useFilesMutation(projectId, (args: { dir: string; sources: string[] }) => invoke("files.import", projectId, args.dir, args.sources));
+export const useImportFiles = (projectId: string) =>
+  useFilesMutation(projectId, (args: { dir: string; sources: string[] }) => invoke("files.import", projectId, args.dir, args.sources), () => reportAction("files.browse", "upload"));
 export const useResolveConflict = (projectId: string) => useFilesMutation(projectId, (args: { path: string; choice: ConflictChoice }) => invoke("files.resolve", projectId, args.path, args.choice));
 export const useResolveAllConflicts = (projectId: string) => useFilesMutation(projectId, (choice: ConflictChoice) => invoke("files.resolveAll", projectId, choice));
 

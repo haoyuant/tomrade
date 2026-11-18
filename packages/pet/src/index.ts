@@ -5,6 +5,7 @@ import type { DesktopSurface, DesktopSurfaceHost } from "@tomradex/desktop-surfa
 import type { SettingsSection } from "@tomradex/settings";
 import type { AccessoryAnimation } from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
+import { contract } from "@tomradex/contracts";
 import { BUILT_IN_IMAGES, dataAnimation, embeddedAccessory, fileAnimation, PET_DESKTOP_URL } from "./manifest.js";
 import { PetProfiles, type PetImageUpload, type PetProfileView, type PetProfilesView, type ResolvedImage } from "./profiles.js";
 import { emptyPetModel, moodForThread, PET_MOODS, reducePetModel, restPetThread, SUCCESS_REST_MS, type PetModel, type PetMood } from "./state.js";
@@ -281,6 +282,7 @@ export class Pet extends Service {
       clickThrough: settings.clickThrough,
       initialState: this.surfacePayload(),
       onMessage: (message) => {
+        if ((message as { type?: unknown } | null)?.type === "pet") return contract(this.ctx, "analytics")?.activate("pet.companion", "interact");
         if (!isMoveMessage(message)) return;
         this.position = { x: message.x, y: message.y };
         this.surface?.setPosition(message.x, message.y);
@@ -288,6 +290,7 @@ export class Pet extends Service {
     });
     if (this.position) this.surface.setPosition(this.position.x, this.position.y);
     this.pushSurfaceState();
+    contract(this.ctx, "analytics")?.activate("pet.companion", "open");
   }
 
   private showAccessory(): void {

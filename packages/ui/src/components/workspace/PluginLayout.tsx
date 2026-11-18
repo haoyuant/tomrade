@@ -4,12 +4,13 @@ import { pluginLayoutId, type Patch, type PluginLayout as PluginLayoutId } from 
 import type { LayoutHandle, LayoutModule, LayoutState } from "@tomradex/plugin-sdk";
 import { messageOf } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
-import { useLayouts, usePatchItem } from "~/lib/queries";
+import { useLayouts, usePatchItem, usePlugins } from "~/lib/queries";
 import { useLook } from "~/lib/surface-look";
 import { LayoutFeed } from "~/plugin-layout/feed";
 import { nativeApi, serveFrame, type LayoutActions } from "~/plugin-layout/host";
 import { CONNECT, type ConnectMessage } from "~/plugin-layout/protocol";
 import { useSelectedId, useWorkspace } from "./context";
+import { reportAction } from "~/lib/analytics";
 
 /** The backlog region drawn by a plugin's layout: its module mounted native in this window, or in a frame of its own. */
 export function PluginLayoutRegion({ layout }: { layout: PluginLayoutId }) {
@@ -19,6 +20,12 @@ export function PluginLayoutRegion({ layout }: { layout: PluginLayoutId }) {
   const info = layouts.data?.find((l) => l.id === id);
   const state = useLayoutState();
   const actions = useLayoutActions();
+  const plugins = usePlugins();
+  const tier = info ? plugins.data?.plugins.find((p) => p.id === info.pluginId)?.extension?.tier : undefined;
+  // Anything not signed as official is counted together, never by its id.
+  useEffect(() => {
+    if (tier && tier !== "official") reportAction("plugin.community", "open");
+  }, [info?.pluginId, tier]);
   if (!layouts.data) return null;
   if (!info) return <Notice text={t("pluginLayout.missing", { id })} />;
   // A change of module or mode is a different page: start it over.

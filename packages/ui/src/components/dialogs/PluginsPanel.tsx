@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ContractSpec, ModuleView, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
@@ -14,6 +14,7 @@ import { BrowseTab } from "./plugins/BrowseTab";
 import { ExtensionRow } from "./plugins/ExtensionRow";
 import { MineTab } from "./plugins/MineTab";
 import { UpdatesTab } from "./plugins/UpdatesTab";
+import { reportAction } from "~/lib/analytics";
 
 const TONE: Record<PluginView["state"], "faint" | "neutral" | "strong"> = {
   active: "strong",
@@ -259,6 +260,7 @@ export function PluginsPanel({ onLeave, query }: { onLeave?: () => void; /** Ope
 }
 
 function InstalledTab({ initialQuery }: { initialQuery?: string }) {
+  useEffect(() => reportAction("plugins.manage", "open"), []);
   const { t } = useI18n();
   const contractTitle = useContractTitle();
   const [query, setQuery] = useState(initialQuery ?? "");

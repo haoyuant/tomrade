@@ -12,6 +12,7 @@ import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle } from "./EpicHead
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
+import { reportAction } from "~/lib/analytics";
 
 /** What a table shows when the view has not chosen its fields. */
 
@@ -89,6 +90,7 @@ function ComposerRow({ span }: { span: number }) {
     if (!input) return setEditing(false);
     create.mutate(input, {
       onSuccess: (item) => {
+        reportAction("backlog.create", "create", "quick");
         setEditing(false);
         toast({ body: <>{tx("table.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },

@@ -9,6 +9,7 @@ import type { CodeLink, ConnectMode } from "./service.js";
 import type { StartMode } from "./start.js";
 import type { CodeLinkView, ProposalView } from "./store.js";
 import type { CodeWords, PlainCodeWord } from "./words.js";
+import { contract } from "@tomradex/contracts";
 
 // Names a word book translates; any other value reads as it is.
 const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
@@ -298,6 +299,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
       const settings = await herdr.terminalSettings();
       const launch = await herdr.launch({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(self.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal);
       const fallback = herdr.fallbackNote(words().locale, launch);
+      if (launch.launched) contract(ctx, "analytics")?.activate("code.link", "open_worktree");
       const said = launch.launched ? words()("opened", { cwd }) : `cd ${cwd}`;
       return { toast: fallback ? `${fallback}\n${said}` : said };
     }

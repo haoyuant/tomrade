@@ -247,13 +247,25 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
   }, [others.data, search, mode, entry.id]);
 
   // Closed, with a way back: Reopen is otherwise only on the closed tab.
-  const closed = { onSuccess: () => toast({ body: t("inbox.closedToast", { title: entry.title }), onUndo: () => actions.reopen.mutate(entry.id, { onError: reportError }) }), onError: reportError };
+  const closed = {
+    onSuccess: () => {
+      reportAction("inbox.triage", "dismiss");
+      toast({ body: t("inbox.closedToast", { title: entry.title }), onUndo: () => actions.reopen.mutate(entry.id, { onError: reportError }) });
+    },
+    onError: reportError
+  };
   const closeAsDuplicate = (duplicateOf?: string) => actions.close.mutate({ id: entry.id, reason: "duplicate", ...(duplicateOf ? { duplicateOf } : {}) }, closed);
 
   const accept = () =>
     actions.accept.mutate(
       { id: entry.id, opts: { title, kind } },
-      { onSuccess: ({ item }) => toast({ body: t("inbox.accepted", { key: item.key }), actions: [{ label: t("inbox.openTicket"), run: () => onOpenIssue(item.id) }] }), onError: reportError }
+      {
+        onSuccess: ({ item }) => {
+          reportAction("inbox.triage", "accept");
+          toast({ body: t("inbox.accepted", { key: item.key }), actions: [{ label: t("inbox.openTicket"), run: () => onOpenIssue(item.id) }] });
+        },
+        onError: reportError
+      }
     );
 
   return (
@@ -524,10 +536,12 @@ function SuggestionCard({
     actions.adopt.mutate(
       { id: entry.id, opts: { reply: withReply ? draft : false } },
       {
-        onSuccess: ({ item, replyError }) =>
-          replyError
+        onSuccess: ({ item, replyError }) => {
+          reportAction("inbox.triage", s.action === "duplicate" ? "dismiss" : "accept");
+          return replyError
             ? reportError(new Error(t("inbox.adoptedReplyFailed", { error: replyError })))
-            : toast({ body: t("inbox.adopted"), ...(item ? { actions: [{ label: t("inbox.openTicket"), run: () => onOpenIssue(item.id) }] } : {}) }),
+            : toast({ body: t("inbox.adopted"), ...(item ? { actions: [{ label: t("inbox.openTicket"), run: () => onOpenIssue(item.id) }] } : {}) });
+        },
         onError: reportError
       }
     );

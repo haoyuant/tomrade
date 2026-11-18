@@ -10,6 +10,7 @@ import { invalidateWorkspace, keys } from "~/lib/queries";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 import { SavePlaybook } from "./SavePlaybook";
+import { reportAction } from "~/lib/analytics";
 
 /** A resource opens the version it pinned, never the file's current head. */
 function ResourceLink({ item, resource }: { item: Item; resource: DeliveryResource }) {
@@ -47,7 +48,10 @@ export function DeliveryPanel({ item }: { item: Item }) {
       if (!submission) throw new Error(t("fields.noSubmission"));
       return invoke("items.reviewDelivery", item.projectId, item.id, { submissionId: submission.id, decision: action, comment }, item.version);
     },
-    onSuccess: () => { setReport(""); setComment(""); setSelected(null); },
+    onSuccess: (_, action) => {
+      reportAction("backlog.delivery", action === "submit" ? "submit" : action === "accepted" ? "accept" : "request_changes");
+      setReport(""); setComment(""); setSelected(null);
+    },
     onError: error => toast(errorSpec(error)),
     onSettled: () => { invalidateWorkspace(qc, item.projectId); void qc.invalidateQueries({ queryKey: keys.deliveriesAll(item.projectId, item.id) }); }
   });
