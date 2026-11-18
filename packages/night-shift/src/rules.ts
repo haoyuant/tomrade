@@ -59,7 +59,7 @@ export type TicketState = "queued" | "running" | "limited" | "needs-you" | "deli
 export type Halt = "stopped" | "deadline" | "budget" | "failures";
 
 export type Why =
-  | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-outside" | "waits-elsewhere"; keys: string[] }
+  | { kind: "waits-merge" | "waits-upstream" | "upstream-stuck" | "waits-person" | "waits-outside" | "waits-elsewhere"; keys: string[] }
   | { kind: "halted"; halt: Halt }
   | { kind: "asked" | "error" | "gate" | "merge-refused" | "merge-conflict" | "blocked"; text: string }
   | { kind: "found"; fromKey: string; text: string }
@@ -254,6 +254,12 @@ function settle(t: ShiftTicket, f: TicketFacts, now: number, switching: boolean)
 
 const isFailure = (t: ShiftTicket) => t.state === "failed" || t.why?.kind === "conflict-unresolved" || t.why?.kind === "no-engine";
 
+/**
+ * A ticket that turned to the person with its session still there may go on: an agent that ended its turn waiting
+ * on a long build picks up again, and so does one the person answers. What depends on it waits, and the run with it.
+ */
+const mayGoOn = (t: ShiftTicket, f: TicketFacts): boolean => t.state === "needs-you" && !isFailure(t) && !!f.session && f.session.state !== "ended" && f.session.state !== "lost";
+
 /** The whole of a shift's judgement: what the world now says of each ticket, and what to do next. */
 export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFacts, now: number): { shift: NightShift; actions: Action[] } {
   if (shift.status === "ended") return { shift, actions: [] };
@@ -307,6 +313,7 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
     if (seen.has(t.itemId)) return false;
     const on = new Set(seen).add(t.itemId);
     if (WORKING.has(t.state)) return true;
+    if (mayGoOn(t, factsOf(t.itemId))) return !halt;
     if (t.state === "delivered") return merging(t) ? t.merge !== "refused" && (t.merge !== "merged" || !halt) : factsOf(t.itemId).session?.state === "running";
     return t.state === "queued" && canStart(t, on);
   };
@@ -324,8 +331,10 @@ export function advance(shift: NightShift, factsOf: (itemId: string) => TicketFa
     if (outside.length) return { kind: "waits-outside", keys: outside };
     const unmerged = keys((u) => u?.state === "delivered" && !merging(u));
     if (unmerged.length) return { kind: "waits-merge", keys: unmerged };
-    const stuck = keys((u) => !!u && (u.state === "failed" || u.state === "needs-you" || u.state === "skipped" || (u.state === "delivered" && u.merge === "refused")));
+    const person = keys((u) => !!u && !halt && mayGoOn(u, factsOf(u.itemId)));
+    const stuck = keys((u) => !!u && !person.includes(u.key) && (u.state === "failed" || u.state === "needs-you" || u.state === "skipped" || (u.state === "delivered" && u.merge === "refused")));
     if (stuck.length) return { kind: "upstream-stuck", keys: stuck };
+    if (person.length) return { kind: "waits-person", keys: person };
     const elsewhere = keys((u) => !u);
     if (elsewhere.length) return { kind: "waits-elsewhere", keys: elsewhere };
     return blockers.length ? { kind: "waits-upstream", keys: blockers.map((b) => b.key) } : null;

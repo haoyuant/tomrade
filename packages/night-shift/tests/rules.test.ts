@@ -67,6 +67,27 @@ describe("dependencies", () => {
     expect(shift.status).toBe("ended");
   });
 
+  it("holds a dependant, and the run, while an upstream that turned to the person still has its session, and starts it once that lands", () => {
+    const first = advance(shiftOf(chain(), { autoMerge: true, mode: "terminal" }), world({ B: onA }), T0);
+    const quiet = { status: "doing" as const, session: session("waiting", { headless: false }) };
+    const second = advance(first.shift, world({ A: quiet, B: onA }), T0 + 1000);
+    expect(second.shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "stopped" } });
+    expect(second.shift.tickets[1]).toMatchObject({ state: "queued", why: { kind: "waits-person", keys: ["A"] } });
+    expect(second.shift.status).toBe("running");
+    const back = advance(second.shift, world({ A: { status: "doing", session: session("running", { headless: false }) }, B: onA }), T0 + 2000);
+    expect(back.shift.tickets[0]!.state).toBe("running");
+    const landed = advance(back.shift, world({ A: { status: "done" } }), T0 + 3000);
+    expect(landed.actions).toEqual([{ kind: "start", itemId: "B" }]);
+  });
+
+  it("does not hold a dependant for an upstream that turned to the person once the run is stopped", () => {
+    const first = advance(shiftOf(chain(), { autoMerge: true }), world({ B: onA }), T0);
+    const { shift } = advance({ ...first.shift, halt: "stopped" }, world({ A: { status: "doing", session: session("idle") }, B: onA }), T0 + START_GRACE_MS + 1000);
+    expect(shift.tickets[0]).toMatchObject({ state: "needs-you", why: { kind: "stopped" } });
+    expect(shift.tickets[1]!.state).toBe("skipped");
+    expect(shift.status).toBe("ended");
+  });
+
   it("says when the wait is on a ticket outside the shift", () => {
     const { shift } = advance(shiftOf([ticket("B")]), world({ B: { blockers: [{ itemId: "Z", key: "Z" }] } }), T0);
     expect(shift.tickets[0]).toMatchObject({ state: "skipped", why: { kind: "waits-outside", keys: ["Z"] } });
