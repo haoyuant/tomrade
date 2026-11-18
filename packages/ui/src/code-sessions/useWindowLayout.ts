@@ -22,6 +22,12 @@ export const paneKey = (state: WindowState): Key => {
   return (id) => (panes.has(id) ? `pane:${panes.get(id)}` : id);
 };
 
+/** The cells' area as width over height, so a new cell splits the largest across its longer side; the window's while hidden. */
+export const layoutAspect = (): number => {
+  const el = document.querySelector<HTMLElement>(".cs-layout");
+  return el && el.clientWidth && el.clientHeight ? el.clientWidth / el.clientHeight : window.innerWidth / Math.max(1, window.innerHeight);
+};
+
 export type Leaf = Extract<Layout, { type: "leaf" }>;
 
 /** What was picked from History to read: known to the window by these until a state carries it, since a cell shows it. */
@@ -103,7 +109,7 @@ export function useWindowLayout(state: WindowState | null, picked: Picked) {
     if (ask && ask.at !== revealed.current && ready(ask.sessionId)) {
       revealed.current = ask.at;
       if (state.sessions.some((s) => s.id === ask.sessionId && s.endedAt !== null)) toRead.current.add(ask.sessionId);
-      const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
+      const shown = reveal(placed, ask.sessionId, layoutAspect(), key);
       placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
       setFlash({ cell: shown.cell, at: ask.at });

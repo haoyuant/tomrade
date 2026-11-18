@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { applyPreset, carryOn, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
+import { applyPreset, carryOn, close, cycle, dedupe, heir, holder, landing, leaves, lock, makeRoom, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -40,17 +40,35 @@ it("keeps a preset's shape, refills it in reading order, places new ids in the f
   expect(place(full, "s9")).toEqual(full);
 });
 
-it("brings a session into view without moving anything out: its cell, an empty one, or a new one beside", () => {
+it("brings a session into view without moving anything out: its cell, an empty one, or a new one split from the largest", () => {
   const two = split(one, "c1", "row", "c2").layout;
-  expect(reveal(two, "s1", null)).toEqual({ layout: two, cell: "c1" });
+  expect(reveal(two, "s1")).toEqual({ layout: two, cell: "c1" });
   // A terminal's cell that became the session counts as showing it.
-  expect(reveal(show(two, "c2", "t1"), "s2", null, (id) => (id === "t1" ? "s2" : id)).cell).toBe("c2");
-  const filled = reveal(two, "s2", null);
+  expect(reveal(show(two, "c2", "t1"), "s2", 1, (id) => (id === "t1" ? "s2" : id)).cell).toBe("c2");
+  const filled = reveal(two, "s2");
   expect(filled.cell).toBe("c2");
   expect(leaves(filled.layout).map((l) => l.sessionId)).toEqual(["s1", "s2"]);
-  const beside = reveal(filled.layout, "s3", "c2", undefined, "c3");
-  expect(beside.cell).toBe("c3");
-  expect(leaves(beside.layout).map((l) => [l.id, l.sessionId])).toEqual([["c1", "s1"], ["c2", "s2"], ["c3", "s3"]]);
+  // Both halves equal: the first is split, across its longer side in a wide window (stacked).
+  const room = reveal(filled.layout, "s3", 16 / 10, undefined, "c3");
+  expect(room.cell).toBe("c3");
+  expect(leaves(room.layout).map((l) => [l.id, l.sessionId])).toEqual([["c1", "s1"], ["c3", "s3"], ["c2", "s2"]]);
+  expect(neighbour(room.layout, "c1", "down")).toBe("c3");
+});
+
+it("makes room by splitting the largest cell across its longer side, never an already small one", () => {
+  // c1 a half, c2 and c3 a quarter each: c1 is split, even with c3 selected or last.
+  const halves = makeRoom(three(), 1, "n1");
+  expect(leaves(halves.layout).map((l) => l.id)).toEqual(["c1", "n1", "c2", "c3"]);
+  expect(neighbour(halves.layout, "c1", "down")).toBe("n1");
+  // One cell in a wide window: side by side; in a tall one: stacked.
+  expect(neighbour(makeRoom(one, 16 / 10, "n2").layout, "c1", "right")).toBe("n2");
+  expect(neighbour(makeRoom(one, 0.6, "n3").layout, "c1", "down")).toBe("n3");
+  // Filling a wide window cell by cell grows a grid, not ever thinner columns.
+  let grid: Layout = one;
+  for (const id of ["a", "b", "c"]) grid = makeRoom(grid, 16 / 10, id).layout;
+  expect(neighbour(grid, "c1", "right")).toBe("a");
+  expect(neighbour(grid, "c1", "down")).toBe("b");
+  expect(neighbour(grid, "a", "down")).toBe("c");
 });
 
 // Three cells side by side, showing s1, s2 and s3.
@@ -79,7 +97,7 @@ it("opens a ⌘-click beside the selected cell, and never lands on a locked cell
   // One that needs you is passed over the same way; an empty cell comes before any replacement.
   expect(landing(three(), "s9", { selected: "c1", needsYou: (id) => id === "s1", recent: ["c3", "c1"] })).toMatchObject({ cell: "c2", replaced: "s2" });
   expect(landing(show(locked, "c3", null), "s9", { selected: "c2" })).toMatchObject({ cell: "c3", replaced: null });
-  // Every other cell locked or needing you: a new cell beside the selected one.
+  // Every other cell locked or needing you: a new cell split from the largest, c1.
   const held = landing(lock(lock(three(), "c1", true), "c3", true), "s9", { selected: "c1", needsYou: (id) => id === "s2", newId: "n2" });
   expect(held).toMatchObject({ cell: "n2", replaced: null });
   expect(shownIn(held.layout)).toEqual([["c1", "s1", true], ["n2", "s9", false], ["c2", "s2", false], ["c3", "s3", true]]);
@@ -149,7 +167,7 @@ it("never puts one herdr pane in two cells, whatever id it comes under", () => {
   // Auto-place and reveal leave it where it is.
   const roomy = show(layout, "c3", null);
   expect(place(roomy, "s2", key)).toBe(roomy);
-  expect(reveal(roomy, "s2", "c1", key)).toEqual({ layout: roomy, cell: "c2" });
+  expect(reveal(roomy, "s2", 1, key)).toEqual({ layout: roomy, cell: "c2" });
   // Shown elsewhere on purpose, it moves: the old cell empties.
   expect(leaves(show(layout, "c1", "s2", key)).map((l) => l.sessionId)).toEqual(["s2", null, "s3"]);
   // A layout that has it twice keeps the first, or the one asked to keep.

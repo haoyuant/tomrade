@@ -15,7 +15,7 @@ import { Cell } from "./Cell";
 import { clipboardOf } from "./clipboard";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
-import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
+import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, makeRoom, neighbour, resize, show, split } from "./layout";
 import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
@@ -23,7 +23,7 @@ import { redrawTerminals } from "./TerminalCell";
 import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { swapPanels } from "~/lib/motion";
-import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
+import { asPicked, carriedOf, layoutAspect, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
 /** What a cell's buttons and menu do, read from the window's latest render when they are used. */
 interface CellActs {
@@ -346,7 +346,7 @@ export function App() {
   const land = (id: string, beside: boolean) => {
     // Picked over the overview: back to the cells, to see it in its own.
     setView("grid");
-    const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key });
+    const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key, aspect: layoutAspect() });
     const next = asPicked(state, at.layout, at.cell, id, key);
     if (next !== layout) change(next);
     setFocused(at.cell);
@@ -538,12 +538,12 @@ export function App() {
     const to = neighbour(layout, target.id, key);
     if (to) select(to);
   };
-  // From the list's button: the first empty cell, or a new one beside the focused cell.
+  // From the list's button: the first empty cell, or a new one split from the largest.
   const newTerminal = () => {
     if (outside) return send({ type: "openOutside", cwd: state.places[0]!.cwd });
     const empty = cells.find((c) => !c.sessionId);
     if (empty) return openTerminal(layout, empty.id, state.places[0]!.cwd);
-    const next = split(layout, target.id, "row");
+    const next = makeRoom(layout, layoutAspect());
     openTerminal(next.layout, next.created, state.places[0]!.cwd);
   };
 
