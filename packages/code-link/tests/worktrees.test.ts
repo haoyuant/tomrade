@@ -101,7 +101,7 @@ async function machine() {
   bag.boards.update(projectId, bag.board.id, { repoId: row.id });
   await ctx.repos.setCheckout(repo.remote, repo.checkout);
   ctx.codeLink.pulls = async () => null;
-  const keep = (settings: { enabled?: boolean; keepDays?: number; dropBranch?: boolean; dropRemoteBranch?: boolean }) => ctx.settings.set({ ...ctx.settings.get(), worktrees: { enabled: true, keepDays: 0, ...settings } });
+  const keep = (settings: { enabled?: boolean; outside?: boolean; keepDays?: number; dropBranch?: boolean; dropRemoteBranch?: boolean }) => ctx.settings.set({ ...ctx.settings.get(), worktrees: { enabled: true, keepDays: 0, ...settings } });
   /** A ticket worked by the agent to its end of turn: a commit on its branch, in a worktree of its own. */
   const worked = async (title: string) => {
     const item = bag.items.create({ projectId, boardId: bag.board.id, title, workType: "coding", status: "todo", by: "human" });
@@ -354,6 +354,45 @@ it("lists a worktree made outside the Hub with the ticket it was worked for, and
   expect(await ctx.repos.removeWorktree(checkout, checkout, true)).toMatch(/is not a worktree of/);
   expect(await ctx.repos.removeWorktree(checkout, elsewhere, true)).toMatch(/is not a worktree of/);
   expect([checkout, elsewhere].map((dir) => fs.existsSync(dir))).toEqual([true, true]);
+});
+
+it("with the setting on, removes a finished ticket's worktree made outside the Hub by itself; a pane left open holds it only while something there runs in it", async () => {
+  const { ctx, codeLink, projectId, repo, checkout, keep, finish, view, items, board } = await machine();
+  keep({ keepDays: 0, outside: true });
+  const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(root, "elsewhere-")));
+  const outside = (name: string, branch: string) => {
+    const dir = path.join(elsewhere, name);
+    git(["worktree", "add", "-q", "-b", branch, dir], checkout);
+    return dir;
+  };
+  const ticket = items.create({ projectId, boardId: board.id, title: "Worked from a terminal", workType: "coding", status: "doing", by: "human" });
+  const one = outside("one", `${ticket.key.toLowerCase()}/from-a-terminal`);
+  const own = outside("own", "scratch");
+  // The agent that worked it stays in its pane and goes on to other work.
+  const session = codeLink.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [ticket.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: one });
+  codeLink.store.patchSession(projectId, session.id, { herdrPane: "w1:p1" });
+  codeLink.sessions.end(projectId, session.id, "ended", true, "left");
+  const herdr = (codeLink as unknown as { herdr: { paneAlive: (pane: string) => Promise<boolean | null>; paneDirs: (pane: string) => Promise<string[]> } }).herdr;
+  let dirs: string[] = [one];
+  herdr.paneAlive = async (pane) => pane === "w1:p1";
+  herdr.paneDirs = async () => dirs;
+
+  expect(await view(one)).toMatchObject({ outside: true, hold: "open", removeAt: null });
+  finish(ticket.id);
+  // Still running in it, or where it runs cannot be told: held.
+  expect(await view(one)).toMatchObject({ hold: "busy", removeAt: null });
+  dirs = [];
+  expect(await view(one)).toMatchObject({ hold: "busy" });
+  expect(await codeLink.sweepWorktrees()).toBe(0);
+
+  // Gone on from there: nothing holds it, and the cleanup takes it with its branch. One on no ticket stays.
+  dirs = [checkout];
+  const finishedAt = ctx.items.get(projectId, ticket.id)!.updatedAt;
+  expect(await view(one)).toMatchObject({ hold: null, removeAt: finishedAt });
+  expect(await view(own)).toMatchObject({ hold: "unticketed", removeAt: null });
+  expect(await codeLink.sweepWorktrees()).toBe(1);
+  expect([one, own].map((dir) => fs.existsSync(dir))).toEqual([false, true]);
+  expect(git(["branch", "--list", `${ticket.key.toLowerCase()}/from-a-terminal`], checkout)).toBe("");
 });
 
 it("deletes a removed worktree's branch, here and on the remote, only when nothing on it would be lost", async () => {

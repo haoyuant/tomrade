@@ -1481,7 +1481,7 @@ export const es: PartialMessages = {
     worktreeHold_loose: "Tiene commits que ninguna rama conserva",
     worktreeHold_unticketed: "Sin ticket: Tomrade te lo deja a ti",
     worktreeOutside: "Fuera del Hub, en {{dir}}",
-    worktreesOutsideNote: "Los worktrees creados en otro lugar —por un agente en tu propio terminal, o por ti— también aparecen aquí. Tomrade nunca los quita por sí solo: Quitar se lleva uno cuyos tickets están terminados y que no retiene nada; uno sin ticket queda en tus manos.",
+    worktreesOutsideNote: "Los worktrees creados en otro lugar —por un agente en tu propio terminal, o por ti— también aparecen aquí. Quitar se lleva uno cuyos tickets están terminados y que no retiene nada; con Ajustes › Worktrees › «Also remove ones made outside the Hub» activado, Tomrade también los quita por sí solo. Uno sin ticket queda en tus manos.",
     worktreeFree: "No se perdería nada",
     worktreeDue: "Se quita solo después del {{when}}",
     worktreeDueNow: "Se quita solo en menos de una hora",

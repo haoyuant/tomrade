@@ -86,7 +86,7 @@ const run = async () => {
   ctx.items.update(project.id, merged.item.id, { status: "done" }, "human");
   ctx.items.update(project.id, scratch.item.id, { status: "done" }, "human");
   check("each ticket got a worktree of its own", [merged, scratch, open].every((each) => fs.existsSync(each.worktree)));
-  check("Settings has the cleanup, on and keeping a day, and takes a branch with its worktree here and on the remote", JSON.stringify(ctx.settings.value("worktrees")) === JSON.stringify({ enabled: true, keepDays: 1, dropBranch: true, dropRemoteBranch: true }), ctx.settings.value("worktrees"));
+  check("Settings has the cleanup, on for the Hub's own and keeping a day, and takes a branch with its worktree here and on the remote", JSON.stringify(ctx.settings.value("worktrees")) === JSON.stringify({ enabled: true, outside: false, keepDays: 1, dropBranch: true, dropRemoteBranch: true }), ctx.settings.value("worktrees"));
 
   const win = new BrowserWindow({ width: 1500, height: 900, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   const base = process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/";

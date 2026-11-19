@@ -619,7 +619,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       lastHooks: (projectId, repoId) => this.connections.lastHooks(projectId, repoId),
       connectors: this.connectorSet()
     });
-    this.worktreeCare = new Worktrees({ ctx: this.ctx, store: this.store, git: this.git, paneAlive: (pane) => this.herdr.paneAlive(pane), worktrees: this.worktrees, notify: (projectId) => this.notify(projectId), prefixOf: (projectId) => this.prefixOf(projectId) });
+    this.worktreeCare = new Worktrees({ ctx: this.ctx, store: this.store, git: this.git, paneAlive: (pane) => this.herdr.paneAlive(pane), paneDirs: (pane) => this.herdr.paneDirs(pane), worktrees: this.worktrees, notify: (projectId) => this.notify(projectId), prefixOf: (projectId) => this.prefixOf(projectId) });
     this.ctx.settings.register(SETTINGS_SECTION);
     this.ctx.settings.register(WORKTREE_SECTION);
     this.ctx.on("write/pre-commit", (intent, next) => {

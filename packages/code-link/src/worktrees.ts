@@ -13,6 +13,7 @@ import type { CodeLinkStore, SessionView } from "./store.js";
 
 const WorktreeSettings = z.object({
   enabled: z.boolean().default(true).meta({ title: "Remove a finished ticket's worktree" }).describe("Once a ticket is Done or Cancelled, the worktree Tomrade made for it is removed from this computer — only when nothing would be lost: no uncommitted or untracked files, no session still in it. Starting the ticket again brings the worktree back."),
+  outside: z.boolean().default(false).meta({ title: "Also remove ones made outside the Hub" }).describe("Worktrees made somewhere else — by an agent in your own terminal, or by you — are removed the same way once every ticket they were worked for is Done or Cancelled, and only when nothing would be lost. One on no ticket is never touched."),
   keepDays: z.number().int().min(0).max(365).default(1).meta({ title: "Keep for (days)" }).describe("How long a finished ticket's worktree stays before it is removed. 0 removes it soon after the ticket finishes."),
   dropBranch: z.boolean().default(true).meta({ title: "Delete its local branch too" }).describe("When a worktree is removed — by this cleanup, or by you — its local branch is deleted with it, only when every commit on it is kept elsewhere: merged into the default branch, squash-merged into it, or on the remote. Otherwise the branch stays."),
   dropRemoteBranch: z.boolean().default(true).meta({ title: "Delete its branch on the remote too" }).describe("The branch of the same name on the remote is deleted as well — only when the remote's default branch already has everything on it (merged, or squash-merged), and only where pushing from Tomrade is on for the repository. A branch that was pushed but never merged stays on the remote.")
@@ -33,6 +34,7 @@ export const WORKTREE_SECTION: SettingsSection<WorktreeSettings> = {
       description: "从 Tomrade 开始的每张工单都在 Hub 下自己的 worktree 里做，各带一份依赖安装，放着不管会占满磁盘。这里是它们在这台电脑上占了多少，以及已结束工单的 worktree 何时移除。",
       fields: {
         enabled: { title: "移除已结束工单的 worktree", description: "工单完成或取消后，Tomrade 为它建的 worktree 会从这台电脑上移除——只在不丢东西时：没有未提交改动和未跟踪文件，也没有会话还在里面。重新开始这张工单就能把 worktree 带回来。" },
+        outside: { title: "也移除在 Hub 之外建的 worktree", description: "在别处建的 worktree（终端里的智能体建的，或你自己建的）也一样处理：它对应的工单都已完成或取消、移除不会丢东西时就移除。不属于任何工单的永远不动。" },
         keepDays: { title: "保留天数", description: "已结束工单的 worktree 保留多久再移除。0 表示工单结束后很快移除。" },
         dropBranch: { title: "同时删除本地分支", description: "移除 worktree 时（自动清理，或你手动移除），它的本地分支会一起删除——只在分支上的每个提交都在别处还有时：已合并进默认分支、已 squash 合并进去，或远端有这条分支。否则分支保留。" },
         dropRemoteBranch: { title: "同时删除远端分支", description: "远端的同名分支也会一起删除——只在远端的默认分支已经包含它的全部内容时（已合并，或已 squash 合并），并且这个仓库允许 Tomrade 推送。只推送过、没有合并的分支会留在远端。" }
@@ -116,6 +118,8 @@ export interface WorktreesDeps {
   git: Git;
   /** Whether a pane still runs; null when nothing can tell. */
   paneAlive: (pane: string) => Promise<boolean | null>;
+  /** Where the pane's foreground processes run; empty when the backend cannot tell. */
+  paneDirs: (pane: string) => Promise<string[]>;
   /** Machine-local: each thread's worktree. A removed one is forgotten. */
   worktrees: Map<string, string>;
   notify: (projectId: string) => void;
@@ -155,7 +159,8 @@ type Tree = WorktreeView & { checkout: string | null };
  * The worktrees of the project's checkouts, and their end. One Tomrade made under the Hub for a ticket goes once the
  * ticket is done or cancelled and nothing would be lost with it; everything else stays until a person removes it, and
  * a worktree anyone still works in is never touched. One made outside the Hub — by an agent in the person's terminal,
- * or by the person — is listed and counted with the rest, and removed only on a person's word. The person's own
+ * or by the person — is listed and counted with the rest, and removed on a person's word, or by the same rule once
+ * the `outside` setting says so and it was worked for a ticket. The person's own
  * checkout is never one of them.
  */
 export class Worktrees {
@@ -425,6 +430,7 @@ export class Worktrees {
           const here = real(found.dir);
           const inside = sessions.filter((session) => within(here, session.worktree) || within(here, session.cwd));
           const tickets = this.ticketsAt(projectId, inside, found.branch);
+          const finishedAt = Math.max(0, ...tickets.map((ticket) => ticket.updatedAt));
           // On no ticket here, and on one of another open project that shares the checkout: that project lists it.
           if (!tickets.length && openIds.some((id) => id !== projectId && this.ticketsAt(id, this.store.sessions(id).filter((session) => within(here, session.worktree) || within(here, session.cwd)), found.branch).length)) continue;
           out.push({
@@ -435,7 +441,7 @@ export class Worktrees {
             owner: tickets.length ? "ticket" : "none",
             tickets: tickets.map(({ updatedAt: _updatedAt, ...ticket }) => ticket),
             hold: tickets.some((ticket) => !FINISHED.has(ticket.status)) ? "open" : inside.some(live) ? "busy" : tickets.length ? null : "unticketed",
-            removeAt: null,
+            removeAt: tickets.length && settings.enabled && settings.outside ? finishedAt + settings.keepDays * DAY_MS : null,
             stray: false,
             outside: true,
             checkout: found.checkout
@@ -479,8 +485,12 @@ export class Worktrees {
     // What is left is asked of the terminal and of git, a few worktrees at a time: a machine with dozens left over is the one that looks.
     const unheld = out.filter((tree) => !tree.hold);
     const look = async (tree: Tree): Promise<void> => {
+      const here = real(tree.dir);
       for (const pane of panes.get(tree.dir) ?? []) {
-        if ((await this.host.paneAlive(pane).catch(() => null)) === true) {
+        if ((await this.host.paneAlive(pane).catch(() => null)) !== true) continue;
+        // A pane its sessions left holds it only while something there still runs in it: one agent goes on from ticket to ticket in the same pane.
+        const dirs = await this.host.paneDirs(pane).catch(() => []);
+        if (!dirs.length || dirs.some((dir) => within(here, dir))) {
           tree.hold = "busy";
           return;
         }
