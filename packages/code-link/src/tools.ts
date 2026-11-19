@@ -68,9 +68,9 @@ export interface ToolHost {
   settleTicket(projectId: string, itemId: string): Promise<void>;
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
-  mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
-  /** On the person's word: the ticket's pull request through gh, or its branch here without a remote. */
-  merge(projectId: string, itemId: string): Promise<MergeLocalResult>;
+  mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<MergeLocalResult>;
+  /** On the person's word: the ticket's pull request through gh, or its branch here without a remote; a conflict goes back to its session by itself. */
+  land(projectId: string, itemId: string): Promise<MergeLocalResult & { resolving?: boolean }>;
   /** How tickets asked for in this conversation run, or that the person has to pick. */
   startConfigFor(projectId: string, threadId: string): Promise<StartConfig>;
   /** Start several tickets headless with one configuration. */
@@ -355,7 +355,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       name: "merge_ticket",
       title: "Merge a delivered ticket on the user's word",
       description:
-        "When the user says to merge a ticket that is Verifying (its pull request is open, or its branch is handed over in a repository with no remote), call this: Tomrade merges the pull request with gh by the method the repository allows, or the branch into the default branch here. Only on the user's say-so, never on your own. A refused merge comes back as its message; tell the user and stop.",
+        "When the user says to merge a ticket that is Verifying (its pull request is open, or its branch is handed over in a repository with no remote), call this: Tomrade merges the pull request with gh by the method the repository allows, or the branch into the default branch here. Only on the user's say-so, never on your own. A conflict goes back to the ticket's session by itself, and the merge follows once it hands over; any other refusal comes back with what to do next, which waits on the user.",
       input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
       mcp: "run",
       execute: async (args, inv) => {
@@ -363,13 +363,14 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (!inv.run) throw new Error("merge_ticket: only a conversation in Tomrade can merge on the user's word");
         const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
         if (!item) throw new Error(`merge_ticket: no ticket ${args.key} in this project`);
-        const result = await host.merge(projectId, item.id);
+        const result = await host.land(projectId, item.id);
         const next =
           result.merged ? undefined
-          : result.cause === "conflict" ? "the branch conflicts with the default branch: ask the user (ask_user) whether the ticket's session should bring it up to date, and if so call resolve_merge — Tomrade offers the merge again once it hands over"
-          : result.cause === "dirty" ? "the person's checkout has uncommitted changes on the default branch: tell them to commit or stash there, then call merge_ticket again when they say so"
+          : result.resolving ? "the branch conflicted with the default branch, so the ticket's session is bringing it up to date by itself, and Tomrade merges once it hands over: say so in one line and end your turn"
+          : result.cause === "conflict" ? "the branch still conflicts after its session was sent back: ask the user (ask_user) whether to send the session back again (resolve_merge) or to resolve it themselves, and wait for their answer"
+          : result.cause === "dirty" ? "the person's checkout has uncommitted changes on the default branch: ask the user (ask_user) to commit or stash there and say when it is done, and wait; then merge_ticket again"
           : result.cause === "no-pr" ? "there is no open pull request yet: the session pushes and opens one; once it has, merge_ticket again"
-          : "tell the user why it did not merge and stop; the person settles it";
+          : "Tomrade could not merge it, and the ticket now waits on the user: say why in one line, then ask the user (ask_user) what to do next — for example they merge it on GitHub themselves, or you try merge_ticket again once what the message names is fixed — and wait for their answer. Never end with only the error";
         return { key: item.key, ...result, ...(next ? { next } : {}) };
       }
     })
@@ -485,7 +486,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       kit: "code",
       title: "Report that the pull request could not be merged",
       description:
-        "Only where the brief says merging is yours: the pull request's checks could not be read (e.g. 'Resource not accessible by integration') or failed, or gh pr merge was refused (a permission denied, a safety check, branch protection, a review still required). Say why in one line; Tomrade stops the session and hands the merge to the person. Do not try to merge another way.",
+        "Only where the brief says merging is yours: the pull request's checks could not be read (e.g. 'Resource not accessible by integration') or failed, gh pr merge or merge_branch was refused (a permission denied, a safety check, branch protection, a review still required, a dirty checkout), or a conflict you could not resolve. Say why in one line; Tomrade stops the session and puts the merge before the person. Do not try to merge another way.",
       input: z.object({ reason: z.string().min(1).max(280), key: z.string().optional(), projectId: z.string().optional() }),
       execute: (args, inv) => {
         const projectId = requireProjectId("report_merge_blocked", args.projectId, inv);
@@ -512,13 +513,16 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       kit: "code",
       title: "Merge the ticket's branch into the default branch, in a repository with no remote",
       description:
-        "Only in a repository with no remote, and only where the brief says merging is yours: after link_code, merge the ticket's branch into the default branch on this machine. Tomrade merges only from a clean default-branch checkout or a temporary worktree, aborts on a conflict, and finishes the ticket. When it does not merge, report its message with note_progress and stop; the person merges.",
+        "Only in a repository with no remote, and only where the brief says merging is yours: after link_code, merge the ticket's branch into the default branch on this machine. Tomrade merges only from a clean default-branch checkout or a temporary worktree, aborts on a conflict, and finishes the ticket. A conflict is yours to settle: merge the default branch into your branch, resolve it, run the tests, commit, link_code again and call this again. Any other refusal, or a conflict you cannot resolve: report_merge_blocked with its message, and stop.",
       input: z.object({ key: z.string().optional(), projectId: z.string().optional() }),
       execute: async (args, inv) => {
         const projectId = requireProjectId("merge_branch", args.projectId, inv);
         const { item } = subject("merge_branch", projectId, args.key, inv);
         const result = await host.mergeLocal(projectId, item.id, { agent: true });
-        return { key: item.key, ...result, ...(result.merged ? {} : { next: "call note_progress with this message and stop — the person merges" }) };
+        const next = result.cause === "conflict"
+          ? "merge the default branch into your branch, resolve every conflict, run the tests, commit, call link_code with scopeChecked: true, then merge_branch again; if you cannot resolve it, report_merge_blocked with why, and stop"
+          : "call report_merge_blocked with this message and stop — the person merges";
+        return { key: item.key, ...result, ...(result.merged ? {} : { next }) };
       }
     })
   );

@@ -26,7 +26,12 @@ const ERROR_KEY = {
   signup_disabled: "account.error_signup_disabled",
   network: "account.error_network",
   other_account: "account.error_other_account",
-  terms_required: "account.error_terms_required"
+  terms_required: "account.error_terms_required",
+  passkey_cancelled: "account.error_passkey_cancelled",
+  passkey_timeout: "account.error_passkey_timeout",
+  passkey_failed: "account.error_passkey_failed",
+  passkey_disabled: "account.error_passkey_disabled",
+  not_signed_in: "account.error_not_signed_in"
 } as const satisfies Record<string, MessageKey>;
 const errorKey = (code: string): MessageKey | undefined => (Object.hasOwn(ERROR_KEY, code) ? ERROR_KEY[code as keyof typeof ERROR_KEY] : undefined);
 const LEGAL_KEY: Record<"terms" | "privacy", MessageKey> = { terms: "account.terms", privacy: "account.privacy" };
@@ -65,6 +70,8 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   /** The signed-in panel's confirmation before the account is deleted, with the password it asks for. */
   const [deleting, setDeleting] = useState<{ password: string; problem: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** A passkey step is waiting in the browser. */
+  const [inBrowser, setInBrowser] = useState(false);
   const [notice, setNotice] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
   const [step, setStep] = useState<Step>({ kind: "form" });
@@ -119,6 +126,12 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       if (from !== "return") setNotice(from === "form" ? t("account.notConfirmed") : t("account.stillNotConfirmed"));
     }
   }, from === "return");
+  /** The ceremony runs in the browser: until it comes back, the panel says so and offers to give up. */
+  const passkey = (action: () => Promise<unknown>, then?: () => void) => run(async () => {
+    setInBrowser(true);
+    try { await action(); } finally { setInBrowser(false); }
+    then?.();
+  });
   const mail = (send: () => Promise<unknown>, then: () => void) => run(async () => { await send(); cooldown.start(MAIL_INTERVAL); then(); });
   const sendReset = (address: string) => mail(() => invoke("account.resetPassword", address, locale), () => setStep({ kind: "reset", sentTo: address }));
   const back = (field: "email" | "password") => {
@@ -141,9 +154,10 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     return () => { window.removeEventListener("focus", returned); document.removeEventListener("visibilitychange", returned); };
   }, [step.kind]);
   // Buttons stay pressable; pressing one says what is missing, beside the field it concerns.
-  function check(mode: "signIn" | "signUp" | "reset"): boolean {
+  function check(mode: "signIn" | "signUp" | "reset" | "passkey"): boolean {
     const address = email.trim();
-    const found: Problem | null = !address ? { field: "email", text: t("account.needEmail") }
+    const found: Problem | null = mode === "passkey" ? (agreed ? null : { field: "terms", text: t("account.needAgree") })
+      : !address ? { field: "email", text: t("account.needEmail") }
       : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) ? { field: "email", text: t("account.badEmail") }
       : mode === "reset" ? null
       : !password ? { field: "password", text: t("account.needPassword") }
@@ -203,6 +217,8 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       <p className="meta-txt">{t("account.pending")}: {account.data.pending}</p>
       <div className="row" style={{ gap: "var(--space-2)" }}>
         <button className="btn btn-primary" disabled={busy} onClick={() => void run(() => invoke("account.sync"))}>{busy ? t("account.busy") : t("account.sync")}</button>
+        <button className="btn btn-secondary" disabled={busy} title={t("account.passkeyAddHint")}
+          onClick={() => void passkey(() => invoke("account.addPasskey", locale), () => setNotice(t("account.passkeyAdded")))}>{t("account.passkeyAdd")}</button>
         <button className="btn btn-ghost" disabled={busy} onClick={() => void run(() => invoke("account.signOut"))}>{t("account.signOut")}</button>
       </div>
       {account.data.conflicts.map(c => <div key={c.id} className="panel stack-3">
@@ -284,7 +300,14 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           });
         }}>{t("account.signUp")}</button>
       </div>
+      <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => {
+        if (check("passkey")) void passkey(() => invoke("account.signInWithPasskey", true, locale));
+      }}>{t("account.passkeySignIn")}</button>
     </form>}
+    {inBrowser && <div className="account-local" role="status">
+      <p className="field-note">{t("account.passkeyWaiting")}</p>
+      <button type="button" className="link-btn" onClick={() => void invoke("account.cancelPasskey")}>{t("account.cancel")}</button>
+    </div>}
     {!account.data?.user && account.data?.offlineAccess && <button className="btn btn-ghost" disabled={busy} onClick={() => void run(() => invoke("account.signOut"))}>{t("account.signOut")}</button>}
     {account.data?.status.detail && !(entrance && account.data.status.state === "unavailable") && <p role="status">{account.data.status.detail}</p>}
     {notice && <p role="status">{notice}</p>}

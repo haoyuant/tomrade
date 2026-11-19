@@ -30,6 +30,8 @@ function fakeGitHub() {
     /** tag → the commits it contains */
     tags: new Map<string, string[]>(),
     writes: [] as { method: string; route: string; body: unknown }[],
+    /** Comments on one issue, by number: what the source posted, or a person did. */
+    said: [] as { number: number; body: string }[],
     refuse: 0,
     /** Another repository: only its issues are read. */
     lib: [] as Issue[],
@@ -43,12 +45,17 @@ function fakeGitHub() {
       const [path, query = ""] = route.split("?");
       const q = new URLSearchParams(query);
       if (state.refuse || (state.refuseRepo && path!.startsWith(`/repos/${state.refuseRepo}/`))) throw Object.assign(new Error("Resource not accessible by integration"), { status: state.refuse || 403 });
+      const one = /^\/repos\/acme\/app\/issues\/(\d+)(\/comments)?$/.exec(path!);
+      const found = one ? [...state.issues, ...state.lib].find((i) => i.number === Number(one[1])) : undefined;
       if (method !== "GET") {
         state.writes.push({ method, route, body });
+        if (one?.[2]) state.said.push({ number: Number(one[1]), body: (body as { body: string }).body });
+        else if (found && method === "PATCH") found.state = (body as { state: "closed" }).state;
         return undefined as T;
       }
       const page = Number(q.get("page") ?? 1);
       const paged = <X>(xs: X[]) => (page === 1 ? xs : []) as T;
+      if (one && found) return (one[2] ? paged(state.said.filter((c) => c.number === found.number)) : found) as T;
       const since = q.get("since");
       const listed = (xs: Issue[]) => paged(xs.filter((i) => (q.get("state") !== "open" || i.state === "open") && (!since || Date.parse(i.created_at) >= Date.parse(since))));
       if (path === `/repos/${REPO}/issues`) return listed(state.issues);
@@ -172,6 +179,28 @@ describe("the GitHub inbox source", () => {
     t.state.writes.length = 0;
     await t.inbox.reply(t.p, id(1), "Can you share the log?");
     expect(t.state.writes).toEqual([{ method: "POST", route: `/repos/${REPO}/issues/1/comments`, body: { body: "Can you share the log?" } }]);
+  });
+
+  it("tells an issue as it stands when the try goes: once per comment, nothing on a pull request, no 'won't do' after it was closed there", async () => {
+    const t = await boot();
+    t.state.issues.push(issue(1), issue(2), issue(3));
+    await t.inbox.setSource(t.p, "github", true);
+    await t.inbox.setSourceOption(t.p, "github", "close", true);
+    // the comment already went, by hand while the source could not post it
+    t.state.refuse = 403;
+    const { item } = await t.inbox.accept(t.p, id(1));
+    await t.inbox.flush(t.p);
+    t.state.refuse = 0;
+    t.state.said.push({ number: 1, body: `Thanks for reporting this — it is now tracked as ${item.key}: Issue 1.` });
+    // closed there as completed by now; the third was a pull request all along
+    t.state.issues[1]!.state = "closed";
+    t.state.issues[2]!.pull_request = {};
+    await t.inbox.close(t.p, id(2), "wontfix");
+    await t.inbox.close(t.p, id(3), "wontfix");
+    await t.inbox.retrySend(t.p, id(1));
+    await t.inbox.flush(t.p);
+    expect(t.state.writes).toEqual([]);
+    expect(t.inbox.list(t.p, "unsent")).toEqual([]);
   });
 
   it("says which release fixed it once the ticket's merge is in one, and closes it as completed", async () => {

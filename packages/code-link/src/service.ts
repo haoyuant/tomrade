@@ -197,6 +197,16 @@ export interface MergeCard {
   cause?: MergeCause;
 }
 
+/** A merge the person asked for that Tomrade could not make by itself: it waits on them until they settle it. */
+export interface MergeNotice {
+  key: string;
+  projectId: string;
+  itemId: string;
+  /** The conversation that asked for the work, where its merge card is. */
+  threadId: string | null;
+  text: string;
+}
+
 /** How tickets asked for in a conversation run: the assistant's own engine, what the Start dialog last ran with, or the person's pick. */
 export type StartConfig =
   | { choose: false; engine: string; options?: Record<string, unknown>; permissionMode?: string; from: "conversation" | "remembered" }
@@ -234,8 +244,8 @@ declare module "@tomradex/ipc" {
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
     "codeLink.mergeLocal": (projectId: string, itemId: string) => MergeLocalResult;
-    /** Land the ticket's delivery on the person's word: the pull request through gh, or the branch here without a remote. */
-    "codeLink.merge": (projectId: string, itemId: string) => MergeLocalResult;
+    /** Land the ticket's delivery on the person's word: the pull request through gh, or the branch here without a remote. A conflict goes back to its session by itself. */
+    "codeLink.merge": (projectId: string, itemId: string) => MergeLocalResult & { resolving?: boolean };
     /** Start several tickets headless from a conversation, with one configuration. */
     "codeLink.startTickets": (projectId: string, request: StartBatchRequest) => StartBatchEntry[];
     /** A merge refused for a conflict: the ticket's session is sent back to bring its branch up to date, from this conversation. */
@@ -369,6 +379,8 @@ export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 
 /** How many records' token counts are kept to go on from. */
 const USAGE_COUNTS = 32;
+/** How many times a ticket's conflicts go back to its session by themselves before the person decides. */
+const AUTO_RESOLVES = 2;
 /** The first look at finished worktrees after a start: once the app has settled, not while it opens. */
 const WORKTREE_START_MS = 2 * 60_000;
 
@@ -451,6 +463,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
+  /** Conflicts sent back to their session by themselves, by ticket, until it merges. */
+  private autoResolved = new Map<string, number>();
+  /** Merges the person asked for that did not happen, by ticket. */
+  private mergeWaits = new Map<string, MergeNotice>();
   private changesReader!: Changes;
   private worktreeCare!: Worktrees;
   /** The run an outside session is in, by session: its id, and the tickets it has begun on. */
@@ -686,7 +702,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts),
-        merge: (projectId, itemId) => this.merge(projectId, itemId),
+        land: (projectId, itemId) => this.land(projectId, itemId),
         startConfigFor: (projectId, threadId) => this.startConfigFor(projectId, threadId),
         startTickets: (projectId, request) => this.startTickets(projectId, request),
         resolveMerge: (projectId, itemId, requestedBy) => this.resolveMerge(projectId, itemId, requestedBy)
@@ -858,7 +874,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionCells", (projectId) => ctx.codeLink.sessionCells(projectId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
-      ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
+      ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.land(projectId, itemId));
       ctx.ipc.handle("codeLink.startTickets", (projectId, request) => ctx.codeLink.startTickets(projectId, request));
       ctx.ipc.handle("codeLink.resolveMerge", (projectId, itemId, requestedBy) => ctx.codeLink.resolveMerge(projectId, itemId, requestedBy));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
@@ -1888,6 +1904,50 @@ export class CodeLink extends Service implements CodeLinkReader {
     return result;
   }
 
+  /**
+   * The person said to merge: a card's button, a merge asked for up front, or merge_ticket. A conflict goes back to the
+   * ticket's session by itself, and the merge follows its hand-over; what Tomrade cannot settle waits on the person.
+   */
+  async land(projectId: string, itemId: string): Promise<MergeLocalResult & { resolving?: boolean }> {
+    this.dropMergeWait(projectId, itemId);
+    const result = await this.landing.merge(projectId, itemId);
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) return result;
+    if (result.merged) {
+      this.autoResolved.delete(itemId);
+      this.reportMerge(projectId, item, "merged", result.message);
+      return result;
+    }
+    if (result.cause === "conflict" && (await this.resolveByItself(projectId, item))) return { ...result, resolving: true };
+    this.reportMerge(projectId, item, "refused", result.message, result.cause);
+    const threadId = this.mergeThreadsOf(projectId, itemId)?.threadIds[0] ?? null;
+    this.mergeWaits.set(itemId, { key: itemId, projectId, itemId, threadId, text: this.words()("mergeWaits", { key: item.key, message: result.message.split("\n")[0]!.slice(0, 200) }) });
+    this.notify(projectId);
+    return result;
+  }
+
+  /** Sends the conflict back to the ticket's session, merging once it hands over, unless it has been sent back enough. */
+  private async resolveByItself(projectId: string, item: Item): Promise<boolean> {
+    const tries = this.autoResolved.get(item.id) ?? 0;
+    if (tries >= AUTO_RESOLVES) return false;
+    this.autoResolved.set(item.id, tries + 1);
+    const requestedBy = this.mergeThreadsOf(projectId, item.id)?.threadIds[0] ?? null;
+    const entry = await this.resolveMerge(projectId, item.id, requestedBy, {}, { autoMerge: true }).catch((err: unknown) => {
+      this.ctx.logger.warn(`could not send ${item.key} back for its conflict: ${errorMessage(err)}`);
+      return null;
+    });
+    return !!entry?.ok;
+  }
+
+  private dropMergeWait(projectId: string, itemId: string): void {
+    if (this.mergeWaits.delete(itemId)) this.notify(projectId);
+  }
+
+  /** Merges the person asked for that Tomrade could not make, while their ticket still waits in Verifying. */
+  mergeNotices(): MergeNotice[] {
+    return [...this.mergeWaits.values()].filter((n) => this.ctx.db.has(n.projectId) && this.ctx.items.get(n.projectId, n.itemId)?.status === "verifying");
+  }
+
   /** What the ticket's pull request's checks say right now; read, not waited for. */
   prChecks(projectId: string, itemId: string): Promise<PrChecks> {
     return this.landing.prChecks(projectId, itemId);
@@ -1996,7 +2056,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.placeMergeCard(projectId, item, talked, card, false);
     // The person said, when asking for the work, to merge it once in: no question, the card reports the outcome.
     const wanted = this.store.sessions(projectId, { itemId: item.id, delivery: talked.delivery }).some((s) => s.autoMerge);
-    if (wanted) void this.merge(projectId, item.id).catch((err) => this.ctx.logger.warn(`auto-merge of ${item.key} failed: ${errorMessage(err)}`));
+    if (wanted) void this.land(projectId, item.id).catch((err) => this.ctx.logger.warn(`auto-merge of ${item.key} failed: ${errorMessage(err)}`));
   }
 
   /** Every merge card on the delivery shows how the merge went; a conversation without one is not told. */
@@ -2012,7 +2072,7 @@ export class CodeLink extends Service implements CodeLinkReader {
    * the merge wish the session had, so a merge the person asked for up front still happens by itself.
    * `how` says how it runs, for a caller whose tickets do not run in the background: a terminal agent goes on in its pane.
    */
-  async resolveMerge(projectId: string, itemId: string, requestedBy: string | null, how: Pick<StartBatchRequest, "mode" | "engine" | "options" | "permissionMode"> = {}): Promise<StartBatchEntry> {
+  async resolveMerge(projectId: string, itemId: string, requestedBy: string | null, how: Pick<StartBatchRequest, "mode" | "engine" | "options" | "permissionMode"> = {}, opts: { autoMerge?: boolean } = {}): Promise<StartBatchEntry> {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
     const link = primaryOf(this.currentLinks(projectId, itemId).filter((l) => l.branch));
@@ -2030,7 +2090,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     const talked = this.mergeThreadsOf(projectId, itemId);
     const resolving = talked && this.mergeCard(projectId, item, "resolving");
     if (talked && resolving) this.placeMergeCard(projectId, item, talked, resolving, true);
-    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], ...(requestedBy ? { requestedBy } : {}), task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}), ...how });
+    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], ...(requestedBy ? { requestedBy } : {}), task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge || opts.autoMerge ? { autoMerge: true } : {}), ...how });
     if (!entry!.ok) {
       const refused = talked && this.mergeCard(projectId, item, "refused", entry!.message ?? `${item.key} could not be started`, "refused");
       if (talked && refused) this.placeMergeCard(projectId, item, talked, refused, true);

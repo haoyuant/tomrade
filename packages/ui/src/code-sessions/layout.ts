@@ -61,7 +61,17 @@ function boxes(layout: Layout, box: Box = { x: 0, y: 0, w: 1, h: 1 }): Map<strin
 
 const EDGE = 1e-6;
 
-/** The cell across one edge of this one: of those touching it there, the one sharing most of it; null at the window's edge. */
+/**
+ * Room for one more cell, made where the window can best spare it: the largest cell split across its longer side.
+ * `aspect` is the cells' area width over height; ties keep reading order.
+ */
+export function makeRoom(layout: Layout, aspect = 1, id = nextId()): { layout: Layout; created: string } {
+  let best: { id: string; box: Box } | null = null;
+  for (const [cell, box] of boxes(layout)) if (!best || box.w * box.h > best.box.w * best.box.h + EDGE) best = { id: cell, box };
+  return split(layout, best!.id, best!.box.w * aspect >= best!.box.h ? "row" : "column", id);
+}
+
+/** The cell across one edge of this one:of those touching it there, the one sharing most of it; null at the window's edge. */
 export function neighbour(layout: Layout, cell: string, direction: "left" | "right" | "up" | "down"): string | null {
   const all = boxes(layout);
   const from = all.get(cell);
@@ -138,13 +148,13 @@ export function place(layout: Layout, id: string, key: Key = byId): Layout {
  * Where a pick from the list lands. What a cell already shows, under any id for the same pane (`key`): that cell, with
  * or without ⌘. With `beside` (⌘-click): a new cell beside the selected one. Else the selected cell, unless it is locked or
  * shows a session that needs the person; then the first empty cell, else the cell selected least recently (`recent`
- * lists cells, the last selected last) that is neither, else a new cell beside the selected one. `replaced` is what
- * the cell showed before.
+ * lists cells, the last selected last) that is neither, else a new cell split from the largest (`makeRoom`). `replaced`
+ * is what the cell showed before.
  */
 export function landing(
   layout: Layout,
   id: string,
-  opts: { selected: string | null; beside?: boolean; recent?: string[]; needsYou?: (shown: string) => boolean; key?: Key; newId?: string }
+  opts: { selected: string | null; beside?: boolean; recent?: string[]; needsYou?: (shown: string) => boolean; key?: Key; newId?: string; aspect?: number }
 ): { layout: Layout; cell: string; replaced: string | null } {
   const cells = leaves(layout);
   const key = opts.key ?? byId;
@@ -152,11 +162,8 @@ export function landing(
   if (already) return { layout, cell: already.id, replaced: null };
   const selected = cells.find((l) => l.id === opts.selected) ?? cells[0]!;
   const into = (cell: Leaf) => ({ layout: show(layout, cell.id, id, key), cell: cell.id, replaced: cell.sessionId });
-  const beside = () => {
-    const next = split(layout, selected.id, "row", opts.newId);
-    return { layout: show(next.layout, next.created, id, key), cell: next.created, replaced: null };
-  };
-  if (opts.beside) return beside();
+  const intoNew = (next: { layout: Layout; created: string }) => ({ layout: show(next.layout, next.created, id, key), cell: next.created, replaced: null });
+  if (opts.beside) return intoNew(split(layout, selected.id, "row", opts.newId));
   const free = (cell: Leaf) => !cell.locked && !(cell.sessionId && opts.needsYou?.(cell.sessionId));
   if (free(selected)) return into(selected);
   const empty = cells.find((l) => !l.sessionId && !l.locked);
@@ -164,21 +171,20 @@ export function landing(
   const recent = opts.recent ?? [];
   // Never selected counts as least recent; ties keep reading order.
   const other = cells.filter((l) => l.id !== selected.id && free(l)).sort((a, b) => recent.lastIndexOf(a.id) - recent.lastIndexOf(b.id))[0];
-  return other ? into(other) : beside();
+  return other ? into(other) : intoNew(makeRoom(layout, opts.aspect, opts.newId));
 }
 
 /**
  * A session brought into view: the cell that already shows its pane, under any id (`key`), else the first empty cell,
- * else a new cell beside `near`. Nothing else is moved out.
+ * else a new cell split from the largest (`makeRoom`, `aspect` as there). Nothing else is moved out.
  */
-export function reveal(layout: Layout, id: string, near: string | null, key: Key = byId, newId = nextId()): { layout: Layout; cell: string } {
-  const cells = leaves(layout);
+export function reveal(layout: Layout, id: string, aspect = 1, key: Key = byId, newId = nextId()): { layout: Layout; cell: string } {
   const already = holder(layout, id, key);
   if (already) return { layout, cell: already.id };
-  const empty = cells.find((l) => !l.sessionId && !l.locked);
+  const empty = leaves(layout).find((l) => !l.sessionId && !l.locked);
   if (empty) return { layout: show(layout, empty.id, id, key), cell: empty.id };
-  const beside = split(layout, (cells.find((l) => l.id === near) ?? cells[0]!).id, "row", newId);
-  return { layout: show(beside.layout, beside.created, id, key), cell: beside.created };
+  const room = makeRoom(layout, aspect, newId);
+  return { layout: show(room.layout, room.created, id, key), cell: room.created };
 }
 
 /**

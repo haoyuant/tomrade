@@ -184,6 +184,10 @@ const firstLine = (text: string | undefined, max: number): string => {
 const REMOTE_COMMAND = /\bgit\s+(?:push|fetch|pull|ls-remote|clone)\b|^\s*gh\s/;
 const BLOCKED_COMMAND = /\bgit\s+(?:push|fetch|pull)\b|^\s*gh\s/;
 const MERGE_COMMAND = /(?:^|[;&|]\s*)gh\s+pr\s+merge\b/;
+/** The branch no longer merges into the default branch: its agent brings it up to date, not the person. */
+const MERGE_CONFLICT = /cannot be cleanly created|merge conflict|has conflicts|conflicts with|is behind|not up to date|out of date/i;
+const CONFLICT_TEXT =
+  "Tomrade: the pull request does not merge because its branch conflicts with or is behind the default branch. That is yours to settle: merge origin's default branch into your branch, resolve every conflict, run the tests, push, wait for the checks, then merge again. Call report_merge_blocked only if you cannot resolve it.";
 /** A refusal, not a slip the agent can correct (a missing flag, a typo). */
 const MERGE_REFUSED = /not (?:allowed|permitted|mergeable)|protected branch|required status check|review(?:s)? (?:is |are )?required|approving review|denied|permission|blocked|policy|merge conflict|not authorized|forbidden|\b403\b/i;
 /**
@@ -213,6 +217,7 @@ const OUT_OF_SCOPE_TOOLS = new Set([
   "plan_and_apply",
   "update_project_brief",
   "start_night_shift",
+  "edit_night_shift",
   "stop_night_shift"
 ]);
 
@@ -668,6 +673,7 @@ export class Sessions {
       const said = this.blockCredentials(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true }).additionalContext;
       return typeof said === "string" ? { context: said } : {};
     }
+    if (command && MERGE_COMMAND.test(command) && MERGE_CONFLICT.test(failedOutput)) return { context: CONFLICT_TEXT };
     if (command && MERGE_COMMAND.test(command) && MERGE_REFUSED.test(failedOutput)) {
       this.blockMerge(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
       return { context: "Tomrade: the merge was refused and the person has been handed it. Do not try to merge another way — stop here." };

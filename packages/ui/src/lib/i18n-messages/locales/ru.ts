@@ -1843,6 +1843,7 @@ export const ru: PartialMessages = {
     deletedViewToast: "{{name}} удалено"
   },
   sidebar: {
+    unreadBadge: "Непрочитанных: {{n}}",
     newView: "Новое представление",
     createdViewToast: "Создано представление {{name}}",
     newViewNameAria: "Название нового представления",

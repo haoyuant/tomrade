@@ -11,6 +11,7 @@
   "scripts": { "build": "tsc -b", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "dependencies": {
     "@tomradex/contracts": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
     "@supabase/supabase-js": "^2.116.0",
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",

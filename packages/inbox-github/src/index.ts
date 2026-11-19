@@ -340,11 +340,19 @@ export function githubSource(deps: Deps): InboxSource {
     },
     async setStatus(entry, change) {
       const { repo, number } = parseRef(entry.externalId);
-      const close = inbox.option(entry.projectId, SOURCE_ID, "close") ? closeFor(change) : null;
+      let close = inbox.option(entry.projectId, SOURCE_ID, "close") ? closeFor(change) : null;
       const comment = inbox.option(entry.projectId, SOURCE_ID, "comment") ? commentFor(change, repo) : null;
+      if (!close && !comment) return;
+      // What a try said may be long stale (it waited on access, on a person): it is told as the issue stands now.
+      const now = await guard(repo, () => api.request<Issue>("GET", `/repos/${repo}/issues/${number}`));
+      // A pull request has nothing to hear; an issue already closed there needs no "won't do" or "duplicate" said after it.
+      if (now.pull_request || (change.state === "closed" && now.state === "closed")) return;
+      if (now.state === "closed") close = null;
       // closed first: a retry after a failed comment closes again harmlessly instead of commenting twice
       if (close) await guard(repo, () => api.request("PATCH", `/repos/${repo}/issues/${number}`, { state: "closed", state_reason: close }));
-      if (comment) await guard(repo, () => api.request("POST", `/repos/${repo}/issues/${number}/comments`, { body: comment }));
+      // said already, by this source's earlier try or by a person: once is enough
+      if (comment && !(await guard(repo, () => pages<{ body?: string | null }>(api, `/repos/${repo}/issues/${number}/comments`))).some((c) => c.body?.trim() === comment.trim()))
+        await guard(repo, () => api.request("POST", `/repos/${repo}/issues/${number}/comments`, { body: comment }));
     }
   };
 }

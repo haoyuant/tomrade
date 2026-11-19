@@ -167,6 +167,7 @@ function useRunContributed(projectId: string) {
 
 /** A contributed module's head: its icon and title, a door when it names a command or a surface, and what waits there. */
 export function PluginModuleHead({ module, projectId, onOpen }: { module: SidebarModuleView; projectId: string; onOpen?: (surface: string) => void }) {
+  const { t } = useI18n();
   const run = useRunContributed(projectId);
   const icon = iconOf(module.icon) ?? "i-plug";
   const title = (
@@ -186,9 +187,30 @@ export function PluginModuleHead({ module, projectId, onOpen }: { module: Sideba
         <span className="side-label-btn side-module-btn is-static">{title}</span>
       )}
       <Spacer />
-      {!!module.count && <span className="side-count num">{module.count}</span>}
+      {!!module.count &&
+        (module.badge ? (
+          <span className="side-badge num" role="status" aria-label={t("sidebar.unreadBadge", { n: module.count })}>
+            {badgeCount(module.count)}
+          </span>
+        ) : (
+          <span className="side-count num">{module.count}</span>
+        ))}
     </>
   );
+}
+
+const badgeCount = (n: number) => (n > 99 ? "99+" : String(n));
+
+/** The folded sidebar's doors to modules with unread news: the module's icon, its badge, opening its surface. */
+export function RailBadges({ projectId, onOpen }: { projectId: string; onOpen: (surface: string) => void }) {
+  const { t } = useI18n();
+  const unread = (useSidebarModules(projectId).data ?? []).filter((m) => m.badge && m.count && m.opens);
+  return unread.map((m) => (
+    <button key={m.id} type="button" className="btn btn-icon rail-btn" data-module-door={m.id} title={m.title} aria-label={`${m.title} · ${t("sidebar.unreadBadge", { n: m.count! })}`} onClick={() => onOpen(m.opens!)}>
+      <Icon name={iconOf(m.icon) ?? "i-plug"} size={16} />
+      <span className="rail-badge num">{badgeCount(m.count!)}</span>
+    </button>
+  ));
 }
 
 function PluginRow({ row, projectId }: { row: SidebarRow; projectId: string }) {

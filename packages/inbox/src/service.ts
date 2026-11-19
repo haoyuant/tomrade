@@ -17,7 +17,7 @@ export type InboxKind = (typeof INBOX_KINDS)[number];
 export type InboxStatus = "new" | "accepted" | "merged" | "closed";
 export type CloseReason = "wontfix" | "duplicate";
 /** A status, everything, or the triaged entries with something new at their source. */
-export type InboxListFilter = InboxStatus | "all" | "activity";
+export type InboxListFilter = InboxStatus | "all" | "activity" | "unsent";
 
 export interface InboxAttachment {
   name: string;
@@ -67,6 +67,8 @@ export interface InboxEntry {
   suggestion: InboxSuggestion | null;
   /** Why the last suggestion could not be made; null when it was, or none was asked. */
   suggestError: string | null;
+  /** Why the source has not heard of its triage yet: the last try failed. Null when it heard, or the try is still to come. */
+  sendError: string | null;
 }
 
 /**
@@ -183,6 +185,8 @@ export interface InboxSourceView {
   warnings: string[];
   /** Triage it has not heard about yet. */
   pending: number;
+  /** Why telling it failed last, while some of that triage failed to go; null otherwise. */
+  sendError: string | null;
   options: { id: string; title: string; description: string | null; value: boolean }[];
 }
 
@@ -224,6 +228,8 @@ declare module "@tomradex/ipc" {
     "inbox.seen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reopen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reply": (projectId: string, entryId: string, text: string) => InboxEntry;
+    "inbox.retrySend": (projectId: string, entryId: string) => InboxEntry;
+    "inbox.dropSend": (projectId: string, entryId: string) => InboxEntry;
     "inbox.triager": () => InboxTriagerView | null;
     "inbox.suggest": (projectId: string, entryId: string) => InboxEntry;
     "inbox.adopt": (projectId: string, entryId: string, opts?: AdoptOptions) => AdoptResult;
@@ -307,6 +313,12 @@ ALTER TABLE plugin_inbox_pulls ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[
 ALTER TABLE plugin_inbox_entries ADD COLUMN suggestion_json TEXT;
 ALTER TABLE plugin_inbox_entries ADD COLUMN suggest_error TEXT;
 `
+  },
+  {
+    version: 5,
+    up: `
+ALTER TABLE plugin_inbox_outbox ADD COLUMN tried_at INTEGER;
+`
   }
 ];
 
@@ -348,6 +360,8 @@ interface EntryRow {
   suggestion_json: string | null;
   suggest_error: string | null;
   updated_at: number;
+  /** From the outbox, when its last try failed. */
+  send_error?: string | null;
 }
 
 interface ProjectRow {
@@ -370,6 +384,11 @@ interface PullRow {
 }
 
 const TRIAGED = "('accepted', 'merged')";
+/** Entries with why their triage failed to reach the source; filter on `e.`. */
+const ENTRIES = "SELECT e.*, o.error AS send_error FROM plugin_inbox_entries e LEFT JOIN plugin_inbox_outbox o ON o.entry_id = e.id";
+/** Failed tries are tried again by themselves this many times, further apart each time; then only when a person says. */
+const AUTO_TRIES = 10;
+const MAX_WAIT_MS = 6 * 3_600_000;
 const FEEDBACK_VALUES_SQL = `SELECT item_id AS item_id, COUNT(*) AS value FROM plugin_inbox_entries WHERE item_id IS NOT NULL AND status IN ${TRIAGED} GROUP BY item_id`;
 const FEEDBACK_EXPR_SQL = `SELECT NULLIF(COUNT(*), 0) FROM plugin_inbox_entries e WHERE e.item_id = i.id AND e.status IN ${TRIAGED}`;
 
@@ -418,7 +437,8 @@ function rowToEntry(r: EntryRow): InboxEntry {
     shippedIn: r.shipped_in,
     duplicateOf: r.duplicate_of,
     suggestion: parseSuggestion(r.suggestion_json),
-    suggestError: r.suggest_error
+    suggestError: r.suggest_error,
+    sendError: r.send_error ?? null
   };
 }
 
@@ -470,13 +490,15 @@ export class Inbox extends Service {
       ctx.ipc.handle("inbox.seen", (projectId, entryId) => inbox().seen(projectId, entryId));
       ctx.ipc.handle("inbox.reopen", (projectId, entryId) => inbox().reopen(projectId, entryId));
       ctx.ipc.handle("inbox.reply", (projectId, entryId, text) => inbox().reply(projectId, entryId, text));
+      ctx.ipc.handle("inbox.retrySend", (projectId, entryId) => inbox().retrySend(projectId, entryId));
+      ctx.ipc.handle("inbox.dropSend", (projectId, entryId) => inbox().dropSend(projectId, entryId));
       ctx.ipc.handle("inbox.triager", () => inbox().triagerView());
       ctx.ipc.handle("inbox.suggest", (projectId, entryId) => inbox().suggest(projectId, entryId));
       ctx.ipc.handle("inbox.adopt", (projectId, entryId, opts) => inbox().adopt(projectId, entryId, opts ?? {}));
       ctx.on("inbox/changed", (projectId) => ctx.ipc.send("inbox.changed", projectId));
     });
     ctx.inject(["contributions"], (ctx) => {
-      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words()("module"), icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId) });
+      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words()("module"), icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId), badge: true });
       ctx.contributions.section({ id: "inbox", title: () => this.words()("section"), render: (item) => this.section(item) });
       ctx.on("inbox/changed", () => ctx.contributions.changed());
     });
@@ -496,7 +518,11 @@ export class Inbox extends Service {
   async sources(projectId: string): Promise<InboxSourceView[]> {
     const enabled = this.enabledSources(projectId);
     const pulls = new Map(this.pulls(projectId).map((p) => [p.source, p]));
-    const pending = this.has(projectId) ? (this.db(projectId).prepare("SELECT e.source AS source, COUNT(*) AS n FROM plugin_inbox_outbox o JOIN plugin_inbox_entries e ON e.id = o.entry_id GROUP BY e.source").all() as { source: string; n: number }[]) : [];
+    const pending = this.has(projectId)
+      ? (this.db(projectId)
+          .prepare("SELECT e.source AS source, COUNT(*) AS n, (SELECT o2.error FROM plugin_inbox_outbox o2 JOIN plugin_inbox_entries e2 ON e2.id = o2.entry_id WHERE e2.source = e.source AND o2.error IS NOT NULL ORDER BY o2.tried_at DESC LIMIT 1) AS error FROM plugin_inbox_outbox o JOIN plugin_inbox_entries e ON e.id = o.entry_id GROUP BY e.source")
+          .all() as { source: string; n: number; error: string | null }[])
+      : [];
     return Promise.all(
       [...this.sourceMap.values()].map(async (s) => {
         const pull = pulls.get(s.id);
@@ -511,6 +537,7 @@ export class Inbox extends Service {
           error: pull?.error ?? null,
           warnings: pull ? (JSON.parse(pull.warnings_json) as string[]) : [],
           pending: pending.find((p) => p.source === s.id)?.n ?? 0,
+          sendError: pending.find((p) => p.source === s.id)?.error ?? null,
           options: (s.options ?? []).map((o) => ({ id: o.id, title: text(o.title), description: o.description ? text(o.description) : null, value: this.option(projectId, s.id, o.id) }))
         };
       })
@@ -551,23 +578,25 @@ export class Inbox extends Service {
     if (!this.has(projectId)) return [];
     const db = this.db(projectId);
     const rows = (status === "all"
-      ? db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? ORDER BY received_at DESC").all(projectId)
+      ? db.prepare(`${ENTRIES} WHERE e.project_id = ? ORDER BY e.received_at DESC`).all(projectId)
       : status === "activity"
-        ? db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? AND activity_at IS NOT NULL ORDER BY activity_at DESC").all(projectId)
-        : db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? AND status = ? ORDER BY received_at DESC").all(projectId, status)) as EntryRow[];
+        ? db.prepare(`${ENTRIES} WHERE e.project_id = ? AND e.activity_at IS NOT NULL ORDER BY e.activity_at DESC`).all(projectId)
+        : status === "unsent"
+          ? db.prepare(`${ENTRIES} WHERE e.project_id = ? AND o.error IS NOT NULL ORDER BY e.triaged_at DESC`).all(projectId)
+          : db.prepare(`${ENTRIES} WHERE e.project_id = ? AND e.status = ? ORDER BY e.received_at DESC`).all(projectId, status)) as EntryRow[];
     return rows.map(rowToEntry);
   }
 
   get(projectId: string, id: string): InboxEntry | null {
     if (!this.has(projectId)) return null;
-    const row = this.db(projectId).prepare("SELECT * FROM plugin_inbox_entries WHERE id = ? AND project_id = ?").get(id, projectId) as EntryRow | undefined;
+    const row = this.db(projectId).prepare(`${ENTRIES} WHERE e.id = ? AND e.project_id = ?`).get(id, projectId) as EntryRow | undefined;
     return row ? rowToEntry(row) : null;
   }
 
-  /** What waits for a person: untriaged entries, and triaged ones with something new at their source. */
+  /** What waits for a person: untriaged entries, triaged ones with something new at their source, and triage the source refused. */
   count(projectId: string): number {
     if (!this.has(projectId)) return 0;
-    return (this.db(projectId).prepare("SELECT COUNT(*) AS n FROM plugin_inbox_entries WHERE project_id = ? AND (status = 'new' OR activity_at IS NOT NULL)").get(projectId) as { n: number }).n;
+    return (this.db(projectId).prepare(`SELECT COUNT(*) AS n FROM (${ENTRIES} WHERE e.project_id = ? AND (e.status = 'new' OR e.activity_at IS NOT NULL OR o.error IS NOT NULL))`).get(projectId) as { n: number }).n;
   }
 
   /**
@@ -897,14 +926,17 @@ export class Inbox extends Service {
     const cols = Object.keys(next);
     db.transaction(() => {
       db.prepare(`UPDATE plugin_inbox_entries SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ?`).run(...cols.map((c) => next[c as keyof typeof next] ?? null), now, entry.id);
-      if (this.sourceMap.get(entry.source)?.setStatus) db.prepare("INSERT INTO plugin_inbox_outbox (entry_id, change_json) VALUES (?, ?) ON CONFLICT(entry_id) DO UPDATE SET change_json = excluded.change_json, attempts = 0, error = NULL").run(entry.id, JSON.stringify(change));
+      if (this.sourceMap.get(entry.source)?.setStatus) db.prepare("INSERT INTO plugin_inbox_outbox (entry_id, change_json) VALUES (?, ?) ON CONFLICT(entry_id) DO UPDATE SET change_json = excluded.change_json, attempts = 0, error = NULL, tried_at = NULL").run(entry.id, JSON.stringify(change));
     });
     this.changed(projectId);
     void this.flush(projectId);
     return this.get(projectId, entry.id)!;
   }
 
-  /** Tell the sources what was triaged here; what fails waits for the next pull. */
+  /**
+   * Tell the sources what was triaged here. What fails is tried at the next pull, then further apart, and after
+   * AUTO_TRIES only when a person retries; the entry says why meanwhile.
+   */
   flush(projectId: string): Promise<void> {
     const running = this.flushing.get(projectId);
     if (running) return running.then(() => this.flush(projectId));
@@ -913,10 +945,16 @@ export class Inbox extends Service {
     return run;
   }
 
+  /** How long after `attempts` failed tries the next one waits: none for the triage's own try and the next pull's, then a pull's interval, doubling. */
+  private waitAfter(attempts: number): number {
+    return attempts <= 2 ? 0 : Math.min(this.config.pullMs * 2 ** (attempts - 3), MAX_WAIT_MS);
+  }
+
   private async flushNow(projectId: string): Promise<void> {
     if (!this.has(projectId)) return;
     const db = this.db(projectId);
-    const rows = db.prepare("SELECT o.entry_id AS entry_id, o.change_json AS change_json FROM plugin_inbox_outbox o").all() as { entry_id: string; change_json: string }[];
+    const rows = db.prepare("SELECT o.entry_id AS entry_id, o.change_json AS change_json, o.attempts AS attempts, o.tried_at AS tried_at FROM plugin_inbox_outbox o").all() as { entry_id: string; change_json: string; attempts: number; tried_at: number | null }[];
+    let moved = false;
     for (const row of rows) {
       const entry = this.get(projectId, row.entry_id);
       const source = entry && this.sourceMap.get(entry.source);
@@ -925,14 +963,33 @@ export class Inbox extends Service {
         continue;
       }
       if (!source?.setStatus) continue;
+      if (row.attempts >= AUTO_TRIES || (row.tried_at !== null && Date.now() < row.tried_at + this.waitAfter(row.attempts))) continue;
+      moved = true;
       try {
         await source.setStatus(entry, JSON.parse(row.change_json) as TriageChange);
         // a newer triage may have replaced this change meanwhile
         db.prepare("DELETE FROM plugin_inbox_outbox WHERE entry_id = ? AND change_json = ?").run(row.entry_id, row.change_json);
       } catch (error) {
-        db.prepare("UPDATE plugin_inbox_outbox SET attempts = attempts + 1, error = ? WHERE entry_id = ?").run(errorMessage(error), row.entry_id);
+        db.prepare("UPDATE plugin_inbox_outbox SET attempts = attempts + 1, error = ?, tried_at = ? WHERE entry_id = ?").run(errorMessage(error), Date.now(), row.entry_id);
       }
     }
+    if (moved) this.changed(projectId);
+  }
+
+  /** Tries telling the source about this entry's triage now, whatever the earlier tries said. */
+  async retrySend(projectId: string, id: string): Promise<InboxEntry> {
+    if (!this.get(projectId, id)) throw new Error("No such inbox entry");
+    this.db(projectId).prepare("UPDATE plugin_inbox_outbox SET attempts = 0, tried_at = NULL WHERE entry_id = ?").run(id);
+    await this.flush(projectId);
+    return this.get(projectId, id)!;
+  }
+
+  /** The source will not hear of this entry's triage: a person dealt with it there, or it no longer holds. */
+  dropSend(projectId: string, id: string): InboxEntry {
+    if (!this.get(projectId, id)) throw new Error("No such inbox entry");
+    this.db(projectId).prepare("DELETE FROM plugin_inbox_outbox WHERE entry_id = ?").run(id);
+    this.changed(projectId);
+    return this.get(projectId, id)!;
   }
 
   // ── tickets ────────────────────────────────────────────────────────────────
@@ -995,7 +1052,7 @@ export class Inbox extends Service {
 
   private section(item: Item) {
     if (!this.has(item.projectId)) return null;
-    const rows = this.db(item.projectId).prepare(`SELECT * FROM plugin_inbox_entries WHERE item_id = ? AND status IN ${TRIAGED} ORDER BY received_at ASC`).all(item.id) as EntryRow[];
+    const rows = this.db(item.projectId).prepare(`${ENTRIES} WHERE e.item_id = ? AND e.status IN ${TRIAGED} ORDER BY e.received_at ASC`).all(item.id) as EntryRow[];
     if (!rows.length) return null;
     const w = this.words();
     return {

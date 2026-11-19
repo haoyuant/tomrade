@@ -20,7 +20,7 @@ import { applyEdit, cannotRemove, type ShiftEdit } from "./edit.js";
 import { DEFAULT_MAX_INSERTS, Triage, insertGate, insertedTicket, reportLine, triageSystem, triageUser, type NotInserted } from "./found.js";
 import { match, type MatchDevice } from "@tomradex/dispatch";
 import { PlanReply, placed, planCandidates, planSystem, planUser, readPlan, type Placer, type PlannerDevice, type ShiftPlan } from "./plan.js";
-import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type Action, type NightShift, type NodeConfig, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
+import { MAX_STEPS, MERGE_WAITS, MERGE_WAIT_MS, advance, failTicket, isStuck, outOfEngines, settingsFor, stepsBetween, takeOverLine, triedEngines, type Action, type NightShift, type NodeConfig, type ShiftMode, type SessionFacts, type ShiftFinding, type ShiftStep, type ShiftTicket, type TicketFacts, type TicketSettings, type TicketState, type Why } from "./rules.js";
 import { WorkRules, keptFrom, ruleConfig, ruleFor, type WorkRule } from "./work-rules.js";
 import { NIGHT_SHIFT_WORDS } from "./words.js";
 
@@ -340,6 +340,7 @@ export class NightShifts extends Service {
       case "waits-merge": return w("waitsMerge", { keys: why.keys.join(", ") });
       case "waits-upstream": return w("waitsUpstream", { keys: why.keys.join(", ") });
       case "upstream-stuck": return w("upstreamStuck", { keys: why.keys.join(", ") });
+      case "waits-person": return w("waitsPerson", { keys: why.keys.join(", ") });
       case "waits-outside": return w("waitsOutside", { keys: why.keys.join(", ") });
       case "waits-elsewhere": return w("waitsElsewhere", { keys: why.keys.join(", ") });
       case "halted": return w(why.halt === "stopped" ? "haltedStopped" : why.halt === "deadline" ? "haltedDeadline" : why.halt === "budget" ? "haltedBudget" : "haltedFailures");
@@ -494,16 +495,12 @@ export class NightShifts extends Service {
 
   start(projectId: string, input: NightShiftInput, now = Date.now()): NightShiftView {
     const { parsed, tickets } = this.checked(projectId, input);
-    const remembered = this.home.codeLink.startDefaults();
     // The person took these on the plan, so they are the person's writes, and undo takes them back.
     for (const { from, to } of parsed.dependencies) {
       const item = this.home.items.get(projectId, from);
       if (item && !item.blocks.includes(to)) this.home.items.update(projectId, from, { blocks: [...item.blocks, to] }, "human");
     }
-    const mode = parsed.mode ?? remembered?.mode ?? "run";
-    const engine = parsed.engine ?? remembered?.engine;
-    const options = parsed.options ?? (parsed.engine ? undefined : remembered?.options);
-    const permissionMode = mode === "run" ? (parsed.permissionMode ?? (parsed.engine ? undefined : remembered?.permissionMode)) : undefined;
+    const { mode, engine, options, permissionMode } = this.runsAs(parsed);
     const shift: NightShift = {
       id: randomUUID(),
       projectId,
@@ -620,13 +617,24 @@ export class NightShifts extends Service {
     return [...this.going].some((projectId) => this.running(projectId)?.settings.keepAwake);
   }
 
+  /**
+   * Where a run's agents work, and which: terminal panes, where the person can watch them and step in, unless
+   * sessions are asked for; Start's last agent, unless the run names one or it cannot go where the run goes.
+   */
+  private runsAs(parsed: z.output<typeof NightShiftInput>): { mode: ShiftMode; engine?: string; options?: Record<string, unknown>; permissionMode?: string } {
+    const mode = parsed.mode ?? "terminal";
+    const remembered = parsed.engine ? null : this.home.codeLink.startDefaults();
+    const kept = remembered?.engine && (mode !== "terminal" || this.home.agent.engineOf(remembered.engine)?.terminal?.mode !== "none") ? remembered : null;
+    const engine = parsed.engine ?? kept?.engine;
+    const options = parsed.options ?? kept?.options;
+    const permissionMode = mode === "run" ? (parsed.permissionMode ?? kept?.permissionMode) : undefined;
+    return { mode, ...(engine ? { engine } : {}), ...(options ? { options } : {}), ...(permissionMode ? { permissionMode } : {}) };
+  }
+
   /** A run in the words the person answers: which tickets, and everything that decides how they go. */
   private describe(projectId: string, parsed: z.output<typeof NightShiftInput>, tickets: ShiftTicket[]): { config: string[]; text: string } {
     const w = NIGHT_SHIFT_WORDS(this.locale());
-    const remembered = this.home.codeLink.startDefaults();
-    const mode = parsed.mode ?? remembered?.mode ?? "run";
-    const engine = parsed.engine ?? remembered?.engine;
-    const permission = mode === "run" ? (parsed.permissionMode ?? (parsed.engine ? undefined : remembered?.permissionMode)) : undefined;
+    const { mode, engine, permissionMode: permission } = this.runsAs(parsed);
     const config = [
       w(mode === "terminal" ? "whereTerminal" : "whereRun"),
       w("configAgent", { agent: engine ? this.engineTitle(engine) : w("configAgentDefault") }),
@@ -642,7 +650,7 @@ export class NightShifts extends Service {
   /** Checks what `start` would, so an ask that cannot run says so now. */
   private checked(projectId: string, input: NightShiftInput): { parsed: z.output<typeof NightShiftInput>; tickets: ShiftTicket[] } {
     if (!this.home.db.has(projectId)) throw new Error("That project is not open on this machine");
-    if (this.running(projectId)) throw new Error("A night shift is already going in this project: stop it, or wait for it to end");
+    if (this.running(projectId)) throw new Error("An auto run is already going in this project: change its plan with edit_night_shift, or stop it and wait for it to end");
     const parsed = NightShiftInput.parse(input);
     const rules = this.rules(projectId);
     const taken = [...new Set(parsed.itemIds)].map((id) => this.take(projectId, id, rules, parsed.nodes[id]));
@@ -706,6 +714,15 @@ export class NightShifts extends Service {
    * the run through the next pass, so it cannot race one. Whatever moved in between is left as it stands, and said.
    */
   edit(projectId: string, id: string, input: NightShiftEdit): NightShiftView {
+    const { shift, change } = this.checkedEdit(projectId, id, input);
+    if (!change.add.length && !change.remove.length && !Object.keys(change.nodes).length) return this.view(shift);
+    this.arrivals.set(projectId, [...(this.arrivals.get(projectId) ?? []), { edit: change }]);
+    this.kick(0);
+    return this.view(shift);
+  }
+
+  /** Checks what `edit` would, so a change that cannot be made is refused before the person is asked about it. */
+  private checkedEdit(projectId: string, id: string, input: NightShiftEdit): { shift: NightShift; change: ShiftEdit } {
     const w = NIGHT_SHIFT_WORDS(this.locale());
     const shift = this.running(projectId);
     if (!shift || shift.id !== id) throw new Error(w("editEnded"));
@@ -729,10 +746,7 @@ export class NightShifts extends Service {
     const nodes = Object.fromEntries(Object.entries(parsed.nodes).filter(([itemId]) => inRun.has(itemId)));
     for (const itemId of Object.keys(nodes)) if (inRun.get(itemId)!.state !== "queued") problems.push(w("nodeBegun", { key: inRun.get(itemId)!.key }));
     if (problems.length) throw new Error(w("editRefused", { problems: problems.join("; ") }));
-    if (!add.length && !parsed.remove.length && !Object.keys(nodes).length) return this.view(shift);
-    this.arrivals.set(projectId, [...(this.arrivals.get(projectId) ?? []), { edit: { add, remove: parsed.remove, nodes } }]);
-    this.kick(0);
-    return this.view(shift);
+    return { shift, change: { add, remove: parsed.remove, nodes } };
   }
 
   /** It ends with what it did: the worktree and the branch stay as they are. */
@@ -1007,7 +1021,7 @@ export class NightShifts extends Service {
   }
 
   private registerTools(ctx: Context): void {
-    ctx.tools.kit("night-shift", "work through a batch of tickets unattended, overnight");
+    ctx.tools.kit("night-shift", "an auto run: reach a goal by working through its tickets unattended, in dependency order, and change the plan while it goes");
     const keyToId = (projectId: string, key: string): string => {
       const item = ctx.items.getByKey(projectId, key.toUpperCase());
       if (!item) throw new Error(`no ticket ${key} in this project`);
@@ -1019,7 +1033,7 @@ export class NightShifts extends Service {
         kit: "night-shift",
         title: "Plan an auto run",
         readOnly: true,
-        description: "What an auto run of this project's backlog would take: the tickets suggested, those left out and why, dependencies the backlog lacks, and how many to run at once. Show the person this before asking to start.",
+        description: "What an auto run of this project's backlog would take: the tickets suggested, those left out and why, dependencies the backlog lacks, and how many to run at once. Show the person this before asking to start. It covers the whole backlog: for a goal, keep to the tickets the goal needs and what they wait on.",
         input: z.object({ projectId: z.string().optional() }),
         execute: async (args, inv) => {
           const plan = await this.plan(requireProjectId("plan_night_shift", args.projectId, inv));
@@ -1033,10 +1047,10 @@ export class NightShifts extends Service {
         kit: "night-shift",
         title: "Ask to start an auto run",
         description:
-          "Asks the person to start an auto run: this does not start one by itself, and you cannot answer for them. They see the tickets and every setting and press Start, in the app or in their direct chat. Calling again replaces what they were asked. Once started it works through these tickets unattended, each with its own coding agent on its own branch, in dependency order, within the limits given. A ticket starts only when nothing it waits on is open. Upstream tickets must merge before what depends on them can start, so a chain runs only with autoMerge; without it the dependants are left waiting, not failed. autoMerge merges a delivery only once its pull request's checks pass; on a conflict its agent is sent back once to resolve it.",
+          "Asks the person to start an auto run: this does not start one by itself, and you cannot answer for them. They see the tickets and every setting and press Start, in the app or in their direct chat. Calling again replaces what they were asked. Once started it works through these tickets unattended, each with its own coding agent on its own branch, in dependency order, within the limits given. A ticket starts only when nothing it waits on is open. Upstream tickets must merge before what depends on them can start, so a chain runs only with autoMerge; without it the dependants are left waiting, not failed. autoMerge merges a delivery only once its pull request's checks pass; on a conflict its agent is sent back once to resolve it. Before you ask, think through what these tickets depend on: open tickets they wait on, recorded (get_item lists blockedBy) or not (plan_night_shift names dependencies the backlog lacks), and work the goal needs that no ticket describes yet (create_item). Put every one an agent can do into keys as well, ahead of what needs it: a ticket waiting on work outside the run never starts. Tell the person which ones need them instead. One run goes per project: when one is going, change its plan with edit_night_shift.",
         input: z.object({
           keys: z.array(z.string().min(1)).min(1).max(50).describe('Ticket keys in the order to try them, e.g. ["TOM-42", "TOM-43"]'),
-          where: z.enum(["terminal", "session"]).optional().describe("terminal: each agent in a pane of the Terminal window. session: background sessions in the assistant panel. Absent goes as Start last went. Ask the user when you do not know which they want."),
+          where: z.enum(["terminal", "session"]).optional().describe("terminal: each agent in a pane of the Terminal window. session: background sessions in the assistant panel. Absent: terminal, which is the default."),
           engine: z.string().min(1).optional().describe("The coding agent's engine id; absent goes as Start last went"),
           permissionMode: z.string().min(1).optional().describe("Sessions only. A mode that asks before acting stalls the ticket until morning."),
           concurrency: z.number().int().min(1).max(8).optional().describe("Tickets at work at once; 2 by default. plan_night_shift suggests a number"),
@@ -1071,6 +1085,48 @@ export class NightShifts extends Service {
           }
           const proposal = this.propose(projectId, input);
           return { started: false, awaiting: "the person", asked: proposal.text, expiresAt: new Date(proposal.expiresAt).toISOString(), note: "Nothing has started and you cannot start it: tell the person it waits for their Start, in the app or in their direct chat. If they want anything different, call this again; that replaces what they were asked." };
+        }
+      })
+    );
+    ctx.tools.register(
+      defineTool({
+        name: "edit_night_shift",
+        kit: "night-shift",
+        title: "Change the auto run's plan",
+        description:
+          "Changes the plan of the auto run going now: tickets join it or leave it, and the run goes on with the rest. This is how a changed goal reaches a run. Stop it and ask for a new one only when an edit would serve worse: hardly a ticket of the plan stays, or the run's own settings (where it runs, the agent, the limits, merging) must change, which an edit cannot do. Add with a ticket every open ticket it waits on that an agent can do, as for start_night_shift. The person is asked first and you cannot answer for them; where nobody can be asked, tickets can only leave, and only on the user's word. A ticket not begun leaves quietly; one at work leaves only with stop, which ends its agent and keeps its branch; one already settled stays as the run's record.",
+        input: z.object({
+          add: z.array(z.string().min(1)).max(50).optional().describe('Keys of tickets to join the run, e.g. ["TOM-44"]'),
+          remove: z.array(z.string().min(1)).max(50).optional().describe("Keys of tickets to take off the plan"),
+          stop: z.boolean().optional().describe("Only when the user said so: end the agent at work on a ticket being removed"),
+          projectId: z.string().optional()
+        }),
+        execute: async (args, inv) => {
+          const projectId = requireProjectId("edit_night_shift", args.projectId, inv);
+          const shift = this.running(projectId);
+          if (!shift) throw new Error("No auto run is going in this project: ask to start one with start_night_shift");
+          const change = { add: (args.add ?? []).map((key) => keyToId(projectId, key)), remove: (args.remove ?? []).map((key) => ({ itemId: keyToId(projectId, key), stop: args.stop ?? false })) };
+          if (!change.add.length && !change.remove.length) throw new Error("edit_night_shift: name a ticket to add or to remove");
+          const checked = this.checkedEdit(projectId, shift.id, change).change;
+          const result = { added: checked.add.map((t) => t.key), removed: change.remove.map((r) => shift.tickets.find((t) => t.itemId === r.itemId)!.key) };
+          if (!inv.ask) {
+            // Joining starts agents, which is the person's to allow; leaving only narrows what they allowed.
+            if (checked.add.length) return { changed: false, why: "Nobody can be asked here, so tickets cannot join the run from this session: the person adds them in the Auto run window. Taking tickets off works here, on their word." };
+            this.edit(projectId, shift.id, change);
+            return { changed: true, ...result };
+          }
+          const w = NIGHT_SHIFT_WORDS(this.locale());
+          const lines = [
+            ...checked.add.map((t) => w("editAdds", { key: t.key, title: t.title })),
+            ...change.remove.map((r) => {
+              const t = shift.tickets.find((x) => x.itemId === r.itemId)!;
+              return w(t.state === "queued" ? "editRemoves" : "editStops", { key: t.key, title: t.title });
+            })
+          ];
+          if ((await inv.ask([w("askEdit"), ...lines].join("\n"), [w("editYes"), w("askNo")])) !== w("editYes")) return { changed: false, why: "The person said no. The plan stays as it was." };
+          // The run moved on while they read: the change is checked again as it is made.
+          this.edit(projectId, shift.id, change);
+          return { changed: true, ...result, note: "It reaches the run at its next pass; night_shift_status shows the plan as it stands." };
         }
       })
     );

@@ -32,6 +32,8 @@ const remote = vi.hoisted(() => ({
   refuse: new Set<string>(),
   /** How many passes asked for the Hub, reachable or not. */
   passes: 0,
+  /** Each passkey step Supabase was asked to check, with its challenge and what the browser sent. */
+  passkeys: [] as { step: string; challengeId: string; credential: unknown }[],
   /** The account's machines, by id. */
   devices: new Map<string, { device_id: string; name: string; facts: unknown; last_seen_at: string; updated_at: string }>()
 }));
@@ -60,6 +62,18 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       },
       resend: async ({ type, email, options }: { type: string; email: string; options?: { emailRedirectTo?: string } }) => mail(type, email, options?.emailRedirectTo),
       resetPasswordForEmail: async (email: string, options?: { redirectTo?: string }) => mail("recovery", email, options?.redirectTo),
+      passkey: {
+        startAuthentication: async () => ({ data: { challenge_id: "sign-in-1", options: { challenge: "sign-in" }, expires_at: 0 }, error: null }),
+        verifyAuthentication: async ({ challengeId, credential }: { challengeId: string; credential: unknown }) => {
+          remote.passkeys.push({ step: "signIn", challengeId, credential });
+          return { data: { user: session().user, session: session() }, error: null };
+        },
+        startRegistration: async () => ({ data: { challenge_id: "add-1", options: { challenge: "add" }, expires_at: 0 }, error: null }),
+        verifyRegistration: async ({ challengeId, credential }: { challengeId: string; credential: unknown }) => {
+          remote.passkeys.push({ step: "add", challengeId, credential });
+          return { data: { id: "passkey-1", created_at: "2026-11-19T00:00:00.000Z" }, error: null };
+        }
+      },
       setSession: async (s: { user?: unknown }) => { remote.adopted.push(s); return { data: { session: s, user: s.user }, error: null }; },
       updateUser: async ({ data }: { data: Record<string, unknown> }) => {
         if (remote.offline) return { data: { user: null }, error: { message: "fetch failed" } };
@@ -127,7 +141,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = { locale: "en" }; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0; remote.devices.clear();
+  remote.meta = { locale: "en" }; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0; remote.devices.clear(); remote.passkeys = [];
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -611,6 +625,30 @@ it("links confirmation and reset emails to the site's pages, in the reader's lan
     { type: "signup", email: "new@example.test", to: "https://tomrade.com/auth/confirmed/" },
     { type: "recovery", email: "new@example.test", to: "https://tomrade.com/zh/auth/reset/" }
   ]);
+});
+
+it("adds a passkey and signs in with it through the site's page in the browser, the session made here", async () => {
+  const { ctx, cloud } = await machine();
+  await cloud.sync();
+  const opened: string[] = [];
+  // The relay page: it signs whatever challenge it was given and goes back to the loopback.
+  ctx.on("desktop/open-external", url => {
+    opened.push(url);
+    const p = JSON.parse(Buffer.from(new URL(url).hash.slice(1), "base64url").toString()) as { kind: string; options: { challenge: string }; callback: string; state: string };
+    const credential = Buffer.from(JSON.stringify({ id: `${p.kind}:${p.options.challenge}` })).toString("base64url");
+    void fetch(`${p.callback}?state=${p.state}&credential=${credential}`);
+  });
+  await cloud.addPasskey("zh");
+  await cloud.signOut();
+  await expect(cloud.addPasskey()).rejects.toThrow(/^\[not_signed_in\] /);
+  const info = await cloud.signInWithPasskey(true);
+  expect(opened.map(url => url.split("#")[0])).toEqual(["https://tomrade.com/zh/auth/passkey/", "https://tomrade.com/auth/passkey/"]);
+  expect(remote.passkeys).toEqual([
+    { step: "add", challengeId: "add-1", credential: { id: "create:add" } },
+    { step: "signIn", challengeId: "sign-in-1", credential: { id: "get:sign-in" } }
+  ]);
+  expect(remote.adopted).toHaveLength(1);
+  expect(info).toMatchObject({ user: { id: remote.userId }, terms: { accepted: TERMS_VERSION } });
 });
 
 it("says so when sign-up meets an address that already has an account", async () => {

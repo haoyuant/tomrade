@@ -12,11 +12,14 @@ import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { isCommitKey } from "~/lib/keys";
 
-const TABS: InboxListFilter[] = ["new", "activity", "accepted", "merged", "closed", "all"];
+const TABS: InboxListFilter[] = ["new", "activity", "unsent", "accepted", "merged", "closed", "all"];
+/** Shown only while something is in them, or they are the one open. */
+const WHEN_ANY: InboxListFilter[] = ["activity", "unsent"];
 const KINDS: InboxKind[] = ["bug", "feedback", "idea"];
 const TAB_KEY: Record<InboxListFilter, MessageKey> = {
   new: "inbox.tab_new",
   activity: "inbox.tab_activity",
+  unsent: "inbox.tab_unsent",
   accepted: "inbox.tab_accepted",
   merged: "inbox.tab_merged",
   closed: "inbox.tab_closed",
@@ -40,7 +43,8 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
   const sources = useInboxSources(projectId, open);
   const waiting = useInboxEntries(projectId, "new", open);
   const stirred = useInboxEntries(projectId, "activity", open);
-  const counts: Partial<Record<InboxListFilter, number>> = { new: waiting.data?.length ?? 0, activity: stirred.data?.length ?? 0 };
+  const unsent = useInboxEntries(projectId, "unsent", open);
+  const counts: Partial<Record<InboxListFilter, number>> = { new: waiting.data?.length ?? 0, activity: stirred.data?.length ?? 0, unsent: unsent.data?.length ?? 0 };
   const actions = useInboxActions(projectId);
   const list = useMemo(() => entries.data ?? [], [entries.data]);
   const entry = list.find((e) => e.id === selected) ?? null;
@@ -83,7 +87,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
         ) : (
           <>
             <div className="seg quiet inbox-tabs" role="group" aria-label={t("inbox.tabsAria")}>
-              {TABS.filter((s) => s !== "activity" || !!counts.activity || tab === "activity").map((s) => (
+              {TABS.filter((s) => !WHEN_ANY.includes(s) || !!counts[s] || tab === s).map((s) => (
                 <button key={s} type="button" aria-pressed={tab === s} data-tab={s} onClick={() => setTab(s)}>
                   {t(TAB_KEY[s])}
                   {!!counts[s] && <span className="side-count num">{counts[s]}</span>}
@@ -120,6 +124,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
                           <span className="num">{e.externalId}</span>
                           <span>{agoLabel(e.receivedAt)}</span>
                           {e.activityAt !== null && <Tag tone="strong">{t("inbox.activity")}</Tag>}
+                          {e.sendError !== null && <Tag tone="strong">{t("inbox.unsent")}</Tag>}
                         </span>
                       </button>
                     </li>
@@ -180,6 +185,11 @@ function SourcesPane({ projectId, sources, onBack }: { projectId: string; source
                 {s.pending > 0 && ` · ${t("inbox.sourcePending", { n: s.pending })}`}
               </p>
             )}
+            {s.enabled && s.sendError && (
+              <p className="meta-txt dense" data-send-error>
+                ⚠ {t("inbox.sourceSendFailed", { error: s.sendError })}
+              </p>
+            )}
             {s.enabled &&
               !s.unavailable &&
               !s.error &&
@@ -232,7 +242,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
   const others = useInboxEntries(projectId, "all", mode === "duplicate" || !!entry.duplicateOf || entry.suggestion?.action === "duplicate");
   const main = entry.duplicateOf ? (others.data ?? []).find((e) => e.id === entry.duplicateOf) : undefined;
   const sourceName = source?.title ?? entry.source;
-  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending || actions.seen.isPending || actions.adopt.isPending;
+  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending || actions.seen.isPending || actions.adopt.isPending || actions.retrySend.isPending || actions.dropSend.isPending;
 
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -329,6 +339,29 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
           <Spacer />
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.reopen.mutate(entry.id, { onError: reportError })}>
             <Icon name="i-undo" size={13} /> {t("inbox.reopen")}
+          </button>
+        </div>
+      )}
+      {entry.sendError !== null && (
+        <div className="row inbox-activity" data-testid="inbox-send-error">
+          <Icon name="i-info" size={14} />
+          <span>{t("inbox.sendFailed", { source: sourceName, error: entry.sendError })}</span>
+          <Spacer />
+          <button type="button" className="btn btn-ghost" disabled={busy} title={t("inbox.sendDropHint")} onClick={() => actions.dropSend.mutate(entry.id, { onError: reportError })}>
+            {t("inbox.sendDrop")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() =>
+              actions.retrySend.mutate(entry.id, {
+                onSuccess: (e) => (e.sendError ? reportError(new Error(t("inbox.sendStillFailing", { error: e.sendError }))) : toast({ body: t("inbox.sendDelivered") })),
+                onError: reportError
+              })
+            }
+          >
+            {actions.retrySend.isPending ? <Icon name="i-sync" size={13} className="is-spinning" /> : null} {t("inbox.sendRetry")}
           </button>
         </div>
       )}

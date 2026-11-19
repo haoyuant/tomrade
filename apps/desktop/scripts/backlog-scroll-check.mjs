@@ -55,14 +55,18 @@ const run = async () => {
   await press(`document.querySelector('.board-scroll-hint')`);
   await sleep(700);
   check("click advances the board", await $(`${scroller}.scrollLeft > 0`));
+  const height = () => $(`${scroller}.getBoundingClientRect().height`);
+  const heightWithHint = await height();
   await $(`${scroller}.scrollLeft = ${scroller}.scrollWidth`);
   await sleep(200);
   check("hint disappears at the right edge", !(await hasHint()));
+  check("board keeps its height when the hint goes", Math.abs((await height()) - heightWithHint) < 1);
   check("done and cancelled columns can be reached", await $(`(() => { const sc = ${scroller}; return ['done', 'cancelled'].every(key => { const col = sc.querySelector('[data-column="'+key+'"]'); return col && col.getBoundingClientRect().right <= sc.getBoundingClientRect().right + 1; }); })()`));
   await $(`${scroller}.scrollLeft = 0`);
   await sleep(200);
   check("scrolling back restores the hint", await hasHint());
-  check("hint sits below cards", await $(`document.querySelector('.board-scroll-hint').getBoundingClientRect().top >= ${scroller}.getBoundingClientRect().bottom`));
+  check("hint floats over the board", await $(`(() => { const hint = document.querySelector('.board-scroll-hint').getBoundingClientRect(), sc = ${scroller}.getBoundingClientRect(); return hint.top >= sc.top && hint.bottom <= sc.bottom; })()`));
+  check("a column scrolls its last card clear of the hint", await $(`(() => { const hint = document.querySelector('.board-scroll-hint').getBoundingClientRect(); const body = [...${scroller}.querySelectorAll('.col-body')].find(b => { const r = b.getBoundingClientRect(); return r.left < hint.right && r.right > hint.left; }); if (!body) return true; body.scrollTop = body.scrollHeight; const last = body.lastElementChild?.getBoundingClientRect(); return !last || last.bottom <= hint.top; })()`));
   await shot("backlog-scroll-hint");
 
   win.setSize(2400, 900);

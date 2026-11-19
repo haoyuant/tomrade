@@ -1669,6 +1669,9 @@ importers:
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tomradex/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
