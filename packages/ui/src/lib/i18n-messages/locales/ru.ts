@@ -1500,6 +1500,8 @@ export const ru: PartialMessages = {
     worktreesRemoveFinished: "Удалить завершённые",
     worktreesRemoving: "Удаление…",
     worktreesNote: "Каждый тикет, запущенный из Tomrade, выполняется в собственном worktree внутри Hub, со своими установленными зависимостями. Когда тикет выполнен или отменён, его worktree удаляется сам — только если в нём ничего не потеряется. Его ветка удаляется вместе с ним, если в ней ничего не потеряется: локальная — когда её коммиты сохранены в другом месте, ветка на сервере — когда она слита; иначе остаётся. Повторный запуск тикета возвращает worktree. Срок хранения или отключение: Настройки › Worktrees.",
+    worktreesRecheck: "Проверить снова",
+    worktreesRechecking: "Проверка…",
     worktreesRemovedToast: "Удалено worktree: {{n}}",
     worktreesKeptToast: "Удалено worktree: {{n}}. Осталось {{kept}}: {{reason}}",
     worktreesBranchesDeleted: "Вместе с ними удалено веток: {{n}}.",

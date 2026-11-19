@@ -64,6 +64,9 @@ export function RepoWorktrees({ projectId, repoId }: { projectId: string; repoId
               </span>
             )}
           </span>
+          <button type="button" className="btn btn-ghost repo-worktrees-recheck" disabled={listed.isFetching} onClick={() => void listed.refetch()}>
+            {listed.isFetching ? t("repositories.worktreesRechecking") : t("repositories.worktreesRecheck")}
+          </button>
           {!none && (
             <button type="button" className="btn btn-secondary repo-worktrees-clear" disabled={!finished.length || remove.isPending} onClick={() => take(finished.map((tree) => tree.dir))}>
               {remove.isPending ? t("repositories.worktreesRemoving") : t("repositories.worktreesRemoveFinished")}

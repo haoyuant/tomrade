@@ -172,6 +172,9 @@ export function WorktreeOverview() {
           <section className="usage-section" aria-label={t("repositories.overviewByRepo")}>
             <div className="usage-section-head">
               <span className="usage-section-title">{t("repositories.overviewByRepo")}</span>
+              <button type="button" className="btn btn-ghost worktree-recheck" disabled={overview.isFetching} onClick={() => void overview.refetch()}>
+                {overview.isFetching ? t("repositories.worktreesRechecking") : t("repositories.worktreesRecheck")}
+              </button>
             </div>
             <div className="usage-purposes worktree-repos">
               {totals.repos.map((repo) => {

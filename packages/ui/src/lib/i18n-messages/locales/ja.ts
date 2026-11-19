@@ -1491,6 +1491,8 @@ export const ja: PartialMessages = {
     worktreesRemoveFinished: "終了したものを削除",
     worktreesRemoving: "削除中…",
     worktreesNote: "Tomrade から開始したチケットは、それぞれハブ配下の専用 worktree で作業され、依存関係もそこにインストールされます。チケットが完了またはキャンセルになると、失われるものがない場合に限り、その worktree は自動で削除されます。失われるコミットがない場合に限り、ブランチも一緒に削除されます。ローカルのブランチはコミットが別の場所に残っているとき、リモートのブランチはマージ済みのときです。そうでなければ残ります。チケットをもう一度開始すれば worktree は戻ります。保持する期間の変更や無効化は、設定 › Worktrees で行えます。",
+    worktreesRecheck: "再確認",
+    worktreesRechecking: "確認中…",
     worktreesRemovedToast: "{{n}} 個の worktree を削除しました",
     worktreesKeptToast: "{{n}} 個の worktree を削除しました。{{kept}} 個は残りました：{{reason}}",
     worktreesBranchesDeleted: "あわせて {{n}} 本のブランチを削除しました。",

@@ -1467,6 +1467,8 @@ export const de: PartialMessages = {
     worktreesRemoveFinished: "Abgeschlossene entfernen",
     worktreesRemoving: "Wird entfernt…",
     worktreesNote: "Jedes aus Tomrade gestartete Ticket wird in einem eigenen Worktree unter dem Hub bearbeitet, mit eigenen installierten Abhängigkeiten. Sobald ein Ticket erledigt oder abgebrochen ist, wird sein Worktree von selbst entfernt – nur wenn darin nichts verloren ginge. Sein Branch wird mit entfernt, wenn darauf nichts verloren ginge – der lokale, sobald seine Commits anderswo erhalten sind, der auf dem Remote, sobald er gemergt ist –, und bleibt sonst. Ein erneuter Start des Tickets bringt den Worktree zurück. Wie lange er bleibt oder das Abschalten: Einstellungen › Worktrees.",
+    worktreesRecheck: "Erneut prüfen",
+    worktreesRechecking: "Wird geprüft…",
     worktreesRemovedToast: "Entfernte Worktrees: {{n}}",
     worktreesKeptToast: "Entfernte Worktrees: {{n}}. {{kept}} bleiben: {{reason}}",
     worktreesBranchesDeleted: "Mit ihnen gelöschte Branches: {{n}}.",

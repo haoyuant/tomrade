@@ -1467,6 +1467,8 @@ export const fr: PartialMessages = {
     worktreesRemoveFinished: "Supprimer les terminés",
     worktreesRemoving: "Suppression…",
     worktreesNote: "Chaque ticket démarré depuis Tomrade est traité dans son propre worktree sous le Hub, avec ses dépendances installées. Une fois le ticket Terminé ou Annulé, son worktree est supprimé de lui-même, uniquement si rien n'y serait perdu. Sa branche est supprimée avec lui si rien n'y serait perdu — la branche locale dès que ses commits sont conservés ailleurs, celle du dépôt distant dès qu'elle est fusionnée — et reste sinon. Redémarrer le ticket ramène le worktree. Durée de conservation, ou désactivation : Réglages › Worktrees.",
+    worktreesRecheck: "Vérifier à nouveau",
+    worktreesRechecking: "Vérification…",
     worktreesRemovedToast: "Worktrees supprimés : {{n}}",
     worktreesKeptToast: "Worktrees supprimés : {{n}}. {{kept}} conservés : {{reason}}",
     worktreesBranchesDeleted: "Branches supprimées avec eux : {{n}}.",
