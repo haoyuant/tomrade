@@ -165,6 +165,20 @@ const RESUME_PROMPT = "Tomrade: this conversation was taken up again from its lo
 export class Starter {
   constructor(private readonly host: StartHost) {}
 
+  /** Sends `text` into the thread once the turn `runId` ends; a send that fails then is logged, not thrown. */
+  private afterTurn(agent: Agent, projectId: string, threadId: string, runId: string, text: string, source: ReturnType<typeof sourced>): void {
+    const { ctx } = this.host;
+    const off = ctx.on("agent/run-ended", (run) => {
+      if (run.id !== runId) return;
+      off();
+      try {
+        agent.send(projectId, threadId, { kind: "text", text }, source);
+      } catch (err) {
+        ctx.logger.warn(`could not continue thread ${threadId} after its turn: ${errorMessage(err)}`);
+      }
+    });
+  }
+
   async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
     const { ctx, store } = this.host;
     const found = ctx.items.get(projectId, itemId);
@@ -412,7 +426,11 @@ export class Starter {
         return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, engine: engineId, ...(warnings.length ? { warnings } : {}) };
       }
       // A claim sends nothing: the conversation goes on as it was, now on the ticket.
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? (opts.claim ? null : agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId);
+      const active = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? null;
+      // A task for a session still in its turn (sent back from its own hand-over, such as a conflict) goes once that turn
+      // ends: sent now it would be refused, and reusing the turn would lose it. A Start with nothing new reuses the turn.
+      if (active && !opts.claim && opts.message?.trim()) this.afterTurn(agent, projectId, thread.id, active, prompt, sourced(opts));
+      const runId = active ?? (opts.claim ? null : agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId);
       store.patchSession(projectId, session.id, { state: runId ? "running" : "idle", lastEventAt: now });
       this.host.notify(projectId);
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: !!runId, ...(runId ? { runId } : {}), engine: engineId, ...(warnings.length ? { warnings } : {}) };
