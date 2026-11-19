@@ -161,6 +161,9 @@ describe("tomrade claim, note, link, create, list and show", () => {
     expect(parseArgs(["note", "--key=TOM-7", "wired"], noDir)).toEqual({ op: "ticket", request: { op: "note", key: "TOM-7", text: "wired" }, json: false });
     expect(parseArgs(["link", "--pr", "https://github.com/a/b/pull/9", "--scope-checked"], noDir)).toEqual({ op: "ticket", request: { op: "link", pr: "https://github.com/a/b/pull/9", scopeChecked: true }, json: false });
     expect(parseArgs(["create", "Write", "the", "README", "--body", "For newcomers."], noDir)).toEqual({ op: "ticket", request: { op: "create", title: "Write the README", body: "For newcomers." }, json: false });
+    expect(parseArgs(["create", "Fix", "the", "badge", "--work-type", "coding"], noDir)).toEqual({ op: "ticket", request: { op: "create", title: "Fix the badge", workType: "coding" }, json: false });
+    expect(parseArgs(["create", "Plan", "--work-type=general"], noDir)).toEqual({ op: "ticket", request: { op: "create", title: "Plan", workType: "general" }, json: false });
+    expect(parseArgs(["create", "Fix", "--work-type", "code"], noDir)).toEqual({ op: "bad", what: "--work-type code" });
     expect(parseArgs(["list", "--search", "readme", "--status", "todo", "--limit", "5"], noDir)).toEqual({ op: "ticket", request: { op: "list", search: "readme", status: "todo", limit: 5 }, json: false });
     expect(parseArgs(["show", "TOM-7"], noDir)).toEqual({ op: "ticket", request: { op: "show", key: "TOM-7" }, json: false });
     expect(parseArgs(["claim"], noDir)).toEqual({ op: "bad", what: "claim" });

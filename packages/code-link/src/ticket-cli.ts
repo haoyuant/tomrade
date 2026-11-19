@@ -142,7 +142,8 @@ export function serveTicketCli(deps: TicketCliDeps): CliHandler {
         case "create": {
           const title = str(request.title);
           if (!title) return { ok: false, text: w("cliNoTitle") };
-          const result = (await call("create_item", { title, ...(str(request.body) ? { body: str(request.body) } : {}) })) as Record<string, unknown>;
+          const workType = str(request.workType);
+          const result = (await call("create_item", { title, ...(str(request.body) ? { body: str(request.body) } : {}), ...(workType === "coding" || workType === "general" ? { workType } : {}) })) as Record<string, unknown>;
           return { ok: true, text: w("cliCreated", { key: String(result.key), title: String(result.title) }), result };
         }
         case "list": {

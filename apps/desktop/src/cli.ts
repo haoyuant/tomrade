@@ -22,6 +22,7 @@ export interface TicketRequest {
   text?: string;
   title?: string;
   body?: string;
+  workType?: "coding" | "general";
   pr?: string;
   branch?: string;
   search?: string;
@@ -37,7 +38,7 @@ const TICKET_FLAGS: Record<TicketRequest["op"], Record<string, "value" | "switch
   claim: { "--parallel": "switch" },
   note: { "--key": "value" },
   link: { "--key": "value", "--pr": "value", "--branch": "value", "--scope-checked": "switch" },
-  create: { "--body": "value" },
+  create: { "--body": "value", "--work-type": "value" },
   list: { "--search": "value", "--status": "value", "--limit": "value" },
   show: {}
 };
@@ -59,7 +60,7 @@ const TICKET = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 export const START_WAIT_MS = 90_000;
 const RETRY_MS = 500;
 
-/** `tomrade claim <KEY>`, `tomrade note [--key K] <text>`, `tomrade link [--key K] [--pr url] [--branch b] [--scope-checked]`, `tomrade create <title> [--body text]`, `tomrade list [--search s] [--status s] [--limit n]`, `tomrade show <KEY>`; --json on any. */
+/** `tomrade claim <KEY>`, `tomrade note [--key K] <text>`, `tomrade link [--key K] [--pr url] [--branch b] [--scope-checked]`, `tomrade create <title> [--body text] [--work-type coding|general]`, `tomrade list [--search s] [--status s] [--limit n]`, `tomrade show <KEY>`; --json on any. */
 function parseTicket(op: TicketRequest["op"], rest: string[]): TermCommand {
   const flags = TICKET_FLAGS[op];
   const given: Record<string, string | true> = {};
@@ -105,6 +106,11 @@ function parseTicket(op: TicketRequest["op"], rest: string[]): TermCommand {
   if (key !== undefined) {
     if (!TICKET.test(key)) return { op: "bad", what: key };
     request.key = key.toUpperCase();
+  }
+  const workType = value("--work-type");
+  if (workType !== undefined) {
+    if (workType !== "coding" && workType !== "general") return { op: "bad", what: `--work-type ${workType}` };
+    request.workType = workType;
   }
   const limit = value("--limit");
   if (limit !== undefined) {
