@@ -273,6 +273,7 @@ export const zhHant: PartialMessages = {
     oplogBullet: "每一處修改都會連同修改者記錄在歷史裡",
     undoBullet: "{{cmdz}} 可以撤回任意一處修改，無論來自代理還是你自己",
     hubLabel: "主目錄",
+    accountLabel: "帳號",
     scopeMachine: "僅本機",
     scopeUser: "隨主目錄",
     projectsDirLabel: "專案資料夾",
@@ -3114,6 +3115,9 @@ export const zhHant: PartialMessages = {
     hourly: "每 {{every}} 小時"
   },
   account: {
+    passkeySignIn: "用通行金鑰登入",
+    passkeyAdd: "新增通行金鑰",
+    or: "或",
     title: "Tomrade 帳號",
     intro: "帳號會同步 Hub 目錄和使用者偏好。專案內容仍保存在各自的專案資料夾中。",
     email: "電子郵件",
@@ -3132,7 +3136,7 @@ export const zhHant: PartialMessages = {
     passwordHint: "註冊新帳號需要至少 {{min}} 個字元的密碼。",
     why: "帳號用於在多台電腦之間同步專案列表和偏好設定。",
     useLocally: "不登入，在本機使用",
-    localNote: "專案只保存在這台電腦上。之後可以在 設定\u00a0→\u00a0主目錄 中登入。",
+    localNote: "專案只保存在這台電腦上。之後可以在 設定\u00a0→\u00a0帳號 中登入。",
     needEmail: "請輸入電子郵件。",
     badEmail: "電子郵件格式不正確。",
     needPassword: "請輸入密碼。",

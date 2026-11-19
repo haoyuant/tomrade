@@ -1,5 +1,5 @@
 /**
- * Deleting a Tomrade account from Settings → Hub, against the real shell and a
+ * Deleting a Tomrade account from Settings → Account, against the real shell and a
  * stand-in for Supabase: the panel says what goes and what stays, a wrong
  * password deletes nothing, the right one deletes the account and signs out,
  * this computer's projects stay, and the next account to sign in takes them.
@@ -143,14 +143,14 @@ const run = async () => {
     await press(button("Create account"));
     return until(`!${gate}`);
   };
-  const openHub = async () => {
+  const openAccount = async () => {
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
     await sleep(500);
     await typeInto(".palette-input", "About");
     await sleep(400);
     await press(`[...document.querySelectorAll('.palette-row')].find(r => r.textContent.trim() === 'About Tomrade')`);
     await sleep(900);
-    await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === 'Hub')`);
+    await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === 'Account')`);
     await sleep(700);
   };
 
@@ -161,8 +161,8 @@ const run = async () => {
   const projectDir = ctx.hub.catalog.project(project.id)?.dir;
   await $(`location.hash = '#/p/${project.id}'; true`);
   await sleep(2500);
-  await openHub();
-  check("Settings → Hub offers to delete the account", await until(`!!${button("Delete account…", "document.querySelector('.dlg-body')")}`));
+  await openAccount();
+  check("Settings → Account offers to delete the account", await until(`!!${button("Delete account…", "document.querySelector('.dlg-body')")}`));
 
   // ── the confirmation says what goes and what stays ──────────────────
   await press(button("Delete account…", "document.querySelector('.dlg-body')"));
@@ -217,7 +217,7 @@ const run = async () => {
   await sleep(500);
   await press(`[...document.querySelectorAll('.palette-row')].find(r => /关于/.test(r.textContent))`);
   await sleep(900);
-  await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === '主目录')`);
+  await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === '账号')`);
   await sleep(700);
   await press(button("注销账号…", "document.querySelector('.dlg-body')"));
   check("中文：确认注销账号", await until(`(${step}?.textContent ?? '').includes('注销你的 Tomrade 账号？')`), await stepText());

@@ -9,6 +9,7 @@ import { KeybindingsPane } from "./KeybindingsPane";
 import { UsagePane } from "./UsagePane";
 import { BackgroundPane } from "./BackgroundPane";
 import { HubPane } from "./HubPane";
+import { AccountPanel } from "./AccountPanel";
 import { McpServersPane } from "./McpServersPane";
 import { ImPane } from "./ImPane";
 import { PluginsPanel } from "./PluginsPanel";
@@ -25,7 +26,7 @@ import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useBackgroundStatus } from "~/lib/background";
 import { useI18n } from "~/lib/i18n";
 import { reportAction } from "~/lib/analytics";
-import { keys, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { keys, useHubInfo, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { useSettingsSheet } from "~/lib/settingsHost";
 import { useWebSearchProviders } from "~/lib/web-search";
 import { reportError } from "~/lib/toast";
@@ -59,6 +60,7 @@ export function SettingsDialog({
   const { t, locale } = useI18n();
   const qc = useQueryClient();
   const settings = useSettings();
+  const hub = useHubInfo();
   const sections = useSettingsSections(locale);
   const save = useSaveSettings({ reportErrors: false });
   const background = useBackgroundStatus();
@@ -213,6 +215,8 @@ export function SettingsDialog({
     // What Tomrade's worktrees take of this computer's disk sits beside where they are kept; drawn while code link runs.
     ...(sections.data ?? []).filter((s) => s.id === "worktrees").map((section): Pane => ({ id: section.id, label: section.title, icon: "i-folder", group: "app", render: () => pluginPane(section) })),
     { id: "devices", label: t("devices.label"), icon: "i-monitor", group: "app", render: () => <DevicesPane onLeave={() => onOpenChange(false)} /> },
+    // Signing in, passkeys and the account itself, when the Hub syncs through the Tomrade account.
+    ...(hub.data?.cloudEnabled ? [{ id: "account", label: t("settingsDialog.accountLabel"), icon: "i-user" as IconId, group: "app" as const, render: () => <AccountPanel /> }] : []),
     { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(
       (section): Pane => ({

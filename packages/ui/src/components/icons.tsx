@@ -58,6 +58,8 @@ export const ICON_IDS = [
   "i-upload",
   "i-download",
   "i-info",
+  "i-user",
+  "i-passkey",
   "i-copy",
   "i-cut",
   "i-paste",
@@ -141,6 +143,8 @@ export function IconSprite() {
         <symbol id="i-upload" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 9.4V2.4M4.3 5.1 7 2.4l2.7 2.7"/><path d="M2.2 9.6v1.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.6"/></g></symbol>
         <symbol id="i-download" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 2.4v7M4.3 6.7 7 9.4l2.7-2.7"/><path d="M2.2 9.6v1.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.6"/></g></symbol>
         <symbol id="i-info" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.4"/><path d="M7 6.3v3.6M7 4.2v.1"/></g></symbol>
+        <symbol id="i-user" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="4.8" r="2.4"/><path d="M2.5 12.3a4.5 4.5 0 0 1 9 0"/></g></symbol>
+        <symbol id="i-passkey" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.3" cy="4.6" r="2.2"/><path d="M1.3 12.1a4 4 0 0 1 6.3-3.3"/><circle cx="10.6" cy="6.9" r="1.5"/><path d="M10.6 8.4v4M10.6 10.4h1.3M10.6 12.1h1"/></g></symbol>
         {/* keyboard shortcuts: a keyboard, keys and a space bar */}
         <symbol id="i-keyboard" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1.4" y="3.4" width="11.2" height="7.2" rx="1.2"/><path d="M3.8 5.6h.01M6 5.6h.01M8 5.6h.01M10.2 5.6h.01M4.8 8.4h4.4"/></g></symbol>
         <symbol id="i-folder" viewBox="0 0 14 14"><path d="M1.8 3.6a1 1 0 0 1 1-1h2.7l1.3 1.4h4.4a1 1 0 0 1 1 1v5.6a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>

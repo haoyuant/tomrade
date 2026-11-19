@@ -10,7 +10,6 @@ import { keys, useAttachAll, useBindHub, useCacheDir, useHubInfo, useHubRemote, 
 import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { RestoreRow } from "~/components/projects/RestoreCards";
-import { AccountPanel } from "./AccountPanel";
 
 /** The same words the project block uses for the same states. */
 function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: string; tone: "faint" | "neutral" | "strong"; warn?: boolean }> {
@@ -118,7 +117,7 @@ export function HubPane() {
         </div>
       </div>
 
-      {hub.data?.cloudEnabled ? <AccountPanel /> : <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />}
+      {!hub.data?.cloudEnabled && <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />}
 
       {(remote.data?.remote || status?.state === "error") && (
         <div style={{ marginTop: "var(--space-4)" }}>

@@ -13,8 +13,8 @@ import { reportAction } from "~/lib/analytics";
 
 const PLATFORM_WORDS: Record<string, MessageKey> = { darwin: "devices.platform_darwin", win32: "devices.platform_win32", linux: "devices.platform_linux" };
 /** What is missing while this computer is the only place to run, and the Settings pane that mends it. */
-const ONLY_HERE: Record<"signed-out" | "alone" | "out", { hint: MessageKey; pane?: "hub" | "devices" }> = {
-  "signed-out": { hint: "devices.runOnSignedOut", pane: "hub" },
+const ONLY_HERE: Record<"signed-out" | "alone" | "out", { hint: MessageKey; pane?: "account" | "devices" }> = {
+  "signed-out": { hint: "devices.runOnSignedOut", pane: "account" },
   alone: { hint: "devices.runOnAlone" },
   out: { hint: "devices.runOnOut", pane: "devices" }
 };
@@ -72,9 +72,9 @@ export function RunOn({ projectId, item, target, role, sendRole, lead, sendSlot,
       })}
     </p>
   );
-  const settings = (pane: "hub" | "devices") => (
+  const settings = (pane: "account" | "devices") => (
     <button type="button" className="link-btn" data-testid="run-on-settings" onClick={() => { onClose(); openSettingsPane(pane); }}>
-      {t(pane === "hub" ? "devices.runOnOpenHub" : "devices.runOnOpenDevices")}
+      {t(pane === "account" ? "devices.runOnOpenAccount" : "devices.runOnOpenDevices")}
     </button>
   );
   if (state.kind !== "choose" && state.kind !== "hidden" && !lent.length) {

@@ -12,4 +12,8 @@
 .account-agree .link-btn { display: inline; text-align: inherit; }
 .terms-prompt-links { gap: var(--space-4); flex-wrap: wrap; }
 .account-delete { align-self: flex-start; font-size: var(--text-sm); }
+/* "or" on a hairline, then passkey sign-in across the card's width. */
+.account-or { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--meta); }
+.account-or::before, .account-or::after { content: ""; flex: 1; border-top: 1px solid var(--border-soft); }
+.account-passkey { justify-content: center; gap: var(--space-2); width: 100%; }
 }
