@@ -1142,6 +1142,11 @@ describe("the tomrade command, for an agent whose MCP connection is missing", ()
     expect((await command(ctx, { op: "list", search: "README", cwd: checkout })).text).toContain(`${key}  backlog  Write the README`);
     expect((await command(ctx, { op: "show", key: key.toLowerCase(), cwd: checkout })).text).toContain("For new contributors.");
     expect(await command(ctx, { op: "show", key: `${key}0`, cwd: checkout })).toMatchObject({ ok: false });
+    // The kind of work is filed as asked.
+    for (const workType of ["coding", "general"] as const) {
+      const filed = await command(ctx, { op: "create", title: `Filed as ${workType}`, workType, cwd: checkout });
+      expect(filed.result).toMatchObject({ workType });
+    }
 
     // On the ticket's branch no key is needed; untracked, it says so instead of failing quietly.
     git(["checkout", "-q", "-b", `${key.toLowerCase()}/readme`], checkout);
