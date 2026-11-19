@@ -83,6 +83,12 @@ interface Release {
   published_at: string | null;
 }
 
+/** A release that holds a merge, and when it was published. */
+interface Shipped {
+  tag: string;
+  at: number;
+}
+
 const PAGES = 10;
 /** Pulls overlap by this much, so an issue GitHub stamped a little before our clock's "now" is not missed. */
 const OVERLAP_MS = 2 * 60_000;
@@ -204,6 +210,8 @@ export interface Deps {
   /** The project's GitHub repositories, as "owner/repo" by repository id. */
   repos(projectId: string): Promise<Map<string, string>>;
   item(projectId: string, itemId: string): Item | null;
+  /** The items under this one, at any depth: the tickets an issue's work was split into. */
+  descendants(projectId: string, itemId: string): Item[];
   /** Where a ticket's code was merged; empty without code-link. */
   links(projectId: string, itemId: string): LandedLink[];
   /** Null while no account is connected. */
@@ -214,8 +222,8 @@ export interface Deps {
 /**
  * GitHub issues of a project's repositories as an inbox source. It hears of
  * triage through comments and, when the project allows, by closing the issue;
- * and when an accepted issue's ticket is merged and a release contains the
- * merge, it says which release.
+ * and once an accepted issue's ticket, and every ticket split from it, is done
+ * and a release contains each one's merge, it says which release.
  */
 export function githubSource(deps: Deps): InboxSource {
   const { api, inbox } = deps;
@@ -248,7 +256,7 @@ export function githubSource(deps: Deps): InboxSource {
   };
 
   /** The earliest published release that contains `sha`, or null while none does. */
-  const releaseWith = async (repo: string, sha: string, releases: Map<string, Release[]>): Promise<string | null> => {
+  const releaseWith = async (repo: string, sha: string, releases: Map<string, Release[]>): Promise<Shipped | null> => {
     let list = releases.get(repo);
     if (!list) {
       list = (await api.request<Release[]>("GET", `/repos/${repo}/releases?per_page=30`))
@@ -256,10 +264,10 @@ export function githubSource(deps: Deps): InboxSource {
         .sort((a, b) => Date.parse(b.published_at!) - Date.parse(a.published_at!));
       releases.set(repo, list);
     }
-    let found: string | null = null;
+    let found: Shipped | null = null;
     for (const r of list) {
       if (!(await includes(repo, r.tag_name, sha))) break;
-      found = r.tag_name;
+      found = { tag: r.tag_name, at: Date.parse(r.published_at!) };
     }
     return found;
   };
@@ -272,22 +280,47 @@ export function githubSource(deps: Deps): InboxSource {
     return link.mergedSha;
   };
 
-  /** Accepted issues whose ticket is done: shipped once a release holds its merge. */
+  /** The release one ticket's merge first went out in; null while none holds it; undefined for a ticket with no merge to look for. */
+  const shippedIn = async (projectId: string, itemId: string, repos: Map<string, string>, releases: Map<string, Release[]>): Promise<Shipped | null | undefined> => {
+    let merged = false;
+    for (const link of deps.links(projectId, itemId)) {
+      const repo = repos.get(link.repoId);
+      const sha = repo ? await mergeSha(repo, link) : null;
+      if (!repo || !sha) continue;
+      merged = true;
+      const found = await releaseWith(repo, sha, releases);
+      if (found) return found;
+    }
+    return merged ? null : undefined;
+  };
+
+  /**
+   * Accepted issues whose work is all out: the ticket and every ticket split from it (cancelled ones aside) done, and
+   * each merge in a release. The release named is the one the last of them went out in.
+   */
   const ship = async (projectId: string, repos: Map<string, string>): Promise<void> => {
     const waiting = [...inbox.list(projectId, "accepted"), ...inbox.list(projectId, "merged")].filter((e) => e.source === SOURCE_ID && !e.shippedIn && e.itemId);
     const byItem = new Map<string, InboxEntry[]>();
     for (const e of waiting) byItem.set(e.itemId!, [...(byItem.get(e.itemId!) ?? []), e]);
     const releases = new Map<string, Release[]>();
     for (const [itemId, entries] of byItem) {
-      if (deps.item(projectId, itemId)?.status !== "done") continue;
-      for (const link of deps.links(projectId, itemId)) {
-        const repo = repos.get(link.repoId);
-        const sha = repo ? await mergeSha(repo, link) : null;
-        const version = repo && sha ? await releaseWith(repo, sha, releases) : null;
-        if (!version) continue;
-        for (const e of entries) inbox.ship(projectId, e.id, version);
-        break;
+      const item = deps.item(projectId, itemId);
+      if (!item) continue;
+      const family = [item, ...deps.descendants(projectId, itemId)].filter((i) => i.status !== "cancelled");
+      if (!family.length || family.some((i) => i.status !== "done")) continue;
+      let last: Shipped | null = null;
+      let held = false;
+      for (const i of family) {
+        const out = await shippedIn(projectId, i.id, repos, releases);
+        if (out === undefined) continue;
+        if (out === null) {
+          held = true;
+          break;
+        }
+        if (!last || out.at > last.at) last = out;
       }
+      if (held || !last) continue;
+      for (const e of entries) inbox.ship(projectId, e.id, last.tag);
     }
   };
 
@@ -373,6 +406,11 @@ export function apply(ctx: Context) {
         return out;
       },
       item: (projectId, itemId) => ctx.items.get(projectId, itemId),
+      descendants(projectId, itemId) {
+        const all = ctx.items.listAll(projectId);
+        const under = (id: string): Item[] => all.filter((i) => i.parentId === id).flatMap((i) => [i, ...under(i.id)]);
+        return under(itemId);
+      },
       links: (projectId, itemId) => codeLink()?.links(projectId, itemId) ?? [],
       connected: async () => !!(await ctx.github.readToken()),
       words

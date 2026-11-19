@@ -12,7 +12,7 @@ import { covered, listDecisions, recordDecision } from "./decisions.js";
 import { DEFAULT_BRANCH_TEMPLATE, branchFor, titleSlug } from "./keys.js";
 import { CODE_WORDS } from "./words.js";
 import type {} from "@tomradex/settings";
-import { mergeLine } from "./prompts.js";
+import { issueLine, mergeLine } from "./prompts.js";
 import { END_AFTER_MS, sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
@@ -694,6 +694,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
                 ]
               : []),
             `every commit message names ${item.key}`,
+            ...(issueLine(item.body) ? [issueLine(item.body)] : []),
             local
               ? `this repository has no remote: do not push or open a pull request; after the full-diff review call link_code with scopeChecked: true and no prUrl; do not mark the ticket done — merging does`
               : "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",

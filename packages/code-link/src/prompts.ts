@@ -51,7 +51,21 @@ export const mergeLine = (merge: boolean, local = false): string =>
       ? "- merging is yours: after link_code, wait for the pull request's checks with gh pr checks <url> --watch and merge only once they pass, with gh pr merge <url> --squash or the method CLAUDE.md names; never pass --admin or work around branch protection. 'no checks reported' means there is nothing to wait for. If the checks cannot be read at all (an error such as 'Resource not accessible by integration'), do not merge without them: call report_merge_blocked saying the check status could not be read, and stop. If gh pr merge says the branch conflicts with or is behind the default branch, that is yours to settle: merge origin's default branch into your branch, resolve every conflict, run the tests, push, wait for the checks and merge again. If the checks fail, the merge is refused — a permission denied, a safety check, branch protection, a review still required — or you cannot resolve the conflict, do not try another way: call report_merge_blocked with the reason and stop; the human merges it"
       : "- do not merge the pull request; the human merges it";
 
-const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false, merge = false) =>
+/**
+ * The GitHub issues a ticket's text links ("owner/repo#12"). The work for one may span several tickets, and Tomrade
+ * closes it once all of them ship, so a pull request must not close it on merge.
+ */
+const issueRefs = (body: string | null | undefined): string[] => [...new Set([...(body ?? "").matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/g)].map((m) => `${m[1]}#${m[2]}`))];
+
+/** The convention for a ticket that answers GitHub issues, without the leading "- "; empty when it answers none. */
+export const issueLine = (body: string | null | undefined): string => {
+  const refs = issueRefs(body);
+  return refs.length
+    ? `this ticket answers ${refs.join(", ")}: in commits and the pull request write "Refs ${refs[0]}", never Closes, Fixes or Resolves — the issue may need more tickets than this one, and Tomrade closes it once all of them ship`
+    : "";
+};
+
+const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false, merge = false, body: string | null = null) =>
   [
     "Conventions:",
     `- this run owns exactly ${key}; implement only its stated outcome and acceptance criteria`,
@@ -59,6 +73,7 @@ const conventions = (key: string, defaultBranch: string, completionPolicy: "merg
     `- before the first edit, name the smallest expected change; before ${local ? "handing the branch over" : "pushing"}, inspect the full diff and remove work that is not required by this ticket`,
     "- if required work belongs to another ticket, report it with note_progress and leave it for a separate branch and session",
     `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
+    issueLine(body) && `- ${issueLine(body)}`,
     local
       ? `- this repository has no remote: commit on your branch, do not push, do not add a remote, and open no pull request; after the full-diff scope review, call link_code with scopeChecked: true and no prUrl — that moves the ticket to Verifying${merge ? "" : `, and the human merges your branch into ${defaultBranch} here`}`
       : "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
@@ -99,7 +114,7 @@ export function firstPrompt(input: FirstPromptInput): string {
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
     mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json and .codex/config.toml: ${mcpUrl}` : "",
     "",
-    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"), input.local, input.merge ?? state?.agentMerge ?? false)
+    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"), input.local, input.merge ?? state?.agentMerge ?? false, item.body)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }
@@ -118,7 +133,7 @@ export function continuePrompt(item: Item, repo: Repo, session: SessionView | nu
     link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : local ? "" : " · no pull request yet"}.` : "",
     "Check the working tree and the tests, then carry on where you stopped. get_item has the ticket's latest state if you need it.",
     "",
-    conventions(item.key, repo.defaultBranch, completionPolicy, local, merge)
+    conventions(item.key, repo.defaultBranch, completionPolicy, local, merge, item.body)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }
