@@ -1481,7 +1481,7 @@ export const fr: PartialMessages = {
     worktreeHold_loose: "Contient des commits qu'aucune branche ne retient",
     worktreeHold_unticketed: "Sur aucun ticket : Tomrade vous le laisse",
     worktreeOutside: "Hors du Hub, dans {{dir}}",
-    worktreesOutsideNote: "Les worktrees créés ailleurs — par un agent dans votre propre terminal, ou par vous — figurent ici aussi. Tomrade ne les supprime jamais de lui-même : Supprimer en retire un dont les tickets sont terminés et qui ne retient rien ; celui qui n’est sur aucun ticket vous est laissé.",
+    worktreesOutsideNote: "Les worktrees créés ailleurs — par un agent dans votre propre terminal, ou par vous — figurent ici aussi. Supprimer en retire un dont les tickets sont terminés et qui ne retient rien ; avec Réglages › Worktrees › « Also remove ones made outside the Hub » activé, Tomrade les supprime aussi de lui-même. Celui qui n’est sur aucun ticket vous est laissé.",
     worktreeFree: "Rien n'y serait perdu",
     worktreeDue: "Supprimé de lui-même après le {{when}}",
     worktreeDueNow: "Supprimé de lui-même dans l'heure",

@@ -1505,7 +1505,7 @@ export const ja: PartialMessages = {
     worktreeHold_loose: "どのブランチにもないコミットがあります",
     worktreeHold_unticketed: "どのチケットにも属さないため、Tomrade は触れません",
     worktreeOutside: "ハブの外: {{dir}}",
-    worktreesOutsideNote: "別の場所で作られた worktree（自分のターミナルのエージェントや自分で作ったもの）もここに表示されます。Tomrade がこれらを自動で削除することはありません。チケットが完了していて失われるものがない場合は、ここから手動で削除できます。どのチケットにも属さないものは自分で管理してください。",
+    worktreesOutsideNote: "別の場所で作られた worktree（自分のターミナルのエージェントや自分で作ったもの）もここに表示されます。チケットが完了していて失われるものがない場合は、ここから手動で削除できます。設定 › Worktree で「Also remove ones made outside the Hub」をオンにすると、Tomrade が自動でも削除します。どのチケットにも属さないものは自分で管理してください。",
     worktreeFree: "削除しても何も失われません",
     worktreeDue: "{{when}} 以降に自動で削除",
     worktreeDueNow: "1 時間以内に自動で削除",

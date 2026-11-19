@@ -97,6 +97,12 @@ export class HerdrBridge {
     return (await this.ctx.get("terminals")?.paneAlive(pane)) ?? null;
   }
 
+  /** Where the pane's foreground processes run, as far as the backend can tell; empty when it cannot. */
+  async paneDirs(pane: string): Promise<string[]> {
+    const processes = (await this.ctx.get("terminals")?.processes(pane)) ?? [];
+    return processes.flatMap((p) => (p.cwd ? [p.cwd] : []));
+  }
+
   /** What the backend says of one pane: the agent in it and its title; null when it or the pane is not there. */
   async pane(pane: string): Promise<TerminalPaneInfo | null> {
     return (await this.ctx.get("terminals")?.panes())?.find((x) => x.paneId === pane) ?? null;

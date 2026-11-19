@@ -1557,7 +1557,7 @@ export const zhHant: PartialMessages = {
     worktreeHold_loose: "有不在任何分支上的提交",
     worktreeHold_unticketed: "不屬於任何工單，Tomrade 不動它",
     worktreeOutside: "在 Hub 之外：{{dir}}",
-    worktreesOutsideNote: "在別處建的 worktree（終端機裡的代理建的，或你自己建的）也列在這裡。Tomrade 不會自動移除它們：工單已結束、裡面也沒有會遺失的東西時，可以在這裡手動移除；不屬於任何工單的，留給你自己處理。",
+    worktreesOutsideNote: "在別處建的 worktree（終端機裡的代理建的，或你自己建的）也列在這裡。工單已結束、裡面也沒有會遺失的東西時，可以在這裡手動移除；在 設定 › Worktree 勾選「也移除在 Hub 之外建的 worktree」後，Tomrade 也會自動移除它們。不屬於任何工單的，留給你自己處理。",
     worktreeFree: "移除不會遺失東西",
     worktreeDue: "{{when}} 之後自動移除",
     worktreeDueNow: "一小時內自動移除",
