@@ -22,6 +22,8 @@
     "install:dev": "node scripts/install-dev.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
     "design-system": "node scripts/design-system/build.mjs",
+    "promo": "pnpm --filter @tomrade/desktop promo",
+    "promo:preview": "pnpm --filter @tomradex/ui promo:preview",
     "dump-config": "pnpm --filter @tomrade/desktop dump-config",
     "analytics": "pnpm --filter @tomradex/store-admin analytics"
   },

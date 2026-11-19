@@ -9,6 +9,8 @@
     "dev": "vite",
     "build": "vite build && vite build -c vite.shell.config.ts && tsc -p tsconfig.json --noEmit",
     "build:shell": "vite build -c vite.shell.config.ts",
+    "promo:build": "vite build -c vite.promo.config.ts",
+    "promo:preview": "vite -c vite.promo.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
