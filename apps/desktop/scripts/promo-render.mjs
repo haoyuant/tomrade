@@ -4,18 +4,22 @@
  * draws a frame from its number alone, and each frame carries its number as a colour the loop reads back, so a frame
  * is taken only once it is the one asked for: a render is repeatable.
  *
- *   pnpm promo                                    every film, both cuts, English, into out/promo/
+ *   pnpm promo                                    every film, both cuts, English, into the masters' folder
  *   pnpm promo --film=main,night                  only these films (the page lists them: films.ts)
  *   pnpm promo --format=tall --locale=zh          one cut (wide | tall), one language (en | zh)
  *   pnpm promo --still=12.5,18                    frames of each cut as PNGs, by their second
- *   pnpm promo --frames=300-480 --no-build        a part of it, silent, from the page already built
+ *   pnpm promo --frames=300-480 --no-build        a part of it, silent, from the page already built (-frames-300-480)
  *   pnpm promo --look=sunrise                     in Sunrise throughout instead of the night (files end in -sunrise)
  *   pnpm promo --silent                           without the soundtrack
- *   pnpm promo --index                            only rewrite out/promo/INDEX.md from what is there
+ *   pnpm promo --index                            only rewrite the masters' INDEX.md from what is there
+ *   pnpm promo --out=<folder>                     into that folder instead, flat
  *
- * A film's renders go in its own folder under out/promo/, by what kind of film it is: 1-launch/ (the launch films,
- * each style in two lengths), 2-stories/ (one story, told whole), 3-features/ (one feature each). INDEX.md there
- * lists every render with its length, and is rewritten after each run. _page/ is the built page, _archive/ is yours.
+ * The masters' folder is one for every checkout and worktree, and the site's scripts/v2-films.mjs reads the same
+ * one: TOMRADE_PROMO_DIR, else tomrade-promo-masters beside the main checkout. A film's renders go in its own folder
+ * there, by what kind of film it is: 1-launch/ (the launch films, each style in two lengths), 2-stories/ (one story,
+ * told whole), 3-features/ (one feature each). INDEX.md lists every render with its length, and is rewritten after
+ * each run; _archive/ is yours. A file takes its final name only once it is whole. The page the films are drawn from
+ * is built into this checkout's out/promo-page/, since it is this checkout's code.
  *
  * Needs ffmpeg on the PATH. `pnpm promo:preview` plays the page in a browser (?film=main, ?format=tall, ?lang=zh,
  * space, arrows).
@@ -31,8 +35,15 @@ import { soundtrack } from "./promo-sound.mjs";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(dir, "../../..");
 const flag = (name) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
-const out = path.resolve(flag("out") ?? path.join(repo, "out/promo"));
-const page = path.join(repo, "out/promo/_page/promo.html");
+/** The masters' folder: TOMRADE_PROMO_DIR, else tomrade-promo-masters beside the main checkout (the one a worktree's .git belongs to). */
+function masters() {
+  if (process.env.TOMRADE_PROMO_DIR) return path.resolve(process.env.TOMRADE_PROMO_DIR);
+  const common = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: repo, encoding: "utf8" });
+  const main = common.status === 0 ? path.dirname(common.stdout.trim()) : repo;
+  return path.join(path.dirname(main), "tomrade-promo-masters");
+}
+const out = path.resolve(flag("out") ?? masters());
+const page = path.join(repo, "out/promo-page/promo.html");
 const formats = flag("format") ? [flag("format")] : ["wide", "tall"];
 const locale = flag("locale") ?? "en";
 const still = flag("still");
@@ -107,22 +118,30 @@ async function film(id, format) {
   fs.mkdirSync(to, { recursive: true });
   const png = ({ bitmap, pxW, pxH }) => nativeImage.createFromBitmap(bitmap.subarray(0, pxW * pxH * 4), { width: pxW, height: pxH }).toPNG();
   const name = `tomrade-${id}-${format}-${locale}${look ? `-${look}` : ""}`;
+  // The folder is shared: a file is written under a name of this run's own and renamed once whole, so the site never
+  // encodes half a film and two runs never write into the same file.
+  const part = (file) => `${file}.${process.pid}.part${path.extname(file)}`;
+  const put = (file, data) => {
+    fs.writeFileSync(part(file), data);
+    fs.renameSync(part(file), file);
+  };
   if (still !== undefined) {
     for (const second of still.split(",")) {
       const file = path.join(to, `${name}-${second.replace(".", "_")}s.png`);
-      fs.writeFileSync(file, png(await frameAt(Math.min(info.frames - 1, Math.round(Number(second) * info.fps)))));
+      put(file, png(await frameAt(Math.min(info.frames - 1, Math.round(Number(second) * info.fps)))));
       console.log(file);
     }
     win.destroy();
     return;
   }
 
-  if (!flag("frames")) fs.writeFileSync(path.join(to, `${name}-poster.png`), png(await frameAt(info.poster)));
+  if (!flag("frames")) put(path.join(to, `${name}-poster.png`), png(await frameAt(info.poster)));
   const [first, last] = (flag("frames") ?? `0-${info.frames - 1}`).split("-").map(Number);
   const scale = Number(flag("scale") ?? 1);
-  const file = path.join(to, `${name}.mp4`);
+  // A part of a film, or one at another size, never takes the master's name.
+  const file = path.join(to, `${name}${flag("frames") ? `-frames-${first}-${last}` : ""}${scale !== 1 ? `-${scale}x` : ""}.mp4`);
   const sound = !process.argv.includes("--silent") && !flag("frames");
-  const picture = sound ? path.join(to, `${name}.picture.mp4`) : file;
+  const picture = sound ? part(path.join(to, `${name}.picture.mp4`)) : part(file);
   let ffmpeg = null;
   const started = Date.now();
   for (let n = first; n <= Math.min(last, info.frames - 1); n += 1) {
@@ -143,13 +162,14 @@ async function film(id, format) {
   if (code !== 0) throw new Error(`ffmpeg left with ${code}`);
   win.destroy();
   if (sound) {
-    const wav = path.join(to, `${name}.wav`);
+    const wav = part(path.join(to, `${name}.wav`));
     fs.writeFileSync(wav, soundtrack(info.cues, info.frames / info.fps, info.song));
-    const mux = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", picture, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file], { stdio: "inherit" });
+    const mux = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", picture, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", part(file)], { stdio: "inherit" });
     if (mux.status !== 0) throw new Error("ffmpeg could not add the soundtrack");
     fs.rmSync(wav);
     fs.rmSync(picture);
   }
+  fs.renameSync(part(file), file);
   console.log(file);
 }
 
@@ -161,13 +181,13 @@ const SHELVES = [
 
 /** Writes INDEX.md: every render under the output folder, by shelf and film, with its length. */
 function index() {
-  const lines = ["# Promo films", "", "Rewritten by `pnpm promo` after every run. `_archive/` holds what you set aside; `_page/` is the page the films are drawn from.", ""];
+  const lines = ["# Promo films", "", "Rewritten by `pnpm promo` after every run. `_archive/` holds what you set aside. Shared by every checkout of the app and read by the site's `scripts/v2-films.mjs`.", ""];
   for (const [shelf, title, about] of SHELVES) {
     const dir = path.join(out, shelf);
     if (!fs.existsSync(dir)) continue;
     lines.push(`## ${title} (\`${shelf}/\`)`, "", about, "", "| Film | Cut | Language | Look | Length | File |", "|---|---|---|---|---|---|");
     for (const name of fs.readdirSync(dir).sort()) {
-      const films = fs.existsSync(path.join(dir, name)) && fs.statSync(path.join(dir, name)).isDirectory() ? fs.readdirSync(path.join(dir, name)).filter((file) => file.endsWith(".mp4") && !file.includes(".picture.")).sort() : [];
+      const films = fs.existsSync(path.join(dir, name)) && fs.statSync(path.join(dir, name)).isDirectory() ? fs.readdirSync(path.join(dir, name)).filter((file) => file.endsWith(".mp4") && !file.includes(".part.")).sort() : [];
       for (const file of films) {
         const [, id, format, locale, , drawn] = file.match(/^tomrade-(.+)-(wide|tall)-([a-z]{2})(-(sunrise))?\.mp4$/) ?? [];
         if (!id) continue;

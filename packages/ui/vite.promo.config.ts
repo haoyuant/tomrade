@@ -9,5 +9,5 @@ export default defineConfig({
   base: "./",
   resolve: { alias: { "~": new URL("./src", import.meta.url).pathname } },
   server: { host: "127.0.0.1", port: 5183, open: "/promo.html" },
-  build: { outDir: "../../out/promo/_page", emptyOutDir: true, rollupOptions: { input: "promo.html" } }
+  build: { outDir: "../../out/promo-page", emptyOutDir: true, rollupOptions: { input: "promo.html" } }
 });

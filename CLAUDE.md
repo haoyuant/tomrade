@@ -17,7 +17,7 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 - `pnpm test:related` — only the tests that reach the files changed against `origin/main` (committed or not); falls back to the touched packages' tests
 - `pnpm test:ui` — Electron UI regression harness (slow; has a known flaky baseline)
 - `pnpm dev` — run the desktop app
-- `pnpm promo` — films the promos (`packages/ui/src/promo`, drawn from the app's own stylesheet and components; `films.ts` lists them) into `out/promo/` (a folder a film, by kind; `INDEX.md` lists them), `--film=main` for one; `pnpm promo:preview` plays them in a browser
+- `pnpm promo` — films the promos (`packages/ui/src/promo`, drawn from the app's own stylesheet and components; `films.ts` lists them) into the masters' folder that every checkout and the site share (`TOMRADE_PROMO_DIR`, else `tomrade-promo-masters` beside the main checkout; a folder a film, by kind; `INDEX.md` lists them), `--film=main` for one; `pnpm promo:preview` plays them in a browser
 
 ## Conventions
 
