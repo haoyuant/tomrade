@@ -395,6 +395,7 @@ it("with the setting on, removes a finished ticket's worktree made outside the H
   expect(git(["branch", "--list", `${ticket.key.toLowerCase()}/from-a-terminal`], checkout)).toBe("");
 });
 
+// Real git against a remote for every case (fetch, push, the squash check): about 4 s on a quiet machine, past 5 s under load.
 it("deletes a removed worktree's branch, here and on the remote, only when nothing on it would be lost", async () => {
   const { ctx, codeLink, projectId, repo, checkout, keep, worked, finish } = await machine();
   keep({ keepDays: 0 });
@@ -466,4 +467,4 @@ it("deletes a removed worktree's branch, here and on the remote, only when nothi
   expect(await codeLink.removeWorktrees(projectId, [noPush.worktree])).toEqual([{ dir: noPush.worktree, removed: true, reason: null, branch: "deleted", remoteBranch: "kept" }]);
   expect(there()).toContain(noPush.branch);
   expect(ctx.repos.checkout(repo.remote).checkout).toBe(checkout);
-});
+}, 30_000);
