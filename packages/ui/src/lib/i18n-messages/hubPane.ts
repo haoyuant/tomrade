@@ -4,7 +4,7 @@ export const hubPane = {
     lede: "The folder your projects, playbooks and settings live in. Give it a remote and a second machine becomes this one.",
     folderLabel: "Hub folder",
     folderNote: "New projects get a folder under projects/; playbooks and your own settings live here too.",
-    cloudLede: "Your account keeps the project catalog and preferences in sync. This folder holds local projects and files.",
+    cloudLede: "Your account (Settings → Account) keeps the project catalog and preferences in sync. This folder holds local projects and files.",
 
     remoteLabel: "Remote",
     remoteKindLabel: "Where it is published",
@@ -39,7 +39,7 @@ export const hubPane = {
     lede: "你的项目、playbook 和设置所在的文件夹。给它一个远端，第二台机器就能变成这一台。",
     folderLabel: "主目录",
     folderNote: "新项目的文件夹放在 projects/ 下；playbook 和你自己的设置也在这里。",
-    cloudLede: "账号同步项目目录和用户偏好。这个文件夹存放本机的项目与文件。",
+    cloudLede: "账号（设置 → 账号）同步项目目录和用户偏好。这个文件夹存放本机的项目与文件。",
 
     remoteLabel: "远端",
     remoteKindLabel: "发布到哪里",

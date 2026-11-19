@@ -6,6 +6,7 @@ import { keys, useHubInfo } from "~/lib/queries";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { legalUrl } from "~/lib/legal";
 import { openExternal } from "~/lib/shell";
+import { Icon } from "~/components/icons";
 import { AccountSunrise } from "./AccountSunrise";
 
 const MIN_PASSWORD = 8;
@@ -218,7 +219,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       <div className="row" style={{ gap: "var(--space-2)" }}>
         <button className="btn btn-primary" disabled={busy} onClick={() => void run(() => invoke("account.sync"))}>{busy ? t("account.busy") : t("account.sync")}</button>
         <button className="btn btn-secondary" disabled={busy} title={t("account.passkeyAddHint")}
-          onClick={() => void passkey(() => invoke("account.addPasskey", locale), () => setNotice(t("account.passkeyAdded")))}>{t("account.passkeyAdd")}</button>
+          onClick={() => void passkey(() => invoke("account.addPasskey", locale), () => setNotice(t("account.passkeyAdded")))}><Icon name="i-passkey" size={14} />{t("account.passkeyAdd")}</button>
         <button className="btn btn-ghost" disabled={busy} onClick={() => void run(() => invoke("account.signOut"))}>{t("account.signOut")}</button>
       </div>
       {account.data.conflicts.map(c => <div key={c.id} className="panel stack-3">
@@ -300,9 +301,11 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           });
         }}>{t("account.signUp")}</button>
       </div>
-      <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => {
+      {/* The other way in, set apart from the password form so it reads as one. */}
+      <div className="account-or" role="separator"><span>{t("account.or")}</span></div>
+      <button className="btn btn-secondary account-passkey" type="button" disabled={busy} onClick={() => {
         if (check("passkey")) void passkey(() => invoke("account.signInWithPasskey", true, locale));
-      }}>{t("account.passkeySignIn")}</button>
+      }}><Icon name="i-passkey" size={16} />{t("account.passkeySignIn")}</button>
     </form>}
     {inBrowser && <div className="account-local" role="status">
       <p className="field-note">{t("account.passkeyWaiting")}</p>

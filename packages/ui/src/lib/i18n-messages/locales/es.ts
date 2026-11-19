@@ -247,6 +247,7 @@ export const es: PartialMessages = {
     oplogBullet: "Cada cambio queda registrado en el Historial, con quién lo hizo",
     undoBullet: "{{cmdz}} deshace cualquier cambio, sea de un agente o tuyo",
     hubLabel: "Hub",
+    accountLabel: "Cuenta",
     scopeMachine: "Este equipo",
     scopeUser: "Sigue al Hub",
     projectsDirLabel: "Carpeta de proyectos",
@@ -3031,6 +3032,9 @@ export const es: PartialMessages = {
     hourly: "cada {{every}} horas"
   },
   account: {
+    passkeySignIn: "Iniciar sesión con una llave de acceso",
+    passkeyAdd: "Añadir una llave de acceso",
+    or: "o",
     title: "Cuenta de Tomrade",
     intro: "Tu cuenta sincroniza el catálogo del Hub y tus preferencias. El contenido de los proyectos se queda en sus carpetas.",
     email: "Correo electrónico",
@@ -3049,7 +3053,7 @@ export const es: PartialMessages = {
     passwordHint: "Una cuenta nueva necesita al menos {{min}} caracteres.",
     why: "Una cuenta mantiene tu lista de proyectos y tus preferencias sincronizadas entre tus ordenadores.",
     useLocally: "Usar sin cuenta",
-    localNote: "Tus proyectos se quedan en este ordenador. Puedes iniciar sesión más tarde en Ajustes\u00a0→\u00a0Hub.",
+    localNote: "Tus proyectos se quedan en este ordenador. Puedes iniciar sesión más tarde en Ajustes\u00a0→\u00a0Cuenta.",
     needEmail: "Escribe tu correo electrónico.",
     badEmail: "Eso no parece una dirección de correo.",
     needPassword: "Escribe tu contraseña.",

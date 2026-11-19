@@ -7,7 +7,7 @@
   --dawn-muted: #554a6b;
   --dawn-red: #c93a24;
   /* The sky gives way first, so the whole form, down to using Tomrade without an account, fits the window. */
-  --dawn-horizon: clamp(240px, calc(100dvh - 580px), 620px);
+  --dawn-horizon: clamp(216px, calc(100dvh - 630px), 620px);
   --sun-red: #e0482c;
   --sun-gold: #f2a43a;
   --sun-sky: #b9a8ec;
@@ -106,16 +106,19 @@
 }
 .account-sunrise__wave--back { fill: rgba(185, 168, 236, .2); animation: account-wave 8s ease-in-out 2 alternate; }
 .account-sunrise__wave--front { fill: rgba(255, 166, 102, .14); animation: account-wave 10s ease-in-out 2 alternate-reverse; }
-.account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--dawn-horizon) + 10px) 0 48px; }
+.account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--dawn-horizon) + 4px) 0 48px; }
 .account-gate__brand { text-align: center; animation: account-form-rise .85s .6s both; }
 .account-gate__brand h1 { margin: 0; font: 800 clamp(32px, 5vw, 42px)/1.1 sans-serif; letter-spacing: .19em; text-indent: .19em; color: var(--dawn-red); background: linear-gradient(90deg, var(--sun-btn-from), var(--sun-btn-to)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .account-gate__brand p { margin: 13px 0 0; font: 10px/1.5 sans-serif; letter-spacing: .13em; color: var(--dawn-muted); }
 .account-gate__brand p span { margin: 0 9px; color: var(--sun-gold); }
-.account-gate__form { margin-top: 32px; animation: account-form-rise .85s 1s both; }
+.account-gate__form { margin-top: 28px; animation: account-form-rise .85s 1s both; }
 .account-gate__form > .panel { padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .account-gate__form .sec-title { text-align: center; font-size: var(--text-md); font-weight: 400; }
 .account-gate__form .meta-txt { text-align: center; line-height: 1.7; }
-.account-gate__form form { margin-top: 24px; gap: 20px; }
+.account-gate__form form { margin-top: 16px; gap: 20px; }
+/* "or" sits evenly between the password buttons and the passkey one. */
+.account-gate__form form .account-or { margin-top: 8px; color: var(--dawn-muted); }
+.account-gate__form form .account-or + .account-passkey { margin-top: 8px; }
 .account-gate__form .field { color: var(--dawn-muted); font-size: 12px; letter-spacing: .04em; }
 .account-gate__form .input { min-height: 42px; padding: 8px 2px; background: transparent; border: 0; border-bottom: 1px solid #c9bdd6; border-radius: 0; font-size: 16px; }
 .account-gate__form .input:focus { border-color: var(--dawn-red); box-shadow: 0 1px 0 var(--dawn-red); }
@@ -142,7 +145,7 @@
 .account-gate__form .link-btn { color: var(--dawn-red); font-size: 12px; }
 .account-gate__form .account-step > .link-btn { display: block; margin-inline: auto; }
 /* The way past the account: set apart below whatever the panel is showing. */
-.account-gate__form .account-local { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.account-gate__form .account-local { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .account-gate__form .account-local .link-btn { font-size: 15px; }
 .account-gate__form .account-local .field-note { text-align: center; color: var(--dawn-muted); }
 /* Keyboard users can enter immediately, even during the entrance; once shown, it never plays again. */

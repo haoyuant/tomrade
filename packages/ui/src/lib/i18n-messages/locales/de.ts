@@ -247,6 +247,7 @@ export const de: PartialMessages = {
     oplogBullet: "Jede Änderung wird im Verlauf festgehalten, mit Urheber",
     undoBullet: "{{cmdz}} macht jede Änderung rückgängig, die eines Agenten oder deine",
     hubLabel: "Hub",
+    accountLabel: "Konto",
     scopeMachine: "Dieser Computer",
     scopeUser: "Folgt dem Hub",
     projectsDirLabel: "Projektordner",
@@ -3031,6 +3032,9 @@ export const de: PartialMessages = {
     hourly: "alle {{every}} Stunden"
   },
   account: {
+    passkeySignIn: "Mit Passkey anmelden",
+    passkeyAdd: "Passkey hinzufügen",
+    or: "oder",
     title: "Tomrade-Konto",
     intro: "Dein Konto synchronisiert den Hub-Katalog und deine Einstellungen. Projektinhalte bleiben in deinen Projektordnern.",
     email: "E-Mail",
@@ -3049,7 +3053,7 @@ export const de: PartialMessages = {
     passwordHint: "Ein neues Konto braucht mindestens {{min}} Zeichen.",
     why: "Ein Konto hält deine Projektliste und Einstellungen auf allen deinen Computern synchron.",
     useLocally: "Ohne Konto verwenden",
-    localNote: "Deine Projekte bleiben auf diesem Computer. Anmelden kannst du dich später unter Einstellungen\u00a0→\u00a0Hub.",
+    localNote: "Deine Projekte bleiben auf diesem Computer. Anmelden kannst du dich später unter Einstellungen\u00a0→\u00a0Konto.",
     needEmail: "Gib deine E-Mail-Adresse ein.",
     badEmail: "Das sieht nicht wie eine E-Mail-Adresse aus.",
     needPassword: "Gib dein Passwort ein.",

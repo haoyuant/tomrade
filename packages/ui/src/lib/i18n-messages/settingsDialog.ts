@@ -255,6 +255,7 @@ export const settingsDialog = {
     undoBullet: "{{cmdz}} takes back any change, an agent's or yours",
 
     hubLabel: "Hub",
+    accountLabel: "Account",
     scopeMachine: "This machine",
     scopeUser: "Follows the Hub",
     projectsDirLabel: "Projects folder",
@@ -523,6 +524,7 @@ export const settingsDialog = {
     undoBullet: "{{cmdz}} 可以撤回任意一处修改，无论来自智能体还是你自己",
 
     hubLabel: "主目录",
+    accountLabel: "账号",
     scopeMachine: "仅本机",
     scopeUser: "随主目录",
     projectsDirLabel: "项目文件夹",

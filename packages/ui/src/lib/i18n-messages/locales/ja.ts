@@ -271,6 +271,7 @@ export const ja: PartialMessages = {
     oplogBullet: "すべての変更は誰が行ったかとともに履歴に記録されます",
     undoBullet: "{{cmdz}} でエージェントのものもあなたのものも、どの変更でも取り消せます",
     hubLabel: "ハブ",
+    accountLabel: "アカウント",
     scopeMachine: "このマシン",
     scopeUser: "ハブに従う",
     projectsDirLabel: "プロジェクトフォルダー",
@@ -3061,6 +3062,9 @@ export const ja: PartialMessages = {
     hourly: "{{every}} 時間ごと"
   },
   account: {
+    passkeySignIn: "パスキーでサインイン",
+    passkeyAdd: "パスキーを追加",
+    or: "または",
     title: "Tomrade アカウント",
     intro: "アカウントは Hub カタログと設定を同期します。プロジェクトの内容は各プロジェクトフォルダに残ります。",
     email: "メールアドレス",
@@ -3079,7 +3083,7 @@ export const ja: PartialMessages = {
     passwordHint: "新しいアカウントには {{min}} 文字以上のパスワードが必要です。",
     why: "アカウントがあると、プロジェクトの一覧と設定を複数のコンピューターで同期できます。",
     useLocally: "アカウントなしで使う",
-    localNote: "プロジェクトはこのコンピューターにだけ保存されます。あとから 設定\u00a0→\u00a0ハブ でログインできます。",
+    localNote: "プロジェクトはこのコンピューターにだけ保存されます。あとから 設定\u00a0→\u00a0アカウント でログインできます。",
     needEmail: "メールアドレスを入力してください。",
     badEmail: "メールアドレスの形式が正しくありません。",
     needPassword: "パスワードを入力してください。",

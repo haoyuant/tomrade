@@ -3,7 +3,7 @@
  * Supabase that starts out unreachable: the sign-in page says what an account is
  * for and offers local use on every step, a failed sign-in still leaves it one
  * click away, the choice survives a restart, projects and tickets (over MCP too)
- * work while nothing reaches the server, and signing in later from Settings → Hub
+ * work while nothing reaches the server, and signing in later from Settings → Account
  * takes those projects into the account. Signing out offers local use again.
  *
  *   pnpm --filter @tomrade/desktop test:account-optional      (needs the dev server up)
@@ -144,14 +144,14 @@ const run = async () => {
   const gateText = () => $(`${gate}?.textContent ?? ''`);
   const dialog = `document.querySelector('.dlg-body')`;
   const cache = () => JSON.parse(fs.readFileSync(path.join(userData, "hub-cloud.json"), "utf8"));
-  const openHub = async () => {
+  const openAccount = async () => {
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
     await sleep(500);
     await typeInto(".palette-input", "About");
     await sleep(400);
     await press(`[...document.querySelectorAll('.palette-row')].find(r => r.textContent.trim() === 'About Tomrade')`);
     await sleep(900);
-    await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === 'Hub')`);
+    await press(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.trim() === 'Account')`);
     await sleep(700);
   };
 
@@ -160,7 +160,7 @@ const run = async () => {
   // The form rises in after the sunrise.
   await sleep(2500);
   check("which says what an account is for", (await gateText()).includes("An account keeps your project list and preferences in sync across your computers."), await gateText());
-  check("and offers to go on without one", await $(`!!${button("Use without an account", gate)}`) && (await gateText()).includes("Your projects stay on this computer. You can sign in later in Settings\u00a0→\u00a0Hub."), await gateText());
+  check("and offers to go on without one", await $(`!!${button("Use without an account", gate)}`) && (await gateText()).includes("Your projects stay on this computer. You can sign in later in Settings\u00a0→\u00a0Account."), await gateText());
   const localInView = await $(`(() => { const r = ${button("Use without an account", gate)}?.getBoundingClientRect(); return { bottom: r?.bottom, innerHeight }; })()`);
   check("in view without scrolling", localInView.bottom !== undefined && localInView.bottom <= localInView.innerHeight, localInView);
   await shot("account-optional-01-gate");
@@ -200,10 +200,10 @@ const run = async () => {
   check("no account or Hub request reached the server meanwhile", supabase.state.reached === reached, { before: reached, after: supabase.state.reached });
   check("the project waits in the outbox", cache().outbox.some((op) => op.kind === "project" && op.key === project.id), cache().outbox.map((op) => `${op.kind}:${op.key}`));
 
-  // ── signing in later from Settings → Hub takes the projects along ────
+  // ── signing in later from Settings → Account takes the projects along ────
   supabase.state.down = false;
-  await openHub();
-  check("Settings → Hub offers to sign in", await until(`!!${dialog}?.querySelector('input[type=email]')`));
+  await openAccount();
+  check("Settings → Account offers to sign in", await until(`!!${dialog}?.querySelector('input[type=email]')`));
   await typeInto(".dlg-body input[type=email]", "later@example.test");
   await typeInto(".dlg-body input[type=password]", "long enough");
   await press(`document.querySelector('.dlg-body .account-agree input')`);
@@ -222,6 +222,8 @@ const run = async () => {
   await shot("account-optional-04-signed-in");
 
   // ── signing out offers local use again ───────────────────────────────
+  // Signing in starts a sync, and the panel's buttons wait for it.
+  await until(`${button("Sign out", dialog)}?.disabled === false`);
   await press(button("Sign out", dialog));
   check("signing out returns to the sign-in page", await until(`!!${gate}`));
   check("which still offers local use", await until(`!!${button("Use without an account", gate)}`));
@@ -236,7 +238,7 @@ const run = async () => {
   check("中文：登录页", await until(`!!${gate}`));
   await sleep(2500);
   check("中文：说明账号的用途", (await gateText()).includes("账号用于在多台电脑之间同步项目列表和偏好设置。"), await gateText());
-  check("中文：不登录，本地使用", await $(`!!${button("不登录，本地使用", gate)}`) && (await gateText()).includes("之后可以在 设置\u00a0→\u00a0主目录 中登录。"), await gateText());
+  check("中文：不登录，本地使用", await $(`!!${button("不登录，本地使用", gate)}`) && (await gateText()).includes("之后可以在 设置\u00a0→\u00a0账号 中登录。"), await gateText());
   await shot("account-optional-05-gate-zh");
 };
 
