@@ -423,10 +423,16 @@ export class CloudHub extends Service implements CloudHubReader {
     this.config.accounts?.claim({ id: userId, email: this.cache.data.email ?? "" });
     // Never over a newer version agreed on another computer. A failure here retries next time, without holding up sync.
     const agreed = this.cache.data.terms, recorded = this.user?.user_metadata?.terms_version;
-    if (agreed && !(typeof recorded === "string" && recorded >= agreed)) {
-      const { data, error: unrecorded } = await this.client.auth.updateUser({ data: termsRecord(agreed) });
+    // The account's emails (confirm, reset password) are written in the language it last recorded.
+    const locale = this.ctx.settings.locale();
+    const record = {
+      ...(agreed && !(typeof recorded === "string" && recorded >= agreed) ? termsRecord(agreed) : {}),
+      ...(this.user?.user_metadata?.locale !== locale ? { locale } : {})
+    };
+    if (Object.keys(record).length) {
+      const { data, error: unrecorded } = await this.client.auth.updateUser({ data: record });
       if (this.closed || this.user?.id !== userId) return;
-      if (unrecorded) this.home.logger.warn(`terms: ${unrecorded.message}`);
+      if (unrecorded) this.home.logger.warn(`account metadata: ${unrecorded.message}`);
       else this.user = data.user;
     }
     // A request the database itself refused (it says why with a code) holds up only its own record: the rest still go.
@@ -600,7 +606,7 @@ export class CloudHub extends Service implements CloudHubReader {
     const parsed = credentials(email, password, 8);
     if (!agreed) throw new Error("[terms_required] Agree to the Terms of Service and Privacy Policy to create an account.");
     const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp({
-      ...parsed, options: { emailRedirectTo: this.page("confirmed", lang), data: { ...termsRecord(TERMS_VERSION), marketing_emails: marketingEmails } }
+      ...parsed, options: { emailRedirectTo: this.page("confirmed", lang), data: { ...termsRecord(TERMS_VERSION), marketing_emails: marketingEmails, locale: this.ctx.settings.locale() } }
     });
     if (error) throw failure(error);
     if (!data.session) {

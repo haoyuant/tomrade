@@ -79,7 +79,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
         if (remote.offline) return { data: { user: null }, error: { message: "fetch failed" } };
         remote.metaUpdates.push(data);
         remote.meta = { ...remote.meta, ...data };
-        return { data: { user: user() }, error: null };
+        return { data: { user: { ...(remote.as ?? user()), user_metadata: { ...remote.meta } } }, error: null };
       }
     },
     channel: () => {
@@ -141,7 +141,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0; remote.devices.clear(); remote.passkeys = [];
+  remote.meta = { locale: "en" }; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = []; remote.rpcWait = 0; remote.refuse.clear(); remote.passes = 0; remote.devices.clear(); remote.passkeys = [];
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -709,12 +709,30 @@ it("records the terms ticked at sign-in, and never writes over a newer version a
   await cloud.signIn("user@example.test", "password", true);
   expect(remote.metaUpdates.map(m => m.terms_version)).toEqual([TERMS_VERSION]);
 
-  const later = { terms_version: "2999-01-01" };
+  const later = { locale: "en", terms_version: "2999-01-01" };
   remote.meta = later;
   await cloud.signIn("user@example.test", "password", true);
   await cloud.sync();
   expect(remote.metaUpdates).toHaveLength(1);
   expect(cloud.info().terms.accepted).toBe(later.terms_version);
+});
+
+it("keeps the app's language on the account, for the emails it is sent", async () => {
+  const { cloud, ctx } = await machine();
+  remote.confirm = true;
+  ctx.settings.set({ ...ctx.settings.get(), language: "ja" });
+  await cloud.signUp("new@example.test", "long enough", "ja", true);
+  expect(remote.signUpData).toMatchObject({ locale: "ja" });
+
+  remote.meta = {};
+  await cloud.sync();
+  expect(remote.metaUpdates).toEqual([{ locale: "ja" }]);
+  await cloud.sync();
+  expect(remote.metaUpdates).toHaveLength(1);
+  ctx.settings.set({ ...ctx.settings.get(), language: "zh-Hant" });
+  await cloud.sync();
+  expect(remote.meta.locale).toBe("zh-Hant");
+  expect(remote.metaUpdates).toHaveLength(2);
 });
 
 it("deletes the account only with its password, and leaves this computer's projects to the next account", async () => {
