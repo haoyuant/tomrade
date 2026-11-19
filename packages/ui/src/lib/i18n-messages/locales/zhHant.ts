@@ -1543,6 +1543,8 @@ export const zhHant: PartialMessages = {
     worktreesRemoveFinished: "移除已結束的",
     worktreesRemoving: "正在移除…",
     worktreesNote: "從 Tomrade 開始的每張工單都在 Hub 下自己的 worktree 裡進行，各帶一份相依套件安裝。工單完成或取消後，它的 worktree 會自動移除——只在不會遺失東西時。分支也會一起刪除，但只在不遺失提交時：本地分支要求上面的提交在別處還有，遠端分支要求已經合併；否則保留。重新開始這張工單就能把 worktree 帶回來。保留多久、或關閉自動移除：設定 › Worktrees。",
+    worktreesRecheck: "重新檢查",
+    worktreesRechecking: "正在檢查…",
     worktreesRemovedToast: "已移除 {{n}} 個 worktree",
     worktreesKeptToast: "已移除 {{n}} 個 worktree，{{kept}} 個保留：{{reason}}",
     worktreesBranchesDeleted: "同時刪除了 {{n}} 條分支。",
